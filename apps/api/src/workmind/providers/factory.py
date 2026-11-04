@@ -17,13 +17,15 @@ from workmind.providers.llm import (
     RoleConfig,
 )
 
-# Effort per role. Answers and judging need reasoning; routing is a quick classification.
+# Effort per role, from Claude Sonnet 5.5's recommended starting points (its levels are
+# recalibrated: `low` for chat, search, extraction and generation; `medium` for multistep tool
+# use and for grading), then checked against `wm eval` (evals/README.md).
 ROLE_EFFORT: dict[Role, Effort] = {
-    "answer": "medium",
-    "router": "low",
-    "judge": "medium",
-    "generator": "medium",
-    "agent": "low",  # department agents: focused extraction from a few passages
+    "answer": "low",  # grounded answers from given sources
+    "router": "low",  # planning and question rewriting: quick classification
+    "judge": "medium",  # faithfulness grading needs care
+    "generator": "low",  # extraction (meeting notes) and generation
+    "agent": "medium",  # department and research agents: multistep tool use
 }
 
 

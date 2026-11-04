@@ -16,7 +16,8 @@ text local while indexing. Other adopters will have different hardware and polic
   `/v1/chat/completions` server: Ollama, vLLM, llama.cpp, LM Studio). LiteLLM is not used: two thin
   adapters are less code to trust than a gateway library.
 - **Roles:** callers ask for a role (`answer`, `router`, `judge`, `generator`). Every role defaults to
-  `LLM_MODEL` (`claude-opus-5-5`); `LLM_MODEL_<ROLE>` overrides one. Server-side refusal fallback
+  `LLM_MODEL` (`claude-sonnet-5-5` since 2026-11-04, see the update below); `LLM_MODEL_<ROLE>`
+  overrides one. Server-side refusal fallback
   (`fallbacks: "default"`) is on for models that support it.
 - **Embeddings:** `EmbeddingProvider` with `OpenAICompatibleEmbeddings` (default: EmbeddingGemma-300M
   served by `llama-server --embeddings` on the host, Metal-accelerated, via `make embeddings`) and
@@ -31,3 +32,11 @@ text local while indexing. Other adopters will have different hardware and polic
 - Scanned PDFs need OCR, which the lightweight parsers do not do; they fail with a clear reason.
 - Changing the embedding model creates a new Qdrant collection (`chunks_<model>_<dims>`) and
   requires re-indexing, as ARCHITECTURE section 8 describes.
+
+## Update (2026-11-04): Claude Sonnet 5.5 is the default
+
+The default moved from Claude Opus 5.5 to Claude Sonnet 5.5 (half the price per token) at the
+maintainer's request. Sonnet 5.5's effort levels are recalibrated, so the per-role efforts were
+reset to its recommended starting points and the full evaluation was re-run
+(`evals/results/2026-11-04-sonnet-baseline.md`). Opus 5.5 remains one setting away
+(`LLM_MODEL=claude-opus-5-5`, or `LLM_MODEL_ANSWER` for answers only).

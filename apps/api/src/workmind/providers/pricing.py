@@ -7,6 +7,7 @@ listed (local models, unknown names) report no cost rather than a guess.
 from workmind.providers.llm import LLMUsage
 
 PRICES: dict[str, tuple[float, float]] = {
+    "claude-sonnet-5-5": (2.0, 10.0),
     "claude-opus-5-5": (4.0, 20.0),
 }
 

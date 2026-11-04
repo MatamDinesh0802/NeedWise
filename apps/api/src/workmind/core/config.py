@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None  # ANTHROPIC_API_KEY
     llm_base_url: str = "http://localhost:11434/v1"  # openai_compatible: Ollama, vLLM, llama.cpp
     llm_api_key: SecretStr | None = None
-    llm_model: str = "claude-opus-5-5"
+    llm_model: str = "claude-sonnet-5-5"
     llm_model_answer: str | None = None
     llm_model_router: str | None = None
     llm_model_judge: str | None = None
