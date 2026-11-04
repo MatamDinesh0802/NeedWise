@@ -6,8 +6,23 @@ Employees ask questions in plain language and get answers grounded in company kn
 citations, drawn only from sources they are allowed to see. Specialized agents (HR, Finance,
 Engineering…) handle department work. Actions that leave the system need human approval.
 
-> **Status: pre-alpha, built in public.** Phase 0 (foundation) is complete. Nothing here is
-> ready for real company data yet. Follow along in the [roadmap](docs/ROADMAP.md).
+> **Status: pre-alpha, built in public.** Phase 0 (foundation) is complete and Phase 1
+> (identity, tenancy, permissions) is nearly done. Nothing here is ready for real company data
+> yet. Follow along in the [roadmap](docs/ROADMAP.md).
+
+## What works today
+
+- **Sign-in through Keycloak** (SSO-ready, MFA-capable). The backend keeps every token; the
+  browser only holds an HttpOnly session cookie.
+- **Company-level isolation enforced by PostgreSQL itself** (forced Row-Level Security). A CI
+  guardrail fails if any table forgets it.
+- **Relationship-based permissions** in OpenFGA, one store per company. An authorization
+  matrix of the demo company runs in CI ("the engineer never sees salaries").
+- **Administration**: people, roles, departments, nested groups, and a hash-chained,
+  tamper-evident audit log.
+- **Personal access tokens** for MCP clients and scripts: scoped, hashed, expiring.
+- About 120 backend and 130+ web tests, including end-to-end sign-ins through the real
+  Keycloak login pages.
 
 ## What makes it different
 
