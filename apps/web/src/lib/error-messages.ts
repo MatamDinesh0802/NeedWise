@@ -59,6 +59,10 @@ const MESSAGES: Record<string, Omit<ErrorMessage, "code">> = {
     title: "Choose who can view",
     description: "A restricted collection needs at least one person or group who can view it.",
   },
+  unknown_collection: {
+    title: "Unknown collection",
+    description: "One of the chosen collections no longer exists. Refresh the page and choose again.",
+  },
   no_version: {
     title: "Nothing to re-index",
     description: "This document has no stored version yet. Upload the file again.",

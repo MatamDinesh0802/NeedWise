@@ -62,7 +62,8 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
     else if (item.message.role === "assistant") {
       const previous = items[index - 1];
       const question = previous?.kind === "message" && previous.message.role === "user" ? previous.message.content : null;
-      answers.set(item.key, answerFromMessage(item.message, question));
+      const trace = item.message.run_id ? (state.traces[item.message.run_id] ?? null) : null;
+      answers.set(item.key, answerFromMessage(item.message, question, trace));
     }
   });
 

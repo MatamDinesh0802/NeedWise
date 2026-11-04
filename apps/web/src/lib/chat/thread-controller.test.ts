@@ -197,5 +197,23 @@ describe("thread controller", () => {
     expect(sources[0].closed).toBe(true);
     expect(controller.getSnapshot()).toMatchObject({ status: "ready", conversation: null, live: null, pendingUser: null });
   });
+
+  it("keeps the agent trace of a finished run for its stored answer", async () => {
+    const getConversation = vi
+      .fn()
+      .mockResolvedValueOnce(detail([question], "r1"))
+      .mockResolvedValueOnce(detail([question, answer], null));
+    const { deps, sources } = harness({ getConversation });
+    const controller = createThreadController({ conversationId: "c1", deps });
+    controller.subscribe(() => {});
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    sources[0].emit("run.started", "1730000000000-0", {});
+    sources[0].emit("plan", "1730000000001-0", { mode: "fan_out", routed_by: "planner", subtasks: [{ agent: "support", goal: "P1" }] });
+    sources[0].emit("agent.step", "1730000004000-0", { agent: "support", status: "done", label: "P1", findings: 2, sources: 3, seconds: 4 });
+    sources[0].emit("run.completed", "1730000019000-0", { message_id: "a1", usage: {}, abstained: false, withheld: 0 });
+
+    await vi.waitFor(() => expect(controller.getSnapshot().live).toBeNull());
+    expect(controller.getSnapshot().traces.r1).toMatchObject({ totalSeconds: 19, steps: [{ agent: "support", status: "done" }] });
+  });
 });
 

@@ -2,6 +2,7 @@
 
 import type { Citation, Message, Source, Usage } from "@/lib/chat/api";
 import type { RunState } from "@/lib/chat/run-reducer";
+import { traceFromRun, type AgentTrace } from "@/lib/chat/trace";
 
 export type AnswerPhase = "searching" | "streaming" | "complete" | "cancelled" | "failed";
 
@@ -20,6 +21,8 @@ export interface AnswerView {
   error: { code: string; message: string } | null;
   /** Stored message (feedback needs its id); null while live. */
   message: Message | null;
+  /** Department agents behind the answer; only known for runs seen live in this tab. */
+  trace: AgentTrace | null;
 }
 
 export function answerFromRun(run: RunState): AnswerView {
@@ -44,10 +47,11 @@ export function answerFromRun(run: RunState): AnswerView {
     usage: run.usage,
     error: run.error,
     message: null,
+    trace: traceFromRun(run),
   };
 }
 
-export function answerFromMessage(message: Message, question: string | null): AnswerView {
+export function answerFromMessage(message: Message, question: string | null, trace: AgentTrace | null = null): AnswerView {
   const searchedFor =
     message.search_query && question && message.search_query.trim() !== question.trim() ? message.search_query : null;
   return {
@@ -63,6 +67,7 @@ export function answerFromMessage(message: Message, question: string | null): An
     usage: message.usage ?? null,
     error: message.status === "failed" ? { code: "failed", message: "This answer failed." } : null,
     message,
+    trace,
   };
 }
 

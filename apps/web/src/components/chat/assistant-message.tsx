@@ -3,6 +3,7 @@
 import { Check, CircleAlert, Copy, Library, RotateCw, Search, SearchX, ShieldAlert, Square, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { AgentTraceLive, AgentTraceSummary } from "@/components/chat/agent-trace";
 import { AnswerMarkdown, type ChipInfo } from "@/components/chat/answer-markdown";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -57,9 +58,16 @@ export function AssistantMessage({
         </Alert>
       ) : null}
 
+      {/* Agents: live list while answering (under "Searching…" until text arrives), then one line. */}
+      {answer.trace && answer.phase === "streaming" ? <AgentTraceLive trace={answer.trace} /> : null}
+      {answer.trace && !live ? <AgentTraceSummary trace={answer.trace} /> : null}
+
       <div aria-live={live ? "polite" : undefined} aria-busy={live || undefined}>
         {answer.phase === "searching" && !answer.text ? (
-          <Searching found={answer.sources.length} />
+          <div className="flex flex-col gap-2">
+            <Searching found={answer.sources.length} agents={answer.trace?.steps.length ?? 0} />
+            {answer.trace ? <AgentTraceLive trace={answer.trace} /> : null}
+          </div>
         ) : answer.abstained && answer.phase === "complete" ? (
           <div className="flex items-start gap-3 rounded-xl border bg-muted/30 px-4 py-3">
             <SearchX className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -119,12 +127,18 @@ export function AssistantMessage({
   );
 }
 
-function Searching({ found }: { found: number }) {
+function Searching({ found, agents }: { found: number; agents: number }) {
+  const label =
+    found > 0
+      ? `Found ${found} relevant passages, writing the answer…`
+      : agents > 0
+        ? `${agents} department agents are searching…`
+        : "Searching your organization's knowledge…";
   return (
     <div className="flex flex-col gap-2" role="status">
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
         <Search className="size-4 animate-pulse" aria-hidden="true" />
-        {found > 0 ? `Found ${found} relevant passages, writing the answer…` : "Searching your organization's knowledge…"}
+        {label}
       </p>
       <Skeleton className="h-3.5 w-11/12" />
       <Skeleton className="h-3.5 w-9/12" />

@@ -9,6 +9,7 @@ import { chatApi, type ConversationDetail, type Message } from "@/lib/chat/api";
 import type { RunState } from "@/lib/chat/run-reducer";
 import { createRunStream, type RunStream } from "@/lib/chat/run-stream";
 import { hasStoredAnswer, runToAttach } from "@/lib/chat/thread";
+import { traceFromRun, type AgentTrace } from "@/lib/chat/trace";
 
 export interface ThreadState {
   status: "idle" | "loading" | "ready" | "not_found" | "error";
@@ -18,6 +19,8 @@ export interface ThreadState {
   /** The question just sent, until the refetched conversation contains it. */
   pendingUser: Message | null;
   sending: boolean;
+  /** Agent traces of runs that ended in this tab, by run id (stored messages don't keep them). */
+  traces: Readonly<Record<string, AgentTrace>>;
 }
 
 export interface ThreadDeps {
@@ -64,6 +67,7 @@ export function createThreadController({
     live: null,
     pendingUser: null,
     sending: false,
+    traces: {},
   });
   let state: ThreadState = blank();
   let stream: RunStream | null = null;
@@ -90,6 +94,8 @@ export function createThreadController({
     detach();
     const current = deps.createStream(runId, () => {
       finished.add(runId);
+      const trace = traceFromRun(current.getSnapshot());
+      if (trace) set({ traces: { ...state.traces, [runId]: trace } });
       void refetch();
     });
     stream = current;
