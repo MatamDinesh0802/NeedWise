@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WorkMind AI · Post 6 multi-agent, measured</title>
+<!-- Numbers: evals/results/2026-11-04-cross-single.md and 2026-11-04-cross-agents.md
+     (15 cross-department questions, Claude Opus 5.5 for every role), routing from
+     2026-11-04-routing.md (36 questions). The miss is xd-14 in 2026-11-04-cross-single.json.
+     Form: small multiples, because facts, seconds and dollars are different scales (never a
+     dual axis). Each panel has its own zero baseline and states its scale end.
+     Color: emphasis (Agents in the accent, One search in the de-emphasis gray). Validated on
+     the panel surface #121a2e: CVD dE 9.2 (deutan), normal-vision dE 15.0, contrast >= 3:1;
+     the chroma-floor FAIL is the intended gray. Every bar carries its series name and value
+     as text, so identity never depends on color. Static image for LinkedIn: no hover layer. -->
+<style>
+  :root {
+    --bg: #0b1020; --panel: #121a2e; --line: #26324d; --text: #e8edf7; --muted: #93a0bb;
+    --brand: #5eead4; --accent: #19a892; --context: #6f7894; --axis: #3a4560;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1350px; }
+  body {
+    background:
+      radial-gradient(900px 500px at 85% -10%, rgba(129,140,248,.16), transparent 60%),
+      radial-gradient(700px 500px at -10% 110%, rgba(94,234,212,.10), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "SF Pro Display", "Inter", "Segoe UI", system-ui, sans-serif;
+    padding: 60px 72px 48px;
+    display: flex; flex-direction: column;
+  }
+  .eyebrow { font-size: 19px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--brand); }
+  h1 { margin-top: 16px; font-size: 56px; line-height: 1.07; font-weight: 750; letter-spacing: -.02em; }
+  h1 em { font-style: normal; color: var(--brand); }
+  .lede { margin-top: 18px; font-size: 24px; line-height: 1.4; color: var(--muted); max-width: 920px; }
+  .panel { margin-top: 32px; background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 30px 40px 26px; }
+  .group + .group { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .group h2 { display: flex; justify-content: space-between; align-items: baseline; font-size: 22px; font-weight: 650; }
+  .group h2 span { font-size: 16px; font-weight: 500; color: var(--muted); }
+  .row { display: grid; grid-template-columns: 170px 1fr; align-items: center; height: 54px; }
+  .row:first-of-type { margin-top: 10px; }
+  .label { font-size: 20px; color: var(--text); }
+  .track { position: relative; height: 100%; border-left: 2px solid var(--axis); }
+  .bar {
+    position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    height: 38px; border-radius: 0 6px 6px 0; background: var(--context);
+    display: flex; align-items: center; justify-content: flex-end; padding-right: 14px;
+  }
+  .bar.pick { background: var(--accent); }
+  .value { font-size: 21px; font-weight: 700; color: #ffffff; white-space: nowrap; }
+  .note { margin-top: 22px; font-size: 20px; line-height: 1.45; color: var(--muted); }
+  .note b { color: var(--text); font-weight: 650; }
+  .kpis { margin-top: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px 16px; }
+  .kpi b { display: block; font-size: 34px; font-weight: 750; letter-spacing: -.01em; }
+  .kpi b.ok { color: var(--brand); }
+  .kpi span { display: block; margin-top: 6px; font-size: 16px; line-height: 1.35; color: var(--muted); }
+  .foot { margin-top: auto; padding-top: 14px; display: flex; justify-content: space-between; font-size: 18px; color: var(--muted); }
+  .foot strong { color: var(--text); font-weight: 650; }
+</style>
+</head>
+<body>
+  <div class="eyebrow">WorkMind AI · Build log #6</div>
+  <h1>Do you need multi-agent?<br><em>I measured it.</em></h1>
+  <p class="lede">15 questions that span departments, each asked as a specific employee. One permission-aware
+    search vs. department agents that each search their own collections in parallel.</p>
+
+  <section class="panel" aria-label="One search versus department agents on 15 cross-department questions">
+    <div class="group">
+      <h2>Answers with every required fact <span>scale 0–15</span></h2>
+      <div class="row"><div class="label">One search</div>
+        <div class="track"><div class="bar" style="width: 93.3%"><span class="value">14 / 15</span></div></div></div>
+      <div class="row"><div class="label">Agents</div>
+        <div class="track"><div class="bar pick" style="width: 100%"><span class="value">15 / 15</span></div></div></div>
+    </div>
+    <div class="group">
+      <h2>Time to a complete answer (median) <span>scale 0–20 s</span></h2>
+      <div class="row"><div class="label">One search</div>
+        <div class="track"><div class="bar" style="width: 33%"><span class="value">6.6 s</span></div></div></div>
+      <div class="row"><div class="label">Agents</div>
+        <div class="track"><div class="bar pick" style="width: 96%"><span class="value">19.2 s</span></div></div></div>
+    </div>
+    <div class="group">
+      <h2>Cost per answer <span>scale $0–0.10</span></h2>
+      <div class="row"><div class="label">One search</div>
+        <div class="track"><div class="bar" style="width: 21.6%"><span class="value">$0.022</span></div></div></div>
+      <div class="row"><div class="label">Agents</div>
+        <div class="track"><div class="bar pick" style="width: 97.8%"><span class="value">$0.098</span></div></div></div>
+    </div>
+  </section>
+
+  <p class="note"><b>The one miss</b> was a three-part on-call question: restart the fleet controller, P1 response
+    time, safe distance to a moving robot. One search found the runbook and stopped; three agents each took one part.
+    <b>So agents aren't the default: a router sends only multi-area questions to them.</b></p>
+
+  <div class="kpis">
+    <div class="kpi"><b class="ok">36/36</b><span>routing decisions right: one area, several areas, or a general question</span></div>
+    <div class="kpi"><b>8 of 36</b><span>matched instantly on example questions, no planner call</span></div>
+    <div class="kpi"><b>~700</b><span>lines of plain asyncio: no graph framework needed</span></div>
+  </div>
+
+  <div class="foot"><span><strong>Open source</strong> · Apache-2.0 · agents search as the person asking</span><span>Evals: evals/results/</span></div>
+</body>
+</html>

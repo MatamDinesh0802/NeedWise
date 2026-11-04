@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WorkMind AI · Post 5 same question, two people</title>
+<!-- Screenshots are the real app on the synthetic Acme Robotics company:
+     post-05-alice-chat.png (Phase 4 browser check, Alice = HR manager) and
+     post-05-mallory-chat.png (Mallory = external contractor, guest; no passages, so the answer model is not called).
+     Numbers: evals/results/2026-11-04-qa-auto.md (answers, auto mode) and
+     2026-11-04-baseline.md (red team: 0 leaks, 48 retrieval checks, 16 attack answers). -->
+<style>
+  :root {
+    --bg: #0b1020; --panel: #121a2e; --line: #26324d; --text: #e8edf7; --muted: #93a0bb;
+    --brand: #5eead4; --accent: #19a892;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1350px; }
+  body {
+    background:
+      radial-gradient(900px 500px at 85% -10%, rgba(129,140,248,.16), transparent 60%),
+      radial-gradient(700px 500px at -10% 110%, rgba(94,234,212,.10), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "SF Pro Display", "Inter", "Segoe UI", system-ui, sans-serif;
+    padding: 60px 72px 48px;
+    display: flex; flex-direction: column;
+  }
+  .eyebrow { font-size: 19px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--brand); }
+  h1 { margin-top: 16px; font-size: 54px; line-height: 1.08; font-weight: 750; letter-spacing: -.02em; }
+  h1 em { font-style: normal; color: var(--brand); }
+  .lede { margin-top: 18px; font-size: 24px; line-height: 1.4; color: var(--muted); }
+  .lede q { color: var(--text); }
+  .who { margin-top: 24px; display: flex; align-items: baseline; gap: 14px; font-size: 22px; font-weight: 650; }
+  .who span { font-size: 18px; font-weight: 500; color: var(--muted); }
+  .shot {
+    margin-top: 12px; position: relative; overflow: hidden; border-radius: 16px;
+    border: 1px solid var(--line); background: #fff; width: 936px;
+  }
+  .shot img { position: absolute; display: block; }
+  /* Alice: crop x 530..1440, y 60..575 of the 1440x900 screenshot, scaled 936/910 */
+  .alice { height: 530px; }
+  .alice img { width: 1481px; left: -545px; top: -62px; }
+  /* Mallory: crop x 580..1380, y 70..198, scaled 936/800 */
+  .mallory { height: 150px; }
+  .mallory img { width: 1685px; left: -679px; top: -82px; }
+  .kpis { margin-top: 22px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px 18px 16px; }
+  .kpi b { display: block; font-size: 34px; font-weight: 750; letter-spacing: -.01em; }
+  .kpi b.ok { color: var(--brand); }
+  .kpi span { display: block; margin-top: 6px; font-size: 16px; line-height: 1.35; color: var(--muted); }
+  .foot { margin-top: auto; padding-top: 14px; display: flex; justify-content: space-between; font-size: 18px; color: var(--muted); }
+  .foot strong { color: var(--text); font-weight: 650; }
+</style>
+</head>
+<body>
+  <div class="eyebrow">WorkMind AI · Build log #5</div>
+  <h1>Same question.<br><em>Two people, two answers.</em></h1>
+  <p class="lede"><q>How many weeks of parental leave do we get?</q> asked in the new chat by an HR manager, then by an external contractor.</p>
+
+  <div class="who">Alice <span>HR manager · cited answer, sources panel open on [1]</span></div>
+  <div class="shot alice" role="img" aria-label="Alice's answer: 16 weeks of fully paid parental leave, with citation chips and the Leave Policy 2026 passage in the sources panel">
+    <img src="post-05-alice-chat.png" alt="">
+  </div>
+
+  <div class="who">Mallory <span>contractor (guest) · no access, no hint the policy exists</span></div>
+  <div class="shot mallory" role="img" aria-label="Mallory's answer: I couldn't find this in the sources available to you.">
+    <img src="post-05-mallory-chat.png" alt="">
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><b>80/82</b><span>answers with every required fact</span></div>
+    <div class="kpi"><b>6.0 s</b><span>to a complete answer (median), streamed</span></div>
+    <div class="kpi"><b>$0.025</b><span>per answer with Claude Opus 5.5</span></div>
+    <div class="kpi"><b class="ok">0</b><span>leaks in 16 attacks with canary tokens</span></div>
+  </div>
+
+  <div class="foot"><span><strong>Open source</strong> · Apache-2.0 · synthetic company, real code</span><span>Evals: evals/results/</span></div>
+</body>
+</html>
