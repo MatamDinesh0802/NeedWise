@@ -27,8 +27,15 @@ from workmind.modules.tools.registry import ToolRegistry
 from workmind.modules.work.tools import create_task_tool, send_email_tool
 from workmind.providers.email import SmtpMailer
 from workmind.providers.embeddings import EmbeddingProvider
-from workmind.providers.factory import create_embeddings, create_llm, create_local_llm, secret
+from workmind.providers.factory import (
+    create_embeddings,
+    create_llm,
+    create_local_llm,
+    create_transcriber,
+    secret,
+)
 from workmind.providers.llm import LLMProvider
+from workmind.providers.transcription import Transcriber
 
 log = structlog.get_logger("workmind.resources")
 
@@ -53,6 +60,7 @@ class Resources:
     runs: RunRegistry
     agent_router: FastRouter | None
     tools: ToolRegistry
+    transcriber: Transcriber
     remote_servers: list[RemoteServer]
     assistant_mode: str
 
@@ -137,6 +145,7 @@ class Resources:
             else None,
             assistant_mode=settings.assistant_mode,
             tools=tools,
+            transcriber=create_transcriber(settings, http),
             remote_servers=[
                 RemoteServer(RemoteServerConfig.model_validate(c)) for c in settings.mcp_servers
             ],

@@ -1,0 +1,25 @@
+# Fact plan for the demo meeting. The transcript (weekly-ops-sync-2026-11-02.txt) was written by a
+# model from this plan, checked for every fact below, and turned into audio with macOS `say`
+# (weekly-ops-sync-2026-11-02.m4a). evals/datasets/meetings.jsonl grades extraction against it.
+title: Weekly operations sync
+date: 2026-11-02            # a Monday
+participants:
+  - { name: Olivia Grant,   role: Head of Operations (chairs the meeting), voice: Samantha }
+  - { name: Wei Zhang,      role: Staff Engineer,                         voice: Rishi }
+  - { name: Samuel Mensah,  role: Support Lead,                           voice: Daniel }
+  - { name: Dan Whitaker,   role: Sales,                                  voice: Aman }
+  - { name: Hannah Schmidt, role: Chief Financial Officer,                voice: Karen }
+decisions:
+  - Move the weekly safety drill at the Rotterdam warehouse from Thursday to Tuesday mornings.
+  - Ship replacement batteries to Bluefin Freight before the end of November.
+  - Answer every warranty claim within 48 hours.
+action_items:
+  - { owner: Wei Zhang,      task: add battery-temperature alerts to the FleetOS dashboard,          due: 2026-11-13, said_as: "by Friday next week" }
+  - { owner: Samuel Mensah,  task: draft the customer notice about the battery replacement program, due: 2026-11-06, said_as: "by this Friday" }
+  - { owner: Dan Whitaker,   task: confirm the delivery date with Bluefin Freight's operations team, due: 2026-11-09, said_as: "by next Monday" }
+  - { owner: Hannah Schmidt, task: approve the budget for 30 spare battery packs,                    due: 2026-11-10, said_as: "on Tuesday" }
+  - { owner: Olivia Grant,   task: update the safety drill schedule in the operations SOP,          due: 2026-11-05, said_as: "by Thursday" }
+distractors:
+  - Dan suggests switching shipping carriers; the group discusses it and decides NOT to change carriers this quarter.
+  - Wei floats rewriting the fleet controller in Rust "some day"; nobody commits to it.
+  - Small talk about a colleague's holiday, and a tangent about the office coffee machine.

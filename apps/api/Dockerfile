@@ -15,19 +15,21 @@ WORKDIR /app
 # Dependencies first, for layer caching.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-project
+    uv sync --locked --no-dev --no-install-project --extra meetings
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable
+    uv sync --locked --no-dev --no-editable --extra meetings
 
 FROM base AS runtime
-RUN useradd --system --uid 10001 --no-create-home workmind
+RUN useradd --system --uid 10001 --no-create-home workmind \
+    && mkdir -p /models && chown workmind /models  # speech models download here (a volume)
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY alembic.ini ./
 COPY migrations ./migrations
 ENV PATH="/app/.venv/bin:$PATH" \
-    LOG_FORMAT=json
+    LOG_FORMAT=json \
+    HF_HOME=/models
 USER workmind
 EXPOSE 8000
 CMD ["uvicorn", "workmind.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

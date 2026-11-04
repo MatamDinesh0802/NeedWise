@@ -134,6 +134,15 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/1"
     ingestion_mode: Literal["celery", "inline"] = "celery"  # inline: in the API process
     max_upload_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    max_meeting_bytes: int = Field(default=500 * 1024 * 1024, gt=0)  # recordings are large
+    # Meetings: speech to text (ARCHITECTURE 15). faster_whisper runs locally in the worker
+    # (the `meetings` extra); openai_compatible calls any /v1/audio/transcriptions server.
+    transcription_provider: Literal["faster_whisper", "openai_compatible", "none"] = (
+        "faster_whisper"
+    )
+    transcription_model: str = "base.en"
+    transcription_base_url: str = "http://localhost:8000/v1"
+    transcription_api_key: SecretStr | None = None
 
     # Sessions (ARCHITECTURE section 6.3): sliding idle timeout, hard absolute lifetime.
     session_idle_timeout_s: int = Field(default=1800, gt=0)

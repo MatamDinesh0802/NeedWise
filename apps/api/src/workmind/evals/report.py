@@ -127,6 +127,38 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
             for r in wrong
         ]
 
+    if run.meetings:
+        out += [
+            "",
+            "## Meetings (extraction)",
+            "",
+            "| Meeting | From | Decisions | Ideas nobody agreed to, reported | Action items "
+            "(owner and task) | Due dates | Timestamped | Transcribe | Extract |",
+            "|---|---|---|---|---|---|---|---|---|",
+        ]
+        for m in run.meetings:
+            if m.error:
+                out.append(f"| {m.id} | {m.source} | error: {m.error} | | | | | | |")
+                continue
+            transcribe = (
+                f"{m.transcribe_s:.0f} s for {m.duration_s / 60:.0f} min"
+                if m.transcribe_s and m.duration_s
+                else "-"
+            )
+            cells = [
+                m.id,
+                m.source,
+                f"{m.decisions_found}/{m.decisions_expected} (+{m.extra_decisions} more)",
+                str(m.rejected_as_decision),
+                f"{m.actions_found}/{m.actions_expected}"
+                + (f" (missed: {', '.join(m.missed)})" if m.missed else ""),
+                f"{m.due_correct}/{m.actions_expected}",
+                _pct(m.timestamped),
+                transcribe,
+                f"{m.extract_s:.0f} s",
+            ]
+            out.append("| " + " | ".join(cells) + " |")
+
     cross = [a for a in run.answers if a.suite == "cross"]
     if cross:
         costs = [c for a in cross if (c := a.cost) is not None]
@@ -227,6 +259,7 @@ def as_json(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
             "leaks": run.leaks,
             "retrieval": [asdict(r) for r in run.retrieval],
             "routing": [asdict(r) for r in run.routing],
+            "meetings": [asdict(m) for m in run.meetings],
             "answers": [asdict(a) for a in run.answers],
             "context_checks": [asdict(c) for c in run.context_checks],
         },

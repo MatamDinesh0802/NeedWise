@@ -11,6 +11,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
@@ -23,10 +24,12 @@ from workmind.core.tenancy import global_transaction, tenant_transaction
 from workmind.evals.datasets import (
     AbstentionItem,
     CrossItem,
+    MeetingItem,
     QAItem,
     RedTeamItem,
     RoutingItem,
     fact_present,
+    keywords_match,
 )
 from workmind.modules.agents.orchestrator import (
     OrchestratorDeps,
@@ -45,6 +48,9 @@ from workmind.modules.assistant.answer import (
 )
 from workmind.modules.identity.models import Tenant, User
 from workmind.modules.identity.service import load_identity
+from workmind.modules.meetings.extract import extract as extract_meeting
+from workmind.modules.meetings.pipeline import _people as meeting_people  # pyright: ignore[reportPrivateUsage]
+from workmind.modules.meetings.transcripts import parse as parse_transcript
 from workmind.modules.retrieval.service import Mode, Passage, RetrievalResult
 from workmind.providers.llm import LLMMessage, LLMRequest, LLMUsage
 from workmind.providers.pricing import cost_usd
@@ -189,6 +195,26 @@ class RoutingRecord:
 
 
 @dataclass
+class MeetingRecord:
+    id: str
+    source: str  # "transcript" or "audio"
+    decisions_found: int
+    decisions_expected: int
+    extra_decisions: int  # extracted decisions beyond the plan (may still be fair)
+    rejected_as_decision: int  # ideas nobody agreed to, reported as decisions or actions (0)
+    actions_found: int  # right owner and task
+    actions_expected: int
+    due_correct: int
+    timestamped: float  # share of items pointing at a real transcript segment
+    segments: int
+    transcribe_s: float | None
+    extract_s: float
+    duration_s: float | None
+    error: str | None = None
+    missed: list[str] = field(default_factory=list[str])  # owners of expected items not found
+
+
+@dataclass
 class ContextLeakRecord:
     id: str
     mode: Mode
@@ -201,6 +227,7 @@ class EvalRun:
     answers: list[AnswerRecord] = field(default_factory=list[AnswerRecord])
     context_checks: list[ContextLeakRecord] = field(default_factory=list[ContextLeakRecord])
     routing: list[RoutingRecord] = field(default_factory=list[RoutingRecord])
+    meetings: list[MeetingRecord] = field(default_factory=list[MeetingRecord])
 
     @property
     def leaks(self) -> list[str]:
@@ -321,6 +348,125 @@ class Evaluator:
             )
 
         return await bounded(self.concurrency, [lambda i=i: one(i) for i in items])
+
+    async def meetings(
+        self, items: Sequence[MeetingItem], directory: Path, *, audio: bool
+    ) -> list[MeetingRecord]:
+        tenant = self.askers.tenant or await self.askers.load_tenant()
+        async with tenant_transaction(self.resources.db, tenant.id) as session:
+            people = await meeting_people(session)
+        records: list[MeetingRecord] = []
+        for item in items:
+            sources = ["transcript", "audio"] if audio else ["transcript"]
+            for source in sources:
+                records.append(await self._meeting(item, directory, source, people, tenant.name))
+        return records
+
+    async def _meeting(
+        self,
+        item: MeetingItem,
+        directory: Path,
+        source: str,
+        people: dict[str, str],
+        organization: str,
+    ) -> MeetingRecord:
+        path = directory / item.file
+        transcribe_s: float | None = None
+        try:
+            if source == "audio":
+                audio = path.with_suffix(".m4a")
+                started = time.perf_counter()
+                transcript = await self.resources.transcriber.transcribe(
+                    audio.read_bytes(), audio.name
+                )
+                transcribe_s = time.perf_counter() - started
+            else:
+                transcript = parse_transcript(path.read_bytes(), path.name)
+            segments = [
+                {
+                    "id": f"T{i}",
+                    "start": s.start,
+                    "end": s.end,
+                    "speaker": s.speaker,
+                    "text": s.text,
+                }
+                for i, s in enumerate(transcript.segments, start=1)
+            ]
+            started = time.perf_counter()
+            outcome, _ = await extract_meeting(
+                self.resources.llm,
+                segments,
+                organization=organization,
+                day=date.fromisoformat(item.date),
+                speakers={},
+                people=people,
+            )
+            extract_s = time.perf_counter() - started
+        except Exception as exc:
+            return MeetingRecord(
+                item.id,
+                source,
+                0,
+                len(item.decisions),
+                0,
+                0,
+                0,
+                len(item.actions),
+                0,
+                0.0,
+                0,
+                transcribe_s,
+                0.0,
+                None,
+                f"{type(exc).__name__}: {exc}"[:300],
+            )
+        decisions = [d["text"] for d in outcome["decisions"]]
+        found = sum(any(keywords_match(groups, d) for d in decisions) for groups in item.decisions)
+        extra = sum(
+            not any(keywords_match(groups, d) for groups in item.decisions) for d in decisions
+        )
+        claims = [*decisions, *(a["text"] for a in outcome["action_items"])]
+        rejected = sum(
+            any(keywords_match(groups, c) for c in claims) for groups in item.not_decisions
+        )
+        actions_found = due_ok = 0
+        missed: list[str] = []
+        for expected in item.actions:
+            match = next(
+                (
+                    a
+                    for a in outcome["action_items"]
+                    if expected["owner"].lower() in a["owner"].lower()
+                    and keywords_match(expected["keywords"], a["text"])
+                ),
+                None,
+            )
+            if match is None:
+                missed.append(expected["owner"])
+            else:
+                actions_found += 1
+                due_ok += match.get("due") == expected.get("due")
+        items = [*outcome["decisions"], *outcome["action_items"]]
+        timestamped = (
+            sum(i.get("segment") is not None for i in items) / len(items) if items else 0.0
+        )
+        return MeetingRecord(
+            item.id,
+            source,
+            found,
+            len(item.decisions),
+            extra,
+            rejected,
+            actions_found,
+            len(item.actions),
+            due_ok,
+            timestamped,
+            len(segments),
+            transcribe_s,
+            extract_s,
+            transcript.duration,
+            missed=missed,
+        )
 
     async def cross(self, items: Sequence[CrossItem], *, with_judge: bool) -> list[AnswerRecord]:
         async def one(item: CrossItem) -> AnswerRecord:

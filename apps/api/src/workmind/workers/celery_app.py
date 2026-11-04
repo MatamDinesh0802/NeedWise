@@ -30,6 +30,7 @@ from workmind.modules.identity.models import Tenant
 from workmind.modules.knowledge.dispatch import CeleryDispatcher
 from workmind.modules.knowledge.pipeline import IngestionDeps, PermanentIngestionError, ingest
 from workmind.modules.knowledge.storage import LocalObjectStorage
+from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
 from workmind.modules.retrieval.qdrant import QdrantClient, QdrantError
 from workmind.modules.work.approvals import expire_due
 from workmind.modules.work.workflows import WorkflowDeps, due_workflows, resume_after, start_run
@@ -41,6 +42,7 @@ SYNC_TASK = "workmind.sync_source"
 SCHEDULE_TASK = "workmind.sync_due_sources"
 WORKFLOWS_TASK = "workmind.run_due_workflows"
 EXPIRE_TASK = "workmind.expire_approvals"
+MEETING_TASK = "workmind.process_meeting"
 
 settings = get_settings()
 app = Celery("workmind", broker=settings.celery_broker_url)
@@ -50,7 +52,11 @@ app.conf.update(
     task_acks_late=True,  # a crashed worker's task is redelivered
     worker_prefetch_multiplier=1,
     task_default_queue="default",
-    task_routes={INGEST_TASK: {"queue": "ingest"}, SYNC_TASK: {"queue": "default"}},
+    task_routes={
+        INGEST_TASK: {"queue": "ingest"},
+        MEETING_TASK: {"queue": "ingest"},
+        SYNC_TASK: {"queue": "default"},
+    },
     # `celery beat` (one process) checks every minute which sources are due.
     beat_schedule={
         "sync-due-sources": {"task": SCHEDULE_TASK, "schedule": 60.0},
@@ -188,3 +194,24 @@ async def _expire_approvals() -> int:
 @app.task(name=EXPIRE_TASK)
 def expire_approvals() -> int:
     return asyncio.run(_expire_approvals())
+
+
+async def _process_meeting(tenant_id: str, meeting_id: str) -> None:
+    resources = Resources.create(settings)
+    try:
+        deps = MeetingDeps(
+            resources.db,
+            resources.storage,
+            resources.llm,
+            resources.transcriber,
+            CeleryDispatcher(),
+        )
+        await process_meeting(deps, uuid.UUID(tenant_id), uuid.UUID(meeting_id))
+    finally:
+        await resources.aclose()
+
+
+@app.task(name=MEETING_TASK)
+def process_meeting_task(tenant_id: str, meeting_id: str) -> None:
+    """Failures are recorded on the meeting (status "failed" with the reason)."""
+    asyncio.run(_process_meeting(tenant_id, meeting_id))

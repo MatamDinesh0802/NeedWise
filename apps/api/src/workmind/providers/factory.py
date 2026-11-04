@@ -16,6 +16,12 @@ from workmind.providers.llm import (
     Role,
     RoleConfig,
 )
+from workmind.providers.transcription import (
+    DisabledTranscriber,
+    FasterWhisperTranscriber,
+    OpenAICompatibleTranscriber,
+    Transcriber,
+)
 
 # Effort per role, from Claude Sonnet 5.5's recommended starting points (its levels are
 # recalibrated: `low` for chat, search, extraction and generation; `medium` for multistep tool
@@ -75,6 +81,21 @@ def create_local_llm(settings: Settings, http: httpx.AsyncClient) -> LLMProvider
         base_url=settings.local_llm_base_url,
         api_key=secret(settings.local_llm_api_key),
     )
+
+
+def create_transcriber(settings: Settings, http: httpx.AsyncClient) -> Transcriber:
+    match settings.transcription_provider:
+        case "faster_whisper":
+            return FasterWhisperTranscriber(settings.transcription_model)
+        case "openai_compatible":
+            return OpenAICompatibleTranscriber(
+                http,
+                base_url=settings.transcription_base_url,
+                model=settings.transcription_model,
+                api_key=secret(settings.transcription_api_key),
+            )
+        case _:
+            return DisabledTranscriber()
 
 
 def create_embeddings(settings: Settings, http: httpx.AsyncClient) -> EmbeddingProvider:

@@ -7,7 +7,7 @@ re-seeds, unlike database ids. A fact is a string, or a list of acceptable spell
 import json
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -51,13 +51,28 @@ class RoutingItem(BaseModel):
     agents: list[str]
 
 
-Suite = Literal["qa", "redteam", "abstention", "cross", "routing"]
+class MeetingItem(BaseModel):
+    """A meeting file with its known outcome. Keywords: every group must match, any word of it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    file: str  # in seed/acme/meetings
+    title: str
+    date: str
+    decisions: list[list[list[str]]]
+    # Floated but never agreed: must appear neither as a decision nor as an action item.
+    not_decisions: list[list[list[str]]] = []
+    actions: list[dict[str, Any]]
+
+
+Suite = Literal["qa", "redteam", "abstention", "cross", "routing", "meetings"]
 FILES: dict[Suite, str] = {
     "qa": "retrieval_qa.jsonl",
     "redteam": "red_team.jsonl",
     "abstention": "abstention.jsonl",
     "cross": "cross_department.jsonl",
     "routing": "routing.jsonl",
+    "meetings": "meetings.jsonl",
 }
 
 
@@ -94,6 +109,18 @@ def load_routing(directory: Path) -> list[RoutingItem]:
         RoutingItem.model_validate(json.loads(line))
         for line in _lines(directory / FILES["routing"])
     ]
+
+
+def load_meetings(directory: Path) -> list[MeetingItem]:
+    return [
+        MeetingItem.model_validate(json.loads(line))
+        for line in _lines(directory / FILES["meetings"])
+    ]
+
+
+def keywords_match(groups: list[list[str]], text: str) -> bool:
+    haystack = text.lower()
+    return all(any(word.lower() in haystack for word in group) for group in groups)
 
 
 _SPACES = re.compile(r"\s+")

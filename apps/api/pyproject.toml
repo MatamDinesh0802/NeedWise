@@ -33,6 +33,13 @@ dependencies = [
 [project.scripts]
 wm = "workmind.cli:main"
 
+[project.optional-dependencies]
+meetings = [
+    "faster-whisper>=1.2.1",
+    # faster-whisper 1.2.1 passes `metadata_errors` to av.open, which PyAV 19 removed.
+    "av>=17.1,<19",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

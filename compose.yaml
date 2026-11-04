@@ -210,6 +210,7 @@ services:
       <<: *app-env
     volumes:
       - ./.data/objects:/data/objects
+      - whisper-models:/models  # the speech-to-text model, downloaded on the first recording
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -330,6 +331,7 @@ services:
 
 volumes:
   llama-models:
+  whisper-models:
   postgres_data:
   valkey_data:
   qdrant_data:

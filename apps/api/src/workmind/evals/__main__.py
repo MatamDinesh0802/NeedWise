@@ -22,6 +22,7 @@ from workmind.evals.datasets import (
     fact_present,
     load_abstention,
     load_cross,
+    load_meetings,
     load_qa,
     load_red_team,
     load_routing,
@@ -74,6 +75,9 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
         help="answer with one search, or with the planner and department agents",
     )
     parser.add_argument("--fast-path", choices=["on", "off"], default="on")
+    parser.add_argument(
+        "--meetings-audio", action="store_true", help="meetings suite: also transcribe the audio"
+    )
     parser.add_argument("--fast-path-score", type=float, help="minimum similarity")
     parser.add_argument("--fast-path-margin", type=float, help="minimum lead over the runner-up")
     parser.add_argument(
@@ -126,6 +130,7 @@ async def run(args: argparse.Namespace) -> int:
     )
     cross = load_cross(args.datasets) if "cross" in suites else []
     routing = load_routing(args.datasets) if "routing" in suites else []
+    meeting_items = load_meetings(args.datasets) if "meetings" in suites else []
     if args.only:
         wanted = set(args.only.split(","))
         qa = [i for i in qa if i.id in wanted]
@@ -165,6 +170,11 @@ async def run(args: argparse.Namespace) -> int:
         if routing:
             print(f"routing: {len(routing)} questions", file=sys.stderr)
             result.routing = await evaluator.routing(routing)
+        if meeting_items and not args.retrieval_only:
+            print(f"meetings: {len(meeting_items)} (audio: {args.meetings_audio})", file=sys.stderr)
+            result.meetings = await evaluator.meetings(
+                meeting_items, REPO / "seed" / "acme" / "meetings", audio=args.meetings_audio
+            )
         if not args.retrieval_only:
             chosen = (
                 [i for i in qa if "qa" in suites],
@@ -221,6 +231,15 @@ async def run(args: argparse.Namespace) -> int:
                 f"  evidence@3 {s['evidence@3']:.3f}  evidence mrr {s['evidence_mrr']:.3f}",
                 file=sys.stderr,
             )
+    for record in result.meetings:
+        print(
+            f"meeting {record.id} ({record.source}): decisions {record.decisions_found}/"
+            f"{record.decisions_expected}, actions {record.actions_found}/"
+            f"{record.actions_expected}, "
+            f"due {record.due_correct}/{record.actions_expected}"
+            + (f", transcribed in {record.transcribe_s:.0f} s" if record.transcribe_s else ""),
+            file=sys.stderr,
+        )
     if result.routing:
         right = sum(r.correct for r in result.routing)
         fast = sum(r.routed_by == "fast_path" for r in result.routing)

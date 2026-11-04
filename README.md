@@ -29,6 +29,9 @@ Engineering…) handle department work. Actions that leave the system need human
   to a local model, or leaves them out and says so.
 - **Knowledge Hub:** upload PDF, Word, Excel, PowerPoint, Markdown, HTML, CSV or Slack exports;
   watch them get indexed; see exactly which chunks the assistant reads.
+- **Meetings become commitments.** Upload a recording or transcript: local speech-to-text (a
+  23-minute meeting in under a minute on a laptop CPU), decisions and action items that each
+  link to the moment they were said, one click to a tracked task ([docs/meetings.md](docs/meetings.md)).
 - **Enterprise identity:** Keycloak SSO, company isolation enforced by PostgreSQL Row-Level
   Security, departments and nested groups, a hash-chained audit log, scoped access tokens.
 

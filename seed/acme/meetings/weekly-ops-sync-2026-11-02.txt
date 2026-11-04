@@ -1,0 +1,158 @@
+Olivia Grant: Morning, everyone. Let's get started. It's Monday, the second of November, and this is the weekly operations sync. Is everyone here? I see Wei, Samuel, Dan, and Hannah. Good.
+Wei Zhang: Morning, Olivia. Yes, all here.
+Samuel Mensah: Morning. Sorry, I'm still on my first coffee.
+Dan Whitaker: Don't talk to me about coffee. Have you seen the machine on the second floor?
+Olivia Grant: I have, and I was going to save that for the end, but go ahead.
+Dan Whitaker: It's making a noise like a small helicopter. Today it gave me half a cup and then just stopped. I stood there pressing the button like a lunatic.
+Hannah Schmidt: It's been doing that for two weeks. I put a ticket in with facilities and they said the part is on order.
+Samuel Mensah: The part has been on order since before the summer. I think the part is a myth.
+Wei Zhang: I have started bringing my own pour-over kit. It takes ten minutes, but at least it's reliable.
+Olivia Grant: Okay, noted. If the budget conversation goes well, maybe Hannah will approve a new machine.
+Hannah Schmidt: Let's not get ahead of ourselves. I have a list of spending approvals already.
+Olivia Grant: Fair enough. Before we dive in, quick thing. Does anyone know when Priya is back? I saw her out-of-office, but it didn't say.
+Samuel Mensah: She's back on the sixteenth. She's in Lisbon for two weeks, and she sent me a photo of a custard tart the size of her head.
+Dan Whitaker: Jealous. I haven't taken a day off since August.
+Olivia Grant: You should, Dan. Anyway, let's get into the agenda. We have four things today. First, the battery issue and what we do about Bluefin Freight. Second, the warranty claim backlog. Third, the Rotterdam safety drill schedule. And fourth, anything else, including Dan's carrier question. Wei, can you start us off on the battery situation? Give everyone the short version.
+Wei Zhang: Sure. So, over the last three weeks we've had eleven units come back from the field with degraded battery packs. Nine of those are from the same production batch, which we shipped in the spring. The packs are not dangerous in the sense of a fire risk, but they're running hot during fast charging, and the cells are losing capacity much faster than they should.
+Olivia Grant: And the nine from that batch, are they all with one customer?
+Wei Zhang: Six of the nine are at Bluefin Freight. The other three are spread across two other sites. The Bluefin ones are the worst because they run their robots almost around the clock, so the packs see a lot of charge cycles.
+Samuel Mensah: That matches what we see in support. Bluefin has called us four times in the last ten days. Their site manager, Marguerite, is polite, but you can hear that she's losing patience.
+Dan Whitaker: She's also on the call list for their contract renewal in January. So this matters for sales too. If we handle this well, I think it helps us. If we handle it badly, they have options.
+Olivia Grant: Right. So what are we proposing? Wei, what's the engineering recommendation?
+Wei Zhang: My recommendation is to replace the packs from that batch proactively, starting with Bluefin. Not wait for each one to fail. We have limited stock of the newer revision packs, which have the improved thermal design, so we need to prioritize.
+Hannah Schmidt: How many packs are we talking about in total, for the whole affected batch?
+Wei Zhang: The whole batch is a little over two hundred packs across all customers. But I don't think we need to replace all of them right away. The failing ones are clustering at high-usage sites. For now, I'd say we need about thirty spare packs to cover Bluefin and the other two sites, and to give us a buffer for any more that come back.
+Hannah Schmidt: Thirty spare packs. What's the unit cost on the new revision?
+Wei Zhang: It's slightly higher than the old one because of the thermal pad and the new cell supplier. I don't have the exact number in my head, but procurement sent a quote last week. I can forward it to you right after this.
+Hannah Schmidt: Please do. I'm not going to approve a number I haven't seen. But in principle, I'm fine with it. A customer losing confidence in us costs more than thirty batteries.
+Olivia Grant: Can you give us a date for the approval, Hannah?
+Hannah Schmidt: Once I have the quote and can check it against the quarter's forecast, I can do it on Tuesday. So tomorrow, basically. Wait, tomorrow is Tuesday, right?
+Olivia Grant: Today is Monday the second, so Tuesday is tomorrow, yes. But I think you mean next Tuesday, the tenth, to give yourself time?
+Hannah Schmidt: Honestly, I'd rather say next Tuesday. I want to look at the cash timing with the supplier's payment terms. So, the budget for the thirty spare battery packs, approved on Tuesday the tenth.
+Olivia Grant: Okay, the tenth. Is that too late for shipping before the end of the month, Wei?
+Wei Zhang: Not if the supplier ships promptly. Lead time on the new packs is about ten days from order. If Hannah approves on the tenth and procurement places the order the same day, we'd have stock around the twentieth. That leaves a week to ship to Bluefin before the end of November. It's tight but workable.
+Dan Whitaker: What about air freight if it gets tight? I can look at that.
+Olivia Grant: Let's hold that thought, because it ties into your carrier question. Let's settle the battery piece first. Are we agreed that we ship replacement batteries to Bluefin Freight before the end of November?
+Dan Whitaker: Yes, I'm in favor. I'd say it's non-negotiable given the renewal.
+Samuel Mensah: Agreed. Support can't keep telling Marguerite we're looking into it.
+Hannah Schmidt: Agreed, subject to the budget approval, which I've already said I'll do.
+Wei Zhang: Agreed from engineering.
+Olivia Grant: Good. So that's decided. We ship replacement batteries to Bluefin Freight before the end of November. Now, who talks to Bluefin about the actual delivery date? We shouldn't promise a date we can't hit.
+Dan Whitaker: That should be me. I have the relationship with their operations team. I'll call them and confirm the delivery date, and what time windows their receiving dock accepts.
+Olivia Grant: When can you have that done?
+Dan Whitaker: By next Monday. So the ninth.
+Olivia Grant: Okay, Dan confirms the delivery date with Bluefin's operations team by next Monday. One caution. The ninth is before Hannah's approval on the tenth. So Dan, when you talk to them, make it clear the date is a target, based on our ordering timeline.
+Dan Whitaker: Understood. I'll say we're targeting the last week of November and confirm the specific day once the stock lands.
+Wei Zhang: That's honest, and I think they'll appreciate it.
+Samuel Mensah: Can I add something? We need to tell customers in writing. Not just Bluefin, but the other two sites as well, and anyone else on that batch who might see issues later. A proper notice about the replacement program, what's covered, how to request a swap, and what to do in the meantime.
+Olivia Grant: Yes, that's a good point. Samuel, can you draft that?
+Samuel Mensah: Sure. I'll draft the customer notice about the battery replacement program by this Friday, the sixth. I'll send it to Wei for technical review and to Hannah in case there's any language about cost that she wants to check.
+Hannah Schmidt: Please make sure it doesn't say the word recall. Legally that's a different thing, and we're not doing a recall.
+Samuel Mensah: Right. I'll call it a proactive battery replacement program. That's accurate.
+Wei Zhang: And in the interim guidance, I'd suggest telling customers to avoid fast charging on the affected units and keep them in a ventilated area. That lowers the heat stress.
+Samuel Mensah: Great, I'll include that. Can you send me two or three sentences I can paste in?
+Wei Zhang: Will do this afternoon.
+Olivia Grant: Wei, there was also something about monitoring. You mentioned it in the pre-read.
+Wei Zhang: Yes. Right now we only see battery temperature if someone pulls the logs manually. That's how we found out this late. I'd like to put battery-temperature alerts on the FleetOS dashboard, so that if a pack runs above a threshold during charging, we and the customer see it right away.
+Olivia Grant: How big a job is that?
+Wei Zhang: The data is already coming in from the robots. It's mostly dashboard work and defining sensible thresholds. I'd say a week and a half, with testing. I can commit to having it done by Friday next week, so the thirteenth.
+Olivia Grant: Okay, Wei adds battery-temperature alerts to the FleetOS dashboard by Friday next week.
+Samuel Mensah: That would help support a lot. Right now when a customer calls, I can't see anything. I'm basically guessing from the serial number.
+Wei Zhang: And just to set expectations, the first version will be simple. A warning and a critical level. We can refine it later.
+Olivia Grant: Simple is fine. Better to have it than not.
+Dan Whitaker: Can I ask whether customers will see these alerts, or only us?
+Wei Zhang: Both, ideally. Customers have a login to the dashboard. I'll make it configurable, but I'd turn it on by default for the affected batch.
+Dan Whitaker: Good. That's something I can mention to Bluefin. It shows we're not just swapping parts, we're improving visibility.
+Olivia Grant: Yes, good selling point. Okay. Let's move to the warranty claim backlog, which is related. Samuel, where are we?
+Samuel Mensah: We have twenty-three open claims right now. Eight of them are battery related. The oldest has been open for nine days without a substantive reply. That's not good. Our written policy says five business days, but in practice we're slipping because the claims go into a shared inbox and people assume someone else has it.
+Olivia Grant: What's a realistic standard we can hold ourselves to?
+Samuel Mensah: I'd like to tighten it, actually. Especially with the battery situation, people are anxious. I'd propose we answer every warranty claim within forty-eight hours. Not resolve, just answer, with a real response, acknowledging the claim, saying what we need, and giving a next step.
+Hannah Schmidt: Is that sustainable? I don't want to promise something and then miss it constantly.
+Samuel Mensah: With the new triage rotation, yes. We have two people on rotation each day, and I'll make claims assigned automatically instead of sitting in a shared inbox. If volume spikes, I'll pull someone else in.
+Wei Zhang: Engineering can help on the technical triage. If it's a battery claim, send it to me or Ana on my team and we'll respond the same day.
+Dan Whitaker: From the sales side, a forty-eight-hour commitment is a strong message. Customers like specific numbers.
+Olivia Grant: Let me make sure everyone's on board. Decision: we answer every warranty claim within forty-eight hours. Any objections?
+Hannah Schmidt: No objection. I'd just ask Samuel to report on how we do against it for the first month.
+Samuel Mensah: Happy to. I'll track it and bring numbers to this meeting.
+Olivia Grant: Good. That's agreed. Every warranty claim gets an answer within forty-eight hours. Samuel will report back in a few weeks.
+Samuel Mensah: And for the record, I'll clear the existing backlog this week, so we start with a clean slate.
+Olivia Grant: Thank you. Okay, next topic. Rotterdam. Wei, actually, this one is more on my side. Rotterdam's warehouse supervisor, Jeroen, raised an issue about the weekly safety drill. It's currently on Thursday mornings, and Thursday is their busiest inbound day. The drill pulls people off the dock just when trucks are queuing.
+Dan Whitaker: I've heard that from their side too. Last week the drill ran long and two trucks waited almost forty minutes.
+Olivia Grant: Right. Jeroen proposed Tuesday mornings instead. Tuesdays are lighter because most deliveries are scheduled for later in the week.
+Wei Zhang: From a robot standpoint, is there any issue? The drill includes the emergency-stop test on the fleet, right?
+Olivia Grant: Yes, it does. Is there any reason that can't be done on a Tuesday?
+Wei Zhang: No. Actually, Tuesday is better for me, because we don't push firmware updates on Tuesdays, so there's no conflict. On Thursdays we sometimes have updates rolling out in the same window.
+Samuel Mensah: Support has no issue either. Fewer calls on Tuesday mornings, if anything.
+Hannah Schmidt: Any cost or compliance implications? I assume the local safety regulation just requires a weekly drill, not a specific day.
+Olivia Grant: Correct. It requires a documented weekly drill, not a particular day. I've checked with the safety officer. So, do we agree to move the weekly safety drill at the Rotterdam warehouse from Thursday to Tuesday mornings?
+Dan Whitaker: Yes.
+Samuel Mensah: Yes.
+Wei Zhang: Yes, agreed.
+Hannah Schmidt: Agreed.
+Olivia Grant: Great. That's decided. Tuesday mornings, starting next week, so the tenth. I'll update the safety drill schedule in the operations SOP by Thursday, so the third and fourth... sorry, by Thursday this week, the fifth, and then I'll let Jeroen know it's official.
+Wei Zhang: Will the SOP update mention the emergency-stop test timing as well? I'd like it to say it happens at the start of the drill.
+Olivia Grant: Good idea. I'll add that line so the sequence is clear.
+Samuel Mensah: Should we also tell the night shift? They overlap with the Tuesday morning crew sometimes.
+Olivia Grant: Yes, I'll ask Jeroen to brief them at handover. Okay, that covers Rotterdam. Dan, you wanted to raise the carrier question.
+Dan Whitaker: Yes. So, with the battery shipments coming, plus the usual spare parts, I've been looking at our shipping costs. Our current carrier raised rates by about six percent in October, and I got a quote from another carrier that's roughly nine percent cheaper on the European lanes. I wondered if we should switch.
+Hannah Schmidt: Nine percent is meaningful. What's the catch?
+Dan Whitaker: Their transit times are a day longer on average, and their tracking system isn't as detailed. But the price is attractive.
+Samuel Mensah: The tracking piece worries me. Half our support contacts about shipments are people asking where their parts are. If the tracking is worse, we'll get more of those calls.
+Wei Zhang: And there's the integration. Our order system pulls tracking updates from the current carrier through an API. A new carrier means new integration work, and my team is already stretched with the dashboard alerts.
+Olivia Grant: Also, we're about to ship a time-sensitive battery replacement to a customer we can't afford to disappoint. Changing carriers right in the middle of that adds risk.
+Dan Whitaker: That's fair. I hadn't thought about the timing overlap with the batteries.
+Hannah Schmidt: Financially, nine percent on our shipping spend is real, but it isn't huge in absolute terms this quarter. If the switch causes one unhappy customer or a delayed shipment, we'd lose the savings quickly.
+Dan Whitaker: Okay, I see where this is going. What if we revisit it in January, after the renewal season?
+Olivia Grant: I think that's sensible. Let me state it plainly. We are not changing carriers this quarter. Dan, you can keep the quote on file, and we can look again at the start of next quarter. Does everyone agree?
+Hannah Schmidt: Agreed. And maybe ask the current carrier whether they'd match part of the discount, now that you have a competing quote.
+Dan Whitaker: That's a good tactic. I'll mention it casually next time I speak to my account rep. No promises.
+Olivia Grant: Fine, though it's not a formal action item. Just use it if the opportunity comes up.
+Wei Zhang: Since we're talking about future things, can I mention something unrelated? Totally optional, no decisions needed.
+Olivia Grant: Go ahead, but keep it short.
+Wei Zhang: I've been thinking that some day we should rewrite the fleet controller in Rust. The current C plus plus code has a lot of memory-safety history, and I think Rust would reduce a whole class of bugs.
+Hannah Schmidt: Some day meaning what? Next year? Five years?
+Wei Zhang: I honestly don't know. It's more of an idea I wanted to put on people's radar. It's a big project. Probably months of work, and we'd need to run both versions in parallel for a while.
+Olivia Grant: I appreciate you flagging it. Nobody's committing to that today. We have the battery work, the dashboard, and a lot of customer commitments. Let's park it.
+Wei Zhang: Totally fine. I just didn't want it to be a surprise if I bring it up again in planning.
+Dan Whitaker: From sales, I'd only say that customers don't care what language it's written in. They care that it doesn't stop.
+Wei Zhang: That's the argument for it, actually. Fewer crashes. But yes, I know, it's not for now.
+Samuel Mensah: If you ever do it, please give support a heads-up. Every big change in the controller has come with a week of weird tickets.
+Wei Zhang: Noted. If it happens, you'll be the first to know.
+Olivia Grant: Okay. Let's go back and recap, because we've covered a lot. Let me read back the decisions first. One, we move the weekly safety drill at the Rotterdam warehouse from Thursday to Tuesday mornings. Two, we ship replacement batteries to Bluefin Freight before the end of November. Three, we answer every warranty claim within forty-eight hours. And we also agreed not to change shipping carriers this quarter.
+Hannah Schmidt: That all matches my notes.
+Olivia Grant: Now action items. Wei, you're adding battery-temperature alerts to the FleetOS dashboard by Friday next week. And you're sending Samuel those interim guidance sentences today.
+Wei Zhang: Correct on both.
+Olivia Grant: Samuel, you're drafting the customer notice about the battery replacement program by this Friday, and clearing the claim backlog this week.
+Samuel Mensah: Yes. Notice by Friday, backlog this week.
+Olivia Grant: Dan, you're confirming the delivery date with Bluefin Freight's operations team by next Monday.
+Dan Whitaker: Yes, by next Monday, framed as a target date.
+Olivia Grant: Hannah, you're approving the budget for the thirty spare battery packs on Tuesday, the tenth, once you've seen the quote.
+Hannah Schmidt: Yes. Wei, please send me that quote today, so there are no delays.
+Wei Zhang: Sending it right after the meeting.
+Olivia Grant: And I'm updating the safety drill schedule in the operations SOP by Thursday. Did I miss anything?
+Samuel Mensah: One question. If Hannah approves on the tenth and the supplier slips, who decides whether we use air freight to hit the end of November?
+Olivia Grant: Good question. I'd say Wei flags the slip as soon as he hears from the supplier, and then Dan, Hannah, and I decide quickly. Air freight for a few packs is cheap compared with missing the commitment. Hannah, would you be comfortable with pre-authorizing that?
+Hannah Schmidt: For up to a reasonable amount, yes. If it's just for the Bluefin shipment, I'm fine with it. Just tell me before it happens.
+Olivia Grant: Perfect. So we have a contingency without needing another meeting.
+Dan Whitaker: That also gives me something concrete to tell Bluefin. We'll say we're committed to the end of November, and we have a backup plan.
+Wei Zhang: One more point from me. When the new packs arrive, I'd like to test a sample from each box before shipping. A quick charge-cycle check. It adds a day, but I'd rather not send a customer a bad pack after all this.
+Olivia Grant: Yes, please build that day into the timeline. So the packs arrive around the twentieth, you test, and we ship by the twenty-fourth or twenty-fifth.
+Wei Zhang: That works.
+Samuel Mensah: Should the customer notice mention the delivery timing, or should that wait until Dan has confirmed it?
+Olivia Grant: I'd keep it general in the first draft. Say replacement units will ship in November, and that each customer will be contacted individually with a date. Then Bluefin gets the specific date from Dan directly.
+Samuel Mensah: Makes sense. I'll write it that way.
+Hannah Schmidt: Can I ask one financial question before we close? Is there any chance the affected batch leads to more replacements beyond the thirty? I'd like to give the board a range.
+Wei Zhang: Honestly, it's possible. If the failure rate stays on the current trend, we might see forty to sixty more packs over the next quarter. But the new alerts should help us catch the worst ones early and prioritize. I'd say plan for thirty now, and keep a contingency line for another thirty.
+Hannah Schmidt: Okay. I'll note a contingency, but I'm only approving the thirty for now.
+Olivia Grant: Good. Anything else from anyone? Dan, any updates on the pipeline that the team should know?
+Dan Whitaker: Just one. We have a demo scheduled with a cold-storage operator in Antwerp on the nineteenth. I might need Wei for twenty minutes to talk about how the robots handle low temperatures.
+Wei Zhang: Happy to. Just send me the invite. The cold-weather configuration is actually pretty solid, although, funnily enough, the batteries are part of that conversation.
+Dan Whitaker: I know, I know. I'll steer the conversation carefully.
+Samuel Mensah: Maybe tell them about the new revision packs. The improved thermal design should help in cold storage as well.
+Wei Zhang: It does, in both directions. Better thermal management helps with heat and with cold.
+Olivia Grant: That's a good story for Dan to tell, once the replacement program is in place. Okay, if there's nothing else, let's wrap up. Thanks, everyone. Good meeting, and a lot of clear commitments.
+Hannah Schmidt: Thanks, Olivia. And I'll chase facilities about the coffee machine, since nobody else seems to have luck.
+Dan Whitaker: You're a hero, Hannah.
+Samuel Mensah: If you succeed, I'll buy you a custard tart. Priya's photo has given me ideas.
+Hannah Schmidt: Deal. Talk soon, everyone.
+Olivia Grant: Bye, all. Have a good week.

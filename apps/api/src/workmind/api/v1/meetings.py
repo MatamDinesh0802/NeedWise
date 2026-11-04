@@ -1,0 +1,395 @@
+"""Meetings (ARCHITECTURE section 15). A meeting lives in a collection: whoever can view the
+collection can view the meeting, and its editors can upload and correct it."""
+
+import asyncio
+import hashlib
+import uuid
+from datetime import UTC, date, datetime, time
+from pathlib import PurePath
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Query, Request, Response
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from workmind.api.deps import require_scope, resources_of, settings_of
+from workmind.core.context import RequestContext
+from workmind.core.errors import ApiError
+from workmind.core.tenancy import tenant_transaction
+from workmind.modules.governance.audit import Actor, record_event
+from workmind.modules.identity.models import User
+from workmind.modules.knowledge.models import Collection
+from workmind.modules.knowledge.service import collection_access, visible_collections
+from workmind.modules.knowledge.storage import object_key
+from workmind.modules.meetings import transcripts
+from workmind.modules.meetings.models import Meeting
+from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
+from workmind.modules.work.models import Task
+from workmind.modules.work.notifications import notify
+
+router = APIRouter(tags=["meetings"])
+AskContext = Annotated[RequestContext, require_scope("assistant:ask")]
+MEDIA_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".mp4": "video/mp4",
+    ".wav": "audio/wav",
+    ".webm": "audio/webm",
+    ".ogg": "audio/ogg",
+    ".flac": "audio/flac",
+    ".aiff": "audio/aiff",
+    ".aif": "audio/aiff",
+    ".mov": "video/quicktime",
+}
+
+
+class MeetingSummary(BaseModel):
+    id: uuid.UUID
+    title: str
+    collection_id: uuid.UUID
+    status: str
+    error: str | None
+    duration_s: float | None
+    decisions: int
+    action_items: int
+    created_at: datetime
+
+
+class MeetingOut(BaseModel):
+    id: uuid.UUID
+    title: str
+    collection_id: uuid.UUID
+    owner_id: uuid.UUID
+    status: str
+    error: str | None
+    filename: str
+    has_media: bool
+    duration_s: float | None
+    language: str | None
+    segments: list[dict[str, Any]]
+    speakers: dict[str, Any]
+    summary: str
+    decisions: list[dict[str, Any]]
+    action_items: list[dict[str, Any]]
+    document_id: uuid.UUID | None
+    timings: dict[str, Any]
+    can_edit: bool
+    created_at: datetime
+
+
+class SpeakerMap(BaseModel):
+    speakers: dict[str, uuid.UUID | None] = Field(description="speaker label -> colleague, or null")
+
+
+class Commitment(BaseModel):
+    meeting_id: uuid.UUID
+    meeting_title: str
+    meeting_date: date
+    index: int
+    text: str
+    due: str | None
+    start: float | None
+    task_id: str | None
+    task_status: str | None
+
+
+def _summary(m: Meeting) -> MeetingSummary:
+    return MeetingSummary(
+        id=m.id,
+        title=m.title,
+        collection_id=m.collection_id,
+        status=m.status,
+        error=m.error,
+        duration_s=m.duration_s,
+        decisions=len(m.decisions),
+        action_items=len(m.action_items),
+        created_at=m.created_at,
+    )
+
+
+def _out(m: Meeting, can_edit: bool) -> MeetingOut:
+    return MeetingOut(
+        id=m.id,
+        title=m.title,
+        collection_id=m.collection_id,
+        owner_id=m.owner_id,
+        status=m.status,
+        error=m.error,
+        filename=m.filename,
+        has_media=transcripts.kind(m.filename) == "audio",
+        duration_s=m.duration_s,
+        language=m.language,
+        segments=m.segments,
+        speakers=m.speakers,
+        summary=m.summary,
+        decisions=m.decisions,
+        action_items=m.action_items,
+        document_id=m.document_id,
+        timings=m.timings,
+        can_edit=can_edit,
+        created_at=m.created_at,
+    )
+
+
+async def _meeting(
+    session: AsyncSession, ctx: RequestContext, meeting_id: uuid.UUID, *, edit: bool = False
+) -> tuple[Meeting, bool]:
+    meeting = await session.get(Meeting, meeting_id)
+    if meeting is None:
+        raise ApiError(404, "not_found", "Meeting not found")
+    try:
+        access = await collection_access(session, ctx, meeting.collection_id, edit=edit)
+    except ApiError as exc:
+        if exc.status == 404:
+            raise ApiError(404, "not_found", "Meeting not found") from exc
+        raise
+    return meeting, access.can_edit or meeting.owner_id == ctx.user_id
+
+
+@router.post("/meetings", status_code=202)
+async def upload_meeting(
+    ctx: AskContext,
+    request: Request,
+    collection: Annotated[str, Query(description="key of the collection the meeting belongs to")],
+    filename: Annotated[str, Query(min_length=1, max_length=255)],
+    title: Annotated[str | None, Query(max_length=200)] = None,
+) -> MeetingSummary:
+    """The raw recording (mp3, m4a, wav, mp4, ...) or transcript (vtt, srt, txt) as the body."""
+    resources, settings = resources_of(request), settings_of(request)
+    name = PurePath(filename).name
+    try:
+        transcripts.kind(name)
+    except ValueError as exc:
+        raise ApiError(
+            415, "unsupported_type", "Upload a recording or a transcript", str(exc)
+        ) from exc
+    data = await request.body()
+    if not data:
+        raise ApiError(422, "empty_file", "The file is empty")
+    if len(data) > settings.max_meeting_bytes:
+        raise ApiError(413, "too_large", "The recording is too large")
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        target = await session.scalar(select(Collection).where(Collection.key == collection))
+        if target is None:
+            raise ApiError(404, "not_found", "Collection not found")
+        await collection_access(session, ctx, target.id, edit=True)
+        key = object_key(ctx.tenant_id, hashlib.sha256(data).hexdigest())
+        await resources.storage.put(key, data)
+        meeting = Meeting(
+            tenant_id=ctx.tenant_id,
+            title=(title or PurePath(name).stem).strip()[:200],
+            collection_id=target.id,
+            owner_id=ctx.user_id,
+            filename=name,
+            media_key=key,
+        )
+        session.add(meeting)
+        await session.flush()
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="meeting.uploaded",
+            resource_type="meeting",
+            resource_id=str(meeting.id),
+            details={"filename": name, "bytes": len(data), "collection": collection},
+        )
+        summary = _summary(meeting)
+    if settings.ingestion_mode == "celery":
+        from workmind.workers.celery_app import MEETING_TASK, app
+
+        args = [str(ctx.tenant_id), str(summary.id)]
+        await asyncio.to_thread(app.send_task, MEETING_TASK, args=args)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  (Celery is untyped)
+    else:
+        deps = MeetingDeps(
+            resources.db,
+            resources.storage,
+            resources.llm,
+            resources.transcriber,
+            resources.ingestion,
+        )
+        resources.runs.start(process_meeting(deps, ctx.tenant_id, summary.id))
+    return summary
+
+
+@router.get("/meetings")
+async def list_meetings(ctx: AskContext, request: Request) -> list[MeetingSummary]:
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        visible = [access.collection.id for access, _ in await visible_collections(session, ctx)]
+        rows = (
+            await session.scalars(
+                select(Meeting)
+                .where(Meeting.collection_id.in_(visible))
+                .order_by(Meeting.created_at.desc())
+                .limit(200)
+            )
+        ).all()
+    return [_summary(m) for m in rows]
+
+
+@router.get("/meetings/{meeting_id}")
+async def get_meeting(ctx: AskContext, request: Request, meeting_id: uuid.UUID) -> MeetingOut:
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        meeting, can_edit = await _meeting(session, ctx, meeting_id)
+    return _out(meeting, can_edit)
+
+
+@router.get("/meetings/{meeting_id}/media")
+async def meeting_media(ctx: AskContext, request: Request, meeting_id: uuid.UUID) -> Response:
+    """The original recording, for playback at a timestamp (players send Range requests;
+    the whole file is fine for meeting-sized media)."""
+    resources = resources_of(request)
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        meeting, _ = await _meeting(session, ctx, meeting_id)
+    media_type = MEDIA_TYPES.get(PurePath(meeting.filename).suffix.lower())
+    if media_type is None:
+        raise ApiError(404, "not_found", "This meeting has no recording")
+    data = await resources.storage.get(meeting.media_key)
+    return Response(
+        content=data, media_type=media_type, headers={"Content-Security-Policy": "sandbox"}
+    )
+
+
+@router.put("/meetings/{meeting_id}/speakers")
+async def map_speakers(
+    ctx: AskContext, request: Request, meeting_id: uuid.UUID, body: SpeakerMap
+) -> MeetingOut:
+    """Who is who: maps transcript speaker labels to colleagues, and re-links action items whose
+    owner was named by that label."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        meeting, can_edit = await _meeting(session, ctx, meeting_id)
+        if not can_edit:
+            raise ApiError(
+                403,
+                "forbidden",
+                "Only the meeting's owner or the collection's editors can change it",
+            )
+        speakers = dict(meeting.speakers)
+        for label, user_id in body.speakers.items():
+            if label not in speakers:
+                raise ApiError(422, "unknown_speaker", f"No speaker {label!r} in this meeting")
+            user = await session.get(User, user_id) if user_id else None
+            if user_id and user is None:
+                raise ApiError(422, "unknown_user", "Unknown colleague")
+            speakers[label] = {
+                "name": user.display_name if user else label,
+                "user_id": str(user.id) if user else None,
+            }
+        items: list[dict[str, Any]] = []
+        for item in meeting.action_items:
+            for label, mapped in speakers.items():
+                if item.get("owner", "").strip().lower() in (
+                    label.lower(),
+                    str(mapped["name"]).lower(),
+                ):
+                    item = {**item, "owner_user_id": mapped["user_id"]}
+            items.append(item)
+        meeting.speakers, meeting.action_items = speakers, items
+        return _out(meeting, can_edit)
+
+
+@router.post("/meetings/{meeting_id}/actions/{index}/task", status_code=201)
+async def action_to_task(
+    ctx: AskContext, request: Request, meeting_id: uuid.UUID, index: int
+) -> MeetingOut:
+    """Turns an action item into a tracked task for its owner (an explicit click: no approval)."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        meeting, can_edit = await _meeting(session, ctx, meeting_id)
+        if not can_edit:
+            raise ApiError(
+                403, "forbidden", "Only the meeting's owner or the collection's editors can do this"
+            )
+        if not 0 <= index < len(meeting.action_items):
+            raise ApiError(404, "not_found", "No such action item")
+        item = dict(meeting.action_items[index])
+        if item.get("task_id"):
+            raise ApiError(409, "already_a_task", "This action item is already a task")
+        assignee = uuid.UUID(item["owner_user_id"]) if item.get("owner_user_id") else None
+        due = item.get("due")
+        task = Task(
+            tenant_id=ctx.tenant_id,
+            title=item["text"][:200],
+            description=f"From the meeting “{meeting.title}”"
+            + (
+                f" at {int(item['start'] // 60)}:{int(item['start'] % 60):02d}"
+                if item.get("start") is not None
+                else ""
+            ),
+            assignee_id=assignee,
+            created_by=ctx.user_id,
+            due_at=datetime.combine(date.fromisoformat(due), time(17, 0), UTC) if due else None,
+            origin={"via": "meeting", "meeting_id": str(meeting.id), "action_index": index},
+        )
+        session.add(task)
+        await session.flush()
+        item["task_id"] = str(task.id)
+        items = list(meeting.action_items)
+        items[index] = item
+        meeting.action_items = items
+        if assignee and assignee != ctx.user_id:
+            await notify(
+                session,
+                ctx.tenant_id,
+                assignee,
+                kind="task.assigned",
+                title=f"New task from {meeting.title}: {item['text'][:120]}",
+                link=f"/tasks/{task.id}",
+            )
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="task.created",
+            resource_type="task",
+            resource_id=str(task.id),
+            details={
+                "meeting_id": str(meeting.id),
+                "assignee": str(assignee) if assignee else None,
+            },
+        )
+        return _out(meeting, can_edit)
+
+
+@router.get("/me/commitments")
+async def my_commitments(ctx: AskContext, request: Request) -> list[Commitment]:
+    """Action items assigned to me in meetings I can see, with their task's status."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        visible = [access.collection.id for access, _ in await visible_collections(session, ctx)]
+        meetings = (
+            await session.scalars(
+                select(Meeting)
+                .where(Meeting.collection_id.in_(visible), Meeting.status == "ready")
+                .order_by(Meeting.created_at.desc())
+            )
+        ).all()
+        task_ids = [
+            uuid.UUID(i["task_id"])
+            for m in meetings
+            for i in m.action_items
+            if i.get("owner_user_id") == str(ctx.user_id) and i.get("task_id")
+        ]
+        statuses = (
+            {
+                str(t.id): t.status
+                for t in await session.scalars(select(Task).where(Task.id.in_(task_ids)))
+            }
+            if task_ids
+            else {}
+        )
+    return [
+        Commitment(
+            meeting_id=m.id,
+            meeting_title=m.title,
+            meeting_date=m.created_at.date(),
+            index=i,
+            text=item["text"],
+            due=item.get("due"),
+            start=item.get("start"),
+            task_id=item.get("task_id"),
+            task_status=statuses.get(item.get("task_id") or ""),
+        )
+        for m in meetings
+        for i, item in enumerate(m.action_items)
+        if item.get("owner_user_id") == str(ctx.user_id)
+    ]

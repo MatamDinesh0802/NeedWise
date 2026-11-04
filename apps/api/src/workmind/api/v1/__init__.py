@@ -10,6 +10,7 @@ from workmind.api.v1 import (
     conversations,
     knowledge,
     me,
+    meetings,
     sources,
     tokens,
     work,
@@ -31,3 +32,4 @@ router.include_router(sources.router)
 router.include_router(sources.oauth_router)
 router.include_router(work.router)
 router.include_router(work.admin_router)
+router.include_router(meetings.router)

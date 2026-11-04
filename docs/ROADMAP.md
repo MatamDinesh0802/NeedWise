@@ -272,7 +272,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #9 — "Designing human-in-the-loop for AI agents: when should the AI ask permission?"**
 
-### Phase 9 — Meeting intelligence (v0.9)
+### Phase 9 — Meeting intelligence (v0.9) ✅ Backend done; UI in progress (see `docs/meetings.md`)
 
 **Goal:** meetings turn into decisions, tasks and searchable knowledge.
 
