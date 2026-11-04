@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WorkMind AI · Post 1 architecture card</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #121a2e;
+    --panel-2: #172238;
+    --line: #26324d;
+    --text: #e8edf7;
+    --muted: #93a0bb;
+    --accent: #5eead4;
+    --accent-2: #818cf8;
+    --planned: #64708a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1350px; }
+  body {
+    background:
+      radial-gradient(900px 500px at 85% -10%, rgba(129,140,248,.18), transparent 60%),
+      radial-gradient(700px 500px at -10% 110%, rgba(94,234,212,.12), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "SF Pro Display", "Inter", "Segoe UI", system-ui, sans-serif;
+    padding: 68px 72px 56px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .eyebrow {
+    font-size: 19px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    margin-top: 18px; font-size: 54px; line-height: 1.08; font-weight: 750; letter-spacing: -.02em;
+  }
+  h1 em { font-style: normal; color: var(--accent); }
+  .sub { margin-top: 18px; font-size: 23px; color: var(--muted); }
+
+  .diagram { margin-top: 50px; display: flex; flex-direction: column; gap: 0; }
+  .layer-label {
+    font-size: 15px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 10px;
+  }
+  .row { display: grid; gap: 14px; }
+  .r2 { grid-template-columns: 1fr 1fr; }
+  .r3 { grid-template-columns: 1fr 1.3fr 1fr; }
+  .r5 { grid-template-columns: repeat(5, 1fr); }
+
+  .box {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 15px 16px; display: flex; align-items: flex-start; gap: 11px; min-height: 74px;
+  }
+  .box .t { font-size: 21px; font-weight: 650; line-height: 1.15; }
+  .box .d { font-size: 15.5px; color: var(--muted); margin-top: 4px; line-height: 1.25; }
+  .r5 .box { flex-direction: column; gap: 8px; padding: 14px; }
+  .r5 .box .t { font-size: 19px; }
+
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; margin-top: 7px; }
+  .on  { background: var(--accent); box-shadow: 0 0 0 4px rgba(94,234,212,.15); }
+  .off { border: 2px solid var(--planned); }
+  .r5 .dot { margin-top: 0; }
+
+  .planned .t { color: #c7cfe0; }
+  .planned { background: transparent; border-style: dashed; }
+
+  .connector { height: 38px; position: relative; }
+  .connector::before {
+    content: ""; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 2px;
+    background: linear-gradient(var(--line), var(--accent-2));
+  }
+  .connector::after {
+    content: ""; position: absolute; left: calc(50% - 5px); bottom: 2px; width: 0; height: 0;
+    border-left: 6px solid transparent; border-right: 6px solid transparent;
+    border-top: 7px solid var(--accent-2);
+  }
+
+  .brain {
+    border: 1.5px dashed rgba(129,140,248,.55); border-radius: 18px; padding: 18px 20px;
+    background: linear-gradient(180deg, rgba(129,140,248,.08), rgba(129,140,248,.02));
+  }
+  .brain-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .brain-title { font-size: 22px; font-weight: 700; }
+  .brain-phase { font-size: 15px; color: var(--muted); }
+  .agents { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  .chip {
+    border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px;
+    padding: 9px 16px; font-size: 18px; font-weight: 600; white-space: nowrap;
+  }
+  .chip.sup { border-color: rgba(129,140,248,.7); }
+  .arrow { color: var(--accent-2); font-size: 22px; }
+  .locks { margin-top: 14px; font-size: 18px; color: var(--muted); line-height: 1.4; }
+  .locks b { color: var(--text); font-weight: 650; }
+
+  .principles {
+    margin-top: 44px; display: grid; grid-template-columns: 1fr; gap: 16px;
+  }
+  .p { display: flex; gap: 14px; align-items: center; font-size: 23px; line-height: 1.3; }
+  .p .n {
+    flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+    font-size: 15px; font-weight: 700; color: var(--bg); background: var(--accent);
+  }
+
+  footer {
+    margin-top: auto; display: flex; justify-content: space-between; align-items: center;
+    padding-top: 22px; border-top: 1px solid var(--line); font-size: 17px; color: var(--muted);
+  }
+  .legend { display: flex; gap: 22px; align-items: center; }
+  .legend span { display: inline-flex; gap: 9px; align-items: center; }
+  .legend .dot { margin-top: 0; }
+  .brand { color: var(--text); font-weight: 650; }
+</style>
+</head>
+<body>
+  <div class="eyebrow">Building in public · Post 1</div>
+  <h1>An AI assistant that only knows what <em>you're allowed to see.</em></h1>
+  <div class="sub">Open-source, self-hosted AI workspace for companies</div>
+
+  <div class="diagram">
+    <div class="layer-label">Entry</div>
+    <div class="row r2">
+      <div class="box"><span class="dot on"></span><div><div class="t">Browser</div><div class="d">Employees, one secure origin via Caddy</div></div></div>
+      <div class="box planned"><span class="dot off"></span><div><div class="t">AI tools via MCP</div><div class="d">Claude Desktop, Cursor, IDEs</div></div></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="layer-label">Application</div>
+    <div class="row r3">
+      <div class="box"><span class="dot on"></span><div><div class="t">Next.js</div><div class="d">Web UI</div></div></div>
+      <div class="box"><span class="dot on"></span><div><div class="t">FastAPI</div><div class="d">API · login · agent runtime</div></div></div>
+      <div class="box"><span class="dot on"></span><div><div class="t">Keycloak</div><div class="d">SSO · MFA</div></div></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="brain">
+      <div class="brain-head">
+        <div class="brain-title">Agents + permission-aware retrieval</div>
+        <div class="brain-phase">Phases 3–5</div>
+      </div>
+      <div class="agents">
+        <span class="chip sup">Supervisor</span><span class="arrow">→</span>
+        <span class="chip">HR</span><span class="chip">Finance</span><span class="chip">Engineering</span>
+      </div>
+      <div class="locks">
+        Hybrid search · reranking · citations<br>
+        <b>Two locks:</b> ACL filter in the vector search + OpenFGA recheck before answering
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="layer-label">Data</div>
+    <div class="row r5">
+      <div class="box"><span class="dot on"></span><div><div class="t">PostgreSQL</div><div class="d">Row-level security</div></div></div>
+      <div class="box"><span class="dot on"></span><div><div class="t">Qdrant</div><div class="d">Vector + keyword</div></div></div>
+      <div class="box"><span class="dot on"></span><div><div class="t">OpenFGA</div><div class="d">Who can see what</div></div></div>
+      <div class="box"><span class="dot on"></span><div><div class="t">Valkey</div><div class="d">Sessions · jobs</div></div></div>
+      <div class="box planned"><span class="dot off"></span><div><div class="t">LLMs</div><div class="d">Local or paid</div></div></div>
+    </div>
+  </div>
+
+  <div class="principles">
+    <div class="p"><span class="n">1</span>Permissions enforced by code, never by the LLM</div>
+    <div class="p"><span class="n">2</span>Every claim cited, or "I don't know"</div>
+    <div class="p"><span class="n">3</span>Quality, leak rate and cost measured every release</div>
+    <div class="p"><span class="n">4</span>Runs on local models or paid APIs</div>
+  </div>
+
+  <footer>
+    <div class="legend">
+      <span><span class="dot on"></span>Running today</span>
+      <span><span class="dot off"></span>Planned</span>
+    </div>
+    <div><span class="brand">WorkMind AI</span> · Phase 0 done · 12 phases to v1.0 · Apache-2.0</div>
+  </footer>
+</body>
+</html>
