@@ -68,11 +68,11 @@ Each row becomes a full Architecture Decision Record (ADR) in `docs/adr/` when i
 | Authorization | OpenFGA (relationship-based, Zanzibar model) | Inheritance (org → department → collection → document), nested groups, external ACLs from connectors | Plain RBAC tables, Casbin, Cerbos |
 | Session pattern | Backend-for-Frontend (BFF): server-side sessions + httpOnly cookie | Tokens never reach browser JavaScript. One auth path serves web, API and MCP. | Tokens in browser storage |
 | Background jobs | Celery + Valkey | Mature retries, queue routing, schedules (beat) | Dramatiq, arq, Temporal |
-| LLM access | Our own `LLMProvider` interface, implemented with LiteLLM | One API for local and paid models. LiteLLM can be replaced without touching business code. | One SDK per provider |
+| LLM access | Our own `LLMProvider` interface: Anthropic SDK (default) + OpenAI-compatible adapter ([ADR 0007](adr/0007-model-providers-and-lightweight-parsing.md)) | Claude by default; Ollama/vLLM/llama.cpp for fully local setups; no gateway library to trust | LiteLLM |
 | Default open models | Qwen3 / gpt-oss families (Apache-2.0 weights) via Ollama (dev) and vLLM (production) | Permissive licenses, good tool calling. The final choice is made by evals in Phase 3. | Llama (community license, not OSI-approved) |
-| Embeddings | BGE-M3 (1024 dimensions, multilingual) | Strong open model, handles long inputs | nomic-embed, e5 |
+| Embeddings | EmbeddingGemma-300M (768 dimensions, multilingual) on llama.cpp, via an OpenAI-compatible adapter | Small, strong, fast on the Apple GPU; any `/v1/embeddings` server can replace it | BGE-M3, Qwen3-Embedding, hosted APIs |
 | Reranker | bge-reranker-v2-m3 | Open, multilingual cross-encoder | — |
-| Document parsing | Docling (+ OCR) | Layout-aware PDF/DOCX/PPTX/XLSX parsing, tables, page provenance | Unstructured, Apache Tika |
+| Document parsing | Pure-Python parsers (pypdf, python-docx, openpyxl, python-pptx) behind one `parse()` | Small worker image, fast; Docling remains a drop-in for layout-heavy PDFs | Docling, Unstructured |
 | Frontend | Next.js (App Router) + TypeScript + Tailwind + shadcn/ui | Production-grade UI, large ecosystem | SvelteKit |
 | Observability | OpenTelemetry → Langfuse (LLM traces) + Prometheus/Grafana (metrics) | Open standards, self-hostable | LangSmith, Datadog (available as paid adapters) |
 | Reverse proxy | Caddy | Automatic HTTPS, simple config | Traefik, nginx |

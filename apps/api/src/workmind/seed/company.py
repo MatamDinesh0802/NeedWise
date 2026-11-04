@@ -64,6 +64,7 @@ class CollectionSpec(_Strict):
     scope: Scope
     department: str | None = None
     viewers: list[str] = []
+    editors: list[str] = []
     trust: Trust = "reference"
     sensitivity: Sensitivity = "internal"
     description: str = ""
@@ -95,7 +96,12 @@ class CompanySpec(_Strict):
         if not any(p.org_role == "owner" for p in self.people):
             problems.append("at least one person needs org_role: owner")
 
-        known = {"department": departments, "group": groups, "user": emails}
+        known = {
+            "department": departments,
+            "department-manager": departments,
+            "group": groups,
+            "user": emails,
+        }
         for collection in self.collections:
             if collection.scope == "department" and not collection.department:
                 problems.append(f"collection {collection.key}: department scope needs a department")
@@ -103,10 +109,10 @@ class CompanySpec(_Strict):
                 problems.append(f"collection {collection.key}: unknown '{collection.department}'")
             if collection.scope == "restricted" and not collection.viewers:
                 problems.append(f"collection {collection.key}: restricted needs viewers")
-            for viewer in collection.viewers:
-                kind, _, key = viewer.partition(":")
+            for principal in [*collection.viewers, *collection.editors]:
+                kind, _, key = principal.partition(":")
                 if kind not in known or key.lower() not in known[kind]:
-                    problems.append(f"collection {collection.key}: unknown viewer '{viewer}'")
+                    problems.append(f"collection {collection.key}: unknown viewer '{principal}'")
 
         if problems:
             raise ValueError("invalid company file:\n  - " + "\n  - ".join(problems))

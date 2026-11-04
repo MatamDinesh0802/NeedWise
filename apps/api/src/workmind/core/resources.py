@@ -12,6 +12,13 @@ from workmind.core.db import create_engine, create_session_factory
 from workmind.modules.authz.openfga import OpenFgaClient
 from workmind.modules.identity.oidc import OidcClient
 from workmind.modules.identity.sessions import SessionStore
+from workmind.modules.knowledge.dispatch import CeleryDispatcher, Dispatcher, InlineDispatcher
+from workmind.modules.knowledge.pipeline import IngestionDeps
+from workmind.modules.knowledge.storage import LocalObjectStorage, ObjectStorage
+from workmind.modules.retrieval.qdrant import QdrantClient
+from workmind.providers.embeddings import EmbeddingProvider
+from workmind.providers.factory import create_embeddings, create_llm
+from workmind.providers.llm import LLMProvider
 
 
 @dataclass
@@ -23,6 +30,12 @@ class Resources:
     oidc: OidcClient
     sessions: SessionStore
     fga: OpenFgaClient
+    storage: ObjectStorage
+    qdrant: QdrantClient
+    embeddings: EmbeddingProvider
+    llm: LLMProvider
+    ingestion: Dispatcher
+    collection_name: str
 
     @classmethod
     def create(cls, settings: Settings) -> Self:
@@ -30,9 +43,14 @@ class Resources:
         engine = create_engine(settings.database_url)
         valkey = Redis.from_url(settings.valkey_url)  # pyright: ignore[reportUnknownMemberType] (untyped **kwargs upstream)
         http = httpx.AsyncClient(timeout=10)
+        db = create_session_factory(engine)
+        storage = LocalObjectStorage(settings.object_storage_path)
+        qdrant = QdrantClient(http, settings.qdrant_url)
+        embeddings = create_embeddings(settings, http)
+        deps = IngestionDeps(db, storage, embeddings, qdrant, settings.qdrant_collection)
         return cls(
             engine=engine,
-            db=create_session_factory(engine),
+            db=db,
             valkey=valkey,
             http=http,
             oidc=OidcClient(
@@ -50,6 +68,14 @@ class Resources:
             fga=OpenFgaClient(
                 http, settings.openfga_api_url, settings.openfga_api_key.get_secret_value()
             ),
+            storage=storage,
+            qdrant=qdrant,
+            embeddings=embeddings,
+            llm=create_llm(settings, http),
+            ingestion=InlineDispatcher(deps)
+            if settings.ingestion_mode == "inline"
+            else CeleryDispatcher(),
+            collection_name=settings.qdrant_collection,
         )
 
     async def aclose(self) -> None:

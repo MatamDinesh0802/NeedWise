@@ -30,4 +30,5 @@ graphify-out/
 
 # Data produced at runtime
 /data/
+/.data/
 evals/results/*.tmp

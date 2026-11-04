@@ -6,6 +6,28 @@
 
 name: workmind
 
+# Shared by the API, the ingestion worker and the seed tool. Settings you put in .env (LLM models,
+# ANTHROPIC_API_KEY, ...) reach these containers through env_file; container hostnames win.
+x-app-env: &app-env
+  APP_ENV: ${APP_ENV:-dev}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  DATABASE_URL: postgresql+asyncpg://workmind_app:${WORKMIND_APP_PASSWORD:-workmind_app}@postgres:5432/workmind
+  VALKEY_URL: redis://valkey:6379/0
+  CELERY_BROKER_URL: redis://valkey:6379/1
+  QDRANT_URL: http://qdrant:6333
+  OPENFGA_API_URL: http://openfga:8080
+  OPENFGA_API_KEY: ${OPENFGA_API_KEY:-dev-only-openfga-key}
+  KEYCLOAK_URL: http://keycloak:8080/auth
+  PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8480}
+  OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-dev-only-oidc-client-secret}
+  OBJECT_STORAGE_PATH: /data/objects
+  # The embedding server runs on the host by default (make embeddings: Apple GPU via Metal).
+  EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://host.docker.internal:8091/v1}
+
+x-app-env-file: &app-env-file
+  - path: .env
+    required: false
+
 services:
   postgres:
     image: postgres:18.6
@@ -147,19 +169,15 @@ services:
   api:
     build: { context: apps/api }
     image: workmind-api:dev
+    env_file: *app-env-file
     environment:
-      APP_ENV: ${APP_ENV:-dev}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      DATABASE_URL: postgresql+asyncpg://workmind_app:${WORKMIND_APP_PASSWORD:-workmind_app}@postgres:5432/workmind
-      VALKEY_URL: redis://valkey:6379/0
-      QDRANT_URL: http://qdrant:6333
-      OPENFGA_API_URL: http://openfga:8080
-      OPENFGA_API_KEY: ${OPENFGA_API_KEY:-dev-only-openfga-key}
-      KEYCLOAK_URL: http://keycloak:8080/auth
-      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8480}
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-dev-only-oidc-client-secret}
+      <<: *app-env
       # Trust X-Forwarded-* headers: only Caddy (and localhost) can reach this container.
       FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - ./.data/objects:/data/objects
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       migrate: { condition: service_completed_successfully }
       valkey: { condition: service_healthy }
@@ -176,6 +194,24 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # Ingestion and other background jobs (Celery). Scale with: docker compose up --scale worker=3
+  worker:
+    build: { context: apps/api }
+    image: workmind-api:dev
+    command: ["celery", "-A", "workmind.workers.celery_app", "worker", "-Q", "ingest,default", "--concurrency", "2", "--loglevel", "INFO"]
+    env_file: *app-env-file
+    environment:
+      <<: *app-env
+    volumes:
+      - ./.data/objects:/data/objects
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      valkey: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
+    restart: unless-stopped
+
   # Development tool, not part of `up`:  make seed  (= docker compose --profile tools run --rm seed)
   seed:
     profiles: [tools]
@@ -184,14 +220,14 @@ services:
     command: ["python", "-m", "workmind.seed", "/seed/acme/company.yaml"]
     volumes:
       - ./seed:/seed:ro
+      - ./.data/objects:/data/objects
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file: *app-env-file
     environment:
-      APP_ENV: ${APP_ENV:-dev}
-      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8480}
+      <<: *app-env
       # Seeding creates tenants, which only the owner role may do.
       MIGRATIONS_DATABASE_URL: postgresql+asyncpg://workmind_owner:${WORKMIND_OWNER_PASSWORD:-workmind_owner}@postgres:5432/workmind
-      OPENFGA_API_URL: http://openfga:8080
-      OPENFGA_API_KEY: ${OPENFGA_API_KEY:-dev-only-openfga-key}
-      KEYCLOAK_URL: http://keycloak:8080/auth
       KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-workmind-demo}

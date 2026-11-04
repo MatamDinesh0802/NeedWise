@@ -20,7 +20,8 @@ from workmind.modules.identity.models import (
     Tenant,
     User,
 )
-from workmind.seed.company import CompanySpec
+from workmind.modules.knowledge.models import Collection, CollectionGrant
+from workmind.seed.company import CollectionSpec, CompanySpec
 from workmind.seed.keycloak_admin import KeycloakAdmin, KeycloakAdminError
 
 
@@ -31,6 +32,7 @@ class SeedResult:
     departments: int
     groups: int
     keycloak_logins: int
+    collections: dict[str, uuid.UUID]
 
 
 async def seed_keycloak(spec: CompanySpec, admin: KeycloakAdmin, password: str) -> dict[str, str]:
@@ -123,6 +125,10 @@ async def seed_database(
             )
         await session.flush()
 
+        collection_ids = await _seed_collections(
+            session, spec, tenant_id, department_ids, group_ids, user_ids
+        )
+
         await record_event(
             session,
             tenant_id=tenant_id,
@@ -139,6 +145,7 @@ async def seed_database(
         departments=len(spec.departments),
         groups=len(spec.groups),
         keycloak_logins=len(keycloak_subjects),
+        collections=collection_ids,
     )
 
 
@@ -159,3 +166,101 @@ async def _upsert(
         .returning(model.id)
     )
     return (await session.execute(statement)).scalar_one()
+
+
+def _principals(
+    entries: list[str],
+    department_ids: dict[str, uuid.UUID],
+    group_ids: dict[str, uuid.UUID],
+    user_ids: dict[str, uuid.UUID],
+) -> set[str]:
+    prefix = {
+        "department": "dept",
+        "department-manager": "dept-manager",
+        "group": "group",
+        "user": "user",
+    }
+    lookup = {
+        "department": department_ids,
+        "department-manager": department_ids,
+        "group": group_ids,
+        "user": user_ids,
+    }
+    principals: set[str] = set()
+    for entry in entries:
+        kind, _, key = entry.partition(":")
+        principals.add(f"{prefix[kind]}:{lookup[kind][key.lower()]}")
+    return principals
+
+
+def _default_grants(
+    spec: CollectionSpec, tenant_id: uuid.UUID, department_ids: dict[str, uuid.UUID]
+) -> tuple[set[str], set[str]]:
+    viewers: set[str] = set()
+    editors: set[str] = set()
+    if spec.scope == "enterprise":
+        viewers.add(f"org:{tenant_id}")
+    if spec.department:
+        department = department_ids[spec.department]
+        if spec.scope == "department":
+            viewers.add(f"dept:{department}")
+        editors.add(f"dept-manager:{department}")
+    return viewers, editors
+
+
+async def _seed_collections(
+    session: AsyncSession,
+    spec: CompanySpec,
+    tenant_id: uuid.UUID,
+    department_ids: dict[str, uuid.UUID],
+    group_ids: dict[str, uuid.UUID],
+    user_ids: dict[str, uuid.UUID],
+) -> dict[str, uuid.UUID]:
+    """Collections and their grants exactly as the company file says (grants are replaced)."""
+    ids: dict[str, uuid.UUID] = {}
+    for collection in spec.collections:
+        collection_id = (
+            await session.execute(
+                insert(Collection)
+                .values(
+                    tenant_id=tenant_id,
+                    key=collection.key,
+                    name=collection.name,
+                    description=collection.description,
+                    scope=collection.scope,
+                    department_id=department_ids.get(collection.department)
+                    if collection.department
+                    else None,
+                    default_trust=collection.trust,
+                    default_sensitivity=collection.sensitivity,
+                )
+                .on_conflict_do_update(
+                    index_elements=["tenant_id", "key"],
+                    set_={
+                        "name": collection.name,
+                        "description": collection.description,
+                        "scope": collection.scope,
+                        "default_trust": collection.trust,
+                        "default_sensitivity": collection.sensitivity,
+                        "updated_at": func.now(),
+                    },
+                )
+                .returning(Collection.id)
+            )
+        ).scalar_one()
+        ids[collection.key] = collection_id
+        viewers, editors = _default_grants(collection, tenant_id, department_ids)
+        viewers |= _principals(collection.viewers, department_ids, group_ids, user_ids)
+        editors |= _principals(collection.editors, department_ids, group_ids, user_ids)
+        await session.execute(
+            delete(CollectionGrant).where(CollectionGrant.collection_id == collection_id)
+        )
+        session.add_all(
+            CollectionGrant(
+                tenant_id=tenant_id, collection_id=collection_id, principal=p, relation=relation
+            )
+            for relation, principals in (("viewer", viewers), ("editor", editors))
+            for p in sorted(principals)
+        )
+    await session.flush()
+    return ids

@@ -94,7 +94,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Show the login flow diagram and the OpenFGA model.
 - Explain the "two locks" idea.
 
-### Phase 2 — Knowledge ingestion (v0.2)
+### Phase 2 — Knowledge ingestion (v0.2) 🚧 Backend complete, Knowledge Hub UI in progress
 
 **Goal:** documents go in reliably, with structure, metadata, versions and permissions.
 

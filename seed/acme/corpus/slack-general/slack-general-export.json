@@ -1,0 +1,131 @@
+{
+  "channel": "#general",
+  "messages": [
+    {
+      "user_name": "Grace Liu",
+      "text": "Who's in for lunch at the noodle place on Witte de Withstraat today? Leaving the office at 12:15 :ramen:",
+      "ts": "1793610900.000100",
+      "thread_ts": null,
+      "date": "2026-11-02"
+    },
+    {
+      "user_name": "Wei Zhang",
+      "text": "In! Save me a seat, I have a call until 12:20.",
+      "ts": "1793611200.000200",
+      "thread_ts": "1793610900.000100",
+      "date": "2026-11-02"
+    },
+    {
+      "user_name": "Diego Alvarez",
+      "text": "Count me and two folks from sales in. That makes 6 so far.",
+      "ts": "1793611500.000300",
+      "thread_ts": "1793610900.000100",
+      "date": "2026-11-02"
+    },
+    {
+      "user_name": "Marcus Bell",
+      "text": "Reminder: the final write-up for the July 14 outage is now in the engineering wiki. Thanks to everyone who helped get FleetOS back up that day. Please give it a read, especially the action items for on-call.",
+      "ts": "1793615400.000400",
+      "thread_ts": null,
+      "date": "2026-11-02"
+    },
+    {
+      "user_name": "Samuel Mensah",
+      "text": "Thanks Marcus. Support still gets questions from customers who remember July 14, so having a link I can share is really useful.",
+      "ts": "1793615700.000500",
+      "thread_ts": "1793615400.000400",
+      "date": "2026-11-02"
+    },
+    {
+      "user_name": "Olivia Grant",
+      "text": "Ops has already updated the warehouse fallback checklist based on it. AMR-200 and AMR-500 sites now have the manual mode steps printed at each dock.",
+      "ts": "1793616000.000600",
+      "thread_ts": "1793615400.000400",
+      "date": "2026-11-02"
+    },
+    {
+      "user_name": "Olivia Grant",
+      "text": "Office move update :package: Movers arrive Friday afternoon. Please pack your desk into the labelled crates by Friday 14:00 and keep anything personal with you. Floor plan for the new office is pinned in #facilities.",
+      "ts": "1793695500.000700",
+      "thread_ts": null,
+      "date": "2026-11-03"
+    },
+    {
+      "user_name": "Erin Takahashi",
+      "text": "IT note: leave monitors and docks on the desks, we will move those ourselves. Just take your laptop home over the weekend.",
+      "ts": "1793695800.000800",
+      "thread_ts": "1793695500.000700",
+      "date": "2026-11-03"
+    },
+    {
+      "user_name": "Hannah Schmidt",
+      "text": "Is the demo AMR-500 coming with us or going to the test hall?",
+      "ts": "1793696100.000900",
+      "thread_ts": "1793695500.000700",
+      "date": "2026-11-03"
+    },
+    {
+      "user_name": "Olivia Grant",
+      "text": "Test hall for now, it will join us once the new lab is set up.",
+      "ts": "1793696400.001000",
+      "thread_ts": "1793695500.000700",
+      "date": "2026-11-03"
+    },
+    {
+      "user_name": "Alice Moreau",
+      "text": "Please give a warm welcome to Lena Vos, who joins the Support team today under Samuel! Lena previously worked in warehouse logistics, so she knows our customers' world well. Say hi :wave:",
+      "ts": "1793698200.001100",
+      "thread_ts": null,
+      "date": "2026-11-03"
+    },
+    {
+      "user_name": "Priya Raman",
+      "text": "Welcome to Acme Robotics, Lena! Great to have you.",
+      "ts": "1793698500.001200",
+      "thread_ts": "1793698200.001100",
+      "date": "2026-11-03"
+    },
+    {
+      "user_name": "Samuel Mensah",
+      "text": "Welcome Lena! Coffee at 10:00, I will show you the FleetOS ticket queue afterwards.",
+      "ts": "1793698800.001300",
+      "thread_ts": "1793698200.001100",
+      "date": "2026-11-03"
+    },
+    {
+      "user_name": "Dan Whitaker",
+      "text": "Heads up for anyone planning a family: parental leave is now 20 weeks! :baby:",
+      "ts": "1793790000.001400",
+      "thread_ts": null,
+      "date": "2026-11-04"
+    },
+    {
+      "user_name": "Tom Becker",
+      "text": "Are you sure? I haven't seen anything official about that. I'm not sure it has changed.",
+      "ts": "1793790300.001500",
+      "thread_ts": "1793790000.001400",
+      "date": "2026-11-04"
+    },
+    {
+      "user_name": "Alice Moreau",
+      "text": "Good question, Tom. Please check the HR handbook or DM me before planning around any number. I'll post in #general if there's a policy update.",
+      "ts": "1793790600.001600",
+      "thread_ts": "1793790000.001400",
+      "date": "2026-11-04"
+    },
+    {
+      "user_name": "Erin Takahashi",
+      "text": "Reminder: laptop OS updates must be installed before the move on Friday. If yours is still pending, restart today or ping me.",
+      "ts": "1793800800.001700",
+      "thread_ts": null,
+      "date": "2026-11-04"
+    },
+    {
+      "user_name": "Wei Zhang",
+      "text": "Done :white_check_mark: Took about 15 minutes.",
+      "ts": "1793801100.001800",
+      "thread_ts": "1793800800.001700",
+      "date": "2026-11-04"
+    }
+  ]
+}

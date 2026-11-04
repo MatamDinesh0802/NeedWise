@@ -48,8 +48,13 @@ make up            # or: docker compose up -d --build --wait
 Open **http://localhost:8480**. The first start pulls about 2 GB of images and takes a few minutes.
 
 ```bash
-make seed          # create the fictional Acme Robotics company and its demo logins
+make embeddings    # in a second terminal: the local embedding model (needs `brew install llama.cpp`)
+make seed          # the fictional Acme Robotics company, its logins and 34 documents
 ```
+
+For AI answers, put your Anthropic API key in `.env` as `ANTHROPIC_API_KEY=...` (git-ignored).
+Prefer fully local models? Set `LLM_PROVIDER=openai_compatible` and `LLM_BASE_URL` to Ollama, vLLM
+or llama.cpp. Every model role can be changed separately ([ADR 0007](docs/adr/0007-model-providers-and-lightweight-parsing.md)).
 
 Demo logins use the password `workmind-demo` (development only): `alice@acme.test` (HR manager),
 `bob@acme.test` (engineer), `carol@acme.test` (finance), `dan@acme.test` (sales),

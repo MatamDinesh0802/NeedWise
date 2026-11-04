@@ -515,4 +515,4 @@ async def count_by(
     rows = await session.execute(
         select(column, func.count()).where(column.in_(list(ids))).group_by(column)
     )
-    return {key: count for key, count in rows.tuples()}
+    return {key: count for key, count in rows}

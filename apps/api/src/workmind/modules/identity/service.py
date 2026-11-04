@@ -43,6 +43,11 @@ class Identity:
         if self.user.org_role != "guest":  # guests see only what is shared with them
             principals.add(f"org:{self.user.tenant_id}")
         principals.update(f"dept:{department.id}" for department, _ in self.departments)
+        principals.update(
+            f"dept-manager:{department.id}"
+            for department, role in self.departments
+            if role == "manager"
+        )
         principals.update(f"group:{group.id}" for group in self.groups)
         return frozenset(principals)
 
@@ -51,10 +56,9 @@ def organization_aliases(claim: object) -> list[str]:
     """Keycloak sends `organization` as a list of aliases, or as a map when ids are included."""
     if isinstance(claim, str):
         return [claim]
-    if isinstance(claim, list):
-        return [alias for alias in claim if isinstance(alias, str)]  # pyright: ignore[reportUnknownVariableType]
-    if isinstance(claim, dict):
-        return [alias for alias in claim if isinstance(alias, str)]  # pyright: ignore[reportUnknownVariableType]
+    if isinstance(claim, list | dict):
+        items: list[object] = list(claim)  # pyright: ignore[reportUnknownArgumentType]
+        return [alias for alias in items if isinstance(alias, str)]
     return []
 
 

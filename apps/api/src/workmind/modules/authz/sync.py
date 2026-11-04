@@ -31,12 +31,14 @@ from workmind.modules.identity.models import (
     Tenant,
     User,
 )
+from workmind.modules.knowledge.acl import collection_tuples, document_tuple
+from workmind.modules.knowledge.models import Collection, CollectionGrant, Document
 
 SessionFactory = async_sessionmaker[AsyncSession]
 log = structlog.get_logger("workmind.authz")
 
-# Object types derived from identity tables. Collections and documents arrive in Phase 2.
-IDENTITY_TYPES = frozenset({"organization", "department", "group"})
+# Object types WorkMind derives from PostgreSQL (identity and knowledge tables).
+IDENTITY_TYPES = frozenset({"organization", "department", "group", "collection", "document"})
 ORG_RELATION = {"owner": "owner", "admin": "admin", "member": "member", "auditor": "auditor"}
 MAX_ATTEMPTS = 10
 
@@ -99,6 +101,12 @@ async def desired_identity_tuples(
             tuples.add(RelationTuple(f"user:{member.member_user_id}", "member", group))
         elif member.member_group_id:
             tuples.add(RelationTuple(f"group:{member.member_group_id}#member", "member", group))
+    grants = (await session.scalars(select(CollectionGrant))).all()
+    for collection in await session.scalars(select(Collection)):
+        own = [g for g in grants if g.collection_id == collection.id]
+        tuples |= collection_tuples(tenant_id, collection, own)
+    for document in await session.scalars(select(Document)):
+        tuples.add(document_tuple(document))
     return tuples
 
 

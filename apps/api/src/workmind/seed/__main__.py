@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -15,13 +16,24 @@ from workmind.core.config import Settings, get_settings
 from workmind.core.db import create_engine, create_session_factory
 from workmind.modules.authz.openfga import OpenFgaClient
 from workmind.modules.authz.sync import ensure_store, reconcile
+from workmind.modules.knowledge.pipeline import IngestionDeps
+from workmind.modules.knowledge.storage import LocalObjectStorage
+from workmind.modules.retrieval.qdrant import QdrantClient
+from workmind.providers.embeddings import EmbeddingUnavailableError
+from workmind.providers.factory import create_embeddings
 from workmind.seed.apply import SeedResult, seed_database, seed_keycloak
 from workmind.seed.company import CompanySpec, load_company
+from workmind.seed.corpus_load import load_corpus
 from workmind.seed.keycloak_admin import KeycloakAdmin
 
 
 async def _run(
-    spec: CompanySpec, settings: Settings, *, skip_keycloak: bool, skip_openfga: bool
+    spec: CompanySpec,
+    settings: Settings,
+    *,
+    skip_keycloak: bool,
+    skip_openfga: bool,
+    corpus_dir: Path | None,
 ) -> SeedResult:
     subjects: dict[str, str] = {}
     if not skip_keycloak:
@@ -35,6 +47,8 @@ async def _run(
     sessions = create_session_factory(engine)
     try:
         result = await seed_database(spec, sessions, subjects)
+        if corpus_dir is not None:
+            await _load_corpus(settings, sessions, result, spec, corpus_dir)
         if not skip_openfga:
             async with httpx.AsyncClient(timeout=15) as http:
                 fga = OpenFgaClient(
@@ -51,11 +65,42 @@ async def _run(
         await engine.dispose()
 
 
+async def _load_corpus(
+    settings: Settings, sessions: Any, result: SeedResult, spec: CompanySpec, corpus_dir: Path
+) -> None:
+    owner = next(p.email for p in spec.people if p.org_role == "owner")
+    async with httpx.AsyncClient(timeout=120) as http:
+        deps = IngestionDeps(
+            sessions=sessions,
+            storage=LocalObjectStorage(settings.object_storage_path),
+            embeddings=create_embeddings(settings, http),
+            qdrant=QdrantClient(http, settings.qdrant_url),
+            collection_name=settings.qdrant_collection,
+        )
+        try:
+            loaded = await load_corpus(deps, result.tenant_id, corpus_dir, uploader_email=owner)
+        except EmbeddingUnavailableError as exc:
+            print(
+                f"\nThe embedding server is not reachable ({exc}).\n"
+                "Start it with `make embeddings`, or seed without documents: --skip-corpus.",
+                file=sys.stderr,
+            )
+            raise SystemExit(3) from exc
+    print(
+        f"Documents: {loaded.indexed} indexed ({loaded.chunks} chunks), "
+        f"{loaded.unchanged} unchanged"
+        + (f", {len(loaded.failed)} failed:" if loaded.failed else ".")
+    )
+    for failure in loaded.failed:
+        print(f"  - {failure}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m workmind.seed", description=__doc__)
     parser.add_argument("company_file", type=Path)
     parser.add_argument("--skip-keycloak", action="store_true", help="don't create logins")
     parser.add_argument("--skip-openfga", action="store_true", help="don't sync authorization")
+    parser.add_argument("--skip-corpus", action="store_true", help="don't load documents")
     args = parser.parse_args(argv)
 
     settings = get_settings()
@@ -64,14 +109,22 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     spec = load_company(args.company_file)
+    corpus_dir = args.company_file.parent / "corpus"
+    load = not args.skip_corpus and (corpus_dir / "manifest.yaml").exists()
     result = asyncio.run(
-        _run(spec, settings, skip_keycloak=args.skip_keycloak, skip_openfga=args.skip_openfga)
+        _run(
+            spec,
+            settings,
+            skip_keycloak=args.skip_keycloak,
+            skip_openfga=args.skip_openfga,
+            corpus_dir=corpus_dir if load else None,
+        )
     )
 
     print(
         f"Seeded {spec.company.name} ({spec.company.slug}): {result.people} people, "
         f"{result.departments} departments, {result.groups} groups, "
-        f"{result.keycloak_logins} logins."
+        f"{result.keycloak_logins} logins, {len(result.collections)} collections."
     )
     if result.keycloak_logins:
         print("\nDemo logins (password: the DEMO_PASSWORD setting, default 'workmind-demo'):")

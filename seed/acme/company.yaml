@@ -59,12 +59,14 @@ people:
 
 # scope: personal | department | enterprise | restricted       (ARCHITECTURE §7.2)
 # trust: official | reference | discussion;  sensitivity: internal | confidential | restricted
-# viewers use OpenFGA-style principals: department:<key>, group:<key>, user:<email>
+# viewers/editors: department:<key> (members), department-manager:<key>, group:<key>, user:<email>.
+# Department collections default to department managers as editors.
 collections:
   - key: company-handbook
     name: Company Handbook
     scope: enterprise
     trust: official
+    editors: [department-manager:hr]
     description: Company-wide policies (leave, travel, expenses, code of conduct, security).
   - key: hr-guidance
     name: HR Guidance (internal)
@@ -77,6 +79,7 @@ collections:
     scope: restricted
     viewers: [group:hr-records]
     sensitivity: restricted
+    editors: [group:hr-records]
     description: Salary bands, performance reviews, personal data. Contains canary tokens.
   - key: engineering-docs
     name: Engineering Docs
@@ -96,6 +99,7 @@ collections:
     scope: restricted
     viewers: [group:finance-leads, group:hr-records]
     sensitivity: restricted
+    editors: [group:finance-leads]
     description: Payroll runs and leave-benefit payouts. Contains canary tokens.
   - key: sales-accounts
     name: Sales Accounts
@@ -117,20 +121,24 @@ collections:
     name: Operations SOPs
     scope: enterprise
     trust: official
+    editors: [department-manager:operations]
     description: Standard operating procedures for warehouses, shipping and on-call.
   - key: leadership-strategy
     name: Leadership Strategy
     scope: restricted
     viewers: [group:leadership]
     sensitivity: restricted
+    editors: [group:leadership]
     description: Board updates, strategy, a confidential acquisition plan. Contains canary tokens.
   - key: slack-general
     name: "Slack: #general"
     scope: enterprise
     trust: discussion
+    editors: [user:erin@acme.test]
     description: Exported chat threads. Some messages contradict official policy on purpose.
   - key: contractor-onboarding
     name: Contractor Onboarding
     scope: restricted
     viewers: [user:mallory@acme.test, department:engineering]
+    editors: [department-manager:engineering]
     description: The only collection the external contractor can see.

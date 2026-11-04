@@ -24,6 +24,10 @@ NAMING_CONVENTION = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+    # Fetch server-generated values (ids, timestamps) with RETURNING on every write. Without it,
+    # reading e.g. updated_at after an UPDATE would lazily query the database, which async
+    # sessions cannot do implicitly.
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
 
 
 class Timestamps:
