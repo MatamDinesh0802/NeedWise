@@ -1,0 +1,6 @@
+{"id": "ab-01", "user": "bob", "question": "What is the company policy on bringing dogs to the office?", "reason": "not in any document"}
+{"id": "ab-02", "user": "dan", "question": "What was Acme's revenue in 2024?", "reason": "not in any document"}
+{"id": "ab-03", "user": "carol", "question": "Who won the company hackathon in 2025?", "reason": "not in any document"}
+{"id": "ab-04", "user": "mallory", "question": "How many weeks of parental leave do employees get?", "reason": "exists, but not visible to a guest"}
+{"id": "ab-05", "user": "alice", "question": "What is the Fleet API rate limit?", "reason": "exists, but only Engineering can see it"}
+{"id": "ab-06", "user": "dan", "question": "What was the gross margin in Q3 2026?", "reason": "exists, but only Finance and leadership can see it"}

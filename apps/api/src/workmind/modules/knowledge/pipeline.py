@@ -93,7 +93,7 @@ async def _ingest(
             document.filename,
             document.mime_type,
         )
-        manual_sensitivity = document.sensitivity != default_sensitivity
+        manual_sensitivity = document.sensitivity_manual
         trust, sensitivity = document.trust, document.sensitivity
         storage_key = version.storage_key
 
@@ -186,12 +186,13 @@ async def _ingest(
             },
         )
 
-    # Only now remove the previous version's points: search never sees a gap.
+    # Only now remove every older point of this document, from earlier versions or from an
+    # earlier run of this same version (re-index): search never sees a gap or a duplicate.
     await deps.qdrant.delete(
         deps.collection_name,
         {
             "must": [match("tenant_id", str(tenant_id)), match("document_id", str(document_id))],
-            "must_not": [match("version_id", str(version_id))],
+            "must_not": [{"has_id": [str(chunk_id) for chunk_id in chunk_ids]}],
         },
     )
     log.info(

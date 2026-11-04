@@ -90,29 +90,14 @@ class QdrantClient:
             )["count"]
         )
 
-    async def hybrid_query(
-        self,
-        name: str,
-        *,
-        dense: list[float],
-        sparse: dict[str, Any],
-        flt: dict[str, Any],
-        limit: int,
-        prefetch: int,
+    async def query(
+        self, name: str, *, query: Any, using: str, flt: dict[str, Any], limit: int
     ) -> list[dict[str, Any]]:
-        """Dense + BM25 candidates, each pre-filtered (tenant, ACL, ...), fused with RRF."""
+        """A single-vector query (dense or BM25 alone), used for ablations."""
         result = await self._call(
             "POST",
             f"/collections/{name}/points/query",
-            {
-                "prefetch": [
-                    {"query": dense, "using": "dense", "limit": prefetch, "filter": flt},
-                    {"query": sparse, "using": "bm25", "limit": prefetch, "filter": flt},
-                ],
-                "query": {"fusion": "rrf"},
-                "limit": limit,
-                "with_payload": True,
-            },
+            {"query": query, "using": using, "filter": flt, "limit": limit, "with_payload": True},
         )
         return list(result["points"])
 

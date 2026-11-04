@@ -67,10 +67,19 @@ async def seed_database(
         tenant_id = (
             await session.execute(
                 insert(Tenant)
-                .values(slug=spec.company.slug, name=spec.company.name)
+                .values(
+                    slug=spec.company.slug,
+                    name=spec.company.name,
+                    settings=spec.company.policy.model_dump(),
+                )
                 .on_conflict_do_update(
                     index_elements=["slug"],
-                    set_={"name": spec.company.name, "updated_at": func.now()},
+                    set_={
+                        "name": spec.company.name,
+                        # Merged, so settings changed in the product are not reset by a re-seed.
+                        "settings": Tenant.settings.op("||")(spec.company.policy.model_dump()),
+                        "updated_at": func.now(),
+                    },
                 )
                 .returning(Tenant.id)
             )

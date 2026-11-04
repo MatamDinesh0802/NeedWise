@@ -17,6 +17,11 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class TenantPolicy(_Strict):
+    # ARCHITECTURE 11.6: may `restricted` sources be sent to an external model API?
+    restricted_data: Literal["allow", "local_only"] = "local_only"
+
+
 class CompanyInfo(_Strict):
     name: str
     slug: str = Field(pattern=SLUG_PATTERN)
@@ -25,6 +30,7 @@ class CompanyInfo(_Strict):
     headcount: int | None = None
     founded: int | None = None
     timezone: str = "UTC"
+    policy: TenantPolicy = TenantPolicy()
 
 
 class DepartmentSpec(_Strict):

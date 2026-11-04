@@ -17,6 +17,8 @@ from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
 from workmind.modules.authz.sync import enqueue, ensure_store, org_object, process_outbox, reconcile
 from workmind.modules.identity.models import Group, GroupMember, User
 from workmind.modules.identity.service import load_identity
+from workmind.modules.knowledge.acl import acl_principals
+from workmind.modules.knowledge.models import Collection, CollectionGrant
 from workmind.seed.apply import seed_database
 from workmind.seed.company import load_company
 
@@ -183,3 +185,33 @@ async def test_outbox_applies_changes_in_commit_order(
     assert (applied, replayed) == (3, 0)
     assert not await _allowed(fga, acme, acme.user("dan"), "can_manage", org)
     assert await _allowed(fga, acme, acme.user("dan"), "can_view_audit", org)
+
+
+async def test_both_permission_locks_agree_for_every_person_and_collection(
+    owner_sessions: SessionFactory, fga: OpenFgaClient, acme: SyncedAcme
+) -> None:
+    """Lock 1 (the ACL stored with every chunk) and lock 2 (OpenFGA) must give the same answer.
+    Any difference is drift: lock 2 would silently hide results, or lock 1 would be too open."""
+    async with tenant_transaction(owner_sessions, acme.tenant_id) as session:
+        collections = (await session.scalars(select(Collection))).all()
+        grants = (await session.scalars(select(CollectionGrant))).all()
+        identities = {name: await load_identity(session, uid) for name, uid in acme.users.items()}
+    acl = {
+        c.id: set(acl_principals(c, [g for g in grants if g.collection_id == c.id]))
+        for c in collections
+    }
+
+    disagreements: list[str] = []
+    for name, identity in identities.items():
+        assert identity is not None
+        questions = [
+            RelationTuple(acme.user(name), "viewer", f"collection:{c.id}") for c in collections
+        ]
+        answers = await fga.batch_check(acme.store_id, questions)
+        for c in collections:
+            lock1 = bool(acl[c.id] & identity.principals)
+            lock2 = answers[RelationTuple(acme.user(name), "viewer", f"collection:{c.id}")]
+            if lock1 != lock2:
+                disagreements.append(f"{name} / {c.key}: index={lock1} openfga={lock2}")
+
+    assert disagreements == []

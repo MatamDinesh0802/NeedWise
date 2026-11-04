@@ -142,6 +142,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      - name: Use deterministic hash embeddings (CI has no embedding model server)
+        run: printf 'EMBEDDING_PROVIDER=hash\nEMBEDDING_MODEL=hash-ci\n' > .env
       - run: docker compose up -d --build --wait
       - name: All components report ok through Caddy
         run: |
@@ -149,8 +151,13 @@ jobs:
           python3 -c "import json,sys; d=json.load(open('status.json')); sys.exit(0 if d['status']=='ok' else 1)"
           curl -fsS -o /dev/null http://localhost:8480/
           curl -fsS -o /dev/null http://localhost:8480/auth/realms/master
-      - name: Seed the demo company (documents are covered by integration tests; CI has no embedding model)
-        run: docker compose --profile tools run --rm seed python -m workmind.seed /seed/acme/company.yaml --skip-corpus
+      - name: Seed the demo company and its 34 documents through the real ingestion pipeline
+        run: docker compose --profile tools run --rm seed
+      - name: Permission gate - every red-team attack, every retrieval mode, zero leaks
+        run: >-
+          docker compose --profile tools run --rm -v "$PWD/evals:/evals:ro"
+          -e WORKMIND_EVALS_DIR=/evals seed
+          python -m workmind.evals --retrieval-only --out /tmp/eval-results --label ci
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true

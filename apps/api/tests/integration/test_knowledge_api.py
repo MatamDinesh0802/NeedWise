@@ -278,3 +278,85 @@ async def test_admins_list_every_collection_with_sharing_but_still_cannot_read_r
         == 404
     )
     assert api.get("/api/v1/admin/collections", headers=acme.as_("bob")).status_code == 403
+
+
+async def test_sharing_keeps_the_scope_audience_and_editors_alone_can_own_a_restricted_one(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    handbook = await _collection_id(app_sessions, acme, "company-handbook")  # enterprise
+    alice = f"user:{acme.users['alice']}"
+
+    narrowed = api.put(
+        f"/api/v1/admin/collections/{handbook}/grants",
+        json={"viewers": [], "editors": [alice]},
+        headers=acme.as_("erin", write=True),
+    )
+    created = api.post(
+        "/api/v1/admin/collections",
+        json={
+            "key": f"board-{uuid.uuid4().hex[:6]}",
+            "name": "Board papers",
+            "description": "",
+            "scope": "restricted",
+            "default_trust": "official",
+            "default_sensitivity": "restricted",
+            "viewers": [],
+            "editors": [alice],
+        },
+        headers=acme.as_("erin", write=True),
+    )
+
+    grants = {(g["principal"], g["relation"]) for g in narrowed.json()["items"]}
+    assert narrowed.status_code == 200, narrowed.text
+    assert (f"org:{acme.tenant_id}", "viewer") in grants  # the enterprise audience stays
+    assert (alice, "editor") in grants
+    assert (alice, "viewer") not in grants  # editing implies viewing
+    assert created.status_code == 201, created.text
+
+
+async def test_downloads_keep_non_ascii_file_names(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    handbook = await _collection_id(app_sessions, acme, "company-handbook")
+    document = _upload(api, acme, "alice", handbook, "Übersicht 2026.md", POLICY).json()["document"]
+    _wait_ready(api, acme, "alice", document["id"])
+
+    response = api.get(f"/api/v1/documents/{document['id']}/file", headers=acme.as_("bob"))
+
+    assert response.headers["content-disposition"] == (
+        "attachment; filename=\"_bersicht 2026.md\"; filename*=UTF-8''%C3%9Cbersicht%202026.md"
+    )
+
+
+async def test_editors_correct_labels_and_the_index_follows_at_once(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory, qdrant: tuple[QdrantClient, str]
+) -> None:
+    handbook = await _collection_id(app_sessions, acme, "company-handbook")
+    document = _upload(api, acme, "alice", handbook, "labels.md", POLICY).json()["document"]
+    _wait_ready(api, acme, "alice", document["id"])
+
+    as_viewer = api.patch(
+        f"/api/v1/documents/{document['id']}",
+        json={"sensitivity": "restricted"},
+        headers=acme.as_("bob", write=True),
+    )
+    changed = api.patch(
+        f"/api/v1/documents/{document['id']}",
+        json={"sensitivity": "restricted", "trust": "official"},
+        headers=acme.as_("alice", write=True),
+    )
+    api.post(f"/api/v1/documents/{document['id']}/reindex", headers=acme.as_("alice", write=True))
+    after_reindex = _wait_ready(api, acme, "alice", document["id"])
+
+    client, name = qdrant
+    restricted_points = await client.count(
+        name, {"must": [match("document_id", document["id"]), match("sensitivity", "restricted")]}
+    )
+    assert as_viewer.status_code == 403
+    assert changed.status_code == 200, changed.text
+    assert (changed.json()["sensitivity"], changed.json()["sensitivity_manual"]) == (
+        "restricted",
+        True,
+    )
+    assert after_reindex["sensitivity"] == "restricted"  # a manual label survives re-indexing
+    assert restricted_points == 2

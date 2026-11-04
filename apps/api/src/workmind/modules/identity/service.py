@@ -31,6 +31,9 @@ class SignInError(Exception):
         self.code = code
 
 
+ORG_MEMBER_ROLES = frozenset({"owner", "admin", "member"})
+
+
 @dataclass(frozen=True)
 class Identity:
     user: User
@@ -40,7 +43,10 @@ class Identity:
     @property
     def principals(self) -> frozenset[str]:
         principals = {f"user:{self.user.id}"}
-        if self.user.org_role != "guest":  # guests see only what is shared with them
+        # Mirrors `organization#member` in the OpenFGA model: guests see only what is shared
+        # with them, and auditors read audit logs, never knowledge. The two-locks test in
+        # tests/integration/test_authz_sync.py keeps this and the model in agreement.
+        if self.user.org_role in ORG_MEMBER_ROLES:
             principals.add(f"org:{self.user.tenant_id}")
         principals.update(f"dept:{department.id}" for department, _ in self.departments)
         principals.update(

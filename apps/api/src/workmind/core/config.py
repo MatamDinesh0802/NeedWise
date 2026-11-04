@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     llm_model_judge: str | None = None
     llm_model_generator: str | None = None
     llm_fallbacks: bool = True  # Anthropic server-side refusal fallback ("default" routing)
+    # Set when LLM_BASE_URL is a third-party API rather than a model you run yourself.
+    llm_external: bool = False
+    # Optional local model for tenants whose policy keeps restricted data off external APIs
+    # (ARCHITECTURE 11.6). Without it, restricted sources are left out of external answers.
+    local_llm_base_url: str | None = None
+    local_llm_model: str | None = None
+    local_llm_api_key: SecretStr | None = None
 
     # --- Embeddings: any OpenAI-compatible /v1/embeddings server; "hash" for tests. ---
     embedding_provider: Literal["openai_compatible", "hash"] = "openai_compatible"
@@ -82,6 +89,9 @@ class Settings(BaseSettings):
     embedding_dimensions: int = Field(default=768, gt=0)
     embedding_query_template: str = "task: search result | query: {text}"
     embedding_document_template: str = "title: {title} | text: {text}"
+    # Hybrid search: BM25's weight in reciprocal rank fusion, relative to dense (1.0).
+    retrieval_sparse_weight: float = Field(default=0.5, ge=0)
+    retrieval_rrf_k: int = Field(default=2, ge=1)
 
     # --- Ingestion ---
     # Shared with the containers through a bind mount of <repo>/.data/objects (compose.yaml).

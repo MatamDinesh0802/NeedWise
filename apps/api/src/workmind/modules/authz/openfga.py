@@ -1,5 +1,6 @@
 """A thin OpenFGA HTTP client: only the calls WorkMind uses."""
 
+import asyncio
 import json
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ import httpx
 
 MAX_TUPLES_PER_WRITE = 100  # OpenFGA's default limit
 MAX_CHECKS_PER_BATCH = 50  # OpenFGA's default limit
+RETRY_DELAYS = (0.2, 0.8, 2.0)  # seconds between attempts of a read-only call
 
 
 @dataclass(frozen=True, order=True)
@@ -88,36 +90,49 @@ class OpenFgaClient:
                 return tuples
 
     async def check(self, store_id: str, question: RelationTuple) -> bool:
-        body = await self._post(f"/stores/{store_id}/check", {"tuple_key": question.key()})
+        body = await self._query(f"/stores/{store_id}/check", {"tuple_key": question.key()})
         return bool(body.get("allowed"))
 
     async def batch_check(
         self, store_id: str, questions: Sequence[RelationTuple]
     ) -> dict[RelationTuple, bool]:
+        """Individual checks can fail inside a successful response (e.g. "deadline_exceeded"
+        when OpenFGA is overloaded); only those are asked again. Never guesses an answer."""
         answers: dict[RelationTuple, bool] = {}
-        for start in range(0, len(questions), MAX_CHECKS_PER_BATCH):
-            chunk = questions[start : start + MAX_CHECKS_PER_BATCH]
-            body = await self._post(
-                f"/stores/{store_id}/batch-check",
-                {
-                    "checks": [
-                        {"tuple_key": q.key(), "correlation_id": f"c{i}"}
-                        for i, q in enumerate(chunk)
-                    ]
-                },
-            )
-            results: dict[str, Any] = body.get("result", {})
-            for i, question in enumerate(chunk):
-                result = results.get(f"c{i}", {})
-                if "error" in result:
-                    raise OpenFgaError(f"check failed for {question}: {result['error']}")
-                answers[question] = bool(result.get("allowed"))
-        return answers
+        pending = list(questions)
+        for delay in (*RETRY_DELAYS, None):
+            failed: list[tuple[RelationTuple, object]] = []
+            for start in range(0, len(pending), MAX_CHECKS_PER_BATCH):
+                chunk = pending[start : start + MAX_CHECKS_PER_BATCH]
+                body = await self._query(
+                    f"/stores/{store_id}/batch-check",
+                    {
+                        "checks": [
+                            {"tuple_key": q.key(), "correlation_id": f"c{i}"}
+                            for i, q in enumerate(chunk)
+                        ]
+                    },
+                )
+                results: dict[str, Any] = body.get("result", {})
+                for i, question in enumerate(chunk):
+                    result = results.get(f"c{i}", {})
+                    if "error" in result:
+                        failed.append((question, result["error"]))
+                    else:
+                        answers[question] = bool(result.get("allowed"))
+            if not failed:
+                return answers
+            if delay is None:
+                question, error = failed[0]
+                raise OpenFgaError(f"check failed for {question}: {error}")
+            pending = [question for question, _ in failed]
+            await asyncio.sleep(delay)
+        raise AssertionError("unreachable")  # pragma: no cover
 
     async def list_objects(
         self, store_id: str, *, user: str, relation: str, type: str
     ) -> list[str]:
-        body = await self._post(
+        body = await self._query(
             f"/stores/{store_id}/list-objects", {"user": user, "relation": relation, "type": type}
         )
         return sorted(body.get("objects", []))
@@ -126,6 +141,28 @@ class OpenFgaClient:
         response = await self._http.post(f"{self._base}{path}", json=body, headers=self._headers)
         self._raise_for(response)
         return response.json()
+
+    async def _query(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Read-only calls (checks, list-objects) are safe to retry when OpenFGA is overloaded
+        (HTTP 5xx "deadline_exceeded", 429) or briefly unreachable. Writes are not retried here:
+        the outbox retries them as a whole."""
+        for delay in (*RETRY_DELAYS, None):
+            try:
+                response = await self._http.post(
+                    f"{self._base}{path}", json=body, headers=self._headers
+                )
+            except httpx.TransportError:
+                if delay is None:
+                    raise
+            else:
+                if (
+                    not (response.status_code >= 500 or response.status_code == 429)
+                    or delay is None
+                ):
+                    self._raise_for(response)
+                    return response.json()
+            await asyncio.sleep(delay)
+        raise AssertionError("unreachable")  # pragma: no cover
 
     @staticmethod
     def _raise_for(response: httpx.Response) -> None:

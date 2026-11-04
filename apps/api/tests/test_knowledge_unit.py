@@ -146,6 +146,12 @@ def test_keyword_encoding_finds_identifiers_and_their_parts() -> None:
         ("The L3 salary band is 68,000 to 82,000 euros.", "internal", "confidential"),
         ("Pay to IBAN NL91 ABNA 0417 1643 00.", "internal", "restricted"),
         ("A plain note.", "restricted", "restricted"),  # never lowered
+        # Topics are not data: policies mention these words without holding personal data.
+        ("Absences over 3 days need a medical certificate.", "internal", "internal"),
+        ("Collect logs before a diagnosis of the outage.", "internal", "internal"),
+        ("Expenses are paid out with the next payroll run.", "internal", "internal"),
+        ("Reference AB12 CDEF 3456 7890 is not an IBAN.", "internal", "internal"),  # bad checksum
+        ("Employee SSN: 123-45-6789", "internal", "restricted"),
     ],
 )
 def test_sensitivity_suggestions_only_ever_raise_the_default(

@@ -81,6 +81,8 @@ class RoleConfig:
 
 
 class LLMProvider(Protocol):
+    external: bool  # True when requests leave your infrastructure (a hosted API)
+
     async def complete(self, role: Role, request: LLMRequest) -> tuple[str, LLMUsage]: ...
 
     def stream(self, role: Role, request: LLMRequest) -> AsyncIterator[StreamEvent]: ...
@@ -91,6 +93,8 @@ class LLMProvider(Protocol):
 
 
 class AnthropicLLM:
+    external = True  # requests leave your infrastructure (ARCHITECTURE 11.6)
+
     def __init__(
         self, roles: Mapping[Role, RoleConfig], *, api_key: str | None, fallbacks: bool = True
     ) -> None:
@@ -174,7 +178,9 @@ class OpenAICompatibleLLM:
         *,
         base_url: str,
         api_key: str | None = None,
+        external: bool = False,
     ) -> None:
+        self.external = external
         self._http = http
         self._url = base_url.rstrip("/") + "/chat/completions"
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}

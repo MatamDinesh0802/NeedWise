@@ -18,6 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy import false as sa_false
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -107,6 +108,8 @@ class Document(Base, TenantScoped, Timestamps):
     source: Mapped[str] = mapped_column(String(32), server_default="upload")
     trust: Mapped[str] = mapped_column(String(16))
     sensitivity: Mapped[str] = mapped_column(String(16))
+    # True once an editor sets the label: re-indexing then keeps it instead of re-scanning.
+    sensitivity_manual: Mapped[bool] = mapped_column(server_default=sa_false())
     status: Mapped[str] = mapped_column(String(16), server_default="pending")
     error: Mapped[str | None] = mapped_column(Text)
     current_version_id: Mapped[uuid.UUID | None]

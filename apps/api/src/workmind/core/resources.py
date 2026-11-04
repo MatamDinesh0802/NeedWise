@@ -16,8 +16,9 @@ from workmind.modules.knowledge.dispatch import CeleryDispatcher, Dispatcher, In
 from workmind.modules.knowledge.pipeline import IngestionDeps
 from workmind.modules.knowledge.storage import LocalObjectStorage, ObjectStorage
 from workmind.modules.retrieval.qdrant import QdrantClient
+from workmind.modules.retrieval.service import Retriever
 from workmind.providers.embeddings import EmbeddingProvider
-from workmind.providers.factory import create_embeddings, create_llm
+from workmind.providers.factory import create_embeddings, create_llm, create_local_llm
 from workmind.providers.llm import LLMProvider
 
 
@@ -34,8 +35,10 @@ class Resources:
     qdrant: QdrantClient
     embeddings: EmbeddingProvider
     llm: LLMProvider
+    local_llm: LLMProvider | None
     ingestion: Dispatcher
     collection_name: str
+    retriever: Retriever
 
     @classmethod
     def create(cls, settings: Settings) -> Self:
@@ -48,6 +51,9 @@ class Resources:
         qdrant = QdrantClient(http, settings.qdrant_url)
         embeddings = create_embeddings(settings, http)
         deps = IngestionDeps(db, storage, embeddings, qdrant, settings.qdrant_collection)
+        fga = OpenFgaClient(
+            http, settings.openfga_api_url, settings.openfga_api_key.get_secret_value()
+        )
         return cls(
             engine=engine,
             db=db,
@@ -65,17 +71,25 @@ class Resources:
                 idle_timeout_s=settings.session_idle_timeout_s,
                 absolute_timeout_s=settings.session_absolute_timeout_s,
             ),
-            fga=OpenFgaClient(
-                http, settings.openfga_api_url, settings.openfga_api_key.get_secret_value()
-            ),
+            fga=fga,
             storage=storage,
             qdrant=qdrant,
             embeddings=embeddings,
             llm=create_llm(settings, http),
+            local_llm=create_local_llm(settings, http),
             ingestion=InlineDispatcher(deps)
             if settings.ingestion_mode == "inline"
             else CeleryDispatcher(),
             collection_name=settings.qdrant_collection,
+            retriever=Retriever(
+                qdrant=qdrant,
+                embeddings=embeddings,
+                fga=fga,
+                sessions=db,
+                collection_name=settings.qdrant_collection,
+                sparse_weight=settings.retrieval_sparse_weight,
+                rrf_k=settings.retrieval_rrf_k,
+            ),
         )
 
     async def aclose(self) -> None:

@@ -94,7 +94,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Show the login flow diagram and the OpenFGA model.
 - Explain the "two locks" idea.
 
-### Phase 2 — Knowledge ingestion (v0.2) 🚧 Backend complete, Knowledge Hub UI in progress
+### Phase 2 — Knowledge ingestion (v0.2) ✅ Done
 
 **Goal:** documents go in reliably, with structure, metadata, versions and permissions.
 
@@ -118,7 +118,12 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Lessons on chunking tables and on versioning.
 - Real throughput numbers.
 
-### Phase 3 — Retrieval engine and evaluation harness (v0.3)
+### Phase 3 — Retrieval engine and evaluation harness (v0.3) ✅ Done (see `evals/README.md`)
+
+> Done: hybrid search with tuned fusion, both locks, citations, abstention, sensitivity routing,
+> `wm eval` with QA / red-team / abstention suites, the CI permission gate, and the ablation.
+> Deferred: the reranker adapter (no measurable headroom yet: Evidence@3 is 98.8%), the
+> local-vs-paid comparison (D3: the maintainer runs Claude), and growing QA from 82 to ~200 items.
 
 **Goal:** high-quality, permission-safe retrieval, with numbers to prove it.
 

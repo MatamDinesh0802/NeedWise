@@ -9,6 +9,7 @@ needs a browser session. Uploads send the raw file as the request body:
 import uuid
 from datetime import datetime
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field
@@ -32,6 +33,7 @@ from workmind.modules.knowledge.models import (
     DocumentVersion,
 )
 from workmind.modules.knowledge.pipeline import delete_document_points, refresh_collection_acl
+from workmind.modules.retrieval.qdrant import match
 
 router = APIRouter(tags=["knowledge"])
 ReadContext = Annotated[RequestContext, require_scope("knowledge:read")]
@@ -66,6 +68,7 @@ class DocumentOut(BaseModel):
     mime_type: str
     trust: str
     sensitivity: str
+    sensitivity_manual: bool  # set by an editor; otherwise suggested by the scan
     status: str
     error: str | None
     chunk_count: int
@@ -132,6 +135,7 @@ def _document_out(document: Document, version: DocumentVersion | None) -> Docume
         mime_type=document.mime_type,
         trust=document.trust,
         sensitivity=document.sensitivity,
+        sensitivity_manual=document.sensitivity_manual,
         status=document.status,
         error=document.error,
         chunk_count=version.chunk_count if version else 0,
@@ -299,12 +303,14 @@ async def download_document(ctx: ReadContext, request: Request, document_id: uui
             raise ApiError(404, "not_found", "Document has no stored file")
         filename, mime, key = document.filename, document.mime_type, version.storage_key
     data = await resources.storage.get(key)
-    safe_name = filename.replace('"', "")
+    # RFC 6266: an ASCII fallback plus the exact UTF-8 name (RFC 5987) for non-ASCII names.
+    fallback = filename.encode("ascii", "replace").decode().replace('"', "").replace("?", "_")
+    disposition = f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename)}"
     return Response(
         content=data,
         media_type=mime,
         headers={
-            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Content-Disposition": disposition,
             "X-Content-Type-Options": "nosniff",
         },
     )
@@ -323,6 +329,45 @@ async def reindex_document(
         document.status, document.error = "pending", None
         out = _document_out(document, version)
     await resources.ingestion.dispatch(ctx.tenant_id, document.id, version.id)
+    return out
+
+
+class LabelsUpdate(BaseModel):
+    trust: Literal["official", "reference", "discussion"] | None = None
+    sensitivity: Literal["internal", "confidential", "restricted"] | None = None
+
+
+@router.patch("/documents/{document_id}")
+async def update_labels(
+    ctx: SessionContext, request: Request, document_id: uuid.UUID, body: LabelsUpdate
+) -> DocumentOut:
+    """Editors correct the trust level or sensitivity label (ARCHITECTURE 7.3). A label set here
+    is kept on re-index. The index is updated at once, so model routing follows immediately."""
+    resources = resources_of(request)
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        document, _ = await _document_for(session, ctx, document_id, edit=True)
+        before = {"trust": document.trust, "sensitivity": document.sensitivity}
+        if body.trust:
+            document.trust = body.trust
+        if body.sensitivity:
+            document.sensitivity, document.sensitivity_manual = body.sensitivity, True
+        after = {"trust": document.trust, "sensitivity": document.sensitivity}
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="knowledge.document.labels_changed",
+            resource_type="document",
+            resource_id=str(document_id),
+            details={"before": before, "after": after},
+        )
+        version = (await _latest_versions(session, [document])).get(document.id)
+        out = _document_out(document, version)
+    await resources.qdrant.set_payload(
+        resources.collection_name,
+        after,
+        {"must": [match("tenant_id", str(ctx.tenant_id)), match("document_id", str(document_id))]},
+    )
     return out
 
 
@@ -367,12 +412,22 @@ class GrantsUpdate(BaseModel):
 admin_router = APIRouter(prefix="/admin/collections", tags=["admin"])
 
 
-def _default_viewers(ctx: RequestContext, body: CollectionCreate) -> list[str]:
-    if body.scope == "enterprise":
-        return [f"org:{ctx.tenant_id}"]
-    if body.scope == "department" and body.department_id:
-        return [f"dept:{body.department_id}"]
-    return []
+def baseline_viewers(tenant_id: uuid.UUID, scope: str, department_id: uuid.UUID | None) -> set[str]:
+    """The audience a scope promises. Sharing can add people but never drops these: narrowing
+    an enterprise collection means changing its scope, not quietly editing grants."""
+    if scope == "enterprise":
+        return {f"org:{tenant_id}"}
+    if scope == "department" and department_id:
+        return {f"dept:{department_id}"}
+    return set()
+
+
+def resolve_grants(
+    baseline: set[str], viewers: list[str], editors: list[str]
+) -> tuple[list[str], list[str]]:
+    """Editing implies viewing, so an editor is never also stored as a viewer."""
+    editor_set = set(editors)
+    return sorted((set(viewers) | baseline) - editor_set), sorted(editor_set)
 
 
 class AdminCollectionOut(BaseModel):
@@ -428,8 +483,10 @@ async def create_collection(
 ) -> CollectionDetail:
     if body.scope == "department" and body.department_id is None:
         raise ApiError(422, "department_required", "A department collection needs a department")
-    viewers = sorted(set(body.viewers) | set(_default_viewers(ctx, body)))
-    if body.scope == "restricted" and not viewers:
+    viewers, editors = resolve_grants(
+        baseline_viewers(ctx.tenant_id, body.scope, body.department_id), body.viewers, body.editors
+    )
+    if body.scope == "restricted" and not (viewers or editors):
         raise ApiError(422, "viewers_required", "A restricted collection needs explicit viewers")
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         if (await session.scalars(select(Collection).where(Collection.key == body.key))).first():
@@ -456,7 +513,7 @@ async def create_collection(
             CollectionGrant(
                 tenant_id=ctx.tenant_id, collection_id=collection.id, principal=p, relation="editor"
             )
-            for p in sorted(set(body.editors))
+            for p in editors
         ]
         session.add_all(grants)
         await session.flush()
@@ -472,7 +529,7 @@ async def create_collection(
                 "key": body.key,
                 "scope": body.scope,
                 "viewers": viewers,
-                "editors": body.editors,
+                "editors": editors,
             },
         )
         access = service.CollectionAccess(collection, grants, can_view=True, can_edit=True)
@@ -500,17 +557,17 @@ async def replace_grants(
                 )
             ).all()
         )
+        viewers, editors = resolve_grants(
+            baseline_viewers(ctx.tenant_id, collection.scope, collection.department_id),
+            body.viewers,
+            body.editors,
+        )
         new = [
             CollectionGrant(
-                tenant_id=ctx.tenant_id, collection_id=collection_id, principal=p, relation="viewer"
+                tenant_id=ctx.tenant_id, collection_id=collection_id, principal=p, relation=relation
             )
-            for p in sorted(set(body.viewers))
-        ]
-        new += [
-            CollectionGrant(
-                tenant_id=ctx.tenant_id, collection_id=collection_id, principal=p, relation="editor"
-            )
-            for p in sorted(set(body.editors))
+            for relation, principals in (("viewer", viewers), ("editor", editors))
+            for p in principals
         ]
         if collection.scope == "restricted" and not new:
             raise ApiError(
@@ -533,7 +590,7 @@ async def replace_grants(
             action="admin.collection.grants_replaced",
             resource_type="collection",
             resource_id=str(collection_id),
-            details={"viewers": body.viewers, "editors": body.editors},
+            details={"viewers": viewers, "editors": editors},
         )
     await refresh_collection_acl(
         resources.qdrant, resources.collection_name, ctx.tenant_id, collection, new

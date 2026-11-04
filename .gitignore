@@ -32,3 +32,6 @@ graphify-out/
 /data/
 /.data/
 evals/results/*.tmp
+
+# Evaluation runs: the Markdown reports are committed, the per-item JSON stays local
+/evals/results/*.json

@@ -52,7 +52,24 @@ def create_llm(settings: Settings, http: httpx.AsyncClient) -> LLMProvider:
             roles, api_key=secret(settings.anthropic_api_key), fallbacks=settings.llm_fallbacks
         )
     return OpenAICompatibleLLM(
-        http, roles, base_url=settings.llm_base_url, api_key=secret(settings.llm_api_key)
+        http,
+        roles,
+        base_url=settings.llm_base_url,
+        api_key=secret(settings.llm_api_key),
+        external=settings.llm_external,
+    )
+
+
+def create_local_llm(settings: Settings, http: httpx.AsyncClient) -> LLMProvider | None:
+    """The model restricted sources may be sent to under a `local_only` policy, if configured."""
+    if not (settings.local_llm_base_url and settings.local_llm_model):
+        return None
+    model = settings.local_llm_model
+    return OpenAICompatibleLLM(
+        http,
+        {role: RoleConfig(model=model, effort=ROLE_EFFORT[role]) for role in ROLE_EFFORT},
+        base_url=settings.local_llm_base_url,
+        api_key=secret(settings.local_llm_api_key),
     )
 
 

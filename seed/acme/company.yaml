@@ -13,6 +13,11 @@ company:
   headcount: 180
   founded: 2019
   timezone: UTC
+  policy:
+    # The demo data is fictional, so restricted documents may go to the hosted model.
+    # Real tenants default to local_only: restricted sources never reach an external API
+    # (they go to LOCAL_LLM_* if configured, otherwise they are left out). ARCHITECTURE 11.6.
+    restricted_data: allow
 
 departments:
   - { key: management,  name: Management }
