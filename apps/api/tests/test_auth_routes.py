@@ -1,7 +1,9 @@
+import httpx
 import pytest
 
 from tests.conftest import ALL_HEALTHY, ClientFactory
 from workmind.api.auth import safe_return_to
+from workmind.modules.identity.oidc import OidcClient
 
 
 @pytest.mark.parametrize(
@@ -67,6 +69,27 @@ def test_callback_without_the_browser_flow_cookie_is_rejected(make_client: Clien
 
     assert response.status_code == 303
     assert response.headers["location"] == "/?auth_error=login_expired"
+
+
+def test_login_redirects_with_a_friendly_error_when_keycloak_is_down(
+    make_client: ClientFactory,
+) -> None:
+    def unreachable(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("timed out", request=request)
+
+    client = make_client(ALL_HEALTHY)
+    client.app.state.resources.oidc = OidcClient(  # pyright: ignore[reportAttributeAccessIssue, reportFunctionMemberAccess]
+        httpx.AsyncClient(transport=httpx.MockTransport(unreachable)),
+        discovery_url="http://keycloak/.well-known/openid-configuration",
+        client_id="workmind-api",
+        client_secret="secret",
+        redirect_uri="http://localhost:8480/api/auth/callback",
+    )
+
+    response = client.get("/api/auth/login", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/?auth_error=login_unavailable"
 
 
 def test_cancelled_login_is_reported_as_such(make_client: ClientFactory) -> None:

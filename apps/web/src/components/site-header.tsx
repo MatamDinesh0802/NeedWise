@@ -1,13 +1,12 @@
 "use client";
 
-import { LogIn } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { UserMenu } from "@/components/user-menu";
 import { activeNavItem, siteConfig } from "@/config/site";
 
 export function SiteHeader() {
@@ -25,15 +24,7 @@ export function SiteHeader() {
           {siteConfig.stage}
         </Badge>
         <ThemeToggle />
-        <Button
-          size="sm"
-          disabled
-          title="Sign-in arrives in Phase 1"
-          aria-label="Sign in (available in Phase 1)"
-        >
-          <LogIn data-icon="inline-start" />
-          Sign in
-        </Button>
+        <UserMenu />
       </div>
     </header>
   );

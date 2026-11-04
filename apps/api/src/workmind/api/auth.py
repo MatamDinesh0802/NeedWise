@@ -70,7 +70,11 @@ def _clear_flow_cookie(response: Response, settings: Settings) -> None:
 @router.get("/login", summary="Start sign-in (redirects to Keycloak)")
 async def login(request: Request, return_to: str | None = None) -> RedirectResponse:
     settings, resources = settings_of(request), resources_of(request)
-    attempt = await resources.oidc.begin_login()
+    try:
+        attempt = await resources.oidc.begin_login()
+    except OidcError as exc:
+        log.warning("login_unavailable", reason=str(exc))
+        return RedirectResponse("/?auth_error=login_unavailable", status_code=303)
     await resources.valkey.set(
         f"oidc:flow:{attempt.state}",
         json.dumps(
@@ -178,9 +182,13 @@ async def logout(request: Request) -> JSONResponse:
                 ip=ip,
                 user_agent=user_agent,
             )
-        redirect_url = await resources.oidc.end_session_url(
-            id_token_hint=session.id_token, post_logout_redirect_uri=redirect_url
-        )
+        try:
+            redirect_url = await resources.oidc.end_session_url(
+                id_token_hint=session.id_token, post_logout_redirect_uri=redirect_url
+            )
+        except OidcError as exc:
+            # The WorkMind session is gone either way; the SSO session ends on its own timeout.
+            log.warning("end_session_unavailable", reason=str(exc))
 
     response = JSONResponse(LogoutResponse(redirect_url=redirect_url).model_dump())
     response.delete_cookie(

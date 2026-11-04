@@ -12,6 +12,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { ADMIN_VIEW_ROLES, type OrgRole } from "@/lib/session";
+
 /**
  * Single source of truth for product identity and navigation.
  * The product name may change — nothing else in the app should hardcode it.
@@ -26,7 +28,7 @@ export const siteConfig = {
   stage: "pre-alpha",
 } as const;
 
-export type NavGroup = "workspace" | "administration";
+export type NavGroup = "workspace" | "administration" | "account";
 
 export interface NavItem {
   title: string;
@@ -37,6 +39,11 @@ export interface NavItem {
   /** Roadmap phase in which the section becomes functional (see docs/ROADMAP.md). */
   phase: number;
   group: NavGroup;
+  /**
+   * If set, only these org roles see the item in the navigation.
+   * Cosmetic only: hiding a link is not access control; the API enforces permissions.
+   */
+  visibleTo?: readonly OrgRole[];
 }
 
 export const navItems: readonly NavItem[] = [
@@ -111,6 +118,7 @@ export const navItems: readonly NavItem[] = [
     description: "Organization, users, departments, groups, connectors, policies and audit log.",
     phase: 1,
     group: "administration",
+    visibleTo: ADMIN_VIEW_ROLES,
   },
   {
     title: "Settings",
@@ -118,12 +126,21 @@ export const navItems: readonly NavItem[] = [
     icon: Settings,
     description: "Your profile, personal access tokens and assistant memory.",
     phase: 1,
-    group: "administration",
+    group: "account",
   },
 ];
 
 export function navItemsByGroup(group: NavGroup): NavItem[] {
   return navItems.filter((item) => item.group === group);
+}
+
+/** Whether a user with `role` (undefined while loading or signed out) sees `item`. */
+export function isNavItemVisible(item: NavItem, role: OrgRole | null | undefined): boolean {
+  return item.visibleTo === undefined || (role != null && item.visibleTo.includes(role));
+}
+
+export function visibleNavItems(group: NavGroup, role: OrgRole | null | undefined): NavItem[] {
+  return navItemsByGroup(group).filter((item) => isNavItemVisible(item, role));
 }
 
 export function findNavItem(href: string): NavItem | undefined {

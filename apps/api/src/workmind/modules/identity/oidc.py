@@ -62,9 +62,7 @@ class OidcClient:
 
     async def metadata(self) -> dict[str, Any]:
         if self._metadata is None:
-            response = await self._http.get(self._discovery_url)
-            response.raise_for_status()
-            metadata: dict[str, Any] = response.json()
+            metadata: dict[str, Any] = (await self._get(self._discovery_url)).json()
             self._metadata = metadata
             return metadata
         return self._metadata
@@ -94,16 +92,19 @@ class OidcClient:
 
     async def exchange_code(self, code: str, code_verifier: str) -> dict[str, Any]:
         metadata = await self.metadata()
-        response = await self._http.post(
-            metadata["token_endpoint"],
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": self._redirect_uri,
-                "code_verifier": code_verifier,
-            },
-            auth=(self._client_id, self._client_secret),
-        )
+        try:
+            response = await self._http.post(
+                metadata["token_endpoint"],
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": self._redirect_uri,
+                    "code_verifier": code_verifier,
+                },
+                auth=(self._client_id, self._client_secret),
+            )
+        except httpx.HTTPError as exc:
+            raise OidcError(f"identity provider unreachable: {type(exc).__name__}") from exc
         if response.is_error:
             raise OidcError(f"token exchange failed: HTTP {response.status_code}")
         tokens: dict[str, Any] = response.json()
@@ -172,8 +173,17 @@ class OidcClient:
         fresh = time.monotonic() - self._jwks_loaded_at < JWKS_CACHE_S
         if self._jwks is None or force or not fresh:
             metadata = await self.metadata()
-            response = await self._http.get(metadata["jwks_uri"])
-            response.raise_for_status()
-            self._jwks = jwt.PyJWKSet.from_dict(response.json())
+            self._jwks = jwt.PyJWKSet.from_dict((await self._get(metadata["jwks_uri"])).json())
             self._jwks_loaded_at = time.monotonic()
         return self._jwks
+
+    async def _get(self, url: str) -> httpx.Response:
+        """Network errors and error statuses from the provider surface as OidcError, so routes
+        can show a friendly message instead of failing with a 500."""
+        try:
+            response = await self._http.get(url)
+        except httpx.HTTPError as exc:
+            raise OidcError(f"identity provider unreachable: {type(exc).__name__}") from exc
+        if response.is_error:
+            raise OidcError(f"identity provider returned HTTP {response.status_code}")
+        return response

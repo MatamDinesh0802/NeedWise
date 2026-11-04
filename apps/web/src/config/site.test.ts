@@ -3,7 +3,17 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { activeNavItem, findNavItem, navItems, navItemsByGroup, siteConfig } from "./site";
+import { ORG_ROLES } from "@/lib/session";
+
+import {
+  activeNavItem,
+  findNavItem,
+  isNavItemVisible,
+  navItems,
+  navItemsByGroup,
+  siteConfig,
+  visibleNavItems,
+} from "./site";
 
 const appDir = fileURLToPath(new URL("../app", import.meta.url));
 
@@ -29,8 +39,9 @@ describe("navigation config", () => {
     }
   });
 
-  it("puts Admin and Settings in the administration group", () => {
-    expect(navItemsByGroup("administration").map((i) => i.href)).toEqual(["/admin", "/settings"]);
+  it("puts Admin under administration and Settings under account", () => {
+    expect(navItemsByGroup("administration").map((i) => i.href)).toEqual(["/admin"]);
+    expect(navItemsByGroup("account").map((i) => i.href)).toEqual(["/settings"]);
     expect(navItemsByGroup("workspace")).toHaveLength(navItems.length - 2);
   });
 
@@ -57,5 +68,32 @@ describe("activeNavItem", () => {
   it("finds items by exact href", () => {
     expect(findNavItem("/agents")?.title).toBe("AI Agents");
     expect(findNavItem("/agents/hr")).toBeUndefined();
+  });
+});
+
+describe("role-based navigation visibility", () => {
+  const admin = findNavItem("/admin")!;
+
+  it.each([
+    ["owner", true],
+    ["admin", true],
+    ["auditor", true],
+    ["member", false],
+    ["guest", false],
+  ] as const)("shows Admin to %s: %s", (role, visible) => {
+    expect(isNavItemVisible(admin, role)).toBe(visible);
+    expect(visibleNavItems("administration", role).length > 0).toBe(visible);
+  });
+
+  it("hides Admin while loading or signed out", () => {
+    expect(isNavItemVisible(admin, undefined)).toBe(false);
+    expect(isNavItemVisible(admin, null)).toBe(false);
+  });
+
+  it("shows every workspace and account item to every role", () => {
+    for (const role of [...ORG_ROLES, undefined]) {
+      expect(visibleNavItems("workspace", role)).toEqual(navItemsByGroup("workspace"));
+      expect(visibleNavItems("account", role)).toEqual(navItemsByGroup("account"));
+    }
   });
 });

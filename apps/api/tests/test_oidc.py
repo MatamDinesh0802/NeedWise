@@ -71,6 +71,37 @@ def _token(
     return jwt.encode({**base, **claims}, key, algorithm="RS256", headers={"kid": kid})
 
 
+@pytest.mark.parametrize("failure", ["timeout", "http-500"])
+async def test_provider_outages_raise_oidc_error_not_http_errors(failure: str) -> None:
+    def broken(request: httpx.Request) -> httpx.Response:
+        if failure == "timeout":
+            raise httpx.ReadTimeout("slow", request=request)
+        return httpx.Response(500)
+
+    client = OidcClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(broken)),
+        discovery_url="http://keycloak/.well-known/openid-configuration",
+        client_id=CLIENT_ID,
+        client_secret="secret",
+        redirect_uri="http://localhost:8480/api/auth/callback",
+    )
+
+    with pytest.raises(OidcError):
+        await client.begin_login()
+
+
+async def test_token_exchange_timeouts_raise_oidc_error(oidc: OidcClient) -> None:
+    await oidc.metadata()  # discovery succeeded; the token endpoint then times out
+    oidc._http = httpx.AsyncClient(  # pyright: ignore[reportPrivateUsage]
+        transport=httpx.MockTransport(
+            lambda r: (_ for _ in ()).throw(httpx.ReadTimeout("x", request=r))
+        )
+    )
+
+    with pytest.raises(OidcError, match="unreachable"):
+        await oidc.exchange_code("code", "verifier")
+
+
 def test_pkce_challenge_matches_rfc_7636_example() -> None:
     verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
     assert pkce_challenge(verifier) == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"

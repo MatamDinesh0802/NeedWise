@@ -17,7 +17,8 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { activeNavItem, navItemsByGroup, siteConfig, type NavItem } from "@/config/site";
+import { activeNavItem, siteConfig, visibleNavItems, type NavItem } from "@/config/site";
+import { useSession } from "@/hooks/use-session";
 
 function NavMenu({ items, activeHref }: { items: NavItem[]; activeHref?: string }) {
   return (
@@ -44,6 +45,10 @@ function NavMenu({ items, activeHref }: { items: NavItem[]; activeHref?: string 
 export function AppSidebar() {
   const pathname = usePathname();
   const activeHref = activeNavItem(pathname)?.href;
+  const { state } = useSession();
+  const role = state.kind === "signed_in" ? state.me.org_role : undefined;
+  // Hiding Admin for non-admins is cosmetic only: the API enforces every permission.
+  const adminItems = visibleNavItems("administration", role);
 
   return (
     <Sidebar collapsible="icon">
@@ -67,16 +72,26 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
-            <NavMenu items={navItemsByGroup("workspace")} activeHref={activeHref} />
+            <NavMenu items={visibleNavItems("workspace", role)} activeHref={activeHref} />
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupLabel>Administration</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <NavMenu items={navItemsByGroup("administration")} activeHref={activeHref} />
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <div className="mt-auto">
+          {adminItems.length > 0 ? (
+            <SidebarGroup>
+              <SidebarGroupLabel>Administration</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <NavMenu items={adminItems} activeHref={activeHref} />
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ) : null}
+          <SidebarGroup>
+            <SidebarGroupLabel>Account</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <NavMenu items={visibleNavItems("account", role)} activeHref={activeHref} />
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </div>
       </SidebarContent>
 
       <SidebarFooter>
