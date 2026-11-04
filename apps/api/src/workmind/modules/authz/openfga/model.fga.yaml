@@ -178,3 +178,133 @@ tests:
       - user: user:bob
         object: document:salary-bands-excerpt-shared-with-bob
         assertions: { viewer: true }
+
+  # The full grid published in LinkedIn post #2: 6 people x 7 collections, every cell tested.
+  - name: Full who-can-see-what grid for the demo personas
+    check:
+      - user: user:alice
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:alice
+        object: collection:hr-employee-records
+        assertions: { viewer: true }
+      - user: user:alice
+        object: collection:finance-payroll
+        assertions: { viewer: true }
+      - user: user:alice
+        object: collection:finance-reports
+        assertions: { viewer: false }
+      - user: user:alice
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+      - user: user:alice
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:alice
+        object: collection:contractor-onboarding
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:bob
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:finance-reports
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:engineering-docs
+        assertions: { viewer: true }
+      - user: user:bob
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:contractor-onboarding
+        assertions: { viewer: true }
+      - user: user:carol
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:carol
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:carol
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:carol
+        object: collection:finance-reports
+        assertions: { viewer: true }
+      - user: user:carol
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+      - user: user:carol
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:carol
+        object: collection:contractor-onboarding
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:erin
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:finance-reports
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:contractor-onboarding
+        assertions: { viewer: false }
+      - user: user:priya
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:priya
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:priya
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:priya
+        object: collection:finance-reports
+        assertions: { viewer: true }
+      - user: user:priya
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+      - user: user:priya
+        object: collection:leadership-strategy
+        assertions: { viewer: true }
+      - user: user:priya
+        object: collection:contractor-onboarding
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:company-handbook
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:finance-reports
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:contractor-onboarding
+        assertions: { viewer: true }

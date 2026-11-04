@@ -2,9 +2,8 @@
 
 - **Status:** Draft, not posted
 - **Milestone:** Phase 1 (identity, tenancy, permissions)
-- **Images (to capture when Phase 1 is tagged):**
-  1. The authorization matrix test output: "Tests 8/8 passing, Checks 41/41 passing"
-  2. The admin audit log with "Chain intact"
+- **Image:** `assets/post-02-permission-grid.png` (1080×1350). Every cell in it is an assertion in `apps/api/src/workmind/modules/authz/openfga/model.fga.yaml`, so the picture can't drift from the code.
+- **Optional second image:** the admin audit log with "Chain intact" (captured once the admin UI ships).
 - **Post only after** the repo is public.
 
 ---
@@ -29,7 +28,7 @@ Row-Level Security is forced on every company table. If a query forgets the comp
 An IT admin can manage users but cannot read salary files unless someone grants it. An auditor can read the audit log but not the company's documents.
 
 4. Every promise is a test.
-A fictional company, Acme Robotics, runs through 41 permission checks on every change. "The engineer never sees salaries." "The contractor sees exactly one collection."
+The grid in the image (6 people × 7 collections of a fictional company, Acme Robotics) is 42 automated checks, part of 83 that run on every change. "The engineer never sees salaries." "The contractor sees exactly one collection."
 
 5. The audit log can't be quietly edited.
 Each event is hash-chained to the previous one. Change one record and verification points to exactly where.
