@@ -10,7 +10,7 @@ import type { QueryState } from "@/lib/stores/query-cache";
 const MAX_USER_PAGES = 10; // 1,000 people; beyond that names show as "Unknown person"
 
 /** Every person (following the cursor), for turning `user:<id>` into a name. */
-async function fetchAllUsers(): Promise<AdminUser[]> {
+export async function fetchAllUsers(): Promise<AdminUser[]> {
   const users: AdminUser[] = [];
   let cursor: string | null = null;
   for (let page = 0; page < MAX_USER_PAGES; page++) {

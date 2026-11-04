@@ -19,9 +19,13 @@ const nextConfig: NextConfig = {
    * never reaches Next.js. For local `pnpm dev` (port 3400) we proxy it to the API.
    * Production builds get no rewrites: next.config is serialized at build time.
    */
-  // The assistant moved to /chat (Phase 4).
+  // The assistant moved to /chat (Phase 4); "Workflows" became Approvals and Tasks, with
+  // workflow definitions under Admin → Workflows (Phase 8).
   async redirects() {
-    return [{ source: "/assistant", destination: "/chat", permanent: false }];
+    return [
+      { source: "/assistant", destination: "/chat", permanent: false },
+      { source: "/workflows", destination: "/approvals", permanent: false },
+    ];
   },
   async rewrites() {
     if (process.env.NODE_ENV !== "development") return [];

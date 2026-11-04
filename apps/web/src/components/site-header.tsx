@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { UserMenu } from "@/components/user-menu";
+import { NotificationsBell } from "@/components/work/notifications-bell";
 import { activeNavItem, siteConfig } from "@/config/site";
 
 function SectionTitle() {
@@ -30,6 +31,7 @@ export function SiteHeader() {
           {siteConfig.stage}
         </Badge>
         <ThemeToggle />
+        <NotificationsBell />
         <UserMenu />
       </div>
     </header>
