@@ -21,7 +21,7 @@ Sizes are rough estimates in **weeks of focused work**; part-time takes longer. 
 | Phase | Release | Theme | Size | Public milestone |
 |---|---|---|---|---|
 | 0 ✅ | v0.0.x | Foundation and synthetic company | 1–2 wk | Repo public (pre-alpha), architecture post |
-| 1 | v0.1 | Identity, tenancy and permissions | 2 wk | Login + permission model demo |
+| 1 ✅ | v0.1 | Identity, tenancy and permissions | 2 wk | Login + permission model demo |
 | 2 | v0.2 | Knowledge ingestion | 2 wk | 500-document corpus ingested, live status |
 | 3 | v0.3 | Retrieval engine + evaluation harness | 2–3 wk | First published eval numbers |
 | 4 | **v0.4** | **AI Assistant — first usable product** | 2 wk | **Public launch** (HN, Reddit, LinkedIn video) |
@@ -63,7 +63,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - The architecture diagram and the 8 design principles.
 - Ask: *"What would make you trust an AI assistant with your company's documents?"*
 
-### Phase 1 — Identity, tenancy and permissions (v0.1) 🚧 In progress
+### Phase 1 — Identity, tenancy and permissions (v0.1) ✅ Complete
 
 **Goal:** real login, real organizations, and a permission model that everything else builds on.
 
@@ -74,7 +74,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - [ ] Slice 4: web sign-in and user menu
 - [x] Slice 5: OpenFGA model, outbox sync, reconcile, authz matrix tests
 - [x] Slice 6a: admin API (people, departments, groups, audit log) with guard rails and a role × endpoint test matrix
-- [ ] Slice 6b: admin UI and audit log viewer
+- [x] Slice 6b: admin UI (people, departments, groups, audit log with integrity check) and access tokens in Settings
 - [x] Slice 7: personal access tokens (scoped, hashed, expiring), with an end-to-end test of an MCP-style client
 
 **Scope:**

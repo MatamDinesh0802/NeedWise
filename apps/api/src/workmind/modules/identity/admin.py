@@ -170,6 +170,12 @@ async def update_user(
 ) -> tuple[User, bool]:
     """Returns the user and whether they were just disabled (so the caller ends sessions)."""
     user = await get_user(session, user_id)
+    if (
+        changes.get("status") == "active"
+        and user.keycloak_sub is None
+        and user.last_login_at is None
+    ):
+        changes = {**changes, "status": "invited"}  # re-enabled, but has never signed in
     new_role = changes.get("org_role", user.org_role)
     new_status = changes.get("status", user.status)
     role_changed, status_changed = new_role != user.org_role, new_status != user.status
@@ -379,8 +385,19 @@ def _group_member_tuple(member: GroupMember) -> RelationTuple:
     return RelationTuple(member_ref, "member", f"group:{member.group_id}")
 
 
+def _require_local(group: Group) -> None:
+    """Groups synced from an identity provider or a connector are managed by their source."""
+    if group.source != "local":
+        raise conflict(
+            "managed_externally",
+            "This group is managed by its source system",
+            f"Change it in the {group.source} it comes from.",
+        )
+
+
 async def delete_group(session: AsyncSession, ctx: RequestContext, group_id: uuid.UUID) -> None:
     group = await get_group(session, group_id)
+    _require_local(group)
     related = (
         await session.scalars(
             select(GroupMember).where(
@@ -418,6 +435,7 @@ async def add_group_member(
     child_group_id: uuid.UUID | None = None,
 ) -> GroupMember:
     group = await get_group(session, group_id)
+    _require_local(group)
     if user_id is not None:
         user = await get_user(session, user_id)
         existing = and_(GroupMember.group_id == group.id, GroupMember.member_user_id == user.id)
@@ -462,6 +480,7 @@ async def remove_group_member(
     user_id: uuid.UUID | None = None,
     child_group_id: uuid.UUID | None = None,
 ) -> None:
+    _require_local(await get_group(session, group_id))
     condition = (
         GroupMember.member_user_id == user_id
         if user_id

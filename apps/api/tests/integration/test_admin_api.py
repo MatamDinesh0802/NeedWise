@@ -17,7 +17,7 @@ from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.authz.models import AuthzOutbox
 from workmind.modules.identity import admin
-from workmind.modules.identity.models import Department
+from workmind.modules.identity.models import Department, Group
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL to run")
 
@@ -235,3 +235,48 @@ def test_event_loop_is_not_shared() -> None:
     # TestClient runs the app on its own loop; this guards against accidental reuse.
     with pytest.raises(RuntimeError):
         asyncio.get_running_loop()
+
+
+async def test_titles_can_be_cleared_but_required_fields_cannot(
+    api: TestClient, acme: Acme
+) -> None:
+    url = f"/api/v1/admin/users/{acme.users['bob']}"
+    cleared = api.patch(url, json={"title": None}, headers=acme.as_("erin", write=True))
+    ignored = api.patch(url, json={"display_name": None}, headers=acme.as_("erin", write=True))
+
+    assert cleared.json()["title"] is None
+    assert ignored.json()["display_name"] == "Bob Okafor"
+
+
+async def test_re_enabling_someone_who_never_signed_in_restores_invited(
+    api: TestClient, acme: Acme
+) -> None:
+    created = api.post(
+        "/api/v1/admin/users",
+        json={"email": "new.hire@acme.test", "display_name": "New Hire"},
+        headers=acme.as_("erin", write=True),
+    ).json()
+    url = f"/api/v1/admin/users/{created['id']}"
+    api.patch(url, json={"status": "disabled"}, headers=acme.as_("erin", write=True))
+
+    enabled = api.patch(url, json={"status": "active"}, headers=acme.as_("erin", write=True))
+
+    assert enabled.json()["status"] == "invited"
+
+
+async def test_groups_from_an_identity_provider_are_read_only(
+    api: TestClient, acme: Acme, owner_sessions: SessionFactory
+) -> None:
+    async with tenant_transaction(owner_sessions, acme.tenant_id) as session:
+        group = (await session.scalars(select(Group).where(Group.slug == "leadership"))).one()
+        group.source = "idp"
+        group_id = group.id
+
+    add = api.put(
+        f"/api/v1/admin/groups/{group_id}/members/users/{acme.users['bob']}",
+        headers=acme.as_("erin", write=True),
+    )
+    delete = api.delete(f"/api/v1/admin/groups/{group_id}", headers=acme.as_("erin", write=True))
+
+    assert (add.status_code, add.json()["code"]) == (409, "managed_externally")
+    assert (delete.status_code, delete.json()["code"]) == (409, "managed_externally")

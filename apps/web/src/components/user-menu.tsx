@@ -2,7 +2,7 @@
 
 import { LoaderCircle, LogIn, LogOut } from "lucide-react";
 import { usePathname } from "next/navigation";
-import type { MouseEvent } from "react";
+import { Suspense, type MouseEvent } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -26,25 +26,34 @@ import {
   type Me,
 } from "@/lib/session";
 
-function SignInLink({ title }: { title?: string }) {
-  const pathname = usePathname();
-
+function SignInAnchor({ href, title }: { href: string; title?: string }) {
   // Sign-in is a full navigation through the API to the identity provider.
-  // The href uses the path; on click we add the live query string as well.
-  function withCurrentQuery(event: MouseEvent<HTMLAnchorElement>) {
+  // On click we use the live location, so return_to always matches what's on screen.
+  function withCurrentLocation(event: MouseEvent<HTMLAnchorElement>) {
     event.currentTarget.href = loginHref(window.location.pathname, window.location.search);
   }
 
   return (
-    <a
-      href={loginHref(pathname)}
-      onClick={withCurrentQuery}
-      title={title}
-      className={buttonVariants({ size: "sm" })}
-    >
+    <a href={href} onClick={withCurrentLocation} title={title} className={buttonVariants({ size: "sm" })}>
       <LogIn data-icon="inline-start" />
       Sign in
     </a>
+  );
+}
+
+function PathAwareSignInAnchor({ title }: { title?: string }) {
+  return <SignInAnchor href={loginHref(usePathname())} title={title} />;
+}
+
+/**
+ * The pathname is runtime data on dynamic routes, so it sits behind Suspense;
+ * the fallback (prerendered shell) links to "/" until the real path streams in.
+ */
+export function SignInLink({ title }: { title?: string }) {
+  return (
+    <Suspense fallback={<SignInAnchor href={loginHref("/")} title={title} />}>
+      <PathAwareSignInAnchor title={title} />
+    </Suspense>
   );
 }
 

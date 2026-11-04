@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Suspense } from "react";
 
 import { BrandMark } from "@/components/brand-mark";
 import {
@@ -42,9 +43,20 @@ function NavMenu({ items, activeHref }: { items: NavItem[]; activeHref?: string 
   );
 }
 
+function PathAwareSidebar() {
+  return <SidebarView activeHref={activeNavItem(usePathname())?.href} />;
+}
+
+/** usePathname is runtime data on dynamic routes; the prerendered shell has no active item. */
 export function AppSidebar() {
-  const pathname = usePathname();
-  const activeHref = activeNavItem(pathname)?.href;
+  return (
+    <Suspense fallback={<SidebarView activeHref={undefined} />}>
+      <PathAwareSidebar />
+    </Suspense>
+  );
+}
+
+function SidebarView({ activeHref }: { activeHref: string | undefined }) {
   const { state } = useSession();
   const role = state.kind === "signed_in" ? state.me.org_role : undefined;
   // Hiding Admin for non-admins is cosmetic only: the API enforces every permission.

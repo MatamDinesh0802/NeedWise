@@ -250,15 +250,19 @@ async def create_user(ctx: AdminContext, request: Request, body: UserCreate) -> 
         return (await _users_out(session, [user]))[0]
 
 
+def _user_changes(body: UserUpdate) -> dict[str, Any]:
+    """Fields the client sent. Only `title` may be cleared with null."""
+    sent = body.model_dump(exclude_unset=True)
+    return {k: v for k, v in sent.items() if v is not None or k == "title"}
+
+
 @router.patch("/users/{user_id}")
 async def update_user(
     ctx: AdminContext, request: Request, user_id: uuid.UUID, body: UserUpdate
 ) -> UserOut:
     resources = resources_of(request)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
-        user, disabled = await admin.update_user(
-            session, ctx, user_id, body.model_dump(exclude_unset=True, exclude_none=True)
-        )
+        user, disabled = await admin.update_user(session, ctx, user_id, _user_changes(body))
         out = (await _users_out(session, [user]))[0]
         subject = user.keycloak_sub
     if disabled and subject:

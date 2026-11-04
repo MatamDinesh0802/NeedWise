@@ -3,7 +3,7 @@
 - **Status:** Draft, not posted
 - **Milestone:** Phase 1 (identity, tenancy, permissions)
 - **Image:** `assets/post-02-permission-grid.png` (1080×1350). Every cell in it is an assertion in `apps/api/src/workmind/modules/authz/openfga/model.fga.yaml`, so the picture can't drift from the code.
-- **Optional second image:** the admin audit log with "Chain intact" (captured once the admin UI ships).
+- **Optional second image:** `assets/post-02-audit-chain.png`, the real admin audit log with "Chain intact, 33 events checked".
 - **Post only after** the repo is public.
 
 ---

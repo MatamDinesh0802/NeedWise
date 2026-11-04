@@ -6,8 +6,8 @@ Employees ask questions in plain language and get answers grounded in company kn
 citations, drawn only from sources they are allowed to see. Specialized agents (HR, Finance,
 Engineering…) handle department work. Actions that leave the system need human approval.
 
-> **Status: pre-alpha, built in public.** Phase 0 (foundation) is complete and Phase 1
-> (identity, tenancy, permissions) is nearly done. Nothing here is ready for real company data
+> **Status: pre-alpha, built in public.** Phases 0 (foundation) and 1 (identity, tenancy,
+> permissions) are complete: release `v0.1.0`. Nothing here is ready for real company data
 > yet. Follow along in the [roadmap](docs/ROADMAP.md).
 
 ## What works today
@@ -21,7 +21,7 @@ Engineering…) handle department work. Actions that leave the system need human
 - **Administration**: people, roles, departments, nested groups, and a hash-chained,
   tamper-evident audit log.
 - **Personal access tokens** for MCP clients and scripts: scoped, hashed, expiring.
-- About 120 backend and 130+ web tests, including end-to-end sign-ins through the real
+- About 125 backend and 250+ web tests, including end-to-end sign-ins through the real
   Keycloak login pages.
 
 ## What makes it different
