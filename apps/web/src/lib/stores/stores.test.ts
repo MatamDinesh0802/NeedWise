@@ -124,4 +124,15 @@ describe("paged list", () => {
     list.prepend({ id: 2, v: "c" });
     expect(list.getSnapshot()).toMatchObject({ items: [{ id: 2, v: "c" }, { id: 1, v: "b" }] });
   });
+
+  it("refreshes the first page in the background without going back to loading", async () => {
+    let round = 0;
+    const list = createPagedList(async () => ({ items: round++ === 0 ? [1, 2] : [0, 1, 2], next: null }));
+    const seen: string[] = [];
+    list.subscribe(() => seen.push(list.getSnapshot().status));
+    await vi.waitFor(() => expect(list.getSnapshot().status).toBe("ready"));
+    await list.refresh();
+    expect(list.getSnapshot()).toMatchObject({ status: "ready", items: [0, 1, 2] });
+    expect(seen).not.toContain("loading");
+  });
 });

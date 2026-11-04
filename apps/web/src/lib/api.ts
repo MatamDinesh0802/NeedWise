@@ -142,9 +142,10 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
   return response;
 }
 
-/** `apiFetch` + JSON decoding. Returns `undefined` for 204 No Content. */
+/** `apiFetch` + JSON decoding. Returns `undefined` for empty bodies (204, or 202 from /cancel). */
 export async function apiJson<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
   const response = await apiFetch(path, init);
   if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }

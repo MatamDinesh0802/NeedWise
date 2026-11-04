@@ -186,3 +186,48 @@ describe("safeRedirect", () => {
     expect(safeRedirect(input)).toBe(expected);
   });
 });
+
+function memoryStorage() {
+  const data = new Map<string, string>();
+  return {
+    data,
+    getItem: (k: string) => data.get(k) ?? null,
+    setItem: (k: string, v: string) => void data.set(k, v),
+    removeItem: (k: string) => void data.delete(k),
+  };
+}
+
+describe("switchAccount (demo view as)", () => {
+  it("ends the Keycloak session first and remembers whom to sign in as next", async () => {
+    // With a live SSO session, prompt=login would re-authenticate the *current* user.
+    const keycloakLogout = "http://localhost:8480/auth/realms/workmind/protocol/openid-connect/logout?id_token_hint=x";
+    const postLogout = vi.fn(async () => ({ redirect_url: keycloakLogout }));
+    const navigate = vi.fn();
+    const storage = memoryStorage();
+    const store = createSessionStore({ fetchMe: async () => alice, postLogout, navigate, storage: () => storage });
+    track(store);
+    await vi.waitFor(() => expect(store.getSnapshot().kind).toBe("signed_in"));
+
+    await store.switchAccount("bob@acme.test");
+    expect(postLogout).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith(keycloakLogout);
+    expect(JSON.parse(storage.data.get("workmind:view-as") ?? "{}")).toMatchObject({ email: "bob@acme.test" });
+    expect(store.getSnapshot()).toEqual({ kind: "signed_out" });
+  });
+
+  it("goes straight to the hinted sign-in when there is no session to end", async () => {
+    const navigate = vi.fn();
+    const storage = memoryStorage();
+    const store = createSessionStore({
+      fetchMe: async () => alice,
+      postLogout: async () => Promise.reject(new ApiError({ status: 401, title: "Not signed in", code: "unauthenticated" })),
+      navigate,
+      storage: () => storage,
+    });
+    track(store);
+    await vi.waitFor(() => expect(store.getSnapshot().kind).toBe("signed_in"));
+    await store.switchAccount("mallory@acme.test");
+    expect(navigate).toHaveBeenCalledWith("/api/auth/login?login_hint=mallory%40acme.test&return_to=%2Fchat");
+    expect(storage.data.size).toBe(0);
+  });
+});

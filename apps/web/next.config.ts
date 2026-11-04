@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
    * never reaches Next.js. For local `pnpm dev` (port 3400) we proxy it to the API.
    * Production builds get no rewrites: next.config is serialized at build time.
    */
+  // The assistant moved to /chat (Phase 4).
+  async redirects() {
+    return [{ source: "/assistant", destination: "/chat", permanent: false }];
+  },
   async rewrites() {
     if (process.env.NODE_ENV !== "development") return [];
     const apiInternalUrl = process.env.API_INTERNAL_URL ?? "http://localhost:8400";

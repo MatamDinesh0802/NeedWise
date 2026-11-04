@@ -271,6 +271,7 @@ services:
     image: workmind-web:dev
     environment:
       API_INTERNAL_URL: http://api:8000
+      NEXT_PUBLIC_DEMO: ${NEXT_PUBLIC_DEMO:-1}   # "View as" demo switcher; read at runtime via /runtime-config
     depends_on:
       api: { condition: service_started }
     ports: ["127.0.0.1:${WEB_PORT:-3400}:3000"]

@@ -10,5 +10,5 @@ const getServerSnapshot = (): SessionState => LOADING_STATE;
 export function useSession() {
   const store = getSessionStore();
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, getServerSnapshot);
-  return { state, signOut: store.signOut, reload: store.load };
+  return { state, signOut: store.signOut, switchAccount: store.switchAccount, reload: store.load };
 }

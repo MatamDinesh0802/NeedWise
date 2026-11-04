@@ -116,15 +116,9 @@ describe("sharing payload", () => {
     expect(buildSharingPayload(grantsToEntries(grants))).toEqual({ viewers: [], editors: [`user:${ALICE}`] });
   });
 
-  it("on create, lists editors as viewers only when nobody else can view (API rule)", () => {
-    const editorsOnly = [{ principal: `group:${HR_RECORDS}`, level: "edit" as const }];
-    expect(buildSharingPayload(editorsOnly, { editorsAsViewersIfNone: true })).toEqual({
-      viewers: [`group:${HR_RECORDS}`],
-      editors: [`group:${HR_RECORDS}`],
-    });
-    const mixed = [...editorsOnly, { principal: `user:${BOB}`, level: "view" as const }];
-    expect(buildSharingPayload(mixed, { editorsAsViewersIfNone: true })).toEqual({
-      viewers: [`user:${BOB}`],
+  it("an editors-only restricted collection is sent as-is (the API accepts it)", () => {
+    expect(buildSharingPayload([{ principal: `group:${HR_RECORDS}`, level: "edit" }])).toEqual({
+      viewers: [],
       editors: [`group:${HR_RECORDS}`],
     });
   });

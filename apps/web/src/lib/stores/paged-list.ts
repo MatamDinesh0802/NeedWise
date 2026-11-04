@@ -25,6 +25,8 @@ export interface PagedList<T> {
   subscribe: (listener: () => void) => () => void;
   loadMore: () => Promise<void>;
   reload: () => Promise<void>;
+  /** Re-fetch the first page in the background, keeping the current items visible. */
+  refresh: () => Promise<void>;
   /** Replace one item in place (e.g. after a PATCH returned the updated row). */
   updateItem: (match: (item: T) => boolean, next: T) => void;
   /** Add an item at the top (e.g. after a create). */
@@ -74,6 +76,19 @@ export function createPagedList<T, C>(fetchPage: (cursor: C | null) => Promise<P
     }
   }
 
+  async function refresh(): Promise<void> {
+    if (state.status !== "ready") return reload();
+    const current = ++generation;
+    try {
+      const page = await fetchPage(null);
+      if (current !== generation || state.status !== "ready") return;
+      cursor = page.next;
+      set({ ...state, items: page.items, hasMore: page.next !== null, loadingMore: false, moreError: null });
+    } catch {
+      // Keep showing what we have; the next refresh will try again.
+    }
+  }
+
   return {
     getSnapshot: () => state,
     subscribe(listener) {
@@ -83,6 +98,7 @@ export function createPagedList<T, C>(fetchPage: (cursor: C | null) => Promise<P
     },
     loadMore,
     reload,
+    refresh,
     updateItem(match, next) {
       if (state.status !== "ready") return;
       set({ ...state, items: state.items.map((item) => (match(item) ? next : item)) });

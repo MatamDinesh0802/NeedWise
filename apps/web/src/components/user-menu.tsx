@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, LogIn, LogOut } from "lucide-react";
+import { LoaderCircle, LogIn, LogOut, Users } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Suspense, type MouseEvent } from "react";
 
@@ -14,10 +14,15 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useApiQuery } from "@/hooks/use-api-query";
 import { useSession } from "@/hooks/use-session";
+import { DEMO_ACCOUNTS, fetchRuntimeConfig } from "@/lib/demo";
 import {
   DEPARTMENT_ROLE_LABELS,
   initials,
@@ -105,7 +110,9 @@ function MenuDetails({ me }: { me: Me }) {
 
 /** Header sign-in control: skeleton while loading, a link when signed out, a menu when signed in. */
 export function UserMenu() {
-  const { state, signOut } = useSession();
+  const { state, signOut, switchAccount } = useSession();
+  const config = useApiQuery("web/runtime-config", fetchRuntimeConfig);
+  const demo = config.state.status === "success" && config.state.data.demo;
 
   if (state.kind === "loading") {
     return (
@@ -135,6 +142,40 @@ export function UserMenu() {
       <DropdownMenuContent align="end" className="w-72">
         <MenuDetails me={me} />
         <DropdownMenuSeparator />
+        {demo ? (
+          <>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Users />
+                View as…
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-64">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Demo accounts · password workmind-demo</DropdownMenuLabel>
+                  {DEMO_ACCOUNTS.map((account) => {
+                    const current = account.email === me.email;
+                    return (
+                      <DropdownMenuItem
+                        key={account.email}
+                        disabled={current || signingOut}
+                        onClick={() => void switchAccount(account.email)}
+                      >
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate">
+                            {account.name}
+                            {current ? " (you)" : ""}
+                          </span>
+                          <span className="truncate text-xs text-muted-foreground">{account.role}</span>
+                        </span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         {signOutError ? (
           <p role="alert" className="px-1.5 py-1 text-xs text-destructive">
             Sign out failed: {signOutError}

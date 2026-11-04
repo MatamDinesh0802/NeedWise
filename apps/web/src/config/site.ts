@@ -57,7 +57,7 @@ export const navItems: readonly NavItem[] = [
   },
   {
     title: "Assistant",
-    href: "/assistant",
+    href: "/chat",
     icon: MessageSquareText,
     description: "Ask questions and get cited answers from sources you are allowed to see.",
     phase: 4,

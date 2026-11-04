@@ -3,7 +3,7 @@
 import { ArrowLeft, Download, Ellipsis, Eye, FileText, PencilLine, RotateCw, SearchX, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { SignedInGate } from "@/components/auth/signed-in-gate";
 import { ConfirmDialog } from "@/components/data/confirm-dialog";
@@ -135,6 +135,7 @@ function Documents({ collection }: { collection: CollectionDetail }) {
   const live = useLiveRefresh(key, documents);
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeDocument | null>(null);
   const [rowError, setRowError] = useState<unknown>(null);
+  const headingId = useId();
 
   async function reindex(doc: KnowledgeDocument) {
     setRowError(null);
@@ -147,9 +148,9 @@ function Documents({ collection }: { collection: CollectionDetail }) {
   }
 
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="documents-heading">
+    <section className="flex flex-col gap-3" aria-labelledby={headingId}>
       <div className="flex flex-wrap items-center gap-3">
-        <h3 id="documents-heading" className="font-medium">
+        <h3 id={headingId} className="font-medium">
           Documents {documents ? <span className="text-muted-foreground">({documents.length})</span> : null}
         </h3>
         <LiveIndicator live={live.live} stopped={live.stopped} onResume={live.resume} />

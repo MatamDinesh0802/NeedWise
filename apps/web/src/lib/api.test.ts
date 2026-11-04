@@ -136,6 +136,11 @@ describe("apiFetch", () => {
     expect(error).toMatchObject({ status: 0, code: "network_error", detail: "Failed to fetch" });
   });
 
+  it("returns undefined for an empty 202 Accepted (e.g. cancelling a run)", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 202 }));
+    await expect(apiJson("/api/v1/runs/r1/cancel", { method: "POST" })).resolves.toBeUndefined();
+  });
+
   it("returns undefined for 204 No Content", async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
     await expect(apiJson("/api/v1/thing", { method: "DELETE" })).resolves.toBeUndefined();

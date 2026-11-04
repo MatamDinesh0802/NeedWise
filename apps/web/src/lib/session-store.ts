@@ -5,6 +5,7 @@
  */
 
 import { ApiError, apiJson } from "@/lib/api";
+import { rememberViewAs, viewAsLoginUrl, type KeyValueStorage } from "@/lib/demo";
 import { parseMe, type Me } from "@/lib/session";
 
 export type SessionState =
@@ -21,12 +22,18 @@ export interface SessionStore {
   load: () => Promise<void>;
   /** End the WorkMind session, then navigate to the identity provider's logout. */
   signOut: () => Promise<void>;
+  /**
+   * Demo "view as": end this session, then sign in again with `email` pre-filled.
+   * The API asks Keycloak for prompt=login, so the other account's password is required.
+   */
+  switchAccount: (email: string) => Promise<void>;
 }
 
 export interface SessionStoreDeps {
   fetchMe?: () => Promise<unknown>;
   postLogout?: () => Promise<unknown>;
   navigate?: (url: string) => void;
+  storage?: () => KeyValueStorage | null;
 }
 
 /** Stable object for SSR and the first client render (useSyncExternalStore needs a cached value). */
@@ -53,6 +60,7 @@ export function createSessionStore({
   fetchMe = () => apiJson<unknown>("/api/v1/me"),
   postLogout = () => apiJson<unknown>("/api/auth/logout", { method: "POST" }),
   navigate = (url) => window.location.assign(url),
+  storage = () => (typeof window === "undefined" ? null : window.sessionStorage),
 }: SessionStoreDeps = {}): SessionStore {
   let state: SessionState = LOADING_STATE;
   let started = false;
@@ -99,6 +107,27 @@ export function createSessionStore({
     }
   }
 
+  async function switchAccount(email: string): Promise<void> {
+    if (state.kind === "signed_in") set({ ...state, signingOut: true, signOutError: null });
+    let endSession = "/";
+    try {
+      const body = await postLogout();
+      endSession = safeRedirect((body as { redirect_url?: unknown } | undefined)?.redirect_url);
+    } catch {
+      // Already signed out: nothing to end; go straight to the hinted sign-in.
+    }
+    generation++;
+    set({ kind: "signed_out" });
+    const store = storage();
+    if (endSession !== "/" && store) {
+      // End the identity provider session first; ViewAsResume continues on "/".
+      rememberViewAs(store, email);
+      navigate(endSession);
+    } else {
+      navigate(viewAsLoginUrl(email));
+    }
+  }
+
   return {
     getSnapshot: () => state,
     subscribe(listener) {
@@ -108,6 +137,7 @@ export function createSessionStore({
     },
     load,
     signOut,
+    switchAccount,
   };
 }
 

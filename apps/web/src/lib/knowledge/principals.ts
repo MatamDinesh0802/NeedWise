@@ -114,15 +114,8 @@ export function grantsToEntries(grants: readonly Grant[]): ShareEntry[] {
  * Entries → `{viewers, editors}` for POST/PUT: view-level entries are viewers, edit-level
  * entries are editors (editors can view anyway). This round-trips: saving unchanged sharing
  * sends back exactly the grants the API returned. Deduplicated, sorted, invalid dropped.
- *
- * `editorsAsViewersIfNone`: POST /admin/collections rejects a restricted collection without
- * explicit viewers even when it has editors (PUT accepts editors alone), so on create we list
- * the editors as viewers too when nobody else can view.
  */
-export function buildSharingPayload(
-  entries: readonly ShareEntry[],
-  { editorsAsViewersIfNone = false }: { editorsAsViewersIfNone?: boolean } = {},
-): { viewers: string[]; editors: string[] } {
+export function buildSharingPayload(entries: readonly ShareEntry[]): { viewers: string[]; editors: string[] } {
   const viewers = new Set<string>();
   const editors = new Set<string>();
   for (const entry of entries) {
@@ -130,7 +123,6 @@ export function buildSharingPayload(
     (entry.level === "edit" ? editors : viewers).add(entry.principal);
   }
   for (const editor of editors) viewers.delete(editor);
-  if (editorsAsViewersIfNone && viewers.size === 0) for (const editor of editors) viewers.add(editor);
   return { viewers: [...viewers].sort(), editors: [...editors].sort() };
 }
 

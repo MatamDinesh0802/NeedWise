@@ -3,7 +3,7 @@
 import { ArrowLeft, Download, FileQuestion, Layers, RotateCw, Search } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { SignedInGate } from "@/components/auth/signed-in-gate";
 import { EmptyState, ErrorAlert, TableSkeleton } from "@/components/data/states";
@@ -221,12 +221,13 @@ function ChunkViewer({ doc }: { doc: DocumentDetail }) {
     [chunks, q],
   );
   const totalTokens = chunks.reduce((sum, c) => sum + c.token_count, 0);
+  const headingId = useId();
 
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="chunks-heading">
+    <section className="flex flex-col gap-3" aria-labelledby={headingId}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 id="chunks-heading" className="flex items-center gap-2 font-medium">
+          <h3 id={headingId} className="flex items-center gap-2 font-medium">
             <Layers className="size-4" aria-hidden="true" />
             What the assistant reads
           </h3>
@@ -280,7 +281,7 @@ function ChunkViewer({ doc }: { doc: DocumentDetail }) {
 function ChunkCard({ chunk }: { chunk: Chunk }) {
   const trail = headingTrail(chunk.heading_path);
   return (
-    <li id={`chunk-${chunk.ordinal}`} className="rounded-xl border bg-card">
+    <li className="rounded-xl border bg-card">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-muted/30 px-4 py-2 text-xs">
         <span className="font-mono font-medium text-muted-foreground">#{chunk.ordinal}</span>
         <span className="min-w-0 flex-1 font-medium text-foreground" title={trail ?? undefined}>

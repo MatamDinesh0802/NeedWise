@@ -5,6 +5,8 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AuthErrorAlert } from "@/components/auth-error-alert";
 import { SiteHeader } from "@/components/site-header";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/toaster";
+import { ViewAsResume } from "@/components/view-as-resume";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { siteConfig } from "@/config/site";
@@ -49,6 +51,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 </div>
               </SidebarInset>
             </SidebarProvider>
+            <Toaster />
+            <ViewAsResume />
           </TooltipProvider>
         </ThemeProvider>
       </body>

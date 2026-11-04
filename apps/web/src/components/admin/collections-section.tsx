@@ -253,7 +253,7 @@ function CreateCollectionForm({ me, dir, onDone }: { me: Me; dir: DirectoryData;
         department_id: scope === "department" ? departmentId : null,
         default_trust: trust,
         default_sensitivity: sensitivity,
-        ...buildSharingPayload(entries, { editorsAsViewersIfNone: scope === "restricted" }),
+        ...buildSharingPayload(entries),
       });
       await refreshCollections();
       onDone();
