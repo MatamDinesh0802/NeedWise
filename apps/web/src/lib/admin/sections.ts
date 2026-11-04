@@ -6,7 +6,15 @@
 
 import type { OrgRole } from "@/lib/session";
 
-export type AdminSectionKey = "people" | "departments" | "groups" | "collections" | "agents" | "audit";
+export type AdminSectionKey =
+  | "people"
+  | "departments"
+  | "groups"
+  | "collections"
+  | "sources"
+  | "agents"
+  | "workflows"
+  | "audit";
 
 export interface AdminSection {
   key: AdminSectionKey;
@@ -48,10 +56,24 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     roles: MANAGERS,
   },
   {
+    key: "sources",
+    title: "Sources",
+    href: "/admin/sources",
+    description: "Websites, GitHub, Slack and Google Drive kept in sync with a collection, and its access rules.",
+    roles: MANAGERS,
+  },
+  {
     key: "agents",
     title: "Agents",
     href: "/admin/agents",
     description: "Department agents the assistant can call, the collections they search and when to use them.",
+    roles: MANAGERS,
+  },
+  {
+    key: "workflows",
+    title: "Workflows",
+    href: "/admin/workflows",
+    description: "Scheduled and manual automations. Steps that change something wait for approval.",
     roles: MANAGERS,
   },
   {
