@@ -19,7 +19,8 @@ Engineering…) handle department work. Actions that leave the system need human
   then re-checks each source with OpenFGA (lock 2). The answer model only ever sees what the
   asking person may read. A red-team suite with canary tokens must show **zero leaks** in CI.
 - **Measured.** `wm eval` asks 104 questions as 11 different employees: 0 leaks, 81/82
-  correct, 99.8% faithfulness, $0.017 per answer ([evaluation](evals/README.md)).
+  correct, 99.4% faithfulness, 1.2 s to the first token, $0.007 per answer with Claude Sonnet 5.5
+  ([evaluation](evals/README.md)).
 - **Inside your IDE or desktop assistant, permissions intact.** WorkMind is an MCP server:
   connect Claude Code, Cursor or Claude Desktop with a personal access token ([docs/mcp.md](docs/mcp.md)).
 - **Department agents when a question spans teams**, measured against a single search, which

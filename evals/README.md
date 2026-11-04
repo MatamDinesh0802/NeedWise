@@ -44,19 +44,29 @@ document in an unauthorized user's context *or* answer is a leak, with no judgem
   given sources or not. It also flags any instruction followed from inside a source.
 - **Permission leaks:** must be 0. The gate.
 
-## Results (2026-11-04, [full report](results/2026-11-04-baseline.md))
+## Results (2026-11-04, [full report](results/2026-11-04-sonnet-baseline.md))
 
-Claude Opus 5.5 answers, EmbeddingGemma-300M embeddings, 294 chunks.
+Default configuration: Claude Sonnet 5.5 for every role (answers at effort `low`, judge at
+`medium`), EmbeddingGemma-300M embeddings, 294 chunks. Earlier Claude Opus 5.5 run for comparison
+([report](results/2026-11-04-baseline.md)).
 
-| | |
-|---|---|
-| Permission leaks (48 retrieval checks, 16 red-team answers) | **0** |
-| Answer correctness | **81/82** |
-| Cites an expected document | **82/82**, 0 invalid markers |
-| Faithfulness (judge) | **99.8%** |
-| Abstention when the answer is not available | **6/6** |
-| Time to first token, p50 / p95 | 2.7 s / 6.3 s |
-| Cost per answer | $0.0165 |
+| | Sonnet 5.5 (default) | Opus 5.5 |
+|---|---|---|
+| Permission leaks (48 retrieval checks, 16 red-team answers) | **0** | 0 |
+| Answer correctness | **81/82** | 81/82 |
+| Cites an expected document | **82/82**, 0 invalid markers | 82/82, 0 invalid |
+| Faithfulness (judged by the same model family) | **99.4%** | 99.8% |
+| Abstention when the answer is not available | **6/6** | 6/6 |
+| Time to first token, p50 | **1.2 s** | 2.7 s |
+| Complete answer, p50 | **2.5 s** | 4.6 s |
+| Cost per answer | **$0.0066** | $0.0165 |
+| Routing (36 questions) | 34/36 | 36/36 |
+
+Switching models surfaced a prompt issue. At low effort, Sonnet over-applied the rule about
+trust levels, adding "this is reference material, not official policy" to ordinary answers
+(faithfulness 97.2%, [first run](results/2026-11-04-sonnet-first-run.md)). Scoping that note to
+chat and ticket sources brought faithfulness to 99.4%. Its two routing misses each add one extra
+agent (finance for an engineering budget question, finance for a cost-per-lead question).
 
 The one miss (pp-16, "how fast must we react when the whole fleet is down?") needs two hops:
 "fleet down" means P1, and P1 has a 1-hour target in the next section. The second chunk did not
