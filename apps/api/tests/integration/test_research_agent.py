@@ -134,6 +134,7 @@ async def test_an_injected_instruction_in_a_tool_result_cannot_cause_a_side_effe
         context(tenant.id),
         "How many AMR-200 robots do we have in stock?",
         organization="Acme",
+        propose_actions=False,  # proposals are covered in test_approvals.py
     )
 
     stock, blocked = model.results

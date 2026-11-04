@@ -17,9 +17,9 @@ def test_the_acme_company_file_is_valid() -> None:
     spec = load_company(ACME)
 
     assert spec.company.slug == "acme"
-    assert {p.email for p in spec.demo_people} == {
-        f"{name}@acme.test" for name in ("alice", "bob", "carol", "dan", "erin", "mallory")
-    }
+    people = ("alice", "bob", "carol", "dan", "erin", "mallory")
+    leaders = ("priya.raman", "hannah.schmidt", "olivia.grant")  # CEO, CFO, Head of Operations
+    assert {p.email for p in spec.demo_people} == {f"{name}@acme.test" for name in people + leaders}
 
 
 def test_reports_every_broken_reference_at_once() -> None:

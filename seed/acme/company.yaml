@@ -47,13 +47,13 @@ people:
   - { email: mallory@acme.test, name: Mallory Quinn,   title: External Contractor,                                            org_role: guest,  demo: true, red_team: true }
 
   # --- Other employees: they appear in documents, meetings and tasks -------------------
-  - { email: priya.raman@acme.test,   name: Priya Raman,    title: Chief Executive Officer,  department: management,  dept_role: manager, org_role: owner,  groups: [leadership] }
+  - { email: priya.raman@acme.test,   name: Priya Raman,    title: Chief Executive Officer,  department: management,  dept_role: manager, org_role: owner,  groups: [leadership], demo: true }
   - { email: marcus.bell@acme.test,   name: Marcus Bell,    title: Chief Technology Officer, department: engineering, dept_role: manager, org_role: member, groups: [leadership] }
-  - { email: hannah.schmidt@acme.test, name: Hannah Schmidt, title: Chief Financial Officer, department: finance,     dept_role: manager, org_role: member, groups: [leadership, finance-leads] }
+  - { email: hannah.schmidt@acme.test, name: Hannah Schmidt, title: Chief Financial Officer, department: finance,     dept_role: manager, org_role: member, groups: [leadership, finance-leads], demo: true }
   - { email: diego.alvarez@acme.test, name: Diego Alvarez,  title: VP Sales,                 department: sales,       dept_role: manager, org_role: member, groups: [leadership] }
   - { email: grace.liu@acme.test,     name: Grace Liu,      title: Head of Marketing,        department: marketing,   dept_role: manager, org_role: member }
   - { email: samuel.mensah@acme.test, name: Samuel Mensah,  title: Support Lead,             department: support,     dept_role: manager, org_role: member }
-  - { email: olivia.grant@acme.test,  name: Olivia Grant,   title: Head of Operations,       department: operations,  dept_role: manager, org_role: member, groups: [leadership] }
+  - { email: olivia.grant@acme.test,  name: Olivia Grant,   title: Head of Operations,       department: operations,  dept_role: manager, org_role: member, groups: [leadership], demo: true }
   - { email: tom.becker@acme.test,    name: Tom Becker,     title: HR Generalist,            department: hr,          dept_role: member,  org_role: member, groups: [hr-records] }
   - { email: wei.zhang@acme.test,     name: Wei Zhang,      title: Staff Engineer,           department: engineering, dept_role: member,  org_role: member }
   - { email: fatima.hassan@acme.test, name: Fatima Hassan,  title: Platform Engineer,        department: engineering, dept_role: member,  org_role: member }

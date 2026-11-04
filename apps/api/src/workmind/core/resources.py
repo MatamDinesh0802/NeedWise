@@ -24,8 +24,10 @@ from workmind.modules.retrieval.service import Retriever
 from workmind.modules.tools.builtin import draft_email_tool, search_knowledge_tool, web_search_tool
 from workmind.modules.tools.mcp_client import RemoteServer, RemoteServerConfig, import_tools
 from workmind.modules.tools.registry import ToolRegistry
+from workmind.modules.work.tools import create_task_tool, send_email_tool
+from workmind.providers.email import SmtpMailer
 from workmind.providers.embeddings import EmbeddingProvider
-from workmind.providers.factory import create_embeddings, create_llm, create_local_llm
+from workmind.providers.factory import create_embeddings, create_llm, create_local_llm, secret
 from workmind.providers.llm import LLMProvider
 
 log = structlog.get_logger("workmind.resources")
@@ -81,6 +83,20 @@ class Resources:
         tools = ToolRegistry()
         tools.register(search_knowledge_tool(retriever))
         tools.register(draft_email_tool())
+        mailer = (
+            SmtpMailer(
+                settings.smtp_host,
+                settings.smtp_port,
+                sender=settings.smtp_from,
+                username=settings.smtp_username,
+                password=secret(settings.smtp_password),
+                starttls=settings.smtp_starttls,
+            )
+            if settings.smtp_host
+            else None
+        )
+        tools.register(send_email_tool(mailer, db))
+        tools.register(create_task_tool(db))
         if settings.searxng_url:
             tools.register(web_search_tool(http, settings.searxng_url))
         return cls(

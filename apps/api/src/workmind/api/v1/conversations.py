@@ -28,7 +28,7 @@ from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.conversations.events import RunMeta
 from workmind.modules.conversations.models import Conversation, Message
-from workmind.modules.conversations.runner import RunDeps, execute_run
+from workmind.modules.conversations.runner import RunDeps, execute_research_run, execute_run
 from workmind.modules.identity.models import Tenant
 
 router = APIRouter(tags=["conversations"])
@@ -80,6 +80,8 @@ class ConversationUpdate(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
+    # "research": the agent may use tools and propose actions (emails, tasks) for approval.
+    mode: Literal["answer", "research"] = "answer"
 
 
 class RunStarted(BaseModel):
@@ -242,7 +244,20 @@ async def send_message(
         retriever=resources.retriever,
         router=resources.agent_router,
         mode=resources.assistant_mode,
+        tools=resources.tools,
     )
+    if body.mode == "research":
+        resources.runs.start(
+            execute_research_run(
+                deps,
+                ctx,
+                meta,
+                question=question,
+                user_message_id=message.id,
+                organization=tenant.name if tenant else "the company",
+            )
+        )
+        return RunStarted(run_id=run_id, user_message=user_message)
     resources.runs.start(
         execute_run(
             deps,

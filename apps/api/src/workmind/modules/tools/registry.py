@@ -53,6 +53,14 @@ class Tool:
     handler: Handler
     source: str = "builtin"  # or "mcp:<server key>"
     json_schema: dict[str, Any] | None = None
+    # Plain-words description of one call, shown on its approval card.
+    summarize: Callable[[dict[str, Any]], str] | None = None
+
+    def describe(self, arguments: dict[str, Any]) -> str:
+        if self.summarize is not None:
+            return self.summarize(arguments)
+        shown = ", ".join(f"{k}={str(v)[:60]}" for k, v in list(arguments.items())[:4])
+        return f"Run {self.name} ({shown})"
 
     def input_schema(self) -> dict[str, Any]:
         if self.input_model is not None:

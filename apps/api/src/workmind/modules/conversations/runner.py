@@ -28,6 +28,7 @@ from workmind.modules.agents.orchestrator import (
     orchestrate,
 )
 from workmind.modules.agents.planning import FastRouter
+from workmind.modules.agents.research import ResearchStep, research
 from workmind.modules.assistant.answer import (
     Answer,
     RestrictedPolicy,
@@ -39,6 +40,7 @@ from workmind.modules.conversations.events import RunEvents, RunMeta
 from workmind.modules.conversations.models import Conversation, Message
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.retrieval.service import Passage, Retriever
+from workmind.modules.tools.registry import ToolRegistry
 from workmind.providers.llm import LLMError, LLMMessage, LLMProvider, LLMRequest, LLMUsage
 from workmind.providers.pricing import cost_usd
 
@@ -120,6 +122,7 @@ class RunDeps:
     retriever: Retriever
     router: FastRouter | None = None
     mode: str = "single"  # "single" or "agents" (ARCHITECTURE 12)
+    tools: ToolRegistry | None = None  # research runs (tools, proposed actions)
 
 
 @dataclass
@@ -356,6 +359,79 @@ async def execute_run(
         )
 
 
+async def execute_research_run(
+    deps: RunDeps,
+    ctx: RequestContext,
+    meta: RunMeta,
+    *,
+    question: str,
+    user_message_id: uuid.UUID,
+    organization: str,
+) -> None:
+    """A chat turn answered by the research agent: it may search, call tools, and propose actions
+    (an email, a task) that wait for the person's approval as inline cards (`approval.required`)."""
+    events, run_id = deps.events, meta.run_id
+    await events.emit(
+        run_id, "run.started", {"run_id": str(run_id), "conversation_id": str(meta.conversation_id)}
+    )
+    usage = Usage()
+    status, error, text = "complete", None, ""
+    approvals: list[str] = []
+
+    async def on_step(step: ResearchStep) -> None:
+        await events.emit(
+            run_id, "tool.step", {"tool": step.tool, "ok": step.ok, "error": step.error}
+        )
+        if step.approval_id:
+            approvals.append(step.approval_id)
+            await events.emit(
+                run_id,
+                "approval.required",
+                {"approval_id": step.approval_id, "tool": step.tool, "summary": step.summary},
+            )
+
+    try:
+        assert deps.tools is not None  # noqa: S101
+        history = await load_history(
+            deps.sessions, ctx, meta.conversation_id, before=user_message_id
+        )
+        standalone, rewrite_usage = await rewrite_question(deps.llm, history.messages, question)
+        usage.add(rewrite_usage)
+        result = await research(
+            deps.llm,
+            deps.tools,
+            deps.sessions,
+            ctx,
+            standalone,
+            organization=organization,
+            origin={"conversation_id": str(meta.conversation_id), "run_id": str(run_id)},
+            on_step=on_step,
+        )
+        for step_usage in result.usage:
+            usage.add(step_usage)
+        text = result.text
+        for start in range(0, len(text), 60):  # the loop isn't token-streamed; replay it in pieces
+            await events.emit(run_id, "token", {"text": text[start : start + 60]})
+    except LLMError as exc:
+        status, error = "failed", ("model_unavailable", "The language model is unavailable.")
+        log.warning("research_model_error", run_id=str(run_id), error=str(exc)[:300])
+    except Exception:
+        status, error = "failed", ("internal", "Something went wrong while working on this.")
+        log.exception("research_failed", run_id=str(run_id))
+    message_id = await _store(deps, ctx, meta, None, text, status, question, usage.as_dict())
+    if status == "complete":
+        await events.emit(
+            run_id,
+            "run.completed",
+            {"message_id": str(message_id), "usage": usage.as_dict(), "approvals": approvals},
+        )
+    else:
+        code, message = error or ("internal", "Something went wrong.")
+        await events.emit(
+            run_id, "run.failed", {"code": code, "message": message, "message_id": str(message_id)}
+        )
+
+
 async def _store(
     deps: RunDeps,
     ctx: RequestContext,
@@ -366,7 +442,7 @@ async def _store(
     search_query: str,
     usage: dict[str, Any],
 ) -> uuid.UUID:
-    content = final.text if final and status == "complete" else partial
+    content = final.text if final and status == "complete" else partial  # research: the text
     async with tenant_transaction(deps.sessions, ctx.tenant_id) as session:
         message = Message(
             tenant_id=ctx.tenant_id,

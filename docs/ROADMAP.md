@@ -249,7 +249,14 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #8 — "Connecting to Google Drive is easy. Keeping permissions in sync is the hard part."**
 
-### Phase 8 — Workflow automation and approvals (v0.8)
+### Phase 8 — Workflow automation and approvals (v0.8) ✅ Backend done; UI in progress (see `docs/automation.md`)
+
+> DoD met live: "prepare the weekly ops report and email it to leadership" → four searches → a
+> drafted email → approval with an edit → sent (Mailpit) → every step audited. Done: approvals
+> (stored proposals, atomic decisions, edits re-validated, expiry), tasks and department queues,
+> notifications, SMTP `send_email`, `create_task`, research mode in chat with approval events,
+> YAML workflows with cron schedules, pause and resume at approvals. Event triggers (`document.ready`)
+> are defined but not yet fired by ingestion.
 
 **Goal:** WorkMind does work, safely, with humans in control.
 

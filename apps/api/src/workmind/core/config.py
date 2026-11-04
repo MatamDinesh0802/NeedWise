@@ -90,6 +90,14 @@ class Settings(BaseSettings):
     mcp_servers: list[dict[str, Any]] = []
     # Google Drive sources (OAuth client of type "Web application"; redirect URI:
     # <PUBLIC_URL>/api/v1/oauth/google/callback).
+    # Outgoing email (send_email always needs a person's approval). Unset: email is disabled.
+    # Development uses Mailpit (compose), which catches everything: http://localhost:8025
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_from: str = "WorkMind <workmind@localhost>"
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_starttls: bool = False
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
     agent_fast_path: bool = True

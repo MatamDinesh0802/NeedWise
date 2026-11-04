@@ -12,6 +12,7 @@ from workmind.api.v1 import (
     me,
     sources,
     tokens,
+    work,
 )
 
 router = APIRouter()
@@ -28,3 +29,5 @@ router.include_router(agents.tools_router)
 router.include_router(agents.members_router)
 router.include_router(sources.router)
 router.include_router(sources.oauth_router)
+router.include_router(work.router)
+router.include_router(work.admin_router)

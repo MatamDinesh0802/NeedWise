@@ -25,6 +25,10 @@ x-app-env: &app-env
   EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://host.docker.internal:8091/v1}
   # single (default) | auto | agents: see ADR 0009. Try: ASSISTANT_MODE=auto make up
   ASSISTANT_MODE: ${ASSISTANT_MODE:-single}
+  # Development mail: everything lands in Mailpit (http://localhost:8025), nothing is delivered.
+  SMTP_HOST: ${SMTP_HOST:-mailpit}
+  SMTP_PORT: ${SMTP_PORT:-1025}
+  SMTP_FROM: ${SMTP_FROM:-WorkMind <workmind@acme.test>}
 
 x-app-env-file: &app-env-file
   - path: .env
@@ -243,6 +247,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 120  # the first start downloads the model (~330 MB)
+    restart: unless-stopped
+
+  # Catches all outgoing mail in development: http://localhost:8025 (never delivers anything).
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ["127.0.0.1:${MAILPIT_PORT:-8025}:8025"]
     restart: unless-stopped
 
   # Starts scheduled work: every minute it queues the connector syncs that are due. Run exactly
