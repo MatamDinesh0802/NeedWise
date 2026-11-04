@@ -23,6 +23,8 @@ x-app-env: &app-env
   OBJECT_STORAGE_PATH: /data/objects
   # The embedding server runs on the host by default (make embeddings: Apple GPU via Metal).
   EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://host.docker.internal:8091/v1}
+  # single (default) | auto | agents: see ADR 0009. Try: ASSISTANT_MODE=auto make up
+  ASSISTANT_MODE: ${ASSISTANT_MODE:-single}
 
 x-app-env-file: &app-env-file
   - path: .env
