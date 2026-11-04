@@ -10,9 +10,10 @@ import structlog
 from fastapi import FastAPI
 from opentelemetry.sdk.trace import TracerProvider
 
-from workmind.api import v1
+from workmind.api import auth, v1
 from workmind.api.ops import probes
 from workmind.core.config import Settings, get_settings
+from workmind.core.errors import ApiError, api_error_handler
 from workmind.core.health import build_health_checks
 from workmind.core.logging import configure_logging
 from workmind.core.middleware import RequestContextMiddleware
@@ -29,7 +30,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.resources = resources
     # Tests inject fake checks before startup; keep them if present.
     if not hasattr(app.state, "health_checks"):
-        app.state.health_checks = build_health_checks(resources, settings)
+        app.state.health_checks = build_health_checks(
+            resources, settings, settings.health_check_timeout_s
+        )
     log.info(
         "startup",
         product=settings.product_name,
@@ -60,7 +63,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.add_middleware(RequestContextMiddleware)
+    app.add_exception_handler(ApiError, api_error_handler)
     app.include_router(probes)
+    app.include_router(auth.router)
     app.include_router(v1.router, prefix="/api/v1")
     app.state.tracer_provider = configure_telemetry(app, settings)
     return app

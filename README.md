@@ -59,12 +59,15 @@ Requirements: [uv](https://docs.astral.sh/uv/), Node.js 22+, [pnpm](https://pnpm
 ```bash
 make install       # backend + frontend dependencies
 make infra         # Postgres, Valkey, Qdrant, OpenFGA, Keycloak, Caddy in Docker
-make api-dev       # API on http://localhost:8400 with auto-reload
-make web-dev       # UI on http://localhost:3400 with hot reload (proxies /api to :8400)
+make api-dev       # API on your machine with auto-reload
+make web-dev       # UI on your machine with hot reload
 make lint test     # what CI runs
 ```
 
-Stop the full stack (`make down`) before `make infra` so ports don't clash.
+Open **http://localhost:8480** as usual. In this mode Caddy forwards `/api` and the UI to the
+processes on your machine, so login, cookies and redirects behave exactly as in Docker.
+Stop the full stack (`make down`) before `make infra` so ports don't clash. Keycloak's
+back-channel logout cannot reach a host process, so remote logout is only tested with `make up`.
 
 ## Architecture
 

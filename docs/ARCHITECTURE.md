@@ -284,9 +284,11 @@ sequenceDiagram
 | Cookie | `HttpOnly`, `Secure`, `SameSite=Lax`, path `/` |
 | Idle timeout / absolute lifetime | 30 minutes sliding / 12 hours (configurable per tenant) |
 | Token refresh | The API refreshes the Keycloak access token server-side shortly before it expires |
-| CSRF | `SameSite=Lax`, plus an `Origin` header check on every state-changing request, plus a CSRF token header as defense in depth |
+| CSRF | `SameSite=Lax`, plus an `Origin` (or `Referer`) check on every state-changing request, plus a required custom header `X-CSRF-Protection: 1` that cross-site forms cannot send |
 | Logout | Delete the session and redirect to Keycloak end-session (RP-initiated logout) |
-| Remote kill | Keycloak back-channel logout endpoint: disabling a user in Keycloak ends their WorkMind sessions immediately |
+| Remote kill | Keycloak back-channel logout endpoint: disabling a user in Keycloak ends their WorkMind sessions immediately. Caddy hides it from the public; Keycloak calls it on the internal network. |
+| Login flow binding | A short-lived `wm_oidc_flow` cookie holds the OAuth `state`. A callback whose state doesn't match the browser's cookie is rejected, so a leaked callback URL is useless elsewhere. |
+| Session storage | Valkey stores each session under the SHA-256 of its ID, so a Valkey dump contains no usable cookies |
 
 ### 6.4 Request context
 
@@ -298,13 +300,17 @@ class RequestContext:
     request_id: str
     tenant_id: UUID
     user_id: UUID
-    org_roles: frozenset[str]        # owner | admin | auditor | member | guest
+    org_role: str                    # owner | admin | auditor | member | guest
     principals: frozenset[str]       # "user:<id>", "group:<id>", "dept:<id>", "org:<id>"
     auth_method: Literal["session", "pat", "service"]
     scopes: frozenset[str]           # limits for personal access tokens / service accounts
 ```
 
 The same context flows into agents, tools, retrieval and Celery tasks. This is what makes principle P1 enforceable.
+
+**Login screens:** with Organizations enabled, Keycloak asks for the email first, then routes the user to their company's identity provider if one is linked, or asks for the password. Keycloak marks its login cookies `Secure`. Browsers that treat `http://localhost` as a secure context handle this during local development; anything beyond your own machine must use HTTPS.
+
+**Linking identities:** a Keycloak identity is linked to a pre-created WorkMind user by email **only if the email is verified**. Otherwise, anyone able to set an unverified email in an identity provider could take over the account.
 
 ### 6.5 Other ways to authenticate
 

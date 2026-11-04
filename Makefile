@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test seed
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -30,8 +30,9 @@ ps: ## Show service status
 status: ## Show component health as reported by the API
 	@curl -fsS http://localhost:$(HTTP_PORT)/api/v1/system/status | python3 -m json.tool
 
-infra: ## Start only infrastructure, to run api/web on the host
-	$(COMPOSE) up -d --wait $(INFRA)
+infra: ## Start infrastructure only; http://localhost:8480 then serves api-dev and web-dev
+	API_UPSTREAM=host.docker.internal:8400 WEB_UPSTREAM=host.docker.internal:3400 \
+		$(COMPOSE) up -d --wait $(INFRA)
 
 api-dev: ## Run the API on the host with auto-reload (after `make infra`)
 	cd apps/api && uv run alembic upgrade head && uv run uvicorn workmind.main:create_app --factory --reload --port 8400
@@ -51,10 +52,15 @@ fmt: ## Auto-format backend code
 	cd apps/api && uv run ruff format . && uv run ruff check --fix .
 
 TEST_DATABASE_ADMIN_URL ?= postgresql://postgres:postgres@localhost:5432/postgres
+TEST_VALKEY_URL ?= redis://localhost:6379/15
 
-test: ## Run all tests (integration tests need `make infra` or `make up`)
-	cd apps/api && TEST_DATABASE_ADMIN_URL=$(TEST_DATABASE_ADMIN_URL) uv run pytest
+test: ## Run unit + integration tests (integration needs `make infra` or `make up`)
+	cd apps/api && TEST_DATABASE_ADMIN_URL=$(TEST_DATABASE_ADMIN_URL) \
+		TEST_VALKEY_URL=$(TEST_VALKEY_URL) uv run pytest
 	cd apps/web && pnpm test
+
+e2e: ## End-to-end tests against the running, seeded stack (`make up seed` first)
+	cd apps/api && E2E_BASE_URL=http://localhost:$(HTTP_PORT) uv run pytest tests/e2e -v
 
 seed: ## Create the Acme Robotics demo company and its logins (safe to re-run)
 	$(COMPOSE) --profile tools run --rm --build seed

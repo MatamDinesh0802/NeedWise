@@ -209,6 +209,11 @@ services:
 
   caddy:
     image: caddy:2.11.7-alpine
+    environment:
+      API_UPSTREAM: ${API_UPSTREAM:-api:8000}
+      WEB_UPSTREAM: ${WEB_UPSTREAM:-web:3000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux; Docker Desktop provides it already
     volumes:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

@@ -37,6 +37,7 @@ class RequestContextMiddleware:
             return
 
         request_id = _incoming_request_id(scope) or uuid.uuid4().hex
+        scope.setdefault("state", {})["request_id"] = request_id
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
         started = time.perf_counter()

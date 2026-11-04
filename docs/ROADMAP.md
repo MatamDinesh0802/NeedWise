@@ -63,9 +63,18 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - The architecture diagram and the 8 design principles.
 - Ask: *"What would make you trust an AI assistant with your company's documents?"*
 
-### Phase 1 — Identity, tenancy and permissions (v0.1)
+### Phase 1 — Identity, tenancy and permissions (v0.1) 🚧 In progress
 
 **Goal:** real login, real organizations, and a permission model that everything else builds on.
+
+**Progress:**
+- [x] Slice 1: tenant data model with forced Row-Level Security, plus isolation tests
+- [x] Slice 2: Keycloak realm as code, `make seed`
+- [x] Slice 3: login/logout (BFF), sessions, back-channel logout, `/api/v1/me`, end-to-end tests
+- [ ] Slice 4: web sign-in and user menu
+- [ ] Slice 5: OpenFGA model, outbox sync, authz matrix tests
+- [ ] Slice 6: admin API + UI, audit log viewer
+- [ ] Slice 7: personal access tokens
 
 **Scope:**
 - Keycloak realm as code with demo users (ARCHITECTURE §6.7).

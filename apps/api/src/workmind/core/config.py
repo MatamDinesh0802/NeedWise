@@ -7,6 +7,7 @@ Docker (`make infra`). Inside docker compose, `compose.yaml` overrides the hostn
 
 from functools import lru_cache
 from typing import Literal, Self
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -53,6 +54,10 @@ class Settings(BaseSettings):
 
     health_check_timeout_s: float = Field(default=2.0, gt=0)
 
+    # Sessions (ARCHITECTURE section 6.3): sliding idle timeout, hard absolute lifetime.
+    session_idle_timeout_s: int = Field(default=1800, gt=0)
+    session_absolute_timeout_s: int = Field(default=43200, gt=0)
+
     @model_validator(mode="after")
     def _no_dev_secrets_in_production(self) -> Self:
         if (
@@ -69,6 +74,28 @@ class Settings(BaseSettings):
     @property
     def docs_enabled(self) -> bool:
         return self.app_env != "production"
+
+    @property
+    def public_origin(self) -> str:
+        parts = urlsplit(self.public_url)
+        return f"{parts.scheme}://{parts.netloc}"
+
+    @property
+    def secure_cookies(self) -> bool:
+        return self.public_url.startswith("https://")
+
+    @property
+    def session_cookie_name(self) -> str:
+        # The __Host- prefix makes browsers refuse the cookie unless Secure, Path=/, no Domain.
+        return "__Host-wm_session" if self.secure_cookies else "wm_session"
+
+    @property
+    def oidc_redirect_uri(self) -> str:
+        return f"{self.public_url.rstrip('/')}/api/auth/callback"
+
+    @property
+    def oidc_discovery_url(self) -> str:
+        return f"{self.keycloak_url}/realms/{self.keycloak_realm}/.well-known/openid-configuration"
 
 
 @lru_cache

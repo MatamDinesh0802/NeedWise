@@ -46,15 +46,17 @@ async def run_checks(checks: Mapping[str, HealthCheck], timeout_s: float) -> lis
     )
 
 
-def _http_check(client: httpx.AsyncClient, url: str) -> HealthCheck:
+def _http_check(client: httpx.AsyncClient, url: str, timeout_s: float) -> HealthCheck:
     async def check() -> None:
-        response = await client.get(url)
+        response = await client.get(url, timeout=timeout_s)
         response.raise_for_status()
 
     return check
 
 
-def build_health_checks(resources: Resources, settings: Settings) -> dict[str, HealthCheck]:
+def build_health_checks(
+    resources: Resources, settings: Settings, timeout_s: float
+) -> dict[str, HealthCheck]:
     async def postgres() -> None:
         async with resources.engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
@@ -65,7 +67,9 @@ def build_health_checks(resources: Resources, settings: Settings) -> dict[str, H
     return {
         "postgres": postgres,
         "valkey": valkey,
-        "qdrant": _http_check(resources.http, f"{settings.qdrant_url}/readyz"),
-        "openfga": _http_check(resources.http, f"{settings.openfga_api_url}/healthz"),
-        "keycloak": _http_check(resources.http, f"{settings.keycloak_url}/realms/master"),
+        "qdrant": _http_check(resources.http, f"{settings.qdrant_url}/readyz", timeout_s),
+        "openfga": _http_check(resources.http, f"{settings.openfga_api_url}/healthz", timeout_s),
+        "keycloak": _http_check(
+            resources.http, f"{settings.keycloak_url}/realms/master", timeout_s
+        ),
     }

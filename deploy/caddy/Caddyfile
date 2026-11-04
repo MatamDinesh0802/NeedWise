@@ -5,6 +5,8 @@
 
 # Public entry point: one origin serves the UI, the API and the login pages,
 # so the session cookie works everywhere without CORS.
+# API_UPSTREAM / WEB_UPSTREAM point at containers by default; `make infra` points them at
+# processes on your machine (host.docker.internal) for hot-reload development.
 :8080 {
 	encode zstd gzip
 
@@ -17,7 +19,10 @@
 
 	@api path /api/* /mcp /mcp/*
 	handle @api {
-		reverse_proxy api:8000
+		# Keycloak calls back-channel logout on the internal network; never expose it.
+		@backchannel path /api/auth/backchannel-logout
+		respond @backchannel 404
+		reverse_proxy {$API_UPSTREAM:api:8000}
 	}
 
 	@keycloak path /auth /auth/*
@@ -26,7 +31,7 @@
 	}
 
 	handle {
-		reverse_proxy web:3000
+		reverse_proxy {$WEB_UPSTREAM:web:3000}
 	}
 }
 
