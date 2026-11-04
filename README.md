@@ -6,23 +6,26 @@ Employees ask questions in plain language and get answers grounded in company kn
 citations, drawn only from sources they are allowed to see. Specialized agents (HR, Finance,
 Engineering…) handle department work. Actions that leave the system need human approval.
 
-> **Status: pre-alpha, built in public.** Phases 0 (foundation) and 1 (identity, tenancy,
-> permissions) are complete: release `v0.1.0`. Nothing here is ready for real company data
-> yet. Follow along in the [roadmap](docs/ROADMAP.md).
+> **Status: pre-alpha, built in public.** Phases 0–3 are complete and the chat assistant
+> (Phase 4) is landing. Nothing here is ready for real company data yet. Follow along in the
+> [roadmap](docs/ROADMAP.md).
 
 ## What works today
 
-- **Sign-in through Keycloak** (SSO-ready, MFA-capable). The backend keeps every token; the
-  browser only holds an HttpOnly session cookie.
-- **Company-level isolation enforced by PostgreSQL itself** (forced Row-Level Security). A CI
-  guardrail fails if any table forgets it.
-- **Relationship-based permissions** in OpenFGA, one store per company. An authorization
-  matrix of the demo company runs in CI ("the engineer never sees salaries").
-- **Administration**: people, roles, departments, nested groups, and a hash-chained,
-  tamper-evident audit log.
-- **Personal access tokens** for MCP clients and scripts: scoped, hashed, expiring.
-- About 125 backend and 250+ web tests, including end-to-end sign-ins through the real
-  Keycloak login pages.
+- **Ask questions, get cited answers.** Streaming chat over company documents: every claim
+  cites a source you can open, follow-up questions are understood, and the assistant says
+  so when it doesn't know.
+- **Permission-safe by construction.** Search filters every chunk by its access list (lock 1),
+  then re-checks each source with OpenFGA (lock 2). The answer model only ever sees what the
+  asking person may read. A red-team suite with canary tokens must show **zero leaks** in CI.
+- **Measured.** `wm eval` asks 104 questions as 11 different employees: 0 leaks, 81/82
+  correct, 99.8% faithfulness, $0.017 per answer ([evaluation](evals/README.md)).
+- **Restricted data stays local** if you want: per-company policy routes restricted sources
+  to a local model, or leaves them out and says so.
+- **Knowledge Hub:** upload PDF, Word, Excel, PowerPoint, Markdown, HTML, CSV or Slack exports;
+  watch them get indexed; see exactly which chunks the assistant reads.
+- **Enterprise identity:** Keycloak SSO, company isolation enforced by PostgreSQL Row-Level
+  Security, departments and nested groups, a hash-chained audit log, scoped access tokens.
 
 ## What makes it different
 
@@ -38,27 +41,35 @@ Engineering…) handle department work. Actions that leave the system need human
 
 ## Quick start
 
-Requirements: Docker with Compose v2. That's it for running the stack.
+Requirements: Docker with Compose v2.
 
 ```bash
 git clone <repo-url> workmind && cd workmind
-make up            # or: docker compose up -d --build --wait
+make quickstart    # the stack, a local embedding model in Docker, and the Acme demo company
 ```
 
-Open **http://localhost:8480**. The first start pulls about 2 GB of images and takes a few minutes.
+Open **http://localhost:8480** and sign in as `alice@acme.test` / `workmind-demo`. The first
+run downloads about 2.5 GB (images and the embedding model) and takes a few minutes.
 
-```bash
-make embeddings    # in a second terminal: the local embedding model (needs `brew install llama.cpp`)
-make seed          # the fictional Acme Robotics company, its logins and 34 documents
-```
+**For answers, add a model** to `.env` (git-ignored), then `make up`:
 
-For AI answers, put your Anthropic API key in `.env` as `ANTHROPIC_API_KEY=...` (git-ignored).
-Prefer fully local models? Set `LLM_PROVIDER=openai_compatible` and `LLM_BASE_URL` to Ollama, vLLM
-or llama.cpp. Every model role can be changed separately ([ADR 0007](docs/adr/0007-model-providers-and-lightweight-parsing.md)).
+| Option | `.env` |
+|---|---|
+| Claude (default) | `ANTHROPIC_API_KEY=sk-ant-...` |
+| Fully local (Ollama, vLLM, llama.cpp) | `LLM_PROVIDER=openai_compatible`, `LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_MODEL=qwen3:14b` |
+
+Every model role (answers, question rewriting, judging) can be set separately, and restricted
+documents can be pinned to a local model ([ADR 0007](docs/adr/0007-model-providers-and-lightweight-parsing.md),
+[ADR 0008](docs/adr/0008-retrieval-fusion-and-sensitivity-routing.md)).
+
+> **On a Mac?** `make embeddings` runs the embedding model on the Apple GPU instead
+> (`brew install llama.cpp`; set `EMBEDDING_BASE_URL=http://host.docker.internal:8091/v1`).
+> Both produce the same vectors, so you can switch without re-indexing.
 
 Demo logins use the password `workmind-demo` (development only): `alice@acme.test` (HR manager),
 `bob@acme.test` (engineer), `carol@acme.test` (finance), `dan@acme.test` (sales),
-`erin@acme.test` (IT admin), `mallory@acme.test` (external contractor). See [seed/README.md](seed/README.md).
+`erin@acme.test` (IT admin), `mallory@acme.test` (external contractor). Ask each of them
+"What is the salary band for an L3 engineer?" and compare. See [seed/README.md](seed/README.md).
 
 | URL | What |
 |---|---|
@@ -69,8 +80,8 @@ Demo logins use the password `workmind-demo` (development only): `alice@acme.tes
 `make status` prints component health; `make` lists every command.
 
 > **macOS memory tip:** the core stack needs about 3 GB. Docker Desktop's memory limit can stay
-> around 8 GB. From Phase 2, local models run in Ollama **natively** (not in Docker, which
-> cannot use the Apple GPU), so keep the rest of your RAM for them.
+> around 8 GB. Run local LLMs in Ollama **natively** (Docker cannot use the Apple GPU), and
+> keep the rest of your RAM for them.
 
 ## Local development
 

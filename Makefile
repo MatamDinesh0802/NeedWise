@@ -9,6 +9,16 @@ HTTP_PORT ?= 8480
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+quickstart: ## First run on any OS: embeddings in Docker, the full stack, the Acme demo data
+	@test -f .env || cp .env.example .env
+	@grep -q '^EMBEDDING_BASE_URL=' .env || echo 'EMBEDDING_BASE_URL=http://embeddings:8080/v1' >> .env
+	@grep -q '^COMPOSE_PROFILES=' .env || echo 'COMPOSE_PROFILES=embeddings' >> .env
+	@mkdir -p .data/objects
+	$(COMPOSE) up -d --build --wait
+	$(MAKE) seed
+	@grep -qE '^(ANTHROPIC_API_KEY|LLM_PROVIDER)=' .env || \
+		echo "\nSearch works now. For answers, add ANTHROPIC_API_KEY=... (or a local model) to .env, then: make up"
+
 up: ## Build and start the full stack, wait until every service is healthy
 	@mkdir -p .data/objects
 	$(COMPOSE) up -d --build --wait

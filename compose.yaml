@@ -212,6 +212,37 @@ services:
       qdrant: { condition: service_healthy }
     restart: unless-stopped
 
+  # The embedding model in a container (CPU), for any OS:  make quickstart  or
+  # COMPOSE_PROFILES=embeddings with EMBEDDING_BASE_URL=http://embeddings:8080/v1.
+  # On a Mac, `make embeddings` runs the same model on the host GPU instead (faster).
+  embeddings:
+    profiles: [embeddings]
+    image: ghcr.io/ggml-org/llama.cpp:server-b12098
+    command:
+      - "-hf"
+      - "ggml-org/embeddinggemma-300M-GGUF:Q8_0"
+      - "--embeddings"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "-c"
+      - "8192"
+      - "--parallel"
+      - "4"
+      - "-ub"
+      - "2048"
+      - "-b"
+      - "2048"
+    volumes:
+      - llama-models:/root/.cache/llama.cpp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 120  # the first start downloads the model (~330 MB)
+    restart: unless-stopped
+
   # Development tool, not part of `up`:  make seed  (= docker compose --profile tools run --rm seed)
   seed:
     profiles: [tools]
@@ -271,6 +302,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  llama-models:
   postgres_data:
   valkey_data:
   qdrant_data:
