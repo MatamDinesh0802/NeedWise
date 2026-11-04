@@ -439,10 +439,22 @@ type document
 
 Org admins are deliberately **not** made editors or viewers of every collection, which keeps separation of duties.
 
+The model lives in `apps/api/src/workmind/modules/authz/openfga/`. It ships with the package because the API installs it into each tenant's store:
+- `model.fga` is the source.
+- `model.json` is compiled from it by `make authz-model`; CI fails if they drift apart.
+- `model.fga.yaml` is the **authorization matrix**: the Acme personas and the exact allow/deny answers the product promises (for example, the engineer never sees salaries, the admin doesn't automatically see restricted content, the contractor sees exactly one collection). It is run by the official OpenFGA CLI in CI.
+
+Object IDs in OpenFGA are WorkMind UUIDs (`user:<uuid>`, `department:<uuid>`), never slugs, so renaming a department changes nothing in authorization. Principal strings in `RequestContext` use short prefixes (`dept:<uuid>`) that map one-to-one to these objects.
+
 ### 7.5 Source of truth and synchronization
 
 - **PostgreSQL holds the admin records:** memberships, collection grants, document grants. The admin UI writes these.
 - Every change writes an **outbox row in the same database transaction**. A worker reads the outbox and writes the matching tuples to OpenFGA. Writes are idempotent and retried, so the two stores cannot silently drift (the *transactional outbox* pattern).
+  - Rows are applied in commit order. Processing stops at the first failure, so a later delete never overtakes an earlier write.
+  - Until Celery arrives in Phase 2, the worker runs inside the API process. `SKIP LOCKED` row locks make several API replicas safe.
+- A **reconcile** job recomputes every identity tuple from Postgres and repairs drift in either direction. It runs on seeding, and later on a schedule.
+  - Reconcile and outbox processing share a per-tenant advisory lock. Without it, a reconcile could delete a tuple that a concurrently committed change had just added.
+- An integration test checks, for every Acme user, that the group and department memberships computed in Postgres (lock 1) equal what OpenFGA answers (lock 2).
 - A user's **principal set** (`user:…`, `group:…` including nested groups, `dept:…`, `org:…`) is computed from Postgres. It is cached in Valkey for 60 seconds and invalidated immediately on membership changes.
 
 ### 7.6 Permission-aware retrieval: two locks
@@ -1203,7 +1215,7 @@ workmind/
 │   │   │   ├── api/                  # HTTP routers: probes, /api/v1
 │   │   │   ├── modules/
 │   │   │   │   ├── identity/         # tenants, users, departments, groups, auth BFF, tokens
-│   │   │   │   ├── authz/            # OpenFGA client, outbox, principal resolution
+│   │   │   │   ├── authz/            # OpenFGA client, outbox, reconcile, openfga/ model + matrix
 │   │   │   │   ├── knowledge/        # collections, documents, ingestion orchestration
 │   │   │   │   ├── retrieval/        # hybrid search, rerank, citations, verification
 │   │   │   │   ├── agents/           # LangGraph graphs, supervisor, agent registry
@@ -1225,8 +1237,7 @@ workmind/
 │   └── api-client/                   # generated TypeScript client
 ├── deploy/
 │   ├── postgres/                     # first-start init: databases and roles
-│   ├── keycloak/                     # realm export with demo users
-│   ├── openfga/                      # authorization model + tests
+│   ├── keycloak/                     # realm configuration (no passwords)
 │   ├── caddy/
 │   └── helm/                         # v1.0
 ├── seed/                             # Acme Robotics synthetic company generator + corpus

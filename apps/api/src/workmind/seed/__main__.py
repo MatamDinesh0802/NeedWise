@@ -13,12 +13,16 @@ import httpx
 
 from workmind.core.config import Settings, get_settings
 from workmind.core.db import create_engine, create_session_factory
+from workmind.modules.authz.openfga import OpenFgaClient
+from workmind.modules.authz.sync import ensure_store, reconcile
 from workmind.seed.apply import SeedResult, seed_database, seed_keycloak
 from workmind.seed.company import CompanySpec, load_company
 from workmind.seed.keycloak_admin import KeycloakAdmin
 
 
-async def _run(spec: CompanySpec, settings: Settings, *, skip_keycloak: bool) -> SeedResult:
+async def _run(
+    spec: CompanySpec, settings: Settings, *, skip_keycloak: bool, skip_openfga: bool
+) -> SeedResult:
     subjects: dict[str, str] = {}
     if not skip_keycloak:
         async with httpx.AsyncClient(timeout=15) as http:
@@ -28,8 +32,21 @@ async def _run(spec: CompanySpec, settings: Settings, *, skip_keycloak: bool) ->
             )
             subjects = await seed_keycloak(spec, admin, settings.demo_password.get_secret_value())
     engine = create_engine(settings.migrations_database_url)  # owner role
+    sessions = create_session_factory(engine)
     try:
-        return await seed_database(spec, create_session_factory(engine), subjects)
+        result = await seed_database(spec, sessions, subjects)
+        if not skip_openfga:
+            async with httpx.AsyncClient(timeout=15) as http:
+                fga = OpenFgaClient(
+                    http, settings.openfga_api_url, settings.openfga_api_key.get_secret_value()
+                )
+                store_id = await ensure_store(sessions, fga, result.tenant_id)
+                synced = await reconcile(sessions, fga, result.tenant_id, store_id)
+            print(
+                f"Authorization store {store_id}: {synced.written} tuples written, "
+                f"{synced.deleted} removed."
+            )
+        return result
     finally:
         await engine.dispose()
 
@@ -37,7 +54,8 @@ async def _run(spec: CompanySpec, settings: Settings, *, skip_keycloak: bool) ->
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m workmind.seed", description=__doc__)
     parser.add_argument("company_file", type=Path)
-    parser.add_argument("--skip-keycloak", action="store_true", help="only seed the database")
+    parser.add_argument("--skip-keycloak", action="store_true", help="don't create logins")
+    parser.add_argument("--skip-openfga", action="store_true", help="don't sync authorization")
     args = parser.parse_args(argv)
 
     settings = get_settings()
@@ -46,7 +64,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     spec = load_company(args.company_file)
-    result = asyncio.run(_run(spec, settings, skip_keycloak=args.skip_keycloak))
+    result = asyncio.run(
+        _run(spec, settings, skip_keycloak=args.skip_keycloak, skip_openfga=args.skip_openfga)
+    )
 
     print(
         f"Seeded {spec.company.name} ({spec.company.slug}): {result.people} people, "

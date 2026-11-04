@@ -16,6 +16,7 @@ from workmind import __version__
 
 Environment = Literal["dev", "test", "demo", "production"]
 DEV_OIDC_CLIENT_SECRET = "dev-only-oidc-client-secret"  # noqa: S105  (refused in production)
+DEV_OPENFGA_API_KEY = "dev-only-openfga-key"  # (refused in production)
 
 
 class Settings(BaseSettings):
@@ -39,6 +40,9 @@ class Settings(BaseSettings):
     valkey_url: str = "redis://localhost:6379/0"
     qdrant_url: str = "http://localhost:6333"
     openfga_api_url: str = "http://localhost:8401"
+    openfga_api_key: SecretStr = SecretStr(DEV_OPENFGA_API_KEY)
+    # Background sync of the authorization outbox (disabled in unit tests).
+    authz_outbox_worker: bool = True
     keycloak_url: str = "http://localhost:8480/auth"
     keycloak_realm: str = "workmind"
 
@@ -60,11 +64,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _no_dev_secrets_in_production(self) -> Self:
-        if (
-            self.app_env == "production"
-            and self.oidc_client_secret.get_secret_value() == DEV_OIDC_CLIENT_SECRET
-        ):
+        if self.app_env != "production":
+            return self
+        if self.oidc_client_secret.get_secret_value() == DEV_OIDC_CLIENT_SECRET:
             raise ValueError("OIDC_CLIENT_SECRET must be set in production")
+        if self.openfga_api_key.get_secret_value() == DEV_OPENFGA_API_KEY:
+            raise ValueError("OPENFGA_API_KEY must be set in production")
         return self
 
     @property

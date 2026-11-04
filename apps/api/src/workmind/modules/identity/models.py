@@ -44,6 +44,8 @@ class Tenant(Base, Timestamps):
     name: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), server_default="active")
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    # One OpenFGA store per tenant: hard isolation of authorization data (ARCHITECTURE section 8).
+    openfga_store_id: Mapped[str | None] = mapped_column(Text, unique=True)
 
 
 class User(Base, TenantScoped, Timestamps):

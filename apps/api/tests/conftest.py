@@ -26,7 +26,12 @@ ClientFactory = Callable[[Mapping[str, HealthCheck]], TestClient]
 @pytest.fixture
 def settings() -> Settings:
     # _env_file=None: tests must not depend on a developer's local .env
-    return Settings(_env_file=None, app_env="test", health_check_timeout_s=0.2)  # pyright: ignore[reportCallIssue]
+    return Settings(
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+        app_env="test",
+        health_check_timeout_s=0.2,
+        authz_outbox_worker=False,
+    )
 
 
 @pytest.fixture

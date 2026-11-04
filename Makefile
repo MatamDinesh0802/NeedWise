@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -53,11 +53,20 @@ fmt: ## Auto-format backend code
 
 TEST_DATABASE_ADMIN_URL ?= postgresql://postgres:postgres@localhost:5432/postgres
 TEST_VALKEY_URL ?= redis://localhost:6379/15
+TEST_OPENFGA_URL ?= http://localhost:8401
+TEST_OPENFGA_API_KEY ?= dev-only-openfga-key
+FGA_MODEL_DIR := apps/api/src/workmind/modules/authz/openfga
+FGA := docker run --rm -v "$(CURDIR)/$(FGA_MODEL_DIR):/model" openfga/cli:v0.8.2
 
 test: ## Run unit + integration tests (integration needs `make infra` or `make up`)
 	cd apps/api && TEST_DATABASE_ADMIN_URL=$(TEST_DATABASE_ADMIN_URL) \
-		TEST_VALKEY_URL=$(TEST_VALKEY_URL) uv run pytest
+		TEST_VALKEY_URL=$(TEST_VALKEY_URL) TEST_OPENFGA_URL=$(TEST_OPENFGA_URL) \
+		TEST_OPENFGA_API_KEY=$(TEST_OPENFGA_API_KEY) uv run pytest
 	cd apps/web && pnpm test
+
+authz-model: ## Compile the OpenFGA model to JSON and run the authorization matrix
+	$(FGA) model transform --file /model/model.fga > $(FGA_MODEL_DIR)/model.json
+	$(FGA) model test --tests /model/model.fga.yaml
 
 e2e: ## End-to-end tests against the running, seeded stack (`make up seed` first)
 	cd apps/api && E2E_BASE_URL=http://localhost:$(HTTP_PORT) uv run pytest tests/e2e -v

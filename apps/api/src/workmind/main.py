@@ -3,6 +3,8 @@
 Run with: uvicorn workmind.main:create_app --factory
 """
 
+import asyncio
+import contextlib
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -19,6 +21,7 @@ from workmind.core.logging import configure_logging
 from workmind.core.middleware import RequestContextMiddleware
 from workmind.core.resources import Resources
 from workmind.core.telemetry import configure_telemetry
+from workmind.modules.authz.sync import OutboxWorker
 
 log = structlog.get_logger("workmind")
 
@@ -33,6 +36,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.health_checks = build_health_checks(
             resources, settings, settings.health_check_timeout_s
         )
+    outbox_worker = (
+        asyncio.create_task(OutboxWorker(resources.db, resources.fga).run_forever())
+        if settings.authz_outbox_worker
+        else None
+    )
     log.info(
         "startup",
         product=settings.product_name,
@@ -42,6 +50,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
+        if outbox_worker is not None:
+            outbox_worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await outbox_worker
         await resources.aclose()
         tracer_provider: TracerProvider | None = app.state.tracer_provider
         if tracer_provider is not None:
