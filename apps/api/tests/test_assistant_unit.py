@@ -51,6 +51,11 @@ class FakeLLM:
     async def structured(self, role: Role, request: LLMRequest, schema: Any) -> Any:
         raise NotImplementedError
 
+    async def run_tools(
+        self, role: Role, request: LLMRequest, tools: Any, execute: Any, *, max_steps: int = 6
+    ) -> Any:
+        raise NotImplementedError
+
 
 class FakeRetriever:
     def __init__(self, passages: list[Passage]) -> None:

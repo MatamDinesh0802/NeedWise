@@ -20,6 +20,10 @@ Engineering…) handle department work. Actions that leave the system need human
   asking person may read. A red-team suite with canary tokens must show **zero leaks** in CI.
 - **Measured.** `wm eval` asks 104 questions as 11 different employees: 0 leaks, 81/82
   correct, 99.8% faithfulness, $0.017 per answer ([evaluation](evals/README.md)).
+- **Inside your IDE or desktop assistant, permissions intact.** WorkMind is an MCP server:
+  connect Claude Code, Cursor or Claude Desktop with a personal access token ([docs/mcp.md](docs/mcp.md)).
+- **Department agents when a question spans teams**, measured against a single search, which
+  stays the default because it wins on everything else ([ADR 0009](docs/adr/0009-orchestration-without-a-graph-framework.md)).
 - **Restricted data stays local** if you want: per-company policy routes restricted sources
   to a local model, or leaves them out and says so.
 - **Knowledge Hub:** upload PDF, Word, Excel, PowerPoint, Markdown, HTML, CSV or Slack exports;

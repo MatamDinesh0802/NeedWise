@@ -50,7 +50,9 @@ def test_a_guest_question_streams_through_the_proxy(browser: httpx.Client) -> No
 
     received = _events(browser, run_id)
 
-    assert [name for name, _, _ in received][:2] == ["run.started", "retrieval"]
+    names = [name for name, _, _ in received]
+    assert names[0] == "run.started"
+    assert "retrieval" in names  # after an optional "plan" in auto or agents mode
     assert received[-1][0] == "run.completed"
     assert received[-1][1]["abstained"] is True
 

@@ -149,7 +149,10 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Real numbers from the ablation.
 - Plus how canary tokens catch permission leaks automatically.
 
-### Phase 4 — AI Assistant: first usable product (v0.4) — PUBLIC LAUNCH
+### Phase 4 — AI Assistant: first usable product (v0.4) — PUBLIC LAUNCH ✅ Built (launch pending the public repo)
+
+> Done: streaming chat with citations, sources panel, follow-ups, feedback, usage and cost, "view as",
+> `make quickstart`. Pending the maintainer: README GIF and demo video, public demo deployment (D4).
 
 **Goal:** a real person can install WorkMind and get cited, permission-aware answers in minutes.
 
@@ -171,7 +174,10 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Show HN, r/selfhosted, r/LocalLLaMA (following each community's rules).
 - dev.to / blog article.
 
-### Phase 5 — Multi-agent orchestration (v0.5)
+### Phase 5 — Multi-agent orchestration (v0.5) ✅ Done (ADR 0009)
+
+> Measured: routing 36/36; agents beat the single pipeline only on three-area questions, at 3x latency
+> and 4-5x cost, so `single` stays the default and `auto` is offered.
 
 **Goal:** complex, cross-department requests answered by cooperating agents, with proof that it helps.
 
@@ -191,7 +197,12 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #6 — "Do you actually need multi-agent? I measured it."**
 
-### Phase 6 — Tools and MCP (v0.6)
+### Phase 6 — Tools and MCP (v0.6) ✅ Done (see `docs/mcp.md`)
+
+> Done: tool registry with side-effect levels, execution wrapper (scopes, approval gate, sanitizing,
+> audit), `search_knowledge` / `draft_email` / `web_search` (SearXNG, optional), research agent,
+> MCP client for operator-configured servers, WorkMind MCP server with token auth, injection tests.
+> `create_task` moves to Phase 8 with the Tasks module.
 
 **Goal:** agents can act through governed tools, and WorkMind plugs into the MCP ecosystem.
 

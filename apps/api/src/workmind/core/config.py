@@ -7,7 +7,7 @@ Docker (`make infra`). Inside docker compose, `compose.yaml` overrides the hostn
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, model_validator
@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     # Chosen by the ablation in evals/README.md (ADR 0009).
     assistant_mode: Literal["single", "agents", "auto"] = "single"
     # Fast-path routing: skip the planner when one agent's profile clearly matches.
+    # Public web search for agents (a self-hosted SearXNG); unset = no web_search tool.
+    searxng_url: str | None = None
+    # Remote MCP servers whose tools agents may use, as JSON, e.g.
+    # [{"key": "erp", "url": "https://erp.example/mcp", "token": "...", "read_only": ["stock"]}]
+    mcp_servers: list[dict[str, Any]] = []
     agent_fast_path: bool = True
     agent_fast_path_min_score: float = 0.3  # EmbeddingGemma similarities; see evals/README.md
     agent_fast_path_min_margin: float = 0.15

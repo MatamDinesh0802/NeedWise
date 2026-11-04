@@ -124,3 +124,29 @@ async def _audit(
         resource_id=agent.key,
         details={"collections": agent.collection_keys, "enabled": agent.enabled},
     )
+
+
+class ToolOut(BaseModel):
+    name: str
+    description: str
+    side_effect: str
+    scope: str
+    source: str
+
+
+tools_router = APIRouter(prefix="/admin/tools", tags=["admin"])
+
+
+@tools_router.get("")
+async def list_tools(ctx: AdminContext, request: Request) -> list[ToolOut]:
+    """Every tool agents can call, with its side-effect level (write and external need approval)."""
+    return [
+        ToolOut(
+            name=t.name,
+            description=t.description,
+            side_effect=t.side_effect,
+            scope=t.scope,
+            source=t.source,
+        )
+        for t in resources_of(request).tools.all()
+    ]

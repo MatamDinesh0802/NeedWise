@@ -11,7 +11,7 @@ a model, so one deployment can mix providers' models without touching business c
 """
 
 import json
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -75,6 +75,35 @@ StreamEvent = TextDelta | Done
 
 
 @dataclass(frozen=True)
+class ToolSpec:
+    """A tool offered to the model: name, purpose, JSON schema of its input."""
+
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+# Runs one call and returns (content for the model, is_error). Gating, auditing and sanitizing
+# happen in the caller's executor (modules/tools/execute.py), never in the adapters.
+ToolExecutor = Callable[[ToolCall], Awaitable[tuple[str, bool]]]
+
+
+@dataclass
+class ToolLoopResult:
+    text: str
+    calls: list[ToolCall] = field(default_factory=list[ToolCall])
+    usage: list[LLMUsage] = field(default_factory=list[LLMUsage])
+    stopped: Literal["done", "max_steps"] = "done"
+
+
+@dataclass(frozen=True)
 class RoleConfig:
     model: str
     effort: Effort
@@ -90,6 +119,16 @@ class LLMProvider(Protocol):
     async def structured[T: BaseModel](
         self, role: Role, request: LLMRequest, schema: type[T]
     ) -> tuple[T, LLMUsage]: ...
+
+    async def run_tools(
+        self,
+        role: Role,
+        request: LLMRequest,
+        tools: Sequence[ToolSpec],
+        execute: ToolExecutor,
+        *,
+        max_steps: int = 6,
+    ) -> ToolLoopResult: ...
 
 
 class AnthropicLLM:
@@ -167,6 +206,62 @@ class AnthropicLLM:
         text = next((b.text for b in message.content if b.type == "text"), "")
         return schema.model_validate_json(text), usage
 
+    async def run_tools(
+        self,
+        role: Role,
+        request: LLMRequest,
+        tools: Sequence[ToolSpec],
+        execute: ToolExecutor,
+        *,
+        max_steps: int = 6,
+    ) -> ToolLoopResult:
+        """A manual tool loop behind the provider interface (local models need the same one).
+        The full assistant content (thinking and tool_use blocks) goes back each turn."""
+        params = self._params(role, request)
+        params.pop("betas", None)  # no model fallback mid-loop: thinking is tied to one model
+        params.pop("fallbacks", None)
+        params["tools"] = [
+            {"name": t.name, "description": t.description, "input_schema": t.input_schema}
+            for t in tools
+        ]
+        messages: list[dict[str, Any]] = list(params["messages"])
+        result = ToolLoopResult(text="")
+        for _ in range(max_steps):
+            try:
+                params["messages"] = messages
+                message: BetaMessage = await self._client.beta.messages.create(**params)
+            except anthropic.APIError as exc:
+                raise LLMError(f"Claude API error: {exc}") from exc
+            result.usage.append(self._usage(message))
+            text = "".join(b.text for b in message.content if b.type == "text")
+            if message.stop_reason == "pause_turn":
+                messages.append({"role": "assistant", "content": message.content})
+                continue
+            uses = [b for b in message.content if b.type == "tool_use"]
+            if message.stop_reason != "tool_use" or not uses:
+                result.text = text
+                return result
+            messages.append({"role": "assistant", "content": message.content})
+            replies: list[dict[str, Any]] = []
+            for use in uses:
+                call = ToolCall(
+                    use.id, use.name, dict(use.input) if isinstance(use.input, dict) else {}
+                )
+                result.calls.append(call)
+                content, is_error = await execute(call)
+                replies.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": use.id,
+                        "content": content,
+                        "is_error": is_error,
+                    }
+                )
+            messages.append({"role": "user", "content": replies})
+            result.text = text
+        result.stopped = "max_steps"
+        return result
+
 
 class OpenAICompatibleLLM:
     """For local or self-hosted models. Effort has no equivalent here and is ignored."""
@@ -205,6 +300,60 @@ class OpenAICompatibleLLM:
         if response.is_error:
             raise LLMError(f"model server HTTP {response.status_code}: {response.text[:200]}")
         return response.json()
+
+    async def run_tools(
+        self,
+        role: Role,
+        request: LLMRequest,
+        tools: Sequence[ToolSpec],
+        execute: ToolExecutor,
+        *,
+        max_steps: int = 6,
+    ) -> ToolLoopResult:
+        body = self._body(role, request)
+        body["tools"] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.input_schema,
+                },
+            }
+            for t in tools
+        ]
+        messages: list[dict[str, Any]] = list(body["messages"])
+        result = ToolLoopResult(text="")
+        for _ in range(max_steps):
+            reply = await self._post({**body, "messages": messages})
+            result.usage.append(self._usage(reply))
+            message = reply["choices"][0]["message"]
+            calls = message.get("tool_calls") or []
+            result.text = message.get("content") or ""
+            if not calls:
+                return result
+            messages.append(message)
+            for raw in calls:
+                try:
+                    arguments = json.loads(raw["function"].get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    arguments = {}
+                call = ToolCall(
+                    raw["id"],
+                    raw["function"]["name"],
+                    arguments if isinstance(arguments, dict) else {},
+                )
+                result.calls.append(call)
+                content, is_error = await execute(call)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": raw["id"],
+                        "content": ("ERROR: " if is_error else "") + content,
+                    }
+                )
+        result.stopped = "max_steps"
+        return result
 
     @staticmethod
     def _usage(body: dict[str, Any]) -> LLMUsage:

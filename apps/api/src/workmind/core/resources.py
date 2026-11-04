@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Self
 
 import httpx
+import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -20,9 +21,14 @@ from workmind.modules.knowledge.pipeline import IngestionDeps
 from workmind.modules.knowledge.storage import LocalObjectStorage, ObjectStorage
 from workmind.modules.retrieval.qdrant import QdrantClient
 from workmind.modules.retrieval.service import Retriever
+from workmind.modules.tools.builtin import draft_email_tool, search_knowledge_tool, web_search_tool
+from workmind.modules.tools.mcp_client import RemoteServer, RemoteServerConfig, import_tools
+from workmind.modules.tools.registry import ToolRegistry
 from workmind.providers.embeddings import EmbeddingProvider
 from workmind.providers.factory import create_embeddings, create_llm, create_local_llm
 from workmind.providers.llm import LLMProvider
+
+log = structlog.get_logger("workmind.resources")
 
 
 @dataclass
@@ -44,6 +50,8 @@ class Resources:
     retriever: Retriever
     runs: RunRegistry
     agent_router: FastRouter | None
+    tools: ToolRegistry
+    remote_servers: list[RemoteServer]
     assistant_mode: str
 
     @classmethod
@@ -60,6 +68,21 @@ class Resources:
         fga = OpenFgaClient(
             http, settings.openfga_api_url, settings.openfga_api_key.get_secret_value()
         )
+        retriever = Retriever(
+            qdrant=qdrant,
+            embeddings=embeddings,
+            fga=fga,
+            sessions=db,
+            collection_name=settings.qdrant_collection,
+            sparse_weight=settings.retrieval_sparse_weight,
+            rrf_k=settings.retrieval_rrf_k,
+            min_similarity=settings.retrieval_min_similarity,
+        )
+        tools = ToolRegistry()
+        tools.register(search_knowledge_tool(retriever))
+        tools.register(draft_email_tool())
+        if settings.searxng_url:
+            tools.register(web_search_tool(http, settings.searxng_url))
         return cls(
             engine=engine,
             db=db,
@@ -87,16 +110,7 @@ class Resources:
             if settings.ingestion_mode == "inline"
             else CeleryDispatcher(),
             collection_name=settings.qdrant_collection,
-            retriever=Retriever(
-                qdrant=qdrant,
-                embeddings=embeddings,
-                fga=fga,
-                sessions=db,
-                collection_name=settings.qdrant_collection,
-                sparse_weight=settings.retrieval_sparse_weight,
-                rrf_k=settings.retrieval_rrf_k,
-                min_similarity=settings.retrieval_min_similarity,
-            ),
+            retriever=retriever,
             runs=RunRegistry(RunEvents(valkey)),
             agent_router=FastRouter(
                 embeddings,
@@ -106,7 +120,22 @@ class Resources:
             if settings.agent_fast_path
             else None,
             assistant_mode=settings.assistant_mode,
+            tools=tools,
+            remote_servers=[
+                RemoteServer(RemoteServerConfig.model_validate(c)) for c in settings.mcp_servers
+            ],
         )
+
+    async def load_remote_tools(self) -> None:
+        """Imports every configured MCP server's tools. A server that is down is skipped (and
+        logged): WorkMind starts without it rather than not at all."""
+        for server in self.remote_servers:
+            try:
+                await import_tools(self.tools, server)
+            except Exception as exc:
+                log.warning(
+                    "mcp_server_unavailable", server=server.config.key, error=str(exc)[:200]
+                )
 
     async def aclose(self) -> None:
         await self.runs.shutdown()

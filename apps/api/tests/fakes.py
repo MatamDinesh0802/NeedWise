@@ -43,5 +43,10 @@ class FakeLLM:
             model="fake", input_tokens=30, output_tokens=8
         )
 
+    async def run_tools(
+        self, role: Role, request: LLMRequest, tools: Any, execute: Any, *, max_steps: int = 6
+    ) -> Any:
+        raise NotImplementedError
+
     def roles(self) -> list[Role]:
         return [role for role, _ in self.requests]

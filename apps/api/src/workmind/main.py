@@ -7,11 +7,14 @@ import asyncio
 import contextlib
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 import structlog
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from mcp.server.transport_security import TransportSecuritySettings
 from opentelemetry.sdk.trace import TracerProvider
+from starlette.routing import Route
 
 from workmind.api import auth, v1
 from workmind.api.ops import probes
@@ -23,6 +26,8 @@ from workmind.core.middleware import RequestContextMiddleware
 from workmind.core.resources import Resources
 from workmind.core.telemetry import configure_telemetry
 from workmind.modules.authz.sync import OutboxWorker
+from workmind.modules.mcp_server.auth import RequireAccessToken
+from workmind.modules.mcp_server.server import build_mcp_server
 
 log = structlog.get_logger("workmind")
 
@@ -32,6 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings: Settings = app.state.settings
     resources = Resources.create(settings)
     app.state.resources = resources
+    await resources.load_remote_tools()
     # Tests inject fake checks before startup; keep them if present.
     if not hasattr(app.state, "health_checks"):
         app.state.health_checks = build_health_checks(
@@ -48,8 +54,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         version=settings.version,
         environment=settings.app_env,
     )
+    mcp_sessions = (
+        app.state.mcp.session_manager.run()
+        if hasattr(app.state, "mcp")
+        else contextlib.nullcontext()
+    )
     try:
-        yield
+        async with mcp_sessions:
+            yield
     finally:
         if outbox_worker is not None:
             outbox_worker.cancel()
@@ -81,5 +93,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(probes)
     app.include_router(auth.router)
     app.include_router(v1.router, prefix="/api/v1")
+    _add_mcp(app, settings)
     app.state.tracer_provider = configure_telemetry(app, settings)
     return app
+
+
+def _add_mcp(app: FastAPI, settings: Settings) -> None:
+    """The WorkMind MCP server at /mcp (Streamable HTTP, stateless). Its session manager runs
+    inside the app's lifespan, because Starlette never runs a mounted app's own lifespan."""
+    mcp = build_mcp_server(lambda: app.state.resources, settings.version)
+    public = urlsplit(settings.public_url).netloc
+    security = TransportSecuritySettings(
+        allowed_hosts=sorted({public, "localhost:*", "127.0.0.1:*", "api:*", "testserver"}),
+        allowed_origins=sorted(
+            {settings.public_origin, "http://localhost:*", "http://127.0.0.1:*"}
+        ),
+    )
+    mcp_app = mcp.streamable_http_app(
+        streamable_http_path="/mcp",
+        stateless_http=True,
+        json_response=True,
+        transport_security=security,
+    )
+    guarded = RequireAccessToken(mcp_app, lambda: app.state.resources)
+    app.router.routes.append(Route("/mcp", endpoint=guarded, methods=["GET", "POST", "DELETE"]))
+    app.state.mcp = mcp

@@ -11,6 +11,7 @@ from workmind.api.deps import require_scope, resources_of
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
+from workmind.modules.agents.research import research
 from workmind.modules.assistant.answer import RestrictedPolicy, answer
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import Tenant
@@ -173,5 +174,59 @@ async def ask(
             model=result.usage.model,
             input_tokens=result.usage.input_tokens,
             output_tokens=result.usage.output_tokens,
+        ),
+    )
+
+
+class ResearchRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    tools: list[str] | None = Field(default=None, description="limit to these tools")
+
+
+class ResearchStepOut(BaseModel):
+    tool: str
+    ok: bool
+    error: str | None
+
+
+class ResearchOut(BaseModel):
+    answer: str
+    steps: list[ResearchStepOut]
+    stopped: str
+    usage: UsageOut
+
+
+@router.post("/research")
+async def research_question(
+    ctx: Annotated[RequestContext, require_scope("assistant:ask")],
+    request: Request,
+    body: ResearchRequest,
+) -> ResearchOut:
+    """The research agent: the model picks tools (company search, configured MCP servers, web
+    search if enabled). Tools with side effects stop at the approval gate."""
+    resources = resources_of(request)
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        tenant = await session.get(Tenant, ctx.tenant_id)
+    try:
+        result = await research(
+            resources.llm,
+            resources.tools,
+            resources.db,
+            ctx,
+            body.question,
+            organization=tenant.name if tenant else "the company",
+            tool_names=body.tools,
+        )
+    except LLMError as exc:
+        raise ApiError(502, "model_unavailable", "The language model is unavailable") from exc
+    usage = result.usage[-1] if result.usage else None
+    return ResearchOut(
+        answer=result.text,
+        steps=[ResearchStepOut(tool=s.tool, ok=s.ok, error=s.error) for s in result.steps],
+        stopped=result.stopped,
+        usage=UsageOut(
+            model=usage.model if usage else "",
+            input_tokens=sum(u.input_tokens for u in result.usage),
+            output_tokens=sum(u.output_tokens for u in result.usage),
         ),
     )
