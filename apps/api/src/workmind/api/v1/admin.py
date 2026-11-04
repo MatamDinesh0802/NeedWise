@@ -35,6 +35,9 @@ DepartmentRoleName = Literal["manager", "member"]
 
 def require_roles(*roles: str):
     async def dependency(ctx: CurrentContext) -> RequestContext:
+        # Administration needs a browser session: no access-token scope grants it.
+        if not ctx.has_scope("admin"):
+            raise ApiError(403, "scope_required", "Access tokens cannot administer")
         if not ctx.has_role(*roles):
             raise ApiError(403, "forbidden", "Not allowed", f"Requires role: {', '.join(roles)}.")
         return ctx

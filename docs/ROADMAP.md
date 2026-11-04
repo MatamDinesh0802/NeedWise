@@ -75,7 +75,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - [x] Slice 5: OpenFGA model, outbox sync, reconcile, authz matrix tests
 - [x] Slice 6a: admin API (people, departments, groups, audit log) with guard rails and a role × endpoint test matrix
 - [ ] Slice 6b: admin UI and audit log viewer
-- [ ] Slice 7: personal access tokens
+- [x] Slice 7: personal access tokens (scoped, hashed, expiring), with an end-to-end test of an MCP-style client
 
 **Scope:**
 - Keycloak realm as code with demo users (ARCHITECTURE §6.7).

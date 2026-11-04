@@ -24,3 +24,7 @@ class RequestContext:
 
     def has_role(self, *roles: str) -> bool:
         return self.org_role in roles
+
+    def has_scope(self, scope: str) -> bool:
+        """Browser sessions carry every scope ("*"); access tokens only those granted."""
+        return "*" in self.scopes or scope in self.scopes

@@ -53,6 +53,10 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run pyright
       - run: uv run pytest
+      - name: Models and migrations match (alembic check on the migrated test database)
+        env:
+          MIGRATIONS_DATABASE_URL: postgresql+asyncpg://workmind_test_owner:test-only-password@localhost:5432/workmind_test
+        run: uv run alembic check
 
   web:
     name: Web · lint, types, tests, build

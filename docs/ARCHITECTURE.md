@@ -316,7 +316,7 @@ The same context flows into agents, tools, retrieval and Celery tasks. This is w
 
 | Client | Method |
 |---|---|
-| MCP clients, CLI, scripts | **Personal access tokens** (`wm_pat_…`). Only a hash is stored. Tokens are scoped (e.g. `knowledge:read`, `assistant:ask`), expire, and act *as the user*. |
+| MCP clients, CLI, scripts | **Personal access tokens**: `wm_pat_<tenant-slug>_<256-bit secret>`. Only the SHA-256 is stored, and the plain token is shown once. They expire (1–365 days), act *as the user*, and carry scopes (`profile:read`, `knowledge:read`, `assistant:ask`). No scope grants administration, and a token can never create tokens. Revoking the token or disabling the user stops it immediately. |
 | Integrations / automation | **Service accounts** via Keycloak client-credentials, with narrow scopes |
 | Inbound webhooks (Slack events, etc.) | Signature verification per provider. No session involved. |
 

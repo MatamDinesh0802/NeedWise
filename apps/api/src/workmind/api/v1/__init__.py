@@ -3,9 +3,10 @@
 from fastapi import APIRouter
 
 from workmind.api.ops import system
-from workmind.api.v1 import admin, me
+from workmind.api.v1 import admin, me, tokens
 
 router = APIRouter()
 router.include_router(system)
+router.include_router(tokens.router)  # before /me so /me/tokens matches here
 router.include_router(me.router)
 router.include_router(admin.router)

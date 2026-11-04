@@ -1,11 +1,13 @@
 """The signed-in user's profile, roles and memberships."""
 
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from workmind.api.deps import CurrentContext, resources_of
+from workmind.api.deps import require_scope, resources_of
+from workmind.core.context import RequestContext
 from workmind.core.errors import unauthenticated
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.identity.models import Tenant
@@ -45,7 +47,7 @@ class Me(BaseModel):
 
 
 @router.get("/me")
-async def me(ctx: CurrentContext, request: Request) -> Me:
+async def me(ctx: Annotated[RequestContext, require_scope("profile:read")], request: Request) -> Me:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as db:
         identity = await load_identity(db, ctx.user_id)
         tenant = await db.get(Tenant, ctx.tenant_id)

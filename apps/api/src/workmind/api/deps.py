@@ -10,6 +10,7 @@ from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError, unauthenticated
 from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
+from workmind.modules.identity import tokens
 from workmind.modules.identity.service import load_identity
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -42,8 +43,30 @@ def verify_csrf(request: Request, settings: Settings) -> None:
         )
 
 
+async def _token_context(request: Request, plain: str) -> RequestContext:
+    """Bearer access tokens are not ambient credentials (a browser never sends them on its
+    own), so CSRF checks do not apply to them."""
+    result = await tokens.authenticate(resources_of(request).db, plain)
+    if result is None:
+        raise unauthenticated("The access token is invalid, revoked or expired.")
+    token, identity = result
+    return RequestContext(
+        request_id=getattr(request.state, "request_id", ""),
+        tenant_id=token.tenant_id,
+        user_id=token.user_id,
+        org_role=identity.user.org_role,
+        principals=identity.principals,
+        auth_method="pat",
+        scopes=frozenset(token.scopes),
+    )
+
+
 async def get_request_context(request: Request) -> RequestContext:
     settings, resources = settings_of(request), resources_of(request)
+    authorization = request.headers.get("authorization", "")
+    if authorization[:7].lower() == "bearer ":
+        return await _token_context(request, authorization[7:].strip())
+
     session_id = request.cookies.get(settings.session_cookie_name)
     if not session_id:
         raise unauthenticated()
@@ -66,7 +89,26 @@ async def get_request_context(request: Request) -> RequestContext:
         org_role=identity.user.org_role,
         principals=identity.principals,
         auth_method="session",
+        scopes=frozenset({"*"}),
     )
 
 
 CurrentContext = Annotated[RequestContext, Depends(get_request_context)]
+
+
+def require_scope(scope: str):
+    async def dependency(ctx: CurrentContext) -> RequestContext:
+        if not ctx.has_scope(scope):
+            raise ApiError(403, "scope_required", "Missing scope", f"Requires scope '{scope}'.")
+        return ctx
+
+    return Depends(dependency)
+
+
+async def _session_only(ctx: CurrentContext) -> RequestContext:
+    if ctx.auth_method != "session":
+        raise ApiError(403, "session_required", "Sign in with a browser session for this action")
+    return ctx
+
+
+SessionContext = Annotated[RequestContext, Depends(_session_only)]

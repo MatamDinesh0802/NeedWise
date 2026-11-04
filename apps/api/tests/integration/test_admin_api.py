@@ -5,92 +5,21 @@ TEST_DATABASE_ADMIN_URL and TEST_VALKEY_URL but not Keycloak.
 """
 
 import asyncio
-import os
 import uuid
-from collections.abc import Iterator
-from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from redis.asyncio import Redis
 from sqlalchemy import select
 
-from tests.integration.conftest import Database, SessionFactory
-from workmind.core.config import Settings
+from tests.integration.conftest import VALKEY_URL, Acme, SessionFactory, seed_acme
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
 from workmind.modules.authz.models import AuthzOutbox
 from workmind.modules.identity import admin
-from workmind.modules.identity.models import Department, User
-from workmind.modules.identity.sessions import SessionStore
-from workmind.seed.apply import seed_database
-from workmind.seed.company import load_company
+from workmind.modules.identity.models import Department
 
-VALKEY_URL = os.environ.get("TEST_VALKEY_URL")
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL to run")
-ACME = Path(__file__).resolve().parents[4] / "seed" / "acme" / "company.yaml"
-WRITE = {"Origin": "http://localhost:8480", "X-CSRF-Protection": "1"}
-
-
-@dataclass
-class Acme:
-    tenant_id: uuid.UUID
-    users: dict[str, uuid.UUID]  # first part of the email -> id
-    sessions: dict[str, str]  # first part of the email -> session cookie
-
-    def as_(self, name: str, *, write: bool = False) -> dict[str, str]:
-        headers = {"Cookie": f"wm_session={self.sessions[name]}"}
-        return {**headers, **WRITE} if write else headers
-
-
-async def _seed(owner_sessions: SessionFactory) -> Acme:
-    spec = load_company(ACME)
-    slug = f"acme-{uuid.uuid4().hex[:8]}"
-    spec = spec.model_copy(update={"company": spec.company.model_copy(update={"slug": slug})})
-    subjects = {p.email.lower(): f"kc-{slug}-{p.email.split('@')[0]}" for p in spec.people}
-    seeded = await seed_database(spec, owner_sessions, subjects)
-    async with tenant_transaction(owner_sessions, seeded.tenant_id) as session:
-        users = {
-            u.email.split("@")[0]: (u.id, u.keycloak_sub)
-            for u in await session.scalars(select(User))
-        }
-
-    assert VALKEY_URL is not None
-    valkey = Redis.from_url(VALKEY_URL)  # pyright: ignore[reportUnknownMemberType]
-    store = SessionStore(valkey, idle_timeout_s=1800, absolute_timeout_s=3600)
-    sessions = {
-        name: await store.create(
-            user_id=user_id,
-            tenant_id=seeded.tenant_id,
-            keycloak_sub=sub or "",
-            keycloak_sid=None,
-            id_token="t",
-        )
-        for name, (user_id, sub) in users.items()
-    }
-    await valkey.aclose()
-    return Acme(seeded.tenant_id, {n: uid for n, (uid, _) in users.items()}, sessions)
-
-
-@pytest.fixture
-async def acme(owner_sessions: SessionFactory) -> Acme:
-    return await _seed(owner_sessions)
-
-
-@pytest.fixture
-def api(database: Database) -> Iterator[TestClient]:
-    settings = Settings(
-        _env_file=None,  # pyright: ignore[reportCallIssue]
-        app_env="test",
-        database_url=database.app_url,
-        valkey_url=VALKEY_URL or "",
-        authz_outbox_worker=False,
-    )
-    with TestClient(create_app(settings)) as client:
-        yield client
 
 
 # --- Who may call what ---------------------------------------------------------------------
@@ -230,7 +159,7 @@ async def test_nested_groups_cannot_form_a_cycle(api: TestClient, acme: Acme) ->
 async def test_other_tenants_records_are_invisible(
     api: TestClient, acme: Acme, owner_sessions: SessionFactory
 ) -> None:
-    other = await _seed(owner_sessions)
+    other = await seed_acme(owner_sessions)
 
     response = api.patch(
         f"/api/v1/admin/users/{other.users['bob']}",

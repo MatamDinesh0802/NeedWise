@@ -8,13 +8,14 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import CITEXT, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from workmind.core.db import Base, TenantScoped, Timestamps, uuid_primary_key
@@ -151,3 +152,27 @@ class GroupMember(Base, TenantScoped):
     member_user_id: Mapped[uuid.UUID | None]
     member_group_id: Mapped[uuid.UUID | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ApiToken(Base, TenantScoped):
+    """A personal access token: acts as its user, limited to its scopes (ARCHITECTURE 6.5).
+    Only the SHA-256 of the token is stored; the plain token is shown once, at creation."""
+
+    __tablename__ = "api_tokens"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "user_id"], ["users.tenant_id", "users.id"], ondelete="CASCADE"
+        ),
+        UniqueConstraint("token_hash"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_primary_key()
+    user_id: Mapped[uuid.UUID]
+    name: Mapped[str] = mapped_column(Text)
+    prefix: Mapped[str] = mapped_column(Text)  # e.g. "wm_pat_acme_Xy3q", safe to display
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary)
+    scopes: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
