@@ -1,7 +1,8 @@
-import { PagePlaceholder, sectionMetadata } from "@/components/page-placeholder";
+import { CollectionsView } from "@/components/knowledge/collections-view";
+import { sectionMetadata } from "@/components/page-placeholder";
 
 export const metadata = sectionMetadata("/knowledge");
 
 export default function KnowledgePage() {
-  return <PagePlaceholder href="/knowledge" />;
+  return <CollectionsView />;
 }

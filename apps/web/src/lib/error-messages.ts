@@ -19,7 +19,7 @@ const MESSAGES: Record<string, Omit<ErrorMessage, "code">> = {
   },
   slug_taken: {
     title: "Slug already in use",
-    description: "Another item already uses this slug. Choose a different one.",
+    description: "Another item already uses this slug or key. Choose a different one.",
   },
   last_owner: {
     title: "The organization needs an owner",
@@ -49,6 +49,19 @@ const MESSAGES: Record<string, Omit<ErrorMessage, "code">> = {
   csrf_header: {
     title: "Request blocked",
     description: "The request was missing a security header. Reload the page and try again.",
+  },
+  // 422 business rules
+  department_required: {
+    title: "Choose a department",
+    description: "A department collection belongs to one department; pick it before saving.",
+  },
+  viewers_required: {
+    title: "Choose who can view",
+    description: "A restricted collection needs at least one person or group who can view it.",
+  },
+  no_version: {
+    title: "Nothing to re-index",
+    description: "This document has no stored version yet. Upload the file again.",
   },
   // Other
   unauthenticated: {

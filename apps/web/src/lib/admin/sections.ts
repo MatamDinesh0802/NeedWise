@@ -6,7 +6,7 @@
 
 import type { OrgRole } from "@/lib/session";
 
-export type AdminSectionKey = "people" | "departments" | "groups" | "audit";
+export type AdminSectionKey = "people" | "departments" | "groups" | "collections" | "audit";
 
 export interface AdminSection {
   key: AdminSectionKey;
@@ -38,6 +38,13 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     title: "Groups",
     href: "/admin/groups",
     description: "Groups of people and nested groups, used for sharing knowledge.",
+    roles: MANAGERS,
+  },
+  {
+    key: "collections",
+    title: "Collections",
+    href: "/admin/collections",
+    description: "Who can view and edit each knowledge collection. Managing sharing doesn't let you read restricted documents.",
     roles: MANAGERS,
   },
   {

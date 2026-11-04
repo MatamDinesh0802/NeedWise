@@ -16,7 +16,7 @@ export const EMPTY_NAME_SLUG: NameSlugValue = { name: "", slug: "", slugEdited: 
 export function nameSlugErrors(value: NameSlugValue, serverSlugError?: string | null) {
   return {
     name: value.name.trim() ? null : "Enter a name.",
-    slug: serverSlugError ?? (value.slug ? slugError(value.slug) : "Enter a slug."),
+    slug: serverSlugError ?? (value.slug ? slugError(value.slug) : "Enter a value."),
   };
 }
 
@@ -26,11 +26,13 @@ export function NameSlugFields({
   onChange,
   serverSlugError,
   showErrors,
+  slugLabel = "Slug",
 }: {
   value: NameSlugValue;
   onChange: (value: NameSlugValue) => void;
   serverSlugError?: string | null;
   showErrors: boolean;
+  slugLabel?: string;
 }) {
   const errors = nameSlugErrors(value, serverSlugError);
   return (
@@ -52,7 +54,7 @@ export function NameSlugFields({
         )}
       </Field>
       <Field
-        label="Slug"
+        label={slugLabel}
         hint="Used in links and integrations. Lowercase letters, numbers and hyphens; can't be changed later."
         error={showErrors || value.slugEdited || serverSlugError ? errors.slug : null}
       >

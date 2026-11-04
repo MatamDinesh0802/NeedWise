@@ -43,10 +43,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <AppSidebar />
               <SidebarInset>
                 <SiteHeader />
-                <main className="flex flex-1 flex-col p-4 md:p-6">
+                <div className="flex flex-1 flex-col p-4 md:p-6">
                   <AuthErrorAlert />
                   {children}
-                </main>
+                </div>
               </SidebarInset>
             </SidebarProvider>
           </TooltipProvider>
