@@ -1,0 +1,198 @@
+# WorkMind AI local stack.
+#   make up        -> build and start everything, wait until healthy
+#   make infra     -> infrastructure only (run api/web on the host)
+# Every default below is for LOCAL DEVELOPMENT ONLY. Override them in .env (see .env.example).
+# Host ports bind to 127.0.0.1, so nothing is reachable from your network.
+
+name: workmind
+
+services:
+  postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      WORKMIND_OWNER_PASSWORD: ${WORKMIND_OWNER_PASSWORD:-workmind_owner}
+      WORKMIND_APP_PASSWORD: ${WORKMIND_APP_PASSWORD:-workmind_app}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
+      OPENFGA_DB_PASSWORD: ${OPENFGA_DB_PASSWORD:-openfga}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
+    healthcheck:
+      # -h 127.0.0.1 forces TCP, which only opens after the init scripts have finished.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  valkey:
+    image: valkey/valkey:9.1.3-alpine
+    command: ["valkey-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes: [valkey_data:/data]
+    ports: ["127.0.0.1:${VALKEY_PORT:-6379}:6379"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes: [qdrant_data:/qdrant/storage]
+    ports: ["127.0.0.1:${QDRANT_PORT:-6333}:6333"]
+    healthcheck:
+      test:
+        # /dev/tcp is a bash feature; the image's /bin/sh is dash, so call bash explicitly.
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/6333 &&
+          printf 'GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          read -r -t 3 status <&3 && [[ "$$status" == *" 200 "* ]]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  openfga-migrate:
+    image: openfga/openfga:v1.22.1
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://openfga:${OPENFGA_DB_PASSWORD:-openfga}@postgres:5432/openfga?sslmode=disable
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  openfga:
+    image: openfga/openfga:v1.22.1
+    command: run
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://openfga:${OPENFGA_DB_PASSWORD:-openfga}@postgres:5432/openfga?sslmode=disable
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+      OPENFGA_LOG_FORMAT: json
+      # Phase 1 enables pre-shared key authentication before the API writes any tuples.
+    depends_on:
+      openfga-migrate: { condition: service_completed_successfully }
+    ports: ["127.0.0.1:${OPENFGA_PORT:-8401}:8080"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=127.0.0.1:8081"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1
+    command: ["start-dev"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Served behind Caddy at <PUBLIC_URL>/auth. Containers reach it at http://keycloak:8080/auth.
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HOSTNAME: ${PUBLIC_URL:-http://localhost:8480}/auth
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      JAVA_OPTS_KC_HEAP: "-Xms256m -Xmx768m"
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test:
+        # /dev/tcp is a bash feature; the image's /bin/sh is dash, so call bash explicitly.
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /auth/health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          read -r -t 3 status <&3 && [[ "$$status" == *" 200 "* ]]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  migrate:
+    build: { context: apps/api }
+    image: workmind-api:dev
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://workmind_owner:${WORKMIND_OWNER_PASSWORD:-workmind_owner}@postgres:5432/workmind
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    build: { context: apps/api }
+    image: workmind-api:dev
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+asyncpg://workmind_app:${WORKMIND_APP_PASSWORD:-workmind_app}@postgres:5432/workmind
+      VALKEY_URL: redis://valkey:6379/0
+      QDRANT_URL: http://qdrant:6333
+      OPENFGA_API_URL: http://openfga:8080
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      # Trust X-Forwarded-* headers: only Caddy (and localhost) can reach this container.
+      FORWARDED_ALLOW_IPS: "*"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      valkey: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
+      openfga: { condition: service_healthy }
+      keycloak: { condition: service_started }
+    ports: ["127.0.0.1:${API_PORT:-8400}:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  web:
+    build: { context: apps/web }
+    image: workmind-web:dev
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    depends_on:
+      api: { condition: service_started }
+    ports: ["127.0.0.1:${WEB_PORT:-3400}:3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    ports: ["127.0.0.1:${HTTP_PORT:-8480}:8080"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9180/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  valkey_data:
+  qdrant_data:
+  caddy_data:

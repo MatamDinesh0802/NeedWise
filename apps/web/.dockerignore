@@ -1,0 +1,23 @@
+# Dependencies and build output are recreated inside the image
+node_modules
+.next
+out
+coverage
+*.tsbuildinfo
+next-env.d.ts
+
+# Local env and secrets never go into images
+.env*
+
+# Tooling / editor / docs not needed for the build
+.git
+.gitignore
+.dockerignore
+Dockerfile
+.vscode
+.idea
+.DS_Store
+.playwright-mcp
+*.log
+README.md
+AGENTS.md

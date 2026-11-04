@@ -1,0 +1,29 @@
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // Self-contained server bundle for the Docker image (see Dockerfile).
+  output: "standalone",
+  poweredByHeader: false,
+  cacheComponents: true,
+  partialPrefetching: true,
+  turbopack: {
+    rules: {
+      "*.css": {
+        loaders: ["@tailwindcss/turbopack"],
+        as: "*.css",
+      },
+    },
+  },
+  /**
+   * In Docker, Caddy serves the web app and the API on one origin, so `/api/*`
+   * never reaches Next.js. For local `pnpm dev` (port 3400) we proxy it to the API.
+   * Production builds get no rewrites: next.config is serialized at build time.
+   */
+  async rewrites() {
+    if (process.env.NODE_ENV !== "development") return [];
+    const apiInternalUrl = process.env.API_INTERNAL_URL ?? "http://localhost:8400";
+    return [{ source: "/api/:path*", destination: `${apiInternalUrl}/api/:path*` }];
+  },
+};
+
+export default nextConfig;

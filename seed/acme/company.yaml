@@ -1,0 +1,136 @@
+# Acme Robotics: the fictional company used for WorkMind demos and evaluation.
+# Everything in this file is invented. Any resemblance to real people or companies is
+# coincidental. `.test` is a reserved top-level domain (RFC 2606) and never resolves.
+#
+# Phase 1 seeds Keycloak users, departments, groups and collections from this file.
+# Phase 2 adds facts.yaml (ground truth) and generates the document corpus from it.
+
+company:
+  name: Acme Robotics
+  slug: acme
+  domain: acme.test
+  industry: Warehouse robotics (autonomous mobile robots and fleet software)
+  headcount: 180
+  founded: 2019
+  timezone: UTC
+
+departments:
+  - { key: management,  name: Management }
+  - { key: hr,          name: People & HR }
+  - { key: engineering, name: Engineering }
+  - { key: finance,     name: Finance }
+  - { key: sales,       name: Sales }
+  - { key: marketing,   name: Marketing }
+  - { key: support,     name: Customer Support }
+  - { key: operations,  name: Operations }
+
+# Cross-department groups that unlock restricted collections.
+groups:
+  - { key: leadership,    description: Executive team }
+  - { key: hr-records,    description: HR staff allowed to see employee records }
+  - { key: finance-leads, description: Finance managers with access to payroll and budgets }
+
+# org_role:  owner | admin | auditor | member | guest       (ARCHITECTURE §7.1)
+# dept_role: manager | member
+people:
+  # --- Demo logins: one per persona (ARCHITECTURE §6.7) ---------------------------------
+  - { email: alice@acme.test,   name: Alice Moreau,    title: HR Manager,          department: hr,          dept_role: manager, org_role: member, groups: [hr-records], demo: true }
+  - { email: bob@acme.test,     name: Bob Okafor,      title: Software Engineer,   department: engineering, dept_role: member,  org_role: member, demo: true }
+  - { email: carol@acme.test,   name: Carol Lindqvist, title: Finance Analyst,     department: finance,     dept_role: member,  org_role: member, demo: true }
+  - { email: dan@acme.test,     name: Dan Whitaker,    title: Account Executive,   department: sales,       dept_role: member,  org_role: member, demo: true }
+  - { email: erin@acme.test,    name: Erin Takahashi,  title: IT Administrator,    department: operations,  dept_role: member,  org_role: admin,  demo: true }
+  - { email: mallory@acme.test, name: Mallory Quinn,   title: External Contractor,                                            org_role: guest,  demo: true, red_team: true }
+
+  # --- Other employees: they appear in documents, meetings and tasks -------------------
+  - { email: priya.raman@acme.test,   name: Priya Raman,    title: Chief Executive Officer,  department: management,  dept_role: manager, org_role: owner,  groups: [leadership] }
+  - { email: marcus.bell@acme.test,   name: Marcus Bell,    title: Chief Technology Officer, department: engineering, dept_role: manager, org_role: member, groups: [leadership] }
+  - { email: hannah.schmidt@acme.test, name: Hannah Schmidt, title: Chief Financial Officer, department: finance,     dept_role: manager, org_role: member, groups: [leadership, finance-leads] }
+  - { email: diego.alvarez@acme.test, name: Diego Alvarez,  title: VP Sales,                 department: sales,       dept_role: manager, org_role: member, groups: [leadership] }
+  - { email: grace.liu@acme.test,     name: Grace Liu,      title: Head of Marketing,        department: marketing,   dept_role: manager, org_role: member }
+  - { email: samuel.mensah@acme.test, name: Samuel Mensah,  title: Support Lead,             department: support,     dept_role: manager, org_role: member }
+  - { email: olivia.grant@acme.test,  name: Olivia Grant,   title: Head of Operations,       department: operations,  dept_role: manager, org_role: member, groups: [leadership] }
+  - { email: tom.becker@acme.test,    name: Tom Becker,     title: HR Generalist,            department: hr,          dept_role: member,  org_role: member, groups: [hr-records] }
+  - { email: wei.zhang@acme.test,     name: Wei Zhang,      title: Staff Engineer,           department: engineering, dept_role: member,  org_role: member }
+  - { email: fatima.hassan@acme.test, name: Fatima Hassan,  title: Platform Engineer,        department: engineering, dept_role: member,  org_role: member }
+  - { email: noah.fischer@acme.test,  name: Noah Fischer,   title: Payroll Specialist,       department: finance,     dept_role: member,  org_role: member, groups: [finance-leads] }
+  - { email: lucia.romero@acme.test,  name: Lucia Romero,   title: Support Engineer,         department: support,     dept_role: member,  org_role: member }
+  - { email: ivan.petrov@acme.test,   name: Ivan Petrov,    title: Logistics Coordinator,    department: operations,  dept_role: member,  org_role: member }
+  - { email: amara.diallo@acme.test,  name: Amara Diallo,   title: Auditor (internal),       department: finance,     dept_role: member,  org_role: auditor }
+
+# scope: personal | department | enterprise | restricted       (ARCHITECTURE §7.2)
+# trust: official | reference | discussion;  sensitivity: internal | confidential | restricted
+# viewers use OpenFGA-style principals: department:<key>, group:<key>, user:<email>
+collections:
+  - key: company-handbook
+    name: Company Handbook
+    scope: enterprise
+    trust: official
+    description: Company-wide policies (leave, travel, expenses, code of conduct, security).
+  - key: hr-guidance
+    name: HR Guidance (internal)
+    scope: department
+    department: hr
+    trust: reference
+    description: HR-internal procedures, policy drafts, including an outdated 2025 leave policy.
+  - key: hr-employee-records
+    name: Employee Records
+    scope: restricted
+    viewers: [group:hr-records]
+    sensitivity: restricted
+    description: Salary bands, performance reviews, personal data. Contains canary tokens.
+  - key: engineering-docs
+    name: Engineering Docs
+    scope: department
+    department: engineering
+    trust: reference
+    description: ADRs, API documentation, runbooks, incident postmortems.
+  - key: finance-reports
+    name: Finance Reports
+    scope: department
+    department: finance
+    viewers: [group:leadership]
+    sensitivity: confidential
+    description: Monthly P&L, budgets, revenue by product line (XLSX + PDF).
+  - key: finance-payroll
+    name: Payroll
+    scope: restricted
+    viewers: [group:finance-leads, group:hr-records]
+    sensitivity: restricted
+    description: Payroll runs and leave-benefit payouts. Contains canary tokens.
+  - key: sales-accounts
+    name: Sales Accounts
+    scope: department
+    department: sales
+    description: Proposals, account plans, win/loss notes.
+  - key: marketing-campaigns
+    name: Marketing Campaigns
+    scope: department
+    department: marketing
+    description: Campaign briefs and performance reports.
+  - key: support-knowledge
+    name: Support Knowledge Base
+    scope: department
+    department: support
+    viewers: [department:engineering]
+    description: Ticket resolutions, known issues, escalation guides.
+  - key: operations-sops
+    name: Operations SOPs
+    scope: enterprise
+    trust: official
+    description: Standard operating procedures for warehouses, shipping and on-call.
+  - key: leadership-strategy
+    name: Leadership Strategy
+    scope: restricted
+    viewers: [group:leadership]
+    sensitivity: restricted
+    description: Board updates, strategy, a confidential acquisition plan. Contains canary tokens.
+  - key: slack-general
+    name: "Slack: #general"
+    scope: enterprise
+    trust: discussion
+    description: Exported chat threads. Some messages contradict official policy on purpose.
+  - key: contractor-onboarding
+    name: Contractor Onboarding
+    scope: restricted
+    viewers: [user:mallory@acme.test, department:engineering]
+    description: The only collection the external contractor can see.

@@ -1,0 +1,11 @@
+WorkMind AI Enterprise Edition License
+
+Copyright (c) 2026 The WorkMind AI Authors. All rights reserved.
+
+The software in this directory ("ee/") is NOT licensed under the Apache License 2.0
+that covers the rest of this repository. It is proprietary. Viewing the source is
+permitted; using, copying, modifying or distributing it in production requires a
+commercial agreement with the copyright holder.
+
+The full commercial license terms will be published here before any Enterprise
+Edition feature ships. Until then, this directory contains no functional code.

@@ -1,0 +1,33 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Node / Next.js (apps/web has its own .gitignore too)
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Local tooling
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.playwright-mcp/
+graphify-out/
+
+# Data produced at runtime
+/data/
+evals/results/*.tmp

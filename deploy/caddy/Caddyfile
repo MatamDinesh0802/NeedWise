@@ -1,0 +1,36 @@
+{
+	admin off
+	auto_https off
+}
+
+# Public entry point: one origin serves the UI, the API and the login pages,
+# so the session cookie works everywhere without CORS.
+:8080 {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		?X-Frame-Options SAMEORIGIN
+		-Server
+	}
+
+	@api path /api/* /mcp /mcp/*
+	handle @api {
+		reverse_proxy api:8000
+	}
+
+	@keycloak path /auth /auth/*
+	handle @keycloak {
+		reverse_proxy keycloak:8080
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# Container healthcheck only. This port is not published.
+:9180 {
+	respond "ok" 200
+}

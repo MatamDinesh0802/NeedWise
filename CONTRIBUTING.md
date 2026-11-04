@@ -1,0 +1,45 @@
+# Contributing to WorkMind AI
+
+Thanks for helping. This guide covers setup, conventions and what a pull request needs.
+
+## Setup
+
+See [Local development](README.md#local-development). In short: `make install`, `make infra`,
+`make api-dev`, `make web-dev`.
+
+## Before you open a pull request
+
+- `make lint test` passes.
+- New behavior has tests. Permission-related changes need authorization tests: every role ×
+  action that the change touches, including the "deny" cases.
+- Documentation and ADRs are updated when a design decision changes.
+- The PR does one thing. Large changes start as an issue or discussion first.
+
+## Commit messages
+
+We use [Conventional Commits](https://www.conventionalcommits.org): `feat:`, `fix:`, `docs:`,
+`refactor:`, `test:`, `chore:`, `ci:`. They drive the changelog and version numbers.
+
+## Developer Certificate of Origin (DCO)
+
+Every commit must be signed off, certifying that you wrote the change or have the right to
+submit it under the project's license ([developercertificate.org](https://developercertificate.org)):
+
+```bash
+git commit -s -m "feat: add document version history"
+```
+
+This adds `Signed-off-by: Your Name <you@example.com>`. CI rejects commits without it.
+
+## Licensing of contributions
+
+Contributions to everything outside `ee/` are made under the [Apache License 2.0](LICENSE).
+The `ee/` directory is under a separate commercial license and does not accept external
+contributions.
+
+## Security
+
+Never open a public issue for a vulnerability. See [SECURITY.md](SECURITY.md).
+
+Never commit real company data, credentials or personal information. Test data must be
+synthetic (see `seed/`).
