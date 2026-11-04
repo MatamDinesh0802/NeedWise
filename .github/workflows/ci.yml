@@ -143,7 +143,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Use deterministic hash embeddings (CI has no embedding model server)
-        run: printf 'EMBEDDING_PROVIDER=hash\nEMBEDDING_MODEL=hash-ci\n' > .env
+        # The relevance floor is calibrated for real embeddings; off here, so the permission
+        # gate checks every candidate a search can return.
+        run: printf 'EMBEDDING_PROVIDER=hash\nEMBEDDING_MODEL=hash-ci\nRETRIEVAL_MIN_SIMILARITY=0\n' > .env
       - run: docker compose up -d --build --wait
       - name: All components report ok through Caddy
         run: |

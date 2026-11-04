@@ -24,9 +24,9 @@
 {"id": "qa-24", "user": "bob", "question": "How long was FleetOS unavailable during INC-2026-031?", "expected": ["incident-postmortem-inc-2026-031.docx"], "facts": ["47 minutes"], "category": "identifier"}
 {"id": "qa-25", "user": "bob", "question": "How do I restart the fleet controller?", "expected": ["oncall-runbook.md"], "facts": ["systemctl restart fleetd"], "category": "engineering"}
 {"id": "qa-26", "user": "bob", "question": "When is FleetOS 3.0 planned to be released?", "expected": ["engineering-roadmap-h2-2026.pptx"], "facts": [["2026-12-01", "1 December", "December 1"]], "category": "slides"}
-{"id": "qa-27", "user": "carol", "question": "What was our revenue in Q3 2026?", "expected": ["q3-2026-financial-summary.xlsx"], "facts": ["14.2"], "category": "table"}
+{"id": "qa-27", "user": "carol", "question": "What was our revenue in Q3 2026?", "expected": ["q3-2026-financial-summary.xlsx"], "facts": [["14.2", "14,200,000"]], "category": "table"}
 {"id": "qa-28", "user": "carol", "question": "What was the gross margin in Q3 2026?", "expected": ["q3-2026-financial-summary.xlsx"], "facts": ["41"], "category": "table"}
-{"id": "qa-29", "user": "carol", "question": "What is the draft 2027 engineering budget?", "expected": ["budget-2027-draft.docx"], "facts": ["9.4"], "category": "finance"}
+{"id": "qa-29", "user": "carol", "question": "What is the draft 2027 engineering budget?", "expected": ["budget-2027-draft.docx"], "facts": [["9.4", "9,400,000"]], "category": "finance"}
 {"id": "qa-30", "user": "hannah.schmidt", "question": "How much did we pay in leave benefit payouts in Q3 2026?", "expected": ["payroll-summary-q3-2026.xlsx"], "facts": [["182,400", "182400", "182.4"]], "category": "restricted"}
 {"id": "qa-31", "user": "dan", "question": "When does the Bluefin Freight contract renew?", "expected": ["account-plan-bluefin-freight.docx"], "facts": [["2027-03-31", "31 March 2027", "March 31, 2027"]], "category": "sales"}
 {"id": "qa-32", "user": "dan", "question": "How many robots are in the Kestrel Retail proposal?", "expected": ["proposal-kestrel-retail.pdf"], "facts": [["40 amr", "40 robots", "40 units"]], "category": "sales"}
@@ -67,7 +67,7 @@
 {"id": "pp-25", "user": "carol", "question": "How much did we spend on running costs in the third quarter?", "expected": ["q3-2026-financial-summary.xlsx"], "facts": ["5.3"], "category": "paraphrase"}
 {"id": "pp-26", "user": "carol", "question": "How many people do we plan to employ next year?", "expected": ["budget-2027-draft.docx"], "facts": ["205"], "category": "paraphrase"}
 {"id": "pp-27", "user": "carol", "question": "How much did software subscriptions earn in September?", "expected": ["monthly-revenue-by-product-2026.xlsx"], "facts": [["1,520", "1520", "1.52"]], "category": "paraphrase"}
-{"id": "pp-28", "user": "hannah.schmidt", "question": "What did salaries cost us in total last quarter?", "expected": ["payroll-summary-q3-2026.xlsx"], "facts": ["6.1"], "category": "paraphrase"}
+{"id": "pp-28", "user": "hannah.schmidt", "question": "What did salaries cost us in total last quarter?", "expected": ["payroll-summary-q3-2026.xlsx"], "facts": [["6.1", "6,100,000", "6100000"]], "category": "paraphrase"}
 {"id": "pp-29", "user": "priya.raman", "question": "When are we hoping to close the sensor company deal?", "expected": ["project-heron-acquisition-memo.docx"], "facts": ["Q1 2027"], "category": "paraphrase"}
 {"id": "pp-30", "user": "mallory", "question": "What do I have to sign before I can see the code?", "expected": ["contractor-guide.md"], "facts": [["NDA", "non-disclosure"]], "category": "paraphrase"}
 {"id": "id-01", "user": "samuel.mensah", "question": "What is SUP-4471?", "expected": ["ticket-export-q3-2026.xlsx"], "facts": [["prompt-injection", "prompt injection", "not a genuine"]], "category": "identifier"}

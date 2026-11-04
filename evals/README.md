@@ -26,6 +26,8 @@ every push, with deterministic hash embeddings and the full corpus.
 | `retrieval_qa.jsonl` | 82 | asking user, question, expected document(s), required facts. 42 direct, 30 paraphrased (no keyword overlap), 10 exact identifiers |
 | `red_team.jsonl` | 16 | user, attack, forbidden documents and canary strings: direct, indirect, adjacent role, admin, owner, guest, auditor, prompt injection (direct and via ticket SUP-4471), social engineering |
 | `abstention.jsonl` | 6 | questions with no answer in any source the user can see: 3 absent everywhere, 3 that exist but are restricted |
+| `cross_department.jsonl` | 15 | questions that need two or three departments, with expected agents, documents and facts |
+| `routing.jsonl` | 36 | question → expected agents (single area, several areas, or none) |
 
 Restricted documents carry **canary tokens** (`CANARY-SALARY-4F9`, ...). A canary or a forbidden
 document in an unauthorized user's context *or* answer is a leak, with no judgement call.
@@ -83,6 +85,32 @@ model configured. All 6 questions whose answers live only in restricted document
 bands, a performance review, payroll, an acquisition memo) were answered without those
 documents. None of them reached the hosted model, and every other answer was unaffected.
 
+### Multi-agent: does it help? ([ADR 0009](../docs/adr/0009-orchestration-without-a-graph-framework.md))
+
+`wm eval --suites cross,routing --assistant single|agents|auto` on 15 cross-department
+questions (`datasets/cross_department.jsonl`) and 36 routing questions (`datasets/routing.jsonl`).
+
+| | Single pipeline | Agents | Auto |
+|---|---|---|---|
+| Every required fact | 14/15 | 15/15 | 15/15 |
+| Three-area questions | 2/3 | 3/3 | 3/3 |
+| Latency p50 | 6.6 s | 19.2 s | 22.3 s |
+| Cost per answer | $0.022 | $0.098 | $0.095 |
+
+The planner routes 36/36 questions to the right agents; the fast path skips the planner for 8
+of them with no mistakes. Specialists only pay off for questions that span three areas, so
+the single pipeline stays the default. Planner and judge calls are not deterministic: repeated
+runs move individual items, not the picture.
+
+### Relevance floor
+
+Dense search always returns *something*. On EmbeddingGemma, the best similarity of answerable
+questions is at least 0.313, while clearly off-topic prompts score 0.20–0.25 ("write a haiku",
+"who won the World Cup"). Below `RETRIEVAL_MIN_SIMILARITY=0.25`, the assistant answers "not
+found" without calling a model. The scales overlap above that (one unanswerable question scores
+0.49), so the model's own abstention still does most of the work. The floor is model-specific:
+recalibrate it when changing the embedding model.
+
 ### What the evaluation caught
 
 - **Lock 1 and lock 2 disagreed for auditors.** The index treated them as organization
@@ -91,5 +119,9 @@ documents. None of them reached the hosted model, and every other answer was una
 - **The sensitivity scan judged topics, not data.** "medical" in the leave policy and
   "diagnosis" in a runbook labelled them restricted. Under `local_only` that would have hidden
   them from the model. It now looks for data (valid IBANs, ID numbers, pay next to amounts).
+- **SSE streams broke after 5 quiet seconds.** redis-py's default socket timeout cut a
+  blocking stream read, so a slow agent ended the browser's stream mid-answer.
+- **Agents that found nothing didn't fall back.** A contractor's question went to agents whose
+  areas don't include contractor onboarding; it now falls back to the plain search.
 - **The prompt contradicted itself.** It asked for hints about where an answer might be,
   and also forbade speculating. Removing the hints raised faithfulness from 96.5% to 99.8%.

@@ -176,7 +176,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 **Goal:** complex, cross-department requests answered by cooperating agents, with proof that it helps.
 
 **Scope:**
-- LangGraph run graph, supervisor planner (structured output), fast-path router.
+- Run orchestration (plain asyncio, ADR 0009), supervisor planner (structured output), fast-path router.
 - Agent registry (agents as configuration). HR, Engineering and Finance agents.
 - Fan-out with `Send`, evidence aggregation, validator with re-plan.
 - Postgres checkpoints, budgets, timeouts, partial results. Provider fallback chain.
@@ -237,7 +237,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **Scope:**
 - Approval service, approvals inbox, inline approval cards (approve / edit / reject).
-- LangGraph interrupts for agent actions.
+- Agent actions as stored proposals that a decision resumes (ADR 0009).
 - Tasks module. SMTP email adapter. `send_email` with approval.
 - Request routing to department queues.
 - Declarative workflows (YAML) with manual / schedule / event triggers.

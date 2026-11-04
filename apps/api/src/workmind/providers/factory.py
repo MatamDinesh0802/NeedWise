@@ -23,6 +23,7 @@ ROLE_EFFORT: dict[Role, Effort] = {
     "router": "low",
     "judge": "medium",
     "generator": "medium",
+    "agent": "low",  # department agents: focused extraction from a few passages
 }
 
 
@@ -32,6 +33,7 @@ def role_configs(settings: Settings) -> dict[Role, RoleConfig]:
         "router": settings.llm_model_router,
         "judge": settings.llm_model_judge,
         "generator": settings.llm_model_generator,
+        "agent": settings.llm_model_agent,
     }
     return {
         role: RoleConfig(model=overrides[role] or settings.llm_model, effort=ROLE_EFFORT[role])

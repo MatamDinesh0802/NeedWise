@@ -80,6 +80,7 @@ def api(database: Database, tmp_path: Path, model_name: str) -> Iterator[TestCli
         authz_outbox_worker=False,
         ingestion_mode="inline",
         embedding_provider="hash",
+        retrieval_min_similarity=0.0,  # the floor is calibrated for real embeddings
         embedding_model=model_name,
         embedding_dimensions=64,
         object_storage_path=str(tmp_path),
@@ -286,3 +287,78 @@ async def test_a_guest_gets_an_honest_answer_without_any_model_call(
     assert received[1] == ("retrieval", {"sources": [], "withheld": 0})
     assert received[-1][1]["abstained"] is True
     assert llm.requests == []
+
+
+async def test_in_agents_mode_the_plan_and_each_agent_are_streamed(
+    api: TestClient, acme: Acme
+) -> None:
+    from workmind.modules.agents.department import EvidenceOut, Finding
+    from workmind.modules.agents.planning import PlanOut, Subtask
+
+    llm = use_model(
+        api,
+        FakeLLM(
+            "Parental leave is 16 weeks [S1].",
+            structured=[
+                PlanOut(
+                    mode="single", subtasks=[Subtask(agent="hr", goal="Parental leave length?")]
+                ),
+                EvidenceOut(
+                    findings=[Finding(claim="16 weeks", sources=["S1"])],
+                    gaps=[],
+                    follow_up_query="",
+                ),
+            ],
+        ),
+    )
+    app: Any = api.app
+    app.state.resources.assistant_mode = "agents"
+    app.state.resources.agent_router = None  # always ask the (scripted) planner
+    conversation = start(api, acme, "alice")
+
+    received = events(api, acme, "alice", ask(api, acme, "alice", conversation, "Parental leave?"))
+    detail = api.get(f"/api/v1/conversations/{conversation}", headers=acme.as_("alice")).json()
+
+    names = [n for n, _ in received]
+    assert names[:3] == ["run.started", "plan", "agent.step"]
+    assert received[1][1] == {
+        "mode": "single",
+        "routed_by": "planner",
+        "subtasks": [{"agent": "hr", "goal": "Parental leave length?"}],
+    }
+    done = next(d for n, d in received if n == "agent.step" and d["status"] == "done")
+    assert (done["agent"], done["findings"]) == ("hr", 1)
+    assert detail["messages"][-1]["citations"][0]["filename"] == "leave.md"
+    assert [role for role, _ in llm.requests] == ["router", "agent", "answer"]
+    assert detail["messages"][-1]["usage"]["input_tokens"] == 30 + 30 + 100  # every call counted
+
+
+async def test_a_cancelled_exchange_does_not_steer_the_next_answer(
+    api: TestClient, acme: Acme
+) -> None:
+    llm = use_model(api, FakeLLM([f"word{i} " for i in range(200)], delay=0.01))
+    conversation = start(api, acme, "alice")
+    run = ask(api, acme, "alice", conversation, "Explain the whole travel policy in detail")
+    api.post(f"/api/v1/runs/{run}/cancel", headers=acme.as_("alice", write=True))
+    events(api, acme, "alice", run)
+    llm.tokens, llm.delay = ["Sixteen weeks [S1]."], 0.0
+
+    received = events(api, acme, "alice", ask(api, acme, "alice", conversation, "Parental leave?"))
+
+    prompt = llm.requests[-1][1]
+    assert [m.role for m in prompt.messages] == ["user"]  # no unanswered question before it
+    assert received[-1][1]["usage"]["cost_usd"] is None  # the fake model has no price
+    assert received[-1][1]["usage"]["input_tokens"] == 100  # no empty rewrite usage counted
+
+
+async def test_a_long_pause_between_events_keeps_the_stream_alive(
+    api: TestClient, acme: Acme
+) -> None:
+    """Regression: a pause longer than the Valkey client's 5 s socket timeout used to abort
+    the SSE response mid-stream (browsers showed ERR_INCOMPLETE_CHUNKED_ENCODING)."""
+    use_model(api, FakeLLM(["Sixteen weeks [S1]."], delay=6.0))
+    conversation = start(api, acme, "alice")
+
+    received = events(api, acme, "alice", ask(api, acme, "alice", conversation, "Leave?"))
+
+    assert received[-1][0] == "run.completed"

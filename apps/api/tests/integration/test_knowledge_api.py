@@ -51,6 +51,7 @@ def api(database: Database, tmp_path: Path, collection_name: str) -> Iterator[Te
         authz_outbox_worker=False,
         ingestion_mode="inline",
         embedding_provider="hash",
+        retrieval_min_similarity=0.0,  # the floor is calibrated for real embeddings
         embedding_model=collection_name,  # gives every test run its own Qdrant collection
         embedding_dimensions=64,
         object_storage_path=str(tmp_path),

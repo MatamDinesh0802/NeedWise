@@ -10,6 +10,7 @@ Exits with status 2 if any permission leak is found (the CI gate, ARCHITECTURE 2
 import argparse
 import asyncio
 import datetime as dt
+import json
 import os
 import subprocess
 import sys
@@ -17,10 +18,28 @@ from pathlib import Path
 
 from workmind.core.config import Settings
 from workmind.core.resources import Resources
-from workmind.evals.datasets import load_abstention, load_qa, load_red_team
+from workmind.evals.datasets import (
+    fact_present,
+    load_abstention,
+    load_cross,
+    load_qa,
+    load_red_team,
+    load_routing,
+)
 from workmind.evals.report import as_json, markdown
-from workmind.evals.runner import Askers, EvalRun, Evaluator, Variant, summarize_retrieval
+from workmind.evals.runner import (
+    AnswerRecord,
+    Askers,
+    ContextLeakRecord,
+    EvalRun,
+    Evaluator,
+    RetrievalRecord,
+    RoutingRecord,
+    Variant,
+    summarize_retrieval,
+)
 from workmind.modules.retrieval.service import Mode
+from workmind.providers.llm import LLMUsage
 
 REPO = Path(__file__).resolve().parents[5]
 DEFAULT_DATASETS = Path(os.environ.get("WORKMIND_EVALS_DIR", REPO / "evals")) / "datasets"
@@ -43,6 +62,28 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0, help="only the first N items per suite")
     parser.add_argument("--only", default="", help="only these item ids, e.g. qa-18,rt-04")
     parser.add_argument("--concurrency", type=int, default=2)
+    parser.add_argument(
+        "--suites",
+        default="qa,redteam,abstention",
+        help="answer suites: qa, redteam, abstention, cross (multi-department), routing",
+    )
+    parser.add_argument(
+        "--assistant",
+        choices=["single", "agents", "auto"],
+        default="single",
+        help="answer with one search, or with the planner and department agents",
+    )
+    parser.add_argument("--fast-path", choices=["on", "off"], default="on")
+    parser.add_argument("--fast-path-score", type=float, help="minimum similarity")
+    parser.add_argument("--fast-path-margin", type=float, help="minimum lead over the runner-up")
+    parser.add_argument(
+        "--skip-retrieval", action="store_true", help="skip recall and the context gate"
+    )
+    parser.add_argument(
+        "--rescore",
+        type=Path,
+        help="re-grade a saved run (.json) against the current datasets, without model calls",
+    )
     return parser.parse_args(argv)
 
 
@@ -77,42 +118,66 @@ def _commit() -> str:
 
 async def run(args: argparse.Namespace) -> int:
     modes = parse_modes(args.modes)
+    suites = set(args.suites.split(","))
     qa, red_team, abstention = (
         load_qa(args.datasets),
         load_red_team(args.datasets),
         load_abstention(args.datasets),
     )
+    cross = load_cross(args.datasets) if "cross" in suites else []
+    routing = load_routing(args.datasets) if "routing" in suites else []
     if args.only:
         wanted = set(args.only.split(","))
         qa = [i for i in qa if i.id in wanted]
         red_team = [i for i in red_team if i.id in wanted]
         abstention = [i for i in abstention if i.id in wanted]
+        cross = [i for i in cross if i.id in wanted]
+        routing = [i for i in routing if i.id in wanted]
     if args.limit:
         qa, red_team, abstention = (
             qa[: args.limit],
             red_team[: args.limit],
             abstention[: args.limit],
         )
+        cross, routing = cross[: args.limit], routing[: args.limit]
 
-    settings = Settings()
+    overrides: dict[str, object] = {"agent_fast_path": args.fast_path == "on"}
+    if args.fast_path_score is not None:
+        overrides["agent_fast_path_min_score"] = args.fast_path_score
+    if args.fast_path_margin is not None:
+        overrides["agent_fast_path_min_margin"] = args.fast_path_margin
+    settings = Settings(**overrides)  # pyright: ignore[reportArgumentType]
     resources = Resources.create(settings)
     try:
         askers = Askers(resources, args.tenant)
         tenant = await askers.load_tenant()
-        evaluator = Evaluator(resources, askers, concurrency=args.concurrency)
+        evaluator = Evaluator(
+            resources, askers, concurrency=args.concurrency, assistant=args.assistant
+        )
         result = EvalRun()
-        print(f"retrieval: {len(qa)} questions x {len(modes)} modes", file=sys.stderr)
         variants = [Variant(mode, mode) for mode in modes]
         if args.ablation:
             variants += ABLATION
-        result.retrieval = await evaluator.retrieval(qa, variants)
-        result.context_checks = await evaluator.context_checks(red_team, modes)
+        if not args.skip_retrieval:
+            print(f"retrieval: {len(qa)} questions x {len(variants)} variants", file=sys.stderr)
+            result.retrieval = await evaluator.retrieval(qa, variants)
+            result.context_checks = await evaluator.context_checks(red_team, modes)
+        if routing:
+            print(f"routing: {len(routing)} questions", file=sys.stderr)
+            result.routing = await evaluator.routing(routing)
         if not args.retrieval_only:
-            total = len(qa) + len(red_team) + len(abstention)
-            print(f"answers: {total} questions (judge: {args.judge})", file=sys.stderr)
-            result.answers = await evaluator.answers(
-                qa, red_team, abstention, with_judge=args.judge
+            chosen = (
+                [i for i in qa if "qa" in suites],
+                [i for i in red_team if "redteam" in suites],
+                [i for i in abstention if "abstention" in suites],
             )
+            total = sum(map(len, chosen))
+            if total:
+                print(f"answers ({args.assistant}): {total} (judge: {args.judge})", file=sys.stderr)
+                result.answers = await evaluator.answers(*chosen, with_judge=args.judge)
+            if cross:
+                print(f"cross-department ({args.assistant}): {len(cross)}", file=sys.stderr)
+                result.answers += await evaluator.cross(cross, with_judge=args.judge)
         points = await resources.qdrant.count(settings.qdrant_collection, {"must": []})
     finally:
         await resources.aclose()
@@ -132,7 +197,15 @@ async def run(args: argparse.Namespace) -> int:
         "judge model": (settings.llm_model_judge or settings.llm_model)
         if args.judge
         else "not used",
-        "datasets": f"{len(qa)} QA, {len(red_team)} red team, {len(abstention)} abstention",
+        "assistant": args.assistant
+        + (
+            f" (fast path: score >= {settings.agent_fast_path_min_score}, margin >= "
+            f"{settings.agent_fast_path_min_margin})"
+            if settings.agent_fast_path
+            else " (fast path off)"
+        ),
+        "datasets": f"{len(qa)} QA, {len(red_team)} red team, {len(abstention)} abstention, "
+        f"{len(cross)} cross-department, {len(routing)} routing",
     }
     args.out.mkdir(parents=True, exist_ok=True)
     report = args.out / f"{args.label}.md"
@@ -148,6 +221,15 @@ async def run(args: argparse.Namespace) -> int:
                 f"  evidence@3 {s['evidence@3']:.3f}  evidence mrr {s['evidence_mrr']:.3f}",
                 file=sys.stderr,
             )
+    if result.routing:
+        right = sum(r.correct for r in result.routing)
+        fast = sum(r.routed_by == "fast_path" for r in result.routing)
+        print(f"routing: {right}/{len(result.routing)} correct, {fast} fast path", file=sys.stderr)
+    for suite in ("qa", "cross"):
+        rows = [a for a in result.answers if a.suite == suite]
+        if rows:
+            ok = sum(not a.facts_missing and not a.error for a in rows)
+            print(f"{suite}: {ok}/{len(rows)} answers with every fact", file=sys.stderr)
     print(f"report: {report}", file=sys.stderr)
     if result.leaks:
         print(f"PERMISSION LEAKS: {len(result.leaks)}", file=sys.stderr)
@@ -158,8 +240,35 @@ async def run(args: argparse.Namespace) -> int:
     return 0
 
 
+def rescore(args: argparse.Namespace) -> int:
+    """Fact spellings get fixed ("6.1" vs "6,100,000"); stored answers don't need re-asking."""
+    saved = json.loads(args.rescore.read_text())
+    items = {i.id: i for i in [*load_qa(args.datasets), *load_cross(args.datasets)]}
+    run = EvalRun(
+        retrieval=[RetrievalRecord(**r) for r in saved["retrieval"]],
+        routing=[RoutingRecord(**r) for r in saved.get("routing", [])],
+        context_checks=[ContextLeakRecord(**c) for c in saved["context_checks"]],
+    )
+    for raw in saved["answers"]:
+        raw["usage"] = LLMUsage(**raw["usage"])
+        raw["extra_usage"] = [LLMUsage(**u) for u in raw.get("extra_usage", [])]
+        record = AnswerRecord(**raw)
+        if (item := items.get(record.id)) and record.suite in ("qa", "cross"):
+            record.facts_missing = [str(f) for f in item.facts if not fact_present(f, record.text)]
+        run.answers.append(record)
+    meta = {**saved["meta"], "rescored": dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")}
+    labels = list(saved["summary"])
+    args.rescore.with_suffix(".md").write_text(markdown(run, meta, labels))
+    args.rescore.write_text(as_json(run, meta, labels))
+    print(f"rescored: {args.rescore.with_suffix('.md')}", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    return asyncio.run(run(parse(argv)))
+    args = parse(argv)
+    if args.rescore:
+        return rescore(args)
+    return asyncio.run(run(args))
 
 
 if __name__ == "__main__":

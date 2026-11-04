@@ -14,8 +14,12 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from redis.asyncio import Redis
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 TTL_SECONDS = 3600
+# How long one XREAD waits for new events. Must stay below the client's socket timeout
+# (redis-py defaults to 5 s), or a pause between events breaks the response mid-stream.
+BLOCK_MS = 3000
 MAX_EVENTS = 20_000
 TERMINAL = frozenset({"run.completed", "run.failed", "run.cancelled"})
 
@@ -94,17 +98,20 @@ class RunEvents:
         return bool(await self._valkey.exists(_key(run_id, ":cancel")))
 
     async def read(
-        self, run_id: uuid.UUID, *, after: str = "0", block_ms: int = 15_000
+        self, run_id: uuid.UUID, *, after: str = "0", block_ms: int = BLOCK_MS
     ) -> AsyncIterator[StoredEvent | None]:
         """Yields events after `after`, then waits for new ones. Yields None when nothing arrived
         for `block_ms` (the caller sends a keep-alive). Stops after a terminal event."""
         stream = _key(run_id, ":events")
         last = after
         while True:
-            response = cast(
-                list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]],
-                await self._valkey.xread({stream: last}, count=200, block=block_ms),  # pyright: ignore[reportUnknownMemberType]
-            )
+            try:
+                response = cast(
+                    list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]],
+                    await self._valkey.xread({stream: last}, count=200, block=block_ms),  # pyright: ignore[reportUnknownMemberType]
+                )
+            except (TimeoutError, RedisTimeoutError):
+                response = []  # a quiet stretch is not an error: send a keep-alive
             if not response:
                 yield None
                 continue

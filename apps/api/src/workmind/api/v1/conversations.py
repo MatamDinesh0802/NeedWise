@@ -240,6 +240,8 @@ async def send_message(
         llm=resources.llm,
         local_llm=resources.local_llm,
         retriever=resources.retriever,
+        router=resources.agent_router,
+        mode=resources.assistant_mode,
     )
     resources.runs.start(
         execute_run(

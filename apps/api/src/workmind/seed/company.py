@@ -76,12 +76,23 @@ class CollectionSpec(_Strict):
     description: str = ""
 
 
+class AgentSpec(_Strict):
+    key: str = Field(pattern=SLUG_PATTERN)
+    name: str
+    description: str
+    instructions: str = ""
+    collections: list[str]
+    examples: list[str] = []
+    max_searches: int = Field(default=2, ge=1, le=5)
+
+
 class CompanySpec(_Strict):
     company: CompanyInfo
     departments: list[DepartmentSpec]
     groups: list[GroupSpec] = []
     people: list[PersonSpec]
     collections: list[CollectionSpec] = []
+    agents: list[AgentSpec] = []
 
     @model_validator(mode="after")
     def _check_references(self) -> Self:
@@ -119,6 +130,15 @@ class CompanySpec(_Strict):
                 kind, _, key = principal.partition(":")
                 if kind not in known or key.lower() not in known[kind]:
                     problems.append(f"collection {collection.key}: unknown viewer '{principal}'")
+
+        collection_keys = {c.key for c in self.collections}
+        _unique("agent", [a.key for a in self.agents], problems)
+        for agent in self.agents:
+            problems += [
+                f"agent {agent.key}: unknown collection '{c}'"
+                for c in agent.collections
+                if c not in collection_keys
+            ]
 
         if problems:
             raise ValueError("invalid company file:\n  - " + "\n  - ".join(problems))

@@ -280,3 +280,27 @@ async def test_groups_from_an_identity_provider_are_read_only(
 
     assert (add.status_code, add.json()["code"]) == (409, "managed_externally")
     assert (delete.status_code, delete.json()["code"]) == (409, "managed_externally")
+
+
+def test_admins_configure_agents_without_code(api: TestClient, acme: Acme) -> None:
+    listed = api.get("/api/v1/admin/agents", headers=acme.as_("erin")).json()["items"]
+    body = {
+        "key": "it",
+        "name": "IT agent",
+        "description": "Laptops, accounts, VPN and security policy questions.",
+        "collections": ["company-handbook", "contractor-onboarding"],
+        "examples": ["How do I connect to the VPN?"],
+    }
+
+    created = api.post("/api/v1/admin/agents", json=body, headers=acme.as_("erin", write=True))
+    unknown = api.put(
+        "/api/v1/admin/agents/it",
+        json={**body, "collections": ["no-such-collection"]},
+        headers=acme.as_("erin", write=True),
+    )
+    as_member = api.get("/api/v1/admin/agents", headers=acme.as_("bob"))
+
+    assert {a["key"] for a in listed} >= {"hr", "engineering", "finance"}
+    assert created.status_code == 201, created.text
+    assert (unknown.status_code, unknown.json()["code"]) == (422, "unknown_collection")
+    assert as_member.status_code == 403

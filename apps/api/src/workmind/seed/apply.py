@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.tenancy import global_transaction, tenant_transaction
+from workmind.modules.agents.models import AgentDefinition
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import (
     Department,
@@ -137,6 +138,22 @@ async def seed_database(
         collection_ids = await _seed_collections(
             session, spec, tenant_id, department_ids, group_ids, user_ids
         )
+        for agent in spec.agents:
+            fields = {
+                "name": agent.name,
+                "description": agent.description,
+                "instructions": agent.instructions,
+                "collection_keys": agent.collections,
+                "examples": agent.examples,
+                "max_searches": agent.max_searches,
+            }
+            await session.execute(
+                insert(AgentDefinition)
+                .values(tenant_id=tenant_id, key=agent.key, **fields)
+                .on_conflict_do_update(
+                    index_elements=["tenant_id", "key"], set_={**fields, "updated_at": func.now()}
+                )
+            )
 
         await record_event(
             session,

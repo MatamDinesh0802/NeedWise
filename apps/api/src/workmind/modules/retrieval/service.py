@@ -86,6 +86,8 @@ class RetrievalResult:
     passages: list[Passage] = field(default_factory=list[Passage])
     candidates: int = 0
     dropped_by_recheck: int = 0
+    best_similarity: float | None = None  # top dense cosine; None in keyword-only mode
+    below_floor: bool = False  # nothing permitted was relevant enough to show a model
 
 
 class Retriever:
@@ -100,11 +102,13 @@ class Retriever:
         sparse_weight: float = DEFAULT_SPARSE_WEIGHT,
         rrf_k: int = RRF_K,
         trust_boost: bool = True,
+        min_similarity: float = 0.0,
     ) -> None:
         # Tuning knobs, public so the evaluation can ablate them.
         self.sparse_weight = sparse_weight
         self.rrf_k = rrf_k
         self.trust_boost = trust_boost
+        self.min_similarity = min_similarity
         self._qdrant = qdrant
         self._embeddings = embeddings
         self._fga = fga  # None only in tests that exercise lock 1 alone
@@ -113,9 +117,14 @@ class Retriever:
         self._stores: dict[uuid.UUID, str | None] = {}
 
     def acl_filter(
-        self, ctx: RequestContext, *, exclude_restricted: bool = False
+        self,
+        ctx: RequestContext,
+        *,
+        exclude_restricted: bool = False,
+        collection_ids: Sequence[str] | None = None,
     ) -> dict[str, Any]:
-        """Lock 1. Built here, never by callers, so no search can skip it."""
+        """Lock 1. Built here, never by callers, so no search can skip it. `collection_ids`
+        only narrows the search (an agent's knowledge scope); it can never widen access."""
         flt: dict[str, Any] = {
             "must": [
                 match("tenant_id", str(ctx.tenant_id)),
@@ -123,6 +132,8 @@ class Retriever:
                 match_any("acl", sorted(ctx.principals)),
             ]
         }
+        if collection_ids is not None:
+            flt["must"].append(match_any("collection_id", sorted(collection_ids)))
         if exclude_restricted:
             flt["must_not"] = [match("sensitivity", "restricted")]
         return flt
@@ -135,13 +146,23 @@ class Retriever:
         limit: int = 8,
         mode: Mode = "hybrid",
         exclude_restricted: bool = False,
+        collection_ids: Sequence[str] | None = None,
     ) -> RetrievalResult:
         result = RetrievalResult(query=query)
+        if collection_ids is not None and not collection_ids:
+            return result  # an empty scope matches nothing (not "everything")
         if not await self._qdrant.collection_exists(self._collection):
             return result
-        flt = self.acl_filter(ctx, exclude_restricted=exclude_restricted)
-        hits = await self._query(query, flt, limit=limit * 4, mode=mode)
+        flt = self.acl_filter(
+            ctx, exclude_restricted=exclude_restricted, collection_ids=collection_ids
+        )
+        hits, result.best_similarity = await self._query(query, flt, limit=limit * 4, mode=mode)
         result.candidates = len(hits)
+        if result.best_similarity is not None and result.best_similarity < self.min_similarity:
+            # Nothing permitted is about this: answer "not found" without sending noise to a
+            # model. Only the clearly off-topic falls below it (see evals/README.md).
+            result.below_floor = True
+            return result
 
         boost = TRUST_BOOST if self.trust_boost else {}
         scored = sorted(hits, key=lambda h: -h["score"] * boost.get(h["payload"]["trust"], 1.0))
@@ -167,24 +188,28 @@ class Retriever:
 
     async def _query(
         self, query: str, flt: dict[str, Any], *, limit: int, mode: Mode
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], float | None]:
+        """Hits, plus the best dense similarity (for the relevance floor)."""
         sparse = encode_query(query).as_qdrant()
         if mode == "sparse":
-            return await self._qdrant.query(
+            hits = await self._qdrant.query(
                 self._collection, query=sparse, using="bm25", flt=flt, limit=limit
             )
+            return hits, None
         dense = await self._embeddings.embed_query(query)
         if mode == "dense":
-            return await self._qdrant.query(
+            hits = await self._qdrant.query(
                 self._collection, query=dense, using="dense", flt=flt, limit=limit
             )
+            return hits, (float(hits[0]["score"]) if hits else None)
         depth = max(PREFETCH, limit)
         # The ACL filter applies to both lists, so fusion only ever sees permitted chunks.
         dense_hits, sparse_hits = await asyncio.gather(
             self._qdrant.query(self._collection, query=dense, using="dense", flt=flt, limit=depth),
             self._qdrant.query(self._collection, query=sparse, using="bm25", flt=flt, limit=depth),
         )
-        return fuse(dense_hits, sparse_hits, sparse_weight=self.sparse_weight, k=self.rrf_k)[:limit]
+        fused = fuse(dense_hits, sparse_hits, sparse_weight=self.sparse_weight, k=self.rrf_k)
+        return fused[:limit], (float(dense_hits[0]["score"]) if dense_hits else None)
 
     async def _recheck(self, ctx: RequestContext, collection_ids: set[str]) -> set[str]:
         """Lock 2: OpenFGA must also say yes for every collection a passage comes from."""

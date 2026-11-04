@@ -101,6 +101,62 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
                 f"- {r.id}: rank {r.rank or '-'}; top: {', '.join(r.top_files[:3])}" for r in misses
             ]
 
+    if run.routing:
+        right = [r for r in run.routing if r.correct]
+        fast = [r for r in run.routing if r.routed_by == "fast_path"]
+        fast_right = [r for r in fast if r.correct]
+        out += [
+            "",
+            "## Routing (planner and fast path)",
+            "",
+            f"Exact agent set: **{len(right)}/{len(run.routing)}**. Fast path used for "
+            f"{len(fast)} questions, {len(fast_right)} of them correct. Planner latency p50 "
+            f"{percentile([r.latency_ms for r in run.routing], 0.5) / 1000:.1f} s.",
+            "",
+            "| Expected | Questions | Correct |",
+            "|---|---|---|",
+        ]
+        for mode in ("single", "fan_out", "direct"):
+            rows = [r for r in run.routing if r.expected_mode == mode]
+            if rows:
+                out.append(f"| {mode} | {len(rows)} | {sum(r.correct for r in rows)}/{len(rows)} |")
+        wrong = [r for r in run.routing if not r.correct]
+        out += [
+            f"- {r.id}: expected {r.expected_agents or ['direct']}, got {r.agents or [r.mode]}"
+            f" ({r.routed_by}){' ' + r.error if r.error else ''}"
+            for r in wrong
+        ]
+
+    cross = [a for a in run.answers if a.suite == "cross"]
+    if cross:
+        costs = [c for a in cross if (c := a.cost) is not None]
+        out += [
+            "",
+            "## Cross-department questions",
+            "",
+            "| Metric | Value |",
+            "|---|---|",
+            f"| Every required fact | {_rate(cross, _correct)} |",
+            f"| Cites every expected document | {_rate(cross, lambda r: r.cited_all_expected)} |",
+            f"| Invalid citation markers | {_rate(cross, lambda r: r.unknown_markers)} |",
+            "| Complete answer, p50 / p95 | "
+            + " / ".join(
+                f"{percentile([a.total_ms for a in cross], q) / 1000:.1f} s" for q in (0.5, 0.95)
+            )
+            + " |",
+            f"| Model calls per answer (mean) | {statistics.fmean(a.calls for a in cross):.1f} |",
+            f"| Cost per answer (mean) | {f'${statistics.fmean(costs):.4f}' if costs else '-'} |",
+        ]
+        judged = [a.faithfulness for a in cross if a.faithfulness is not None]
+        if judged:
+            out.append(f"| Faithfulness (judge, mean) | {_pct(statistics.fmean(judged))} |")
+        for a in cross:
+            if a.facts_missing or not a.cited_all_expected:
+                out.append(
+                    f"\n- {a.id} ({a.user}): missing {a.facts_missing or 'nothing'}; "
+                    f"cited {sorted(set(a.cited_files))}; agents {a.plan_agents or '-'}"
+                )
+
     qa = [a for a in run.answers if a.suite == "qa"]
     if qa:
         judged = [a.faithfulness for a in qa if a.faithfulness is not None]
@@ -170,6 +226,7 @@ def as_json(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
             "summary": {mode: summarize_retrieval(run.retrieval, mode) for mode in modes},
             "leaks": run.leaks,
             "retrieval": [asdict(r) for r in run.retrieval],
+            "routing": [asdict(r) for r in run.routing],
             "answers": [asdict(a) for a in run.answers],
             "context_checks": [asdict(c) for c in run.context_checks],
         },

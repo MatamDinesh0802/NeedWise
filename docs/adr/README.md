@@ -13,3 +13,4 @@ A decision is never edited after acceptance; a new ADR supersedes it.
 | [0006](0006-two-lock-permission-aware-retrieval.md) | Two-lock permission-aware retrieval | Accepted (implemented) |
 | [0007](0007-model-providers-and-lightweight-parsing.md) | Claude by default, local embeddings, swappable adapters; lightweight parsing | Accepted |
 | [0008](0008-retrieval-fusion-and-sensitivity-routing.md) | Tuned rank fusion, collection-level recheck, routing by sensitivity | Accepted |
+| [0009](0009-orchestration-without-a-graph-framework.md) | Multi-agent orchestration in plain asyncio; single pipeline stays the default | Accepted |

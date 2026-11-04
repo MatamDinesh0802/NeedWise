@@ -9,7 +9,7 @@ Every step is published as an event, so the browser can render it live and repla
 import asyncio
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -20,6 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.context import RequestContext
 from workmind.core.tenancy import tenant_transaction
+from workmind.modules.agents.orchestrator import (
+    AgentStepEvent,
+    OrchestratorDeps,
+    OrchestratorEvent,
+    PlanEvent,
+    orchestrate,
+)
+from workmind.modules.agents.planning import FastRouter
 from workmind.modules.assistant.answer import (
     Answer,
     RestrictedPolicy,
@@ -84,8 +92,11 @@ class Usage:
     output_tokens: int = 0
     cost_usd: float | None = 0.0
 
-    def add(self, usage: LLMUsage) -> None:
-        self.model = usage.model or self.model
+    def add(self, usage: LLMUsage, *, keep_model: bool = False) -> None:
+        if not (usage.input_tokens or usage.output_tokens):
+            return  # a step that called no model (e.g. no rewrite needed) costs nothing
+        if not keep_model or not self.model:
+            self.model = usage.model or self.model
         self.input_tokens += usage.input_tokens
         self.output_tokens += usage.output_tokens
         cost = cost_usd(usage)
@@ -107,6 +118,8 @@ class RunDeps:
     llm: LLMProvider
     local_llm: LLMProvider | None
     retriever: Retriever
+    router: FastRouter | None = None
+    mode: str = "single"  # "single" or "agents" (ARCHITECTURE 12)
 
 
 @dataclass
@@ -127,19 +140,19 @@ async def load_history(
         rows = (
             await session.scalars(
                 select(Message)
-                .where(
-                    Message.conversation_id == conversation_id,
-                    Message.status == "complete",
-                    Message.id != before,
-                )
+                .where(Message.conversation_id == conversation_id, Message.id != before)
                 .order_by(Message.created_at.desc())
-                .limit(HISTORY_MESSAGES)
+                .limit(HISTORY_MESSAGES * 2)
             )
         ).all()
+    # Only finished exchanges: a question whose answer was cancelled or failed would otherwise
+    # sit unanswered in the prompt and steer the next answer.
+    answered = {m.run_id for m in rows if m.role == "assistant" and m.status == "complete"}
+    kept = [m for m in reversed(rows) if m.run_id in answered and m.status == "complete"]
     return History(
         messages=[
             LLMMessage("assistant" if m.role == "assistant" else "user", strip_markers(m.content))
-            for m in reversed(rows)
+            for m in kept[-HISTORY_MESSAGES:]
         ],
         summary=conversation.summary if conversation else "",
     )
@@ -165,6 +178,43 @@ async def rewrite_question(
     text, usage = await llm.complete("router", request)
     lines = [line.strip().strip('"') for line in text.strip().splitlines() if line.strip()]
     return (lines[0][:1000] if lines else question), usage
+
+
+def assistant_stream(
+    deps: RunDeps,
+    ctx: RequestContext,
+    question: str,
+    *,
+    organization: str,
+    history: Sequence[LLMMessage],
+    summary: str,
+    search_query: str,
+    policy: RestrictedPolicy,
+) -> AsyncGenerator[OrchestratorEvent]:
+    if deps.mode in ("agents", "auto"):
+        return orchestrate(
+            OrchestratorDeps(deps.sessions, deps.llm, deps.local_llm, deps.retriever, deps.router),
+            ctx,
+            question,
+            organization=organization,
+            history=history,
+            summary=summary,
+            search_query=search_query,
+            policy=policy,
+            agents_only_for_fan_out=deps.mode == "auto",
+        )
+    return answer_stream(
+        deps.llm,
+        deps.retriever,
+        ctx,
+        question,
+        organization=organization,
+        history=history,
+        summary=summary,
+        search_query=search_query,
+        policy=policy,
+        local_llm=deps.local_llm,
+    )
 
 
 async def execute_run(
@@ -194,9 +244,8 @@ async def execute_run(
         usage.add(rewrite_usage)
         if search_query != question:
             await events.emit(run_id, "query.rewritten", {"query": search_query})
-        stream = answer_stream(
-            deps.llm,
-            deps.retriever,
+        stream = assistant_stream(
+            deps,
             ctx,
             question,
             organization=organization,
@@ -204,10 +253,32 @@ async def execute_run(
             summary=history.summary,
             search_query=search_query,
             policy=policy,
-            local_llm=deps.local_llm,
         )
         async for event in stream:
-            if isinstance(event, SourcesEvent):
+            if isinstance(event, PlanEvent):
+                await events.emit(
+                    run_id,
+                    "plan",
+                    {
+                        "mode": event.plan.mode,
+                        "routed_by": event.plan.routed_by,
+                        "subtasks": [s.model_dump() for s in event.plan.subtasks],
+                    },
+                )
+            elif isinstance(event, AgentStepEvent):
+                await events.emit(
+                    run_id,
+                    "agent.step",
+                    {
+                        "agent": event.agent,
+                        "status": event.status,
+                        "label": event.label,
+                        "findings": event.findings,
+                        "sources": event.sources,
+                        "seconds": round(event.seconds, 2),
+                    },
+                )
+            elif isinstance(event, SourcesEvent):
                 await events.emit(
                     run_id,
                     "retrieval",
@@ -240,6 +311,8 @@ async def execute_run(
 
     if final is not None:
         usage.add(final.usage)
+        for extra in final.extra_usage:
+            usage.add(extra, keep_model=True)
         for citation in final.citations:
             await events.emit(
                 run_id,

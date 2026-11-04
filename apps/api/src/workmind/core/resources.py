@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from workmind.core.config import Settings
 from workmind.core.db import create_engine, create_session_factory
+from workmind.modules.agents.planning import FastRouter
 from workmind.modules.authz.openfga import OpenFgaClient
 from workmind.modules.conversations.events import RunEvents
 from workmind.modules.conversations.registry import RunRegistry
@@ -42,6 +43,8 @@ class Resources:
     collection_name: str
     retriever: Retriever
     runs: RunRegistry
+    agent_router: FastRouter | None
+    assistant_mode: str
 
     @classmethod
     def create(cls, settings: Settings) -> Self:
@@ -92,8 +95,17 @@ class Resources:
                 collection_name=settings.qdrant_collection,
                 sparse_weight=settings.retrieval_sparse_weight,
                 rrf_k=settings.retrieval_rrf_k,
+                min_similarity=settings.retrieval_min_similarity,
             ),
             runs=RunRegistry(RunEvents(valkey)),
+            agent_router=FastRouter(
+                embeddings,
+                min_score=settings.agent_fast_path_min_score,
+                min_margin=settings.agent_fast_path_min_margin,
+            )
+            if settings.agent_fast_path
+            else None,
+            assistant_mode=settings.assistant_mode,
         )
 
     async def aclose(self) -> None:

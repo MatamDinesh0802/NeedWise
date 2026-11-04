@@ -72,6 +72,15 @@ class Settings(BaseSettings):
     llm_model_router: str | None = None
     llm_model_judge: str | None = None
     llm_model_generator: str | None = None
+    llm_model_agent: str | None = None
+    # "single": one search and one answer. "agents": a planner routes to department agents
+    # (ARCHITECTURE 12). "auto": agents only when a question spans several areas.
+    # Chosen by the ablation in evals/README.md (ADR 0009).
+    assistant_mode: Literal["single", "agents", "auto"] = "single"
+    # Fast-path routing: skip the planner when one agent's profile clearly matches.
+    agent_fast_path: bool = True
+    agent_fast_path_min_score: float = 0.3  # EmbeddingGemma similarities; see evals/README.md
+    agent_fast_path_min_margin: float = 0.15
     llm_fallbacks: bool = True  # Anthropic server-side refusal fallback ("default" routing)
     # Set when LLM_BASE_URL is a third-party API rather than a model you run yourself.
     llm_external: bool = False
@@ -92,6 +101,10 @@ class Settings(BaseSettings):
     # Hybrid search: BM25's weight in reciprocal rank fusion, relative to dense (1.0).
     retrieval_sparse_weight: float = Field(default=0.5, ge=0)
     retrieval_rrf_k: int = Field(default=2, ge=1)
+    # Relevance floor on the best dense similarity: below it, nothing is sent to a model.
+    # Calibrated for EmbeddingGemma (0.06 under the weakest answerable evaluation question);
+    # recalibrate when changing the embedding model, as for the fast-path thresholds.
+    retrieval_min_similarity: float = Field(default=0.25, ge=0, le=1)
 
     # --- Ingestion ---
     # Shared with the containers through a bind mount of <repo>/.data/objects (compose.yaml).

@@ -104,6 +104,7 @@ def api(database: Database, tmp_path: Path, model_name: str) -> Iterator[TestCli
         authz_outbox_worker=False,
         ingestion_mode="inline",
         embedding_provider="hash",
+        retrieval_min_similarity=0.0,  # the floor is calibrated for real embeddings
         embedding_model=model_name,
         embedding_dimensions=64,
         object_storage_path=str(tmp_path),

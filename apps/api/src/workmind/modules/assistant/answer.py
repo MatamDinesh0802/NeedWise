@@ -67,6 +67,8 @@ class Answer:
     usage: LLMUsage = field(default_factory=LLMUsage)
     withheld: int = 0  # restricted sources left out because the model is external
     local_model: bool = False  # answered by a model on your own infrastructure
+    # Other model calls behind this answer (planning, agents), for cost reporting.
+    extra_usage: list[LLMUsage] = field(default_factory=list[LLMUsage])
 
 
 @dataclass(frozen=True)

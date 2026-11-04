@@ -37,11 +37,27 @@ class AbstentionItem(_Item):
     reason: str
 
 
-Suite = Literal["qa", "redteam", "abstention"]
+class CrossItem(QAItem):
+    """A question that needs more than one department (the multi-agent ablation)."""
+
+    agents: list[str]
+
+
+class RoutingItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    question: str
+    mode: Literal["direct", "single", "fan_out"]
+    agents: list[str]
+
+
+Suite = Literal["qa", "redteam", "abstention", "cross", "routing"]
 FILES: dict[Suite, str] = {
     "qa": "retrieval_qa.jsonl",
     "redteam": "red_team.jsonl",
     "abstention": "abstention.jsonl",
+    "cross": "cross_department.jsonl",
+    "routing": "routing.jsonl",
 }
 
 
@@ -64,6 +80,19 @@ def load_abstention(directory: Path) -> list[AbstentionItem]:
     return [
         AbstentionItem.model_validate(json.loads(line))
         for line in _lines(directory / FILES["abstention"])
+    ]
+
+
+def load_cross(directory: Path) -> list[CrossItem]:
+    return [
+        CrossItem.model_validate(json.loads(line)) for line in _lines(directory / FILES["cross"])
+    ]
+
+
+def load_routing(directory: Path) -> list[RoutingItem]:
+    return [
+        RoutingItem.model_validate(json.loads(line))
+        for line in _lines(directory / FILES["routing"])
     ]
 
 

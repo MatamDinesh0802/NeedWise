@@ -1,0 +1,36 @@
+{"id": "ro-s01", "question": "How many weeks of parental leave do we get?", "mode": "single", "agents": ["hr"]}
+{"id": "ro-s02", "question": "When do performance reviews take place?", "mode": "single", "agents": ["hr"]}
+{"id": "ro-s03", "question": "What is the probation period for new hires?", "mode": "single", "agents": ["hr"]}
+{"id": "ro-s04", "question": "What is the hotel limit per night in London?", "mode": "single", "agents": ["finance"]}
+{"id": "ro-s05", "question": "What was the gross margin in Q3 2026?", "mode": "single", "agents": ["finance"]}
+{"id": "ro-s06", "question": "What is the draft 2027 engineering budget?", "mode": "single", "agents": ["finance"]}
+{"id": "ro-s07", "question": "How often do robots send a heartbeat to the fleet controller?", "mode": "single", "agents": ["engineering"]}
+{"id": "ro-s08", "question": "What is the Fleet API rate limit?", "mode": "single", "agents": ["engineering"]}
+{"id": "ro-s09", "question": "When is FleetOS 3.0 planned to be released?", "mode": "single", "agents": ["engineering"]}
+{"id": "ro-s10", "question": "Why did we lose the Harbor Logistics deal?", "mode": "single", "agents": ["sales"]}
+{"id": "ro-s11", "question": "When does the Bluefin Freight contract renew?", "mode": "single", "agents": ["sales"]}
+{"id": "ro-s12", "question": "What is the first response time for standard support tickets?", "mode": "single", "agents": ["support"]}
+{"id": "ro-s13", "question": "Which firmware helps with AMR-200 battery degradation?", "mode": "single", "agents": ["support"]}
+{"id": "ro-s14", "question": "How big is the exclusion zone around moving AMR-500 robots?", "mode": "single", "agents": ["operations"]}
+{"id": "ro-s15", "question": "How long do customers have to request a return?", "mode": "single", "agents": ["operations"]}
+{"id": "ro-s16", "question": "What was the average cost per lead in Q3 2026?", "mode": "single", "agents": ["marketing"]}
+{"id": "ro-s17", "question": "When does the FleetOS 3.0 launch campaign start?", "mode": "single", "agents": ["marketing"]}
+{"id": "ro-s18", "question": "What is Project Heron?", "mode": "single", "agents": ["leadership"]}
+{"id": "ro-d01", "question": "Hi! What can you help me with?", "mode": "direct", "agents": []}
+{"id": "ro-d02", "question": "Thanks, that's all for now.", "mode": "direct", "agents": []}
+{"id": "ro-d03", "question": "Can you write a haiku about Mondays?", "mode": "direct", "agents": []}
+{"id": "ro-xd-01", "question": "Before the board meeting: what was Q3 2026 revenue, and when is FleetOS 3.0 planned to ship?", "mode": "fan_out", "agents": ["engineering", "finance"]}
+{"id": "ro-xd-02", "question": "What caused INC-2026-031, and what first-response time do we promise customers for P1 incidents?", "mode": "fan_out", "agents": ["engineering", "support"]}
+{"id": "ro-xd-03", "question": "What is the draft 2027 engineering budget, and what is engineering's priority for Q4 2026?", "mode": "fan_out", "agents": ["engineering", "finance"]}
+{"id": "ro-xd-04", "question": "I'm flying to London for an incident review: what's the hotel limit, and what caused INC-2026-031?", "mode": "fan_out", "agents": ["engineering", "finance"]}
+{"id": "ro-xd-05", "question": "Which firmware fixes the AMR-200 battery issue, and how big is the exclusion zone around moving AMR-500 robots?", "mode": "fan_out", "agents": ["operations", "support"]}
+{"id": "ro-xd-06", "question": "How do I restart the fleet controller, and how many days per week may I work from home?", "mode": "fan_out", "agents": ["engineering", "hr"]}
+{"id": "ro-xd-07", "question": "When does the Bluefin Freight contract renew, and what lead time should I quote for robot shipments?", "mode": "fan_out", "agents": ["operations", "sales"]}
+{"id": "ro-xd-08", "question": "How many robots are in the Kestrel Retail proposal, and what's the daily meal allowance on a sales trip?", "mode": "fan_out", "agents": ["finance", "sales"]}
+{"id": "ro-xd-09", "question": "What's our P1 response time, and within how many days must customers request a return?", "mode": "fan_out", "agents": ["operations", "support"]}
+{"id": "ro-xd-10", "question": "What were the leave benefit payouts in Q3 2026, and how many weeks of parental leave do we offer?", "mode": "fan_out", "agents": ["finance", "hr"]}
+{"id": "ro-xd-11", "question": "What was total Q3 2026 payroll, the Q3 gross margin, and the target closing date for Project Heron?", "mode": "fan_out", "agents": ["finance", "leadership"]}
+{"id": "ro-xd-12", "question": "When does the FleetOS 3.0 launch campaign start, and what's the hotel cap in Zurich for the launch event?", "mode": "fan_out", "agents": ["finance", "marketing"]}
+{"id": "ro-xd-13", "question": "Prepare a short leadership brief: Q3 2026 revenue, the root cause of INC-2026-031, and the first-response time we promise customers for P1 incidents.", "mode": "fan_out", "agents": ["engineering", "finance", "support"]}
+{"id": "ro-xd-14", "question": "For my on-call week: how do I restart the fleet controller, what P1 response time do customers get, and how close may I get to a moving AMR-500?", "mode": "fan_out", "agents": ["engineering", "operations", "support"]}
+{"id": "ro-xd-15", "question": "A customer escalation needs a trip to Zurich: what's the hotel cap there, which firmware fixes AMR-200 battery degradation, and how long does the customer have to request a return?", "mode": "fan_out", "agents": ["finance", "operations", "support"]}

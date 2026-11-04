@@ -20,7 +20,7 @@ import httpx
 from anthropic.types.beta import BetaMessage
 from pydantic import BaseModel
 
-Role = Literal["answer", "router", "judge", "generator"]
+Role = Literal["answer", "router", "judge", "generator", "agent"]
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 # Models that accept Anthropic's server-side refusal fallback (`fallbacks: "default"`).

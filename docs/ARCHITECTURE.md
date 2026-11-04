@@ -61,7 +61,7 @@ Each row becomes a full Architecture Decision Record (ADR) in `docs/adr/` when i
 |---|---|---|---|
 | Architecture style | Modular monolith (API + workers + scheduler) | Fast to build solo and easy to deploy. Clear module boundaries keep a later split possible. | Microservices (too much ops overhead for now) |
 | Backend | Python 3.12+ / FastAPI | Best AI ecosystem, async, OpenAPI out of the box | Node.js / TypeScript |
-| Agent orchestration | LangGraph | Explicit state graphs, parallel fan-out (`Send`), durable checkpoints, human-in-the-loop (`interrupt`) | CrewAI, AutoGen, hand-written loops |
+| Agent orchestration | Plain asyncio orchestrator ([ADR 0009](adr/0009-orchestration-without-a-graph-framework.md)) | The graph is shallow and fixed; streaming and replay already live in run events; approvals are persisted actions, not suspended graphs | LangGraph, CrewAI, AutoGen |
 | Relational DB | PostgreSQL 17+ | Reliable, Row-Level Security for tenant isolation, JSONB | MySQL |
 | Search | Qdrant: dense + BM25 sparse vectors, fused with RRF | Hybrid search in one query, fast payload filtering for permissions, tenant-aware indexing | pgvector + Postgres full-text, OpenSearch |
 | Identity (login) | Keycloak | OIDC/SAML, MFA, social login, federation to Okta/Entra/Google, Organizations for multi-tenancy | Auth.js, Ory, Zitadel |
@@ -87,7 +87,6 @@ Every default is open source. Paid alternatives plug in through adapters (see §
 |---|---|---|---|
 | Web UI | Next.js, React, TypeScript, Tailwind, shadcn/ui, TanStack Query | MIT | — |
 | API | FastAPI, Pydantic v2, SQLAlchemy 2, Alembic | MIT | — |
-| Agents | LangGraph | MIT | — |
 | LLM gateway | LiteLLM (inside our `LLMProvider`) | MIT | — |
 | LLM runtime | Ollama (dev, small installs), vLLM (GPU servers) | MIT / Apache-2.0 | OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock |
 | Embeddings | BGE-M3 via Ollama (dev) or Text Embeddings Inference (TEI, prod) | MIT / Apache-2.0 | OpenAI, Cohere, Voyage |
@@ -799,9 +798,8 @@ app = graph.compile(checkpointer=AsyncPostgresSaver(pool))
 
 ### 12.5 Durability and human-in-the-loop
 
-- **Checkpoints:** the LangGraph Postgres checkpointer saves state after each step, keyed by `thread_id = run_id`. Runs survive restarts and can be resumed.
-- **Approvals:** `propose_action` calls `interrupt(...)` with the proposed action. The run pauses, possibly for days. The UI shows an approval card, and the decision resumes the run with `Command(resume=decision)`.
-- **Caveat:** code before `interrupt()` re-runs on resume, so action planning must be stored or idempotent.
+- **Runs are short-lived** (seconds to a minute). Their events live in a Valkey Stream and the result in PostgreSQL; a run interrupted by a restart ends with `run.failed` and can be asked again. No graph state is checkpointed ([ADR 0009](adr/0009-orchestration-without-a-graph-framework.md)).
+- **Approvals:** an agent that wants to act stores a *proposed action* in PostgreSQL and ends its run. The UI shows an approval card; the decision starts a new run that executes (or discards) the stored action. Nothing waits in memory, and planning never re-runs on resume.
 - **Provider resilience:** retries with jitter on 429/5xx, a circuit breaker per provider, and a configured fallback chain (e.g. local → paid API, if tenant policy allows).
 
 ### 12.6 Why multi-agent? (and how we prove it)
@@ -849,7 +847,7 @@ Tenant admins can tighten policies (never loosen `DESTRUCTIVE`).
 
 ### 13.3 A2A (Agent-to-Agent)
 
-Not needed for internal orchestration; LangGraph handles that. A2A comes **after v1.0**, to publish selected WorkMind agents (with agent cards) to external agent ecosystems, or to call partner agents. We only build it when there is a real interoperability need.
+Not needed for internal orchestration, which is in-process. A2A comes **after v1.0**, to publish selected WorkMind agents (with agent cards) to external agent ecosystems, or to call partner agents. We only build it when there is a real interoperability need.
 
 ---
 
@@ -857,7 +855,7 @@ Not needed for internal orchestration; LangGraph handles that. A2A comes **after
 
 ### 14.1 Two layers
 
-1. **Agent-initiated actions** inside a conversation: "Create tasks from this meeting and email the summary to the team." These use LangGraph interrupts for approvals.
+1. **Agent-initiated actions** inside a conversation: "Create tasks from this meeting and email the summary to the team." Approvals are stored proposed actions (§12.5).
 2. **Declarative workflows** for repeatable automation. Definitions are YAML/JSON (with a UI editor later) and run by a small engine on Celery with state in Postgres. Triggers: manual, schedule (cron), or event (new document, meeting processed, inbound email).
 
 ```yaml
@@ -1065,7 +1063,7 @@ Checklist reference: **OWASP Top 10 for LLM Applications**.
 
 - **Traces:**
   - OpenTelemetry auto-instrumentation for FastAPI, SQLAlchemy, httpx, Celery and Redis/Valkey.
-  - Manual spans for every LangGraph node, tool call, retrieval step and LLM call, using GenAI semantic-convention attributes (`gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`).
+  - Manual spans for every orchestration step, tool call, retrieval step and LLM call, using GenAI semantic-convention attributes (`gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`).
   - Exported through an OTel Collector to **Langfuse**, which shows prompts, outputs, tokens and cost per trace.
 - **Metrics (Prometheus + Grafana):**
   - Request latency, time to first token.
@@ -1218,7 +1216,7 @@ workmind/
 │   │   │   │   ├── authz/            # OpenFGA client, outbox, reconcile, openfga/ model + matrix
 │   │   │   │   ├── knowledge/        # collections, documents, ingestion orchestration
 │   │   │   │   ├── retrieval/        # hybrid search, rerank, citations, verification
-│   │   │   │   ├── agents/           # LangGraph graphs, supervisor, agent registry
+│   │   │   │   ├── agents/           # planner, department agent, orchestrator, agent registry
 │   │   │   │   ├── tools/            # tool registry, execution wrapper, MCP client
 │   │   │   │   ├── mcp_server/       # WorkMind MCP server
 │   │   │   │   ├── workflows/        # workflow engine, tasks, approvals
@@ -1277,7 +1275,7 @@ workmind/
 sequenceDiagram
   participant UI as Web UI
   participant API as FastAPI
-  participant G as LangGraph run
+  participant G as Orchestrator run
   participant S as Supervisor
   participant HR as HR agent
   participant FIN as Finance agent

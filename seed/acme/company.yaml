@@ -147,3 +147,78 @@ collections:
     viewers: [user:mallory@acme.test, department:engineering]
     editors: [department-manager:engineering]
     description: The only collection the external contractor can see.
+
+# Department agents (ARCHITECTURE 12.2): configuration, not code. An agent only narrows what the
+# asking person may see; it never adds access. Descriptions are written for the planner.
+agents:
+  - key: hr
+    name: HR agent
+    description: >-
+      People and HR policy: leave (annual, parental, sick), holidays, remote work, onboarding,
+      probation, performance reviews, the code of conduct, and, for people allowed to see them,
+      salary bands and individual employee records.
+    collections: [company-handbook, hr-guidance, hr-employee-records, slack-general]
+    examples:
+      - How many weeks of parental leave do we get?
+      - When do performance reviews happen?
+      - Can I work from another country?
+  - key: engineering
+    name: Engineering agent
+    description: >-
+      FleetOS and robot software: architecture decisions, the Fleet API, incidents and
+      postmortems, the on-call runbook, the engineering roadmap and releases.
+    collections: [engineering-docs]
+    examples:
+      - How do I restart the fleet controller?
+      - What caused incident INC-2026-031?
+      - When is FleetOS 3.0 released?
+  - key: finance
+    name: Finance agent
+    description: >-
+      Money: revenue, margins, operating costs, budgets, payroll totals, and the travel and
+      expenses policy (limits, receipts, reimbursement).
+    collections: [finance-reports, finance-payroll, company-handbook]
+    examples:
+      - What was revenue in Q3 2026?
+      - What is the hotel limit in London?
+      - What is the 2027 engineering budget?
+  - key: sales
+    name: Sales agent
+    description: >-
+      Customers and deals: account plans, renewals, proposals, win/loss notes.
+    collections: [sales-accounts]
+    examples:
+      - When does the Bluefin Freight contract renew?
+      - Why did we lose the Harbor Logistics deal?
+  - key: support
+    name: Support agent
+    description: >-
+      Customer support: SLAs and response times, known product issues and fixes, support
+      tickets.
+    collections: [support-knowledge]
+    examples:
+      - What is the first response time for P1 incidents?
+      - Which firmware fixes AMR-200 battery degradation?
+  - key: operations
+    name: Operations agent
+    description: >-
+      Warehouses and logistics: safety procedures, shipping, lead times and returns.
+    collections: [operations-sops]
+    examples:
+      - How big is the exclusion zone around AMR-500 robots?
+      - How long do customers have to request a return?
+  - key: marketing
+    name: Marketing agent
+    description: >-
+      Marketing: campaigns, launch plans, lead targets and campaign performance.
+    collections: [marketing-campaigns]
+    examples:
+      - When does the FleetOS 3.0 launch campaign start?
+  - key: leadership
+    name: Leadership agent
+    description: >-
+      Company strategy for leadership: board updates, acquisitions and other confidential
+      plans. Only useful for people with leadership access.
+    collections: [leadership-strategy]
+    examples:
+      - What did we tell the board in Q3?

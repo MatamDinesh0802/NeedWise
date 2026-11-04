@@ -15,12 +15,14 @@ class FakeLLM:
         rewrite: str | None = None,
         external: bool = True,
         delay: float = 0.0,
+        structured: Sequence[Any] = (),
     ) -> None:
         self.tokens = [reply] if isinstance(reply, str) else list(reply)
         self.rewrite = rewrite
         self.external = external
         self.delay = delay
         self.requests: list[tuple[Role, LLMRequest]] = []
+        self.structured_replies = list(structured)
 
     async def complete(self, role: Role, request: LLMRequest) -> tuple[str, LLMUsage]:
         self.requests.append((role, request))
@@ -36,7 +38,10 @@ class FakeLLM:
         yield Done(LLMUsage(model="fake", input_tokens=100, output_tokens=len(self.tokens)))
 
     async def structured(self, role: Role, request: LLMRequest, schema: Any) -> Any:
-        raise NotImplementedError
+        self.requests.append((role, request))
+        return self.structured_replies.pop(0), LLMUsage(
+            model="fake", input_tokens=30, output_tokens=8
+        )
 
     def roles(self) -> list[Role]:
         return [role for role, _ in self.requests]

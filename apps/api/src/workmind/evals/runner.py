@@ -9,10 +9,10 @@ import asyncio
 import statistics
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -20,7 +20,21 @@ from sqlalchemy import select
 from workmind.core.context import RequestContext
 from workmind.core.resources import Resources
 from workmind.core.tenancy import global_transaction, tenant_transaction
-from workmind.evals.datasets import AbstentionItem, QAItem, RedTeamItem, fact_present
+from workmind.evals.datasets import (
+    AbstentionItem,
+    CrossItem,
+    QAItem,
+    RedTeamItem,
+    RoutingItem,
+    fact_present,
+)
+from workmind.modules.agents.orchestrator import (
+    OrchestratorDeps,
+    OrchestratorEvent,
+    PlanEvent,
+    orchestrate,
+)
+from workmind.modules.agents.planning import Plan, load_agents, plan_question
 from workmind.modules.assistant.answer import (
     Answer,
     AnswerEvent,
@@ -36,7 +50,7 @@ from workmind.providers.llm import LLMMessage, LLMRequest, LLMUsage
 from workmind.providers.pricing import cost_usd
 
 K_VALUES = (1, 3, 5, 8)
-KNOBS = ("sparse_weight", "rrf_k", "trust_boost")
+KNOBS = ("sparse_weight", "rrf_k", "trust_boost", "min_similarity")
 
 
 def basename(filename: str) -> str:
@@ -142,10 +156,36 @@ class AnswerRecord:
     faithfulness: float | None = None
     unsupported_claims: list[str] = field(default_factory=list[str])
     error: str | None = None
+    extra_usage: list[LLMUsage] = field(default_factory=list[LLMUsage])
+    plan_agents: list[str] = field(default_factory=list[str])
+    routed_by: str = ""
+    cited_all_expected: bool | None = None
+
+    @property
+    def calls(self) -> int:
+        return (1 if self.usage.output_tokens else 0) + len(self.extra_usage)
 
     @property
     def cost(self) -> float | None:
-        return cost_usd(self.usage)
+        costs = [cost_usd(u) for u in (self.usage, *self.extra_usage) if u.output_tokens]
+        return None if not costs or None in costs else sum(c for c in costs if c is not None)
+
+
+@dataclass
+class RoutingRecord:
+    id: str
+    expected_mode: str
+    expected_agents: list[str]
+    mode: str
+    agents: list[str]
+    routed_by: str
+    latency_ms: float
+    error: str | None = None
+
+    @property
+    def correct(self) -> bool:
+        """The planned agents are exactly the expected ones (none, for a direct answer)."""
+        return self.agents == self.expected_agents
 
 
 @dataclass
@@ -160,6 +200,7 @@ class EvalRun:
     retrieval: list[RetrievalRecord] = field(default_factory=list[RetrievalRecord])
     answers: list[AnswerRecord] = field(default_factory=list[AnswerRecord])
     context_checks: list[ContextLeakRecord] = field(default_factory=list[ContextLeakRecord])
+    routing: list[RoutingRecord] = field(default_factory=list[RoutingRecord])
 
     @property
     def leaks(self) -> list[str]:
@@ -243,10 +284,56 @@ async def bounded[T](limit: int, jobs: Sequence[Callable[[], Awaitable[T]]]) -> 
 
 
 class Evaluator:
-    def __init__(self, resources: Resources, askers: Askers, *, concurrency: int = 4) -> None:
+    def __init__(
+        self,
+        resources: Resources,
+        askers: Askers,
+        *,
+        concurrency: int = 4,
+        assistant: Literal["single", "agents", "auto"] = "single",
+    ) -> None:
         self.resources = resources
         self.askers = askers
         self.concurrency = concurrency
+        self.assistant = assistant
+
+    async def routing(self, items: Sequence[RoutingItem]) -> list[RoutingRecord]:
+        """Planner only (no searching, no answers): cheap enough to run often."""
+        tenant = self.askers.tenant or await self.askers.load_tenant()
+        agents = await load_agents(self.resources.db, tenant.id)
+
+        async def one(item: RoutingItem) -> RoutingRecord:
+            started = time.perf_counter()
+            try:
+                plan = await plan_question(
+                    self.resources.llm, self.resources.agent_router, item.question, agents
+                )
+            except Exception as exc:
+                return RoutingRecord(item.id, item.mode, item.agents, "error", [], "", 0, str(exc))
+            return RoutingRecord(
+                item.id,
+                item.mode,
+                sorted(item.agents),
+                plan.mode,
+                sorted(plan.agents),
+                plan.routed_by,
+                (time.perf_counter() - started) * 1000,
+            )
+
+        return await bounded(self.concurrency, [lambda i=i: one(i) for i in items])
+
+    async def cross(self, items: Sequence[CrossItem], *, with_judge: bool) -> list[AnswerRecord]:
+        async def one(item: CrossItem) -> AnswerRecord:
+            record, result = await self._answer("cross", item.user, item.question)
+            record.id = item.id
+            record.facts_missing = [str(f) for f in item.facts if not fact_present(f, record.text)]
+            record.cited_expected = any(f in item.expected for f in record.cited_files)
+            record.cited_all_expected = set(item.expected) <= set(record.cited_files)
+            if with_judge and result.passages and not record.error:
+                await self._judge(record, result)
+            return record
+
+        return await bounded(self.concurrency, [lambda i=i: one(i) for i in items])
 
     async def _search(
         self, handle: str, question: str, mode: Mode
@@ -304,27 +391,50 @@ class Evaluator:
             self.concurrency, [lambda i=i, m=m: one(i, m) for m in modes for i in items]
         )
 
+    def _stream(self, ctx: RequestContext, question: str) -> AsyncGenerator[OrchestratorEvent]:
+        tenant = self.askers.tenant
+        organization = tenant.name if tenant else "the company"
+        if self.assistant in ("agents", "auto"):
+            deps = OrchestratorDeps(
+                self.resources.db,
+                self.resources.llm,
+                self.resources.local_llm,
+                self.resources.retriever,
+                self.resources.agent_router,
+            )
+            return orchestrate(
+                deps,
+                ctx,
+                question,
+                organization=organization,
+                policy=self.askers.policy,
+                agents_only_for_fan_out=self.assistant == "auto",
+            )
+        return answer_stream(
+            self.resources.llm,
+            self.resources.retriever,
+            ctx,
+            question,
+            organization=organization,
+            policy=self.askers.policy,
+            local_llm=self.resources.local_llm,
+        )
+
     async def _answer(self, suite: str, handle: str, question: str) -> tuple[AnswerRecord, Answer]:
         ctx = await self.askers.context(handle)
-        tenant = self.askers.tenant
         started = time.perf_counter()
         ttft: float | None = None
         final: Answer | None = None
         error: str | None = None
+        plan: Plan | None = None
         try:
-            async for event in answer_stream(
-                self.resources.llm,
-                self.resources.retriever,
-                ctx,
-                question,
-                organization=tenant.name if tenant else "the company",
-                policy=self.askers.policy,
-                local_llm=self.resources.local_llm,
-            ):
+            async for event in self._stream(ctx, question):
                 if isinstance(event, TokenEvent) and ttft is None:
                     ttft = (time.perf_counter() - started) * 1000
                 elif isinstance(event, AnswerEvent):
                     final = event.answer
+                elif isinstance(event, PlanEvent):
+                    plan = event.plan
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"[:300]
         total = (time.perf_counter() - started) * 1000
@@ -344,6 +454,9 @@ class Evaluator:
             total_ms=total,
             usage=result.usage,
             error=error,
+            extra_usage=result.extra_usage,
+            plan_agents=plan.agents if plan else [],
+            routed_by=plan.routed_by if plan else "",
         )
         return record, result
 
