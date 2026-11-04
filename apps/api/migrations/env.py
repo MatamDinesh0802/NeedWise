@@ -7,10 +7,9 @@ from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import workmind.models  # noqa: F401  (registers every model on Base.metadata)
 from workmind.core.config import get_settings
 from workmind.core.db import Base
-
-# Import ORM model modules here as they are added, so autogenerate can see them.
 
 config = context.config
 if config.config_file_name is not None:

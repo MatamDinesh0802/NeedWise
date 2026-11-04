@@ -50,8 +50,10 @@ lint: ## Lint and type-check everything
 fmt: ## Auto-format backend code
 	cd apps/api && uv run ruff format . && uv run ruff check --fix .
 
-test: ## Run all unit tests
-	cd apps/api && uv run pytest
+TEST_DATABASE_ADMIN_URL ?= postgresql://postgres:postgres@localhost:5432/postgres
+
+test: ## Run all tests (integration tests need `make infra` or `make up`)
+	cd apps/api && TEST_DATABASE_ADMIN_URL=$(TEST_DATABASE_ADMIN_URL) uv run pytest
 	cd apps/web && pnpm test
 
 seed: ## Seed the Acme Robotics demo company (arrives in Phase 1)

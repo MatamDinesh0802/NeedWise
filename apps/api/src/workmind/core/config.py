@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     migrations_database_url: str = (
         "postgresql+asyncpg://workmind_owner:workmind_owner@localhost:5432/workmind"
     )
+    # Name of the runtime role; migrations grant and revoke privileges for it.
+    db_app_role: str = "workmind_app"
     valkey_url: str = "redis://localhost:6379/0"
     qdrant_url: str = "http://localhost:6333"
     openfga_api_url: str = "http://localhost:8401"
