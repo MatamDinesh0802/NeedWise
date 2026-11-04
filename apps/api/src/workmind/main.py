@@ -10,12 +10,13 @@ from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from opentelemetry.sdk.trace import TracerProvider
 
 from workmind.api import auth, v1
 from workmind.api.ops import probes
 from workmind.core.config import Settings, get_settings
-from workmind.core.errors import ApiError, api_error_handler
+from workmind.core.errors import ApiError, api_error_handler, validation_error_handler
 from workmind.core.health import build_health_checks
 from workmind.core.logging import configure_logging
 from workmind.core.middleware import RequestContextMiddleware
@@ -76,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.add_middleware(RequestContextMiddleware)
     app.add_exception_handler(ApiError, api_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(probes)
     app.include_router(auth.router)
     app.include_router(v1.router, prefix="/api/v1")

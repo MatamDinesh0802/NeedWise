@@ -73,7 +73,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - [x] Slice 3: login/logout (BFF), sessions, back-channel logout, `/api/v1/me`, end-to-end tests
 - [ ] Slice 4: web sign-in and user menu
 - [x] Slice 5: OpenFGA model, outbox sync, reconcile, authz matrix tests
-- [ ] Slice 6: admin API + UI, audit log viewer
+- [x] Slice 6a: admin API (people, departments, groups, audit log) with guard rails and a role × endpoint test matrix
+- [ ] Slice 6b: admin UI and audit log viewer
 - [ ] Slice 7: personal access tokens
 
 **Scope:**
