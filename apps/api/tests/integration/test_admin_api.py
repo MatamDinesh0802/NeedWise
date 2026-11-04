@@ -304,3 +304,8 @@ def test_admins_configure_agents_without_code(api: TestClient, acme: Acme) -> No
     assert created.status_code == 201, created.text
     assert (unknown.status_code, unknown.json()["code"]) == (422, "unknown_collection")
     assert as_member.status_code == 403
+    available = api.get("/api/v1/agents", headers=acme.as_("bob")).json()
+    deleted = api.delete("/api/v1/admin/agents/it", headers=acme.as_("erin", write=True))
+    assert {"HR agent", "IT agent"} <= {a["name"] for a in available}
+    assert "collections" not in available[0]  # members see what agents do, not how
+    assert deleted.status_code == 204

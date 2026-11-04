@@ -262,7 +262,10 @@ async def execute_run(
                     {
                         "mode": event.plan.mode,
                         "routed_by": event.plan.routed_by,
-                        "subtasks": [s.model_dump() for s in event.plan.subtasks],
+                        "subtasks": [
+                            {**s.model_dump(), "name": event.names.get(s.agent, s.agent)}
+                            for s in event.plan.subtasks
+                        ],
                     },
                 )
             elif isinstance(event, AgentStepEvent):
@@ -271,6 +274,7 @@ async def execute_run(
                     "agent.step",
                     {
                         "agent": event.agent,
+                        "name": event.name or event.agent,
                         "status": event.status,
                         "label": event.label,
                         "findings": event.findings,

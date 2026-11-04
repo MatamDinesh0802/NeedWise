@@ -43,6 +43,7 @@ AGENT_TIMEOUT_S = 90.0
 @dataclass(frozen=True)
 class PlanEvent:
     plan: Plan
+    names: dict[str, str] = field(default_factory=dict[str, str])  # agent key -> display name
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class AgentStepEvent:
     agent: str
     status: Literal["running", "done", "failed"]
     label: str
+    name: str = ""  # the agent's display name, as configured
     findings: int = 0
     sources: int = 0
     seconds: float = 0.0
@@ -153,7 +155,7 @@ async def orchestrate(
     standalone = search_query or question
     agents = {a.key: a for a in await load_agents(deps.sessions, ctx.tenant_id)}
     plan = await plan_question(deps.llm, deps.router, standalone, list(agents.values()))
-    yield PlanEvent(plan)
+    yield PlanEvent(plan, {key: agents[key].name for key in plan.agents if key in agents})
 
     async def single_pipeline() -> AsyncGenerator[StreamEvent]:
         async for event in answer_stream(
@@ -177,7 +179,7 @@ async def orchestrate(
 
     results: list[AgentResult] = []
     for subtask in plan.subtasks:
-        yield AgentStepEvent(subtask.agent, "running", subtask.goal)
+        yield AgentStepEvent(subtask.agent, "running", subtask.goal, agents[subtask.agent].name)
     tasks = {
         asyncio.create_task(
             _bounded(deps, ctx, agents[s.agent], s.goal, organization=organization, policy=policy)
@@ -187,13 +189,15 @@ async def orchestrate(
     for finished in asyncio.as_completed(tasks):
         result = await finished
         results.append(result)
+        name = agents[result.agent].name
         if result.error:
-            yield AgentStepEvent(result.agent, "failed", result.error, seconds=result.seconds)
+            yield AgentStepEvent(result.agent, "failed", result.error, name, seconds=result.seconds)
         else:
             yield AgentStepEvent(
                 result.agent,
                 "done",
                 result.goal,
+                name,
                 findings=len(result.findings),
                 sources=len(result.passages),
                 seconds=result.seconds,

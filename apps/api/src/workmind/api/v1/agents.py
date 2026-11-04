@@ -3,13 +3,14 @@ without code. An agent's collections only narrow what the asking person can see.
 
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from workmind.api.deps import resources_of
+from workmind.api.deps import require_scope, resources_of
 from workmind.api.v1.admin import AdminContext
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
@@ -100,6 +101,46 @@ async def update_agent(
         await session.flush()
         await _audit(session, ctx, "admin.agent.updated", agent)
         return _out(agent)
+
+
+@router.delete("/{key}", status_code=204)
+async def delete_agent(ctx: AdminContext, request: Request, key: str) -> Response:
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        agent = await session.scalar(select(AgentDefinition).where(AgentDefinition.key == key))
+        if agent is None:
+            raise ApiError(404, "not_found", "Agent not found")
+        await _audit(session, ctx, "admin.agent.deleted", agent)
+        await session.delete(agent)
+    return Response(status_code=204)
+
+
+class AgentSummary(BaseModel):
+    key: str
+    name: str
+    description: str
+    examples: list[str]
+
+
+members_router = APIRouter(prefix="/agents", tags=["agents"])
+
+
+@members_router.get("")
+async def list_available_agents(
+    ctx: Annotated[RequestContext, require_scope("assistant:ask")], request: Request
+) -> list[AgentSummary]:
+    """The enabled agents, for everyone: what each can help with (no configuration details)."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        rows = (
+            await session.scalars(
+                select(AgentDefinition)
+                .where(AgentDefinition.enabled.is_(True))
+                .order_by(AgentDefinition.name)
+            )
+        ).all()
+    return [
+        AgentSummary(key=a.key, name=a.name, description=a.description, examples=a.examples)
+        for a in rows
+    ]
 
 
 def _apply(agent: AgentDefinition, body: AgentFields) -> None:

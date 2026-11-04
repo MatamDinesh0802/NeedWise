@@ -324,10 +324,10 @@ async def test_in_agents_mode_the_plan_and_each_agent_are_streamed(
     assert received[1][1] == {
         "mode": "single",
         "routed_by": "planner",
-        "subtasks": [{"agent": "hr", "goal": "Parental leave length?"}],
+        "subtasks": [{"agent": "hr", "goal": "Parental leave length?", "name": "HR agent"}],
     }
     done = next(d for n, d in received if n == "agent.step" and d["status"] == "done")
-    assert (done["agent"], done["findings"]) == ("hr", 1)
+    assert (done["agent"], done["name"], done["findings"]) == ("hr", "HR agent", 1)
     assert detail["messages"][-1]["citations"][0]["filename"] == "leave.md"
     assert [role for role, _ in llm.requests] == ["router", "agent", "answer"]
     assert detail["messages"][-1]["usage"]["input_tokens"] == 30 + 30 + 100  # every call counted
