@@ -94,6 +94,8 @@ async def _ingest(
             document.mime_type,
         )
         manual_sensitivity = document.sensitivity_manual
+        # A synced item keeps the name its source gives it (a page title, a Drive file name).
+        source_title = document.title if document.source_id is not None else None
         trust, sensitivity = document.trust, document.sensitivity
         storage_key = version.storage_key
 
@@ -106,13 +108,14 @@ async def _ingest(
     if not drafts:
         raise PermanentIngestionError("no readable text found (a scanned PDF needs OCR)")
 
+    title = source_title or parsed.title
     findings = scan("\n".join(d.text for d in drafts))
     if not manual_sensitivity:
         sensitivity = suggest(default_sensitivity, findings)
 
     inputs = [embedding_text(d.heading_path, d.text) for d in drafts]
     try:
-        dense = await deps.embeddings.embed_documents(inputs, titles=[parsed.title] * len(inputs))
+        dense = await deps.embeddings.embed_documents(inputs, titles=[title] * len(inputs))
     except EmbeddingRejectedError as exc:
         raise PermanentIngestionError(f"the embedding model rejected this document: {exc}") from exc
     chunk_ids = [uuid.uuid4() for _ in drafts]
@@ -131,7 +134,7 @@ async def _ingest(
                 "acl": acl,
                 "trust": trust,
                 "sensitivity": sensitivity,
-                "title": parsed.title,
+                "title": title,
                 "filename": filename,
                 "heading_path": list(draft.heading_path),
                 "page": draft.page,
@@ -171,7 +174,7 @@ async def _ingest(
         version.chunk_count, version.processed_at = len(drafts), datetime.now(UTC)
         version.embedding_model = deps.embeddings.model_id
         document.current_version_id, document.status, document.error = version_id, "ready", None
-        document.title, document.sensitivity = parsed.title, sensitivity
+        document.title, document.sensitivity = title, sensitivity
         await record_event(
             session,
             tenant_id=tenant_id,

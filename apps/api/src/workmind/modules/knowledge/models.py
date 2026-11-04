@@ -17,13 +17,19 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy import false as sa_false
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from workmind.core.db import Base, TenantScoped, Timestamps, uuid_primary_key
+
+# Synced documents reference sources: register that table whenever documents are used.
+from workmind.modules.connectors import models as _sources
 from workmind.modules.identity.models import SLUG_PATTERN
+
+_ = _sources  # documents reference sources: keep the table registered
 
 SCOPES = ("personal", "department", "enterprise", "restricted")
 TRUST_LEVELS = ("official", "reference", "discussion")
@@ -98,6 +104,20 @@ class Document(Base, TenantScoped, Timestamps):
         CheckConstraint(_in("sensitivity", SENSITIVITIES), name="sensitivity"),
         CheckConstraint("status IN ('pending', 'processing', 'ready', 'failed')", name="status"),
         Index("ix_documents_collection_id", "tenant_id", "collection_id"),
+        # A synced item is one document, whatever its title or file name becomes.
+        Index(
+            "uq_documents_source_item",
+            "tenant_id",
+            "source_id",
+            "external_id",
+            unique=True,
+            postgresql_where=text("source_id IS NOT NULL"),
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["sources.tenant_id", "sources.id"],
+            ondelete="SET NULL (source_id)",
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_primary_key()
@@ -106,6 +126,11 @@ class Document(Base, TenantScoped, Timestamps):
     filename: Mapped[str] = mapped_column(Text)
     mime_type: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(32), server_default="upload")
+    source_id: Mapped[uuid.UUID | None]  # set for synced documents
+    external_id: Mapped[str | None] = mapped_column(Text)  # the item's id in the source
+    url: Mapped[str | None] = mapped_column(Text)  # where people can open the original
+    # The source's version marker (etag, revision): unchanged items are not fetched again.
+    source_version: Mapped[str | None] = mapped_column(Text)
     trust: Mapped[str] = mapped_column(String(16))
     sensitivity: Mapped[str] = mapped_column(String(16))
     # True once an editor sets the label: re-indexing then keeps it instead of re-scanning.

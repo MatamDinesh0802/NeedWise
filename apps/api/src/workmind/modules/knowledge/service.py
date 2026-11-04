@@ -108,6 +108,16 @@ async def visible_collections(
 
 
 @dataclass(frozen=True)
+class SyncedItem:
+    """Identity of a document that comes from a source (not an upload)."""
+
+    source_id: uuid.UUID
+    external_id: str
+    title: str
+    url: str | None
+
+
+@dataclass(frozen=True)
 class UploadResult:
     document: Document
     version: DocumentVersion
@@ -130,9 +140,11 @@ async def upload(
     trust: str | None = None,
     sensitivity: str | None = None,
     source: str = "upload",
+    synced: SyncedItem | None = None,
 ) -> UploadResult:
     """Stores the file and records a new version. A file with the same name in the same
-    collection is a new version of the same document; identical bytes change nothing."""
+    collection is a new version of the same document (a synced item: the same source item);
+    identical bytes change nothing."""
     filename = PurePath(filename).name  # never trust a client-supplied path
     try:
         mime = detect_mime(filename, declared_mime)
@@ -144,13 +156,12 @@ async def upload(
         raise ApiError(422, "empty_file", "The file is empty")
     content_hash = hashlib.sha256(data).hexdigest()
 
-    document = (
-        await session.scalars(
-            select(Document).where(
-                Document.collection_id == collection.id, Document.filename == filename
-            )
-        )
-    ).first()
+    same_item = (
+        (Document.source_id == synced.source_id) & (Document.external_id == synced.external_id)
+        if synced
+        else (Document.collection_id == collection.id) & (Document.filename == filename)
+    )
+    document = (await session.scalars(select(Document).where(same_item))).first()
     if document is not None and document.current_version_id is not None:
         current = await session.get(DocumentVersion, document.current_version_id)
         if (
@@ -167,10 +178,13 @@ async def upload(
         document = Document(
             tenant_id=ctx.tenant_id,
             collection_id=collection.id,
-            title=_title_from(filename),
+            title=synced.title if synced else _title_from(filename),
             filename=filename,
             mime_type=mime,
             source=source,
+            source_id=synced.source_id if synced else None,
+            external_id=synced.external_id if synced else None,
+            url=synced.url if synced else None,
             trust=trust or collection.default_trust,
             sensitivity=sensitivity or collection.default_sensitivity,
             created_by=ctx.user_id,
@@ -178,6 +192,8 @@ async def upload(
         session.add(document)
         await session.flush()
     document.status, document.error, document.mime_type = "pending", None, mime
+    if synced:  # the source may rename an item or move its link
+        document.title, document.url, document.filename = synced.title, synced.url, filename
     version_no = (
         await session.scalar(
             select(func.coalesce(func.max(DocumentVersion.version_no), 0)).where(

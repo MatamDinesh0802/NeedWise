@@ -1,5 +1,6 @@
 """A thin Qdrant REST client: only the calls WorkMind uses (ARCHITECTURE section 11.2)."""
 
+import contextlib
 from collections.abc import Sequence
 from typing import Any
 
@@ -20,6 +21,10 @@ class QdrantError(RuntimeError):
     pass
 
 
+class QdrantConflictError(QdrantError):
+    """HTTP 409: e.g. the collection was created by someone else a moment ago."""
+
+
 class QdrantClient:
     def __init__(self, http: httpx.AsyncClient, base_url: str, api_key: str | None = None) -> None:
         self._http = http
@@ -34,9 +39,8 @@ class QdrantClient:
         except httpx.HTTPError as exc:
             raise QdrantError(f"Qdrant unreachable: {exc!r}") from exc
         if response.is_error:
-            raise QdrantError(
-                f"Qdrant HTTP {response.status_code} on {path}: {response.text[:300]}"
-            )
+            error = QdrantConflictError if response.status_code == 409 else QdrantError
+            raise error(f"Qdrant HTTP {response.status_code} on {path}: {response.text[:300]}")
         return response.json().get("result")
 
     async def delete_collection(self, name: str) -> None:
@@ -46,16 +50,20 @@ class QdrantClient:
         return bool((await self._call("GET", f"/collections/{name}/exists"))["exists"])
 
     async def ensure_collection(self, name: str, *, dense_size: int) -> None:
+        """Idempotent and safe under concurrency: parallel ingestions of a brand-new index (or
+        several workers) may all find it missing; whoever loses the race just carries on."""
         if await self.collection_exists(name):
             return
-        await self._call(
-            "PUT",
-            f"/collections/{name}",
-            {
-                "vectors": {"dense": {"size": dense_size, "distance": "Cosine"}},
-                "sparse_vectors": {"bm25": {"modifier": "idf"}},
-            },
-        )
+        # Created concurrently by someone else: fine, the payload indexes below are idempotent.
+        with contextlib.suppress(QdrantConflictError):
+            await self._call(
+                "PUT",
+                f"/collections/{name}",
+                {
+                    "vectors": {"dense": {"size": dense_size, "distance": "Cosine"}},
+                    "sparse_vectors": {"bm25": {"modifier": "idf"}},
+                },
+            )
         for field, schema in PAYLOAD_INDEXES.items():
             await self._call(
                 "PUT",

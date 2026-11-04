@@ -18,6 +18,8 @@ from workmind import __version__
 Environment = Literal["dev", "test", "demo", "production"]
 DEV_OIDC_CLIENT_SECRET = "dev-only-oidc-client-secret"  # noqa: S105  (refused in production)
 DEV_OPENFGA_API_KEY = "dev-only-openfga-key"  # (refused in production)
+# 32 zero bytes, base64: obviously not a secret, and refused in production.
+DEV_SECRETS_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 
 class Settings(BaseSettings):
@@ -45,6 +47,9 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     openfga_api_url: str = "http://localhost:8401"
     openfga_api_key: SecretStr = SecretStr(DEV_OPENFGA_API_KEY)
+    # Encrypts connector credentials at rest (AES-256-GCM): 32 random bytes, base64.
+    # Generate one: python -c "import base64,os; print(base64.b64encode(os.urandom(32)).decode())"
+    secrets_key: SecretStr = SecretStr(DEV_SECRETS_KEY)
     # Background sync of the authorization outbox (disabled in unit tests).
     authz_outbox_worker: bool = True
     keycloak_url: str = "http://localhost:8480/auth"
@@ -83,6 +88,10 @@ class Settings(BaseSettings):
     # Remote MCP servers whose tools agents may use, as JSON, e.g.
     # [{"key": "erp", "url": "https://erp.example/mcp", "token": "...", "read_only": ["stock"]}]
     mcp_servers: list[dict[str, Any]] = []
+    # Google Drive sources (OAuth client of type "Web application"; redirect URI:
+    # <PUBLIC_URL>/api/v1/oauth/google/callback).
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
     agent_fast_path: bool = True
     agent_fast_path_min_score: float = 0.3  # EmbeddingGemma similarities; see evals/README.md
     agent_fast_path_min_margin: float = 0.15
@@ -130,6 +139,8 @@ class Settings(BaseSettings):
             raise ValueError("OIDC_CLIENT_SECRET must be set in production")
         if self.openfga_api_key.get_secret_value() == DEV_OPENFGA_API_KEY:
             raise ValueError("OPENFGA_API_KEY must be set in production")
+        if self.secrets_key.get_secret_value() == DEV_SECRETS_KEY:
+            raise ValueError("SECRETS_KEY must be set in production")
         return self
 
     @property

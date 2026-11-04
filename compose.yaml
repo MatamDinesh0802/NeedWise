@@ -245,6 +245,20 @@ services:
       retries: 120  # the first start downloads the model (~330 MB)
     restart: unless-stopped
 
+  # Starts scheduled work: every minute it queues the connector syncs that are due. Run exactly
+  # one of these, however many workers you scale to.
+  beat:
+    build: { context: apps/api }
+    image: workmind-api:dev
+    command: ["celery", "-A", "workmind.workers.celery_app", "beat", "--loglevel", "INFO", "--schedule", "/tmp/celerybeat-schedule"]
+    env_file: *app-env-file
+    environment:
+      <<: *app-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      valkey: { condition: service_healthy }
+    restart: unless-stopped
+
   # Development tool, not part of `up`:  make seed  (= docker compose --profile tools run --rm seed)
   seed:
     profiles: [tools]

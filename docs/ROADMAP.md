@@ -221,7 +221,14 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #7 — "Your company knowledge inside your IDE, with permissions intact."**
 
-### Phase 7 — Connectors and sync (v0.7)
+### Phase 7 — Connectors and sync (v0.7) 🚧 Built; live Drive/Slack verification pending (see `docs/connectors.md`)
+
+> Done: connector SDK and contract suite, sync engine (versions, deletion propagation after complete
+> scans, failures recorded, one sync per source), Celery beat scheduling, AES-GCM credentials,
+> web crawler (tested against a live site), GitHub (tested against a public repository), Slack and
+> Google Drive with OAuth (tested against their documented APIs), collection-level permission
+> mapping, stale-document listing. Pending: a test Drive and Slack workspace (DoD), the Sources UI,
+> Confluence and SharePoint, and owner reminders (Phase 11 notifications).
 
 **Goal:** knowledge flows in automatically from the tools companies already use.
 
