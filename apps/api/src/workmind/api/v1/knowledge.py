@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from workmind.api.deps import SessionContext, require_scope, resources_of, settings_of
@@ -373,6 +373,53 @@ def _default_viewers(ctx: RequestContext, body: CollectionCreate) -> list[str]:
     if body.scope == "department" and body.department_id:
         return [f"dept:{body.department_id}"]
     return []
+
+
+class AdminCollectionOut(BaseModel):
+    id: uuid.UUID
+    key: str
+    name: str
+    description: str
+    scope: str
+    department_id: uuid.UUID | None
+    default_trust: str
+    default_sensitivity: str
+    document_count: int
+    grants: list[GrantOut]
+
+
+@admin_router.get("")
+async def list_all_collections(ctx: AdminContext, request: Request) -> Items[AdminCollectionOut]:
+    """Every collection with its sharing, for administrators. Content stays out of reach:
+    listing a collection here does not let an admin read its documents."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        collections = (await session.scalars(select(Collection).order_by(Collection.name))).all()
+        grants = (await session.scalars(select(CollectionGrant))).all()
+        rows = await session.execute(
+            select(Document.collection_id, func.count()).group_by(Document.collection_id)
+        )
+        counts = {collection_id: count for collection_id, count in rows}
+    return Items(
+        items=[
+            AdminCollectionOut(
+                id=c.id,
+                key=c.key,
+                name=c.name,
+                description=c.description,
+                scope=c.scope,
+                department_id=c.department_id,
+                default_trust=c.default_trust,
+                default_sensitivity=c.default_sensitivity,
+                document_count=counts.get(c.id, 0),
+                grants=[
+                    GrantOut(principal=g.principal, relation=g.relation)
+                    for g in grants
+                    if g.collection_id == c.id
+                ],
+            )
+            for c in collections
+        ]
+    )
 
 
 @admin_router.post("", status_code=201)

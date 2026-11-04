@@ -262,3 +262,19 @@ async def test_sharing_changes_update_the_acl_inside_the_search_index(
 
     assert shared.status_code == 200, shared.text
     assert await client.count(name, visible_to_bob) == 1
+
+
+async def test_admins_list_every_collection_with_sharing_but_still_cannot_read_restricted_ones(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    listing = api.get("/api/v1/admin/collections", headers=acme.as_("erin"))
+    records = await _collection_id(app_sessions, acme, "hr-employee-records")
+
+    keys = {c["key"] for c in listing.json()["items"]}
+    assert listing.status_code == 200
+    assert {"hr-employee-records", "leadership-strategy"} <= keys
+    assert (
+        api.get(f"/api/v1/collections/{records}/documents", headers=acme.as_("erin")).status_code
+        == 404
+    )
+    assert api.get("/api/v1/admin/collections", headers=acme.as_("bob")).status_code == 403
