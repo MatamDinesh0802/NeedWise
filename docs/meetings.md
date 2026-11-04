@@ -76,7 +76,7 @@ transcript from the plan. macOS `say` read it aloud with one voice per speaker, 
 | Action items, right owner and task | 5/5 | 5/5, 4/5, 5/5 |
 | Action items linked to a colleague | 100% | 100% |
 | Items with a valid timestamp | 100% | 100% |
-| Transcription (base.en, int8) | none | 42 to 51 s for 23 min on the Apple M5 CPU; 134 s in the Docker worker (first run, model download included) |
+| Transcription (base.en, int8) | none | 42 to 51 s for 23 min on the Apple M5 CPU; 78 s in the Docker worker (134 s on its first run, which downloads the model) |
 | Extraction (Claude Sonnet 5.5) | 9 s | 9 s |
 
 Recording results are three extraction runs on one transcription (Whisper with beam 1 is

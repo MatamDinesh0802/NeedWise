@@ -189,6 +189,10 @@ async def test_a_transcript_becomes_notes_tasks_and_commitments(
     assert [(c["text"], c["due"], c["task_status"]) for c in mine] == [
         ("Add battery-temperature alerts to the FleetOS dashboard", "2026-11-13", "open")
     ]
+    task_id = created.json()["action_items"][0]["task_id"]
+    task = api.get(f"/api/v1/tasks/{task_id}", headers=acme.as_("wei.zhang"))
+    assert (task.status_code, task.json()["assignee_id"]) == (200, str(acme.users["wei.zhang"]))
+    assert api.get(f"/api/v1/tasks/{task_id}", headers=acme.as_("bob")).status_code == 404
     wei_notes = api.get("/api/v1/notifications", headers=acme.as_("wei.zhang")).json()
     assert any(n["kind"] == "task.assigned" for n in wei_notes)
 
@@ -286,3 +290,15 @@ async def test_a_recording_that_cannot_be_transcribed_fails_visibly(
         "audio/mp4",
         b"\x00audio",
     )
+
+
+async def test_members_look_up_colleagues_and_guests_cannot(api: TestClient, acme: Acme) -> None:
+    found = api.get("/api/v1/people", params={"q": "zhang"}, headers=acme.as_("olivia.grant"))
+
+    assert found.status_code == 200
+    assert [(p["display_name"], p["departments"]) for p in found.json()] == [
+        ("Wei Zhang", ["Engineering"])
+    ]
+    everyone = api.get("/api/v1/people", headers=acme.as_("bob")).json()
+    assert len(everyone) == len(acme.users)
+    assert api.get("/api/v1/people", headers=acme.as_("mallory")).status_code == 403

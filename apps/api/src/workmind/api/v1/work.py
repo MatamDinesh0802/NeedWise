@@ -247,18 +247,30 @@ async def create_task(ctx: AskContext, request: Request, body: TaskCreate) -> Ta
         return _task(task)
 
 
+async def _visible_task(session: AsyncSession, ctx: RequestContext, task_id: uuid.UUID) -> Task:
+    """Assignee, creator, or a member of the task's department queue; others get a 404."""
+    task = await session.get(Task, task_id)
+    mine = task is not None and (
+        ctx.user_id in (task.assignee_id, task.created_by)
+        or (task.department_id in await _my_departments(session, ctx.user_id))
+    )
+    if task is None or not mine:
+        raise ApiError(404, "not_found", "Task not found")
+    return task
+
+
+@router.get("/tasks/{task_id}")
+async def get_task(ctx: AskContext, request: Request, task_id: uuid.UUID) -> TaskOut:
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        return _task(await _visible_task(session, ctx, task_id))
+
+
 @router.patch("/tasks/{task_id}")
 async def update_task(
     ctx: AskContext, request: Request, task_id: uuid.UUID, body: TaskUpdate
 ) -> TaskOut:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
-        task = await session.get(Task, task_id)
-        mine = task is not None and (
-            ctx.user_id in (task.assignee_id, task.created_by)
-            or (task.department_id in await _my_departments(session, ctx.user_id))
-        )
-        if task is None or not mine:
-            raise ApiError(404, "not_found", "Task not found")
+        task = await _visible_task(session, ctx, task_id)
         if body.status:
             task.status = body.status
         if body.assignee_id:
