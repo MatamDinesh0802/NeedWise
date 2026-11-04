@@ -222,6 +222,25 @@ async def test_speaker_mapping_relinks_owners(api: TestClient, acme: Acme) -> No
     assert mapped.status_code == 200, mapped.text
     assert mapped.json()["speakers"]["SPEAKER_1"]["name"] == "Wei Zhang"
     assert mapped.json()["action_items"][0]["owner_user_id"] == str(acme.users["wei.zhang"])
+    fixed = api.patch(
+        f"/api/v1/meetings/{meeting['id']}/actions/0",
+        json={"owner_user_id": str(acme.users["olivia.grant"]), "due": "2026-11-06"},
+        headers=acme.as_("olivia.grant", write=True),
+    ).json()["action_items"][0]
+    assert (fixed["owner"], fixed["owner_user_id"], fixed["due"], fixed["text"]) == (
+        "Olivia Grant",
+        str(acme.users["olivia.grant"]),
+        "2026-11-06",
+        "Send the quote",  # not sent: unchanged
+    )
+    assert (
+        api.patch(
+            f"/api/v1/meetings/{meeting['id']}/actions/0",
+            json={"text": "Send the quote"},
+            headers=acme.as_("bob", write=True),
+        ).status_code
+        == 403
+    )
     assert (
         api.put(
             f"/api/v1/meetings/{meeting['id']}/speakers",

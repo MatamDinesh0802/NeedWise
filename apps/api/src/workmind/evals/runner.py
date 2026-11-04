@@ -49,7 +49,7 @@ from workmind.modules.assistant.answer import (
 from workmind.modules.identity.models import Tenant, User
 from workmind.modules.identity.service import load_identity
 from workmind.modules.meetings.extract import extract as extract_meeting
-from workmind.modules.meetings.pipeline import _people as meeting_people  # pyright: ignore[reportPrivateUsage]
+from workmind.modules.meetings.pipeline import Directory, load_directory
 from workmind.modules.meetings.transcripts import parse as parse_transcript
 from workmind.modules.retrieval.service import Mode, Passage, RetrievalResult
 from workmind.providers.llm import LLMMessage, LLMRequest, LLMUsage
@@ -350,34 +350,34 @@ class Evaluator:
         return await bounded(self.concurrency, [lambda i=i: one(i) for i in items])
 
     async def meetings(
-        self, items: Sequence[MeetingItem], directory: Path, *, audio: bool
+        self, items: Sequence[MeetingItem], folder: Path, *, audio: bool
     ) -> list[MeetingRecord]:
         tenant = self.askers.tenant or await self.askers.load_tenant()
         async with tenant_transaction(self.resources.db, tenant.id) as session:
-            people = await meeting_people(session)
+            directory = await load_directory(session)
         records: list[MeetingRecord] = []
         for item in items:
             sources = ["transcript", "audio"] if audio else ["transcript"]
             for source in sources:
-                records.append(await self._meeting(item, directory, source, people, tenant.name))
+                records.append(await self._meeting(item, folder, source, directory, tenant.name))
         return records
 
     async def _meeting(
         self,
         item: MeetingItem,
-        directory: Path,
+        folder: Path,
         source: str,
-        people: dict[str, str],
+        directory: Directory,
         organization: str,
     ) -> MeetingRecord:
-        path = directory / item.file
+        path = folder / item.file
         transcribe_s: float | None = None
         try:
             if source == "audio":
                 audio = path.with_suffix(".m4a")
                 started = time.perf_counter()
                 transcript = await self.resources.transcriber.transcribe(
-                    audio.read_bytes(), audio.name
+                    audio.read_bytes(), audio.name, vocabulary=directory.names
                 )
                 transcribe_s = time.perf_counter() - started
             else:
@@ -399,7 +399,7 @@ class Evaluator:
                 organization=organization,
                 day=date.fromisoformat(item.date),
                 speakers={},
-                people=people,
+                people=directory.people,
             )
             extract_s = time.perf_counter() - started
         except Exception as exc:

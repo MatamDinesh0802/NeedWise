@@ -82,6 +82,14 @@ class SpeakerMap(BaseModel):
     speakers: dict[str, uuid.UUID | None] = Field(description="speaker label -> colleague, or null")
 
 
+class ActionEdit(BaseModel):
+    """Corrections to an extracted action item. Fields left out stay as they are."""
+
+    text: str | None = Field(default=None, min_length=1, max_length=500)
+    owner_user_id: uuid.UUID | None = None  # null: nobody
+    due: date | None = None  # null: no deadline
+
+
 class Commitment(BaseModel):
     meeting_id: uuid.UUID
     meeting_title: str
@@ -286,6 +294,48 @@ async def map_speakers(
                     item = {**item, "owner_user_id": mapped["user_id"]}
             items.append(item)
         meeting.speakers, meeting.action_items = speakers, items
+        return _out(meeting, can_edit)
+
+
+@router.patch("/meetings/{meeting_id}/actions/{index}")
+async def edit_action(
+    ctx: AskContext, request: Request, meeting_id: uuid.UUID, index: int, body: ActionEdit
+) -> MeetingOut:
+    """Fixes what extraction got wrong (the owner, most often) before it becomes a task."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        meeting, can_edit = await _meeting(session, ctx, meeting_id)
+        if not can_edit:
+            raise ApiError(
+                403, "forbidden", "Only the meeting's owner or the collection's editors can do this"
+            )
+        if not 0 <= index < len(meeting.action_items):
+            raise ApiError(404, "not_found", "No such action item")
+        item = dict(meeting.action_items[index])
+        if item.get("task_id"):
+            raise ApiError(409, "already_a_task", "This is a task now: change the task instead")
+        changed = body.model_fields_set
+        if "text" in changed and body.text is not None:
+            item["text"] = body.text.strip()
+        if "owner_user_id" in changed:
+            owner = await session.get(User, body.owner_user_id) if body.owner_user_id else None
+            if body.owner_user_id and owner is None:
+                raise ApiError(422, "unknown_user", "Unknown colleague")
+            item["owner_user_id"] = str(owner.id) if owner else None
+            item["owner"] = owner.display_name if owner else ""
+        if "due" in changed:
+            item["due"] = body.due.isoformat() if body.due else None
+        items = list(meeting.action_items)
+        items[index] = item
+        meeting.action_items = items
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="meeting.action_edited",
+            resource_type="meeting",
+            resource_id=str(meeting.id),
+            details={"index": index, "fields": sorted(changed)},
+        )
         return _out(meeting, can_edit)
 
 

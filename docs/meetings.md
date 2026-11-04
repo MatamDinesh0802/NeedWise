@@ -28,7 +28,8 @@ upload (recording or transcript) ──► transcribe ──► extract ──�
   That pointer is checked like an answer citation: an item pointing at a segment that does not
   exist keeps its text but gets no timestamp, rather than a made-up one.
 - **Owners:** a name that identifies exactly one active colleague ("Wei" or "Wei Zhang") links
-  the item to that person. Ambiguous names stay unlinked.
+  the item to that person. Ambiguous names stay unlinked. Colleagues' names are also given to
+  the transcriber as a spelling hint (measured below).
 - **Index:** the transcript is uploaded to the meeting's collection as a Markdown document with
   `trust = discussion`, so answers that rely on it say it comes from a discussion and cite the
   5-minute section.
@@ -51,6 +52,7 @@ Permissions follow the collection instead, so meetings never need a second permi
 | `GET /meetings/{id}` | Segments, speakers, summary, decisions, action items, timings |
 | `GET /meetings/{id}/media` | The original recording, for playback from a timestamp |
 | `PUT /meetings/{id}/speakers` | Map speaker labels to colleagues. Action items owned by that label are re-linked |
+| `PATCH /meetings/{id}/actions/{index}` | Correct an action item: `text`, `owner_user_id`, `due` (before it becomes a task) |
 | `POST /meetings/{id}/actions/{index}/task` | Turn an action item into a task for its owner (who is notified). Once per item |
 | `GET /me/commitments` | Action items assigned to you, with their task's status |
 
@@ -69,22 +71,40 @@ transcript from the plan. macOS `say` read it aloud with one voice per speaker, 
 
 | | From the transcript | From the recording |
 |---|---|---|
-| Decisions found | 4/4 | 4/4 |
+| Decisions found | 4/4 | 4/4, 3/4, 4/4 |
 | Ideas nobody agreed to, reported as decided | 0 | 0 |
-| Action items, right owner and task | 5/5 | 4/5 |
-| Due dates resolved correctly | 5/5 | 4/5 |
+| Action items, right owner and task | 5/5 | 5/5, 4/5, 5/5 |
+| Action items linked to a colleague | 100% | 100% |
 | Items with a valid timestamp | 100% | 100% |
-| Transcription (base.en, int8, Apple M5 CPU) | none | 42 to 51 s for 23 min |
+| Transcription (base.en, int8) | none | 42 to 51 s for 23 min on the Apple M5 CPU; 134 s in the Docker worker (first run, model download included) |
 | Extraction (Claude Sonnet 5.5) | 9 s | 9 s |
 
-The one miss from the recording is the chair's own commitment ("And I'll update the SOP by
-Thursday"). Whisper does not say who is speaking, so the model cannot tell whose "I'll" that is.
+Recording results are three extraction runs on one transcription (Whisper with beam 1 is
+deterministic, extraction is not).
+
+**Colleagues' names as a spelling hint.** Without speaker labels, the model works out who owns
+"I'll do it" from names said nearby, so a misheard name loses the owner. Whisper spelled
+"Olivia" as "Olivier" and "Wei" as "Way". The transcriber now passes the company directory's
+names to Whisper (`hotwords`, which primes every 30-second window). Same recording, three
+extraction runs per arm ([experiment](../evals/experiments/meeting_name_hint.py),
+[results](../evals/results/2026-11-04-meeting-name-hint.jsonl)):
+
+| | No hint | Directory names as hint |
+|---|---|---|
+| "Wei" transcribed correctly | 2 times | 8 times |
+| Misspelled names | "Olivier", "Way" | "Way" (twice) |
+| Action items found (of 5) | 4, 4, 4 | 5, 4, 5 |
+| Action items linked to a colleague | 83 to 85% | 100% |
+
+Without the hint, the item missed every time was the chair's own "I'll update the SOP": the
+model gave it to "Olivier", who is nobody. Editors can also correct an owner, wording or date by
+hand (`PATCH /meetings/{id}/actions/{index}`) before an item becomes a task.
 
 ## Not built yet
 
 - **Speaker diarization** (pyannote in the design). It needs PyTorch, several GB, and a gated
-  model behind a Hugging Face token, too heavy for the default image. The cost is measured
-  above. Transcripts from meeting tools already name speakers, and recordings can have speakers
-  mapped after the fact.
+  model behind a Hugging Face token, too heavy for the default image. Recordings therefore have
+  no speaker labels, and owners come from names said in the meeting (above). Transcripts from
+  meeting tools already name their speakers.
 - Topic segmentation, open questions and risks in the extraction; DOCX transcripts.
 - Zoom, Teams and Meet connectors, and checking later meetings for progress on commitments.

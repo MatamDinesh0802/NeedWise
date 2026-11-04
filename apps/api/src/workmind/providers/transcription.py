@@ -39,7 +39,21 @@ class Transcript:
 class Transcriber(Protocol):
     model_id: str
 
-    async def transcribe(self, data: bytes, filename: str) -> Transcript: ...
+    async def transcribe(
+        self, data: bytes, filename: str, *, vocabulary: Sequence[str] = ()
+    ) -> Transcript:
+        """vocabulary: words to expect (colleagues' names), so they are spelled right."""
+        ...
+
+
+def hint(vocabulary: Sequence[str], *, max_chars: int = 600) -> str | None:
+    """A comma-separated hint within Whisper's prompt budget (about 220 tokens)."""
+    words: list[str] = []
+    for word in dict.fromkeys(w.strip() for w in vocabulary if w.strip()):
+        if sum(len(w) + 2 for w in words) + len(word) > max_chars:
+            break
+        words.append(word)
+    return ", ".join(words) or None
 
 
 class FasterWhisperTranscriber:
@@ -63,16 +77,21 @@ class FasterWhisperTranscriber:
             self._model = WhisperModel(self._name, device="cpu", compute_type=self._compute)
         return self._model
 
-    def _run(self, data: bytes) -> Transcript:
+    def _run(self, data: bytes, hotwords: str | None) -> Transcript:
         with self._lock:
             model = self._load()
-            segments, info = model.transcribe(io.BytesIO(data), vad_filter=True, beam_size=1)
+            # hotwords prime every 30-second window (initial_prompt only the first).
+            segments, info = model.transcribe(
+                io.BytesIO(data), vad_filter=True, beam_size=1, hotwords=hotwords
+            )
             out = [Segment(float(s.start), float(s.end), str(s.text).strip()) for s in segments]
         return Transcript(out, getattr(info, "language", None), getattr(info, "duration", None))
 
-    async def transcribe(self, data: bytes, filename: str) -> Transcript:
+    async def transcribe(
+        self, data: bytes, filename: str, *, vocabulary: Sequence[str] = ()
+    ) -> Transcript:
         try:
-            return await asyncio.to_thread(self._run, data)
+            return await asyncio.to_thread(self._run, data, hint(vocabulary))
         except TranscriptionError:
             raise
         except Exception as exc:  # a corrupt or unsupported file
@@ -88,12 +107,17 @@ class OpenAICompatibleTranscriber:
         self._url = base_url.rstrip("/") + "/audio/transcriptions"
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
-    async def transcribe(self, data: bytes, filename: str) -> Transcript:
+    async def transcribe(
+        self, data: bytes, filename: str, *, vocabulary: Sequence[str] = ()
+    ) -> Transcript:
+        form = {"model": self.model_id, "response_format": "verbose_json"}
+        if prompt := hint(vocabulary):
+            form["prompt"] = prompt
         try:
             response = await self._http.post(
                 self._url,
                 headers=self._headers,
-                data={"model": self.model_id, "response_format": "verbose_json"},
+                data=form,
                 files={"file": (filename, data)},
                 timeout=1800,
             )
@@ -114,7 +138,9 @@ class OpenAICompatibleTranscriber:
 class DisabledTranscriber:
     model_id = "none"
 
-    async def transcribe(self, data: bytes, filename: str) -> Transcript:
+    async def transcribe(
+        self, data: bytes, filename: str, *, vocabulary: Sequence[str] = ()
+    ) -> Transcript:
         raise TranscriptionError(
             "audio transcription is off: set TRANSCRIPTION_PROVIDER, or upload a transcript"
         )

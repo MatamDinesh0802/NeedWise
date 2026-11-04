@@ -911,7 +911,7 @@ If workflows later need complex long-running timers, we evaluate Temporal (MIT) 
 
 Clicking a decision or action item jumps to that moment in the recording. Privacy: a consent notice is shown on upload, and visibility defaults to participants only.
 
-> **As built (v0.9, [docs/meetings.md](meetings.md)):** visibility follows the meeting's collection, so the same two permission locks apply and there is no second permission model. Diarization, topic segmentation, open questions and risks are not built yet. The measured cost of having no diarization is in that document.
+> **As built (v0.9, [docs/meetings.md](meetings.md)):** visibility follows the meeting's collection, so the same two permission locks apply and there is no second permission model. Diarization, topic segmentation, open questions and risks are not built yet. Without diarization, owners come from names said in the meeting, with the company directory as a spelling hint for speech to text; that document has the measurements.
 
 ---
 

@@ -10,6 +10,7 @@ from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.extract import ActionItem, Decision, Extraction, clock, extract
 from workmind.modules.meetings.models import Meeting
 from workmind.modules.meetings.pipeline import transcript_markdown
+from workmind.providers.transcription import hint
 
 VTT = b"""WEBVTT
 
@@ -151,3 +152,12 @@ def test_the_indexed_transcript_is_split_into_five_minute_sections() -> None:
     assert "## 05:00 to 10:00" in markdown
     assert "[06:10] Olivia Grant: Thanks, everyone." in markdown
     assert clock(3723.5) == "1:02:03"
+
+
+def test_the_spelling_hint_dedupes_and_fits_the_prompt_budget() -> None:
+    assert hint([]) is None
+    assert hint(["Olivia Grant", " Wei Zhang ", "Olivia Grant", ""]) == "Olivia Grant, Wei Zhang"
+    many = hint([f"Person Number {i}" for i in range(200)], max_chars=100)
+    assert many is not None
+    assert len(many) <= 100
+    assert many.startswith("Person Number 0, ")

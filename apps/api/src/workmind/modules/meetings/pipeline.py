@@ -47,14 +47,25 @@ async def _status(
         stored.status, stored.error = status, error
 
 
-async def _people(session: AsyncSession) -> dict[str, str]:
-    """Full and first names that identify exactly one colleague."""
+@dataclass(frozen=True)
+class Directory:
+    names: list[str]  # colleagues' display names: a spelling hint for speech to text
+    people: dict[str, str]  # lower-case full or first name -> user id, unambiguous ones only
+
+
+async def load_directory(session: AsyncSession) -> Directory:
+    users = (
+        await session.scalars(
+            select(User).where(User.status == "active").order_by(User.display_name)
+        )
+    ).all()
     counts: dict[str, list[str]] = {}
-    for user in await session.scalars(select(User).where(User.status == "active")):
+    for user in users:
         full = (user.display_name or "").strip().lower()
         for key in {full, full.split(" ")[0]} - {""}:
             counts.setdefault(key, []).append(str(user.id))
-    return {key: ids[0] for key, ids in counts.items() if len(ids) == 1}
+    people = {key: ids[0] for key, ids in counts.items() if len(ids) == 1}
+    return Directory([u.display_name for u in users if u.display_name], people)
 
 
 def transcript_markdown(meeting: Meeting) -> str:
@@ -80,7 +91,8 @@ async def process_meeting(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: u
         meeting = await session.get(Meeting, meeting_id)
         assert meeting is not None  # noqa: S101
         tenant = await session.get(Tenant, tenant_id)
-        people = await _people(session)
+        directory = await load_directory(session)
+    people = directory.people
     timings: dict[str, float] = {}
     try:
         # 1. Words with times
@@ -88,7 +100,9 @@ async def process_meeting(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: u
         started = time.perf_counter()
         data = await deps.storage.get(meeting.media_key)
         if transcripts.kind(meeting.filename) == "audio":
-            transcript = await deps.transcriber.transcribe(data, meeting.filename)
+            transcript = await deps.transcriber.transcribe(
+                data, meeting.filename, vocabulary=directory.names
+            )
             timings["transcribe_s"] = round(time.perf_counter() - started, 1)
         else:
             transcript = transcripts.parse(data, meeting.filename)

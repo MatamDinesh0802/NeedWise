@@ -1,0 +1,2 @@
+{"arm": "no hint", "names_right": {"Olivia": 1, "Wei": 2, "Samuel": 7, "Dan": 13, "Hannah": 11}, "names_wrong": ["Olivier", "Way"], "decisions": [4, 4, 4], "actions": [4, 4, 4], "missed": [["Olivia"], ["Olivia"], ["Olivia"]], "owner_linked": [0.85, 0.83, 0.85]}
+{"arm": "hint", "names_right": {"Olivia": 2, "Wei": 8, "Samuel": 6, "Dan": 12, "Hannah": 11}, "names_wrong": ["Way", "Way"], "decisions": [4, 3, 4], "actions": [5, 4, 5], "missed": [[], ["Dan"], []], "owner_linked": [1.0, 1.0, 1.0]}
