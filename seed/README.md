@@ -5,7 +5,7 @@ robotics company. No real company data is ever used.
 
 | File | Purpose | Phase |
 |---|---|---|
-| `acme/company.yaml` | Departments, groups, people, demo logins, collections and who can see them | 0 ✅ |
+| `acme/company.yaml` | Departments, groups, people, demo logins, collections and who can see them. `make seed` loads it into Keycloak and WorkMind. | 0–1 ✅ |
 | `acme/facts.yaml` | Ground-truth facts (e.g. "parental leave is 16 weeks in the 2026 policy, 12 in 2025") | 2 |
 | `acme/corpus/` | ~500 generated documents (PDF, DOCX, XLSX, Slack exports, transcripts) | 2 |
 | `generator/` | Generates the corpus from the facts using a local model, then verifies it | 2 |

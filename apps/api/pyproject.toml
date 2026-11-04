@@ -49,7 +49,7 @@ select = ["E", "W", "F", "I", "B", "UP", "S", "ASYNC", "RUF", "SIM", "PT", "N"]
 ignore = ["S104"] # binding to 0.0.0.0 is intentional inside containers
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]           # assert is how pytest works
+"tests/**" = ["S101", "S105", "S106"]  # asserts, and fake credentials in fixtures
 "migrations/**" = ["N999"]
 
 [tool.pyright]

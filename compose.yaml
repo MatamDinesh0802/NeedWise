@@ -92,7 +92,10 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.8.1
-    command: ["start-dev"]
+    # Imports deploy/keycloak/realm-workmind.json once, when the realm doesn't exist yet.
+    command: ["start-dev", "--import-realm"]
+    volumes:
+      - ./deploy/keycloak:/opt/keycloak/data/import:ro
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
@@ -108,6 +111,9 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       JAVA_OPTS_KC_HEAP: "-Xms256m -Xmx768m"
+      # Placeholders used by the realm import file.
+      WORKMIND_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-dev-only-oidc-client-secret}
+      WORKMIND_PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8480}
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -147,6 +153,8 @@ services:
       QDRANT_URL: http://qdrant:6333
       OPENFGA_API_URL: http://openfga:8080
       KEYCLOAK_URL: http://keycloak:8080/auth
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8480}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-dev-only-oidc-client-secret}
       # Trust X-Forwarded-* headers: only Caddy (and localhost) can reach this container.
       FORWARDED_ALLOW_IPS: "*"
     depends_on:
@@ -162,6 +170,27 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
+
+  # Development tool, not part of `up`:  make seed  (= docker compose --profile tools run --rm seed)
+  seed:
+    profiles: [tools]
+    build: { context: apps/api }
+    image: workmind-api:dev
+    command: ["python", "-m", "workmind.seed", "/seed/acme/company.yaml"]
+    volumes:
+      - ./seed:/seed:ro
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8480}
+      # Seeding creates tenants, which only the owner role may do.
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://workmind_owner:${WORKMIND_OWNER_PASSWORD:-workmind_owner}@postgres:5432/workmind
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-workmind-demo}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      keycloak: { condition: service_healthy }
 
   web:
     build: { context: apps/web }

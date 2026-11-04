@@ -32,6 +32,14 @@ make up            # or: docker compose up -d --build --wait
 
 Open **http://localhost:8480**. The first start pulls about 2 GB of images and takes a few minutes.
 
+```bash
+make seed          # create the fictional Acme Robotics company and its demo logins
+```
+
+Demo logins use the password `workmind-demo` (development only): `alice@acme.test` (HR manager),
+`bob@acme.test` (engineer), `carol@acme.test` (finance), `dan@acme.test` (sales),
+`erin@acme.test` (IT admin), `mallory@acme.test` (external contractor). See [seed/README.md](seed/README.md).
+
 | URL | What |
 |---|---|
 | http://localhost:8480 | The app: UI, API and login on one origin, via Caddy |

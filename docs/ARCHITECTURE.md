@@ -325,6 +325,8 @@ The same context flows into agents, tools, retrieval and Celery tasks. This is w
 - One realm, `workmind`, exported to `deploy/keycloak/realm-workmind.json` so dev setups are reproducible.
 - Confidential client `workmind-api` using the standard flow with PKCE S256.
 - **Keycloak Organizations** enabled: one organization per tenant, with organization-linked identity providers for SSO (users are routed to their company IdP by email domain). A protocol mapper adds the `organization` claim to tokens.
+- The realm file holds configuration only, never passwords. Secrets and URLs are filled in from environment variables at import (`${WORKMIND_OIDC_CLIENT_SECRET}`, `${WORKMIND_PUBLIC_URL}`).
+- `make seed` creates the organization (alias = tenant slug) and the demo logins through the Keycloak Admin REST API. It then creates the matching tenant, departments, groups and people in WorkMind. Re-running it is safe.
 - Departments, groups and roles are **not** modeled in Keycloak. App permissions change often and need a relationship model, so they live in WorkMind (§7).
 
 **Demo users** (seeded with the synthetic "Acme Robotics" company; `.test` is a reserved domain):

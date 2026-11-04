@@ -6,14 +6,15 @@ Docker (`make infra`). Inside docker compose, `compose.yaml` overrides the hostn
 """
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from workmind import __version__
 
 Environment = Literal["dev", "test", "demo", "production"]
+DEV_OIDC_CLIENT_SECRET = "dev-only-oidc-client-secret"  # noqa: S105  (refused in production)
 
 
 class Settings(BaseSettings):
@@ -38,8 +39,28 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     openfga_api_url: str = "http://localhost:8401"
     keycloak_url: str = "http://localhost:8480/auth"
+    keycloak_realm: str = "workmind"
+
+    # The URL users type into the browser. Login redirects and cookie security derive from it.
+    public_url: str = "http://localhost:8480"
+    oidc_client_id: str = "workmind-api"
+    oidc_client_secret: SecretStr = SecretStr(DEV_OIDC_CLIENT_SECRET)
+
+    # Development seeding only (python -m workmind.seed).
+    keycloak_admin_user: str = "admin"
+    keycloak_admin_password: SecretStr = SecretStr("admin")
+    demo_password: SecretStr = SecretStr("workmind-demo")
 
     health_check_timeout_s: float = Field(default=2.0, gt=0)
+
+    @model_validator(mode="after")
+    def _no_dev_secrets_in_production(self) -> Self:
+        if (
+            self.app_env == "production"
+            and self.oidc_client_secret.get_secret_value() == DEV_OIDC_CLIENT_SECRET
+        ):
+            raise ValueError("OIDC_CLIENT_SECRET must be set in production")
+        return self
 
     @property
     def version(self) -> str:

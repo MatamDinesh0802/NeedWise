@@ -56,5 +56,5 @@ test: ## Run all tests (integration tests need `make infra` or `make up`)
 	cd apps/api && TEST_DATABASE_ADMIN_URL=$(TEST_DATABASE_ADMIN_URL) uv run pytest
 	cd apps/web && pnpm test
 
-seed: ## Seed the Acme Robotics demo company (arrives in Phase 1)
-	@echo "Seeding arrives in Phase 1. See seed/README.md"
+seed: ## Create the Acme Robotics demo company and its logins (safe to re-run)
+	$(COMPOSE) --profile tools run --rm --build seed

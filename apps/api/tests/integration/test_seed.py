@@ -1,0 +1,43 @@
+import uuid
+from pathlib import Path
+
+from sqlalchemy import func, select
+
+from tests.integration.conftest import SessionFactory
+from workmind.core.tenancy import tenant_transaction
+from workmind.modules.identity.models import DepartmentMember, GroupMember, User
+from workmind.seed.apply import seed_database
+from workmind.seed.company import CompanySpec, load_company
+
+ACME = Path(__file__).resolve().parents[4] / "seed" / "acme" / "company.yaml"
+
+
+def _unique_acme() -> CompanySpec:
+    spec = load_company(ACME)
+    company = spec.company.model_copy(update={"slug": f"acme-{uuid.uuid4().hex[:8]}"})
+    return spec.model_copy(update={"company": company})
+
+
+async def _counts(sessions: SessionFactory, tenant_id: uuid.UUID) -> tuple[int, int, int]:
+    async with tenant_transaction(sessions, tenant_id) as session:
+        users = await session.scalar(select(func.count()).select_from(User))
+        departments = await session.scalar(select(func.count()).select_from(DepartmentMember))
+        groups = await session.scalar(select(func.count()).select_from(GroupMember))
+    return users or 0, departments or 0, groups or 0
+
+
+async def test_seeding_creates_the_company_and_is_idempotent(
+    owner_sessions: SessionFactory, app_sessions: SessionFactory
+) -> None:
+    spec = _unique_acme()
+    subjects = {"alice@acme.test": "kc-alice"}
+
+    first = await seed_database(spec, owner_sessions, subjects)
+    second = await seed_database(spec, owner_sessions, subjects)
+
+    assert first.tenant_id == second.tenant_id
+    # 20 people; everyone except the contractor has a department; 9 group memberships.
+    assert await _counts(app_sessions, first.tenant_id) == (20, 19, 9)
+    async with tenant_transaction(app_sessions, first.tenant_id) as session:
+        alice = (await session.scalars(select(User).where(User.email == "alice@acme.test"))).one()
+    assert (alice.keycloak_sub, alice.org_role, alice.title) == ("kc-alice", "member", "HR Manager")

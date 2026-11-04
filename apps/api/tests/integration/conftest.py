@@ -32,7 +32,7 @@ API_DIR = Path(__file__).resolve().parents[2]
 TEST_DB = "workmind_test"
 OWNER_ROLE = "workmind_test_owner"
 APP_ROLE = "workmind_test_app"
-PASSWORD = "test-only-password"  # noqa: S105  (throwaway roles in a throwaway database)
+PASSWORD = "test-only-password"
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
