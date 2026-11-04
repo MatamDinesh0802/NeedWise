@@ -4,6 +4,7 @@
  */
 
 import { apiJson } from "@/lib/api";
+import type { ChatMode } from "@/lib/chat/research";
 import type { Sensitivity, Trust } from "@/lib/knowledge/api";
 
 export interface Conversation {
@@ -95,10 +96,11 @@ export const chatApi = {
     apiJson<Conversation>(`/api/v1/conversations/${id(conversationId)}`, { method: "PATCH", json: { title } }),
   deleteConversation: (conversationId: string) =>
     apiJson<void>(`/api/v1/conversations/${id(conversationId)}`, { method: "DELETE" }),
-  sendMessage: (conversationId: string, content: string) =>
+  /** "research": the research agent may use tools and propose actions for approval. */
+  sendMessage: (conversationId: string, content: string, mode: ChatMode = "answer") =>
     apiJson<RunStarted>(`/api/v1/conversations/${id(conversationId)}/messages`, {
       method: "POST",
-      json: { content },
+      json: mode === "research" ? { content, mode } : { content },
     }),
   cancelRun: (runId: string) => apiJson<void>(`/api/v1/runs/${id(runId)}/cancel`, { method: "POST" }),
   feedback: (messageId: string, rating: Rating | null, comment?: string | null) =>

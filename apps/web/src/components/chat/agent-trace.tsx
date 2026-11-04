@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import type { AgentStep } from "@/lib/chat/run-reducer";
 import {
-  agentName,
+  stepName,
   failureText,
   formatSeconds,
   planSentence,
@@ -95,7 +95,7 @@ export function AgentTraceSummary({ trace }: { trace: AgentTrace }) {
                 <li key={step.agent} className="space-y-1.5 rounded-xl border p-3">
                   <div className="flex items-center gap-2">
                     <StepIcon status={step.status} />
-                    <span className="font-medium">{agentName(step.agent)}</span>
+                    <span className="font-medium">{stepName(step)}</span>
                     <span className="ml-auto text-xs text-muted-foreground tabular-nums">
                       {step.seconds !== null ? formatSeconds(step.seconds) : null}
                     </span>

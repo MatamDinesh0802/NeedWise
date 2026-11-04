@@ -1,24 +1,30 @@
 "use client";
 
-import { MessageSquareText, SearchX } from "lucide-react";
+import { MessageSquareText, SearchX, ShieldCheck } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AssistantMessage } from "@/components/chat/assistant-message";
 import { useChatShell } from "@/components/chat/chat-context";
 import { Composer } from "@/components/chat/composer";
+import { RunApprovals } from "@/components/chat/research-activity";
 import { SourcesPanel, type PanelSources } from "@/components/chat/sources-panel";
 import { EmptyState, ErrorAlert } from "@/components/data/states";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
+import { useSession } from "@/hooks/use-session";
 import { useStore } from "@/hooks/use-store";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { answerFromMessage, answerFromRun, type AnswerView } from "@/lib/chat/answer";
+import { MODE_HINTS } from "@/lib/chat/research";
 import { createThreadController } from "@/lib/chat/thread-controller";
 import { questionForRun, threadItems } from "@/lib/chat/thread";
 import { errorMessage } from "@/lib/error-messages";
 import { toast } from "@/lib/stores/toasts";
 import { cn } from "@/lib/utils";
+import { workApi, workKeys, type Approval } from "@/lib/work/api";
+import { getNotificationsStore } from "@/lib/work/notifications";
 
 export const STARTERS = [
   "How many weeks of parental leave do we get?",
@@ -42,10 +48,31 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
       onActivity: () => shell.refreshConversations(),
       onBusy: () =>
         toast({ title: "Still answering", description: "Wait for the current answer, or press Stop first." }),
+      onRunEnded: (run) => {
+        if (run.approvals.length === 0) return;
+        void invalidateQueries(workKeys.approvals); // the stored approvals now include this run's
+        void getNotificationsStore().refresh();
+      },
     }),
   );
   useEffect(() => () => controller.dispose(), [controller]);
   const state = useStore(controller);
+  const { mode, setMode } = shell;
+  const { state: session } = useSession();
+  const meId = session.kind === "signed_in" ? session.me.id : null;
+
+  // Approvals proposed in this conversation (after a reload the run's events are gone).
+  const approvals = useApiQuery(conversationId ? workKeys.approvalList("all") : null, () => workApi.listApprovals("all"));
+  const approvalsByRun = useMemo(() => {
+    const byRun = new Map<string, Approval[]>();
+    if (approvals.state.status !== "success") return byRun;
+    for (const approval of approvals.state.data) {
+      const runId = approval.origin.run_id;
+      if (approval.origin.conversation_id !== conversationId || typeof runId !== "string") continue;
+      byRun.set(runId, [...(byRun.get(runId) ?? []), approval]);
+    }
+    return byRun;
+  }, [approvals.state, conversationId]);
 
   const [panel, setPanel] = useState<{ answerKey: string; runId: string | null; marker: string | null } | null>(null);
   const isMobile = useIsMobile();
@@ -62,8 +89,9 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
     else if (item.message.role === "assistant") {
       const previous = items[index - 1];
       const question = previous?.kind === "message" && previous.message.role === "user" ? previous.message.content : null;
-      const trace = item.message.run_id ? (state.traces[item.message.run_id] ?? null) : null;
-      answers.set(item.key, answerFromMessage(item.message, question, trace));
+      const runId = item.message.run_id;
+      const trace = runId ? (state.traces[runId] ?? null) : null;
+      answers.set(item.key, answerFromMessage(item.message, question, trace, runId ? (state.research[runId] ?? null) : null));
     }
   });
 
@@ -77,7 +105,7 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
 
   async function send(text: string): Promise<boolean> {
     try {
-      await controller.send(text);
+      await controller.send(text, mode);
       return true;
     } catch (error) {
       toast({ title: errorMessage(error).title, description: errorMessage(error).description, tone: "error" });
@@ -128,7 +156,13 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
                 onOpenSources={(marker) => setPanel({ answerKey: answer.key, runId: answer.runId, marker })}
                 onRetry={question && !running ? () => void send(question) : undefined}
                 onUpdated={(message) => controller.updateMessage(message)}
-              />
+              >
+                <RunApprovals
+                  refs={answer.approvals}
+                  stored={answer.runId ? (approvalsByRun.get(answer.runId) ?? []) : []}
+                  meId={meId}
+                />
+              </AssistantMessage>
             </li>
           );
         })}
@@ -152,10 +186,19 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
               onSend={send}
               onStop={() => void controller.cancel()}
               autoFocus={!conversationId}
+              mode={mode}
+              onModeChange={setMode}
             />
-            <p className="text-center text-[11px] text-muted-foreground">
-              Answers come only from documents you can access, with sources. Check important details in the source.
-            </p>
+            {mode === "research" ? (
+              <p className="flex items-center justify-center gap-1 text-center text-[11px] text-amber-800 dark:text-amber-300">
+                <ShieldCheck className="size-3" aria-hidden="true" />
+                {MODE_HINTS.research}
+              </p>
+            ) : (
+              <p className="text-center text-[11px] text-muted-foreground">
+                Answers come only from documents you can access, with sources. Check important details in the source.
+              </p>
+            )}
           </div>
         </div>
       </div>

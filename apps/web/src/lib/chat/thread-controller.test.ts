@@ -133,7 +133,7 @@ describe("thread controller", () => {
     controller.subscribe(() => {});
 
     await controller.send("  Hotel limit in London?  ");
-    expect(sendMessage).toHaveBeenCalledWith("new", "Hotel limit in London?");
+    expect(sendMessage).toHaveBeenCalledWith("new", "Hotel limit in London?", "answer");
     expect(onConversationCreated).toHaveBeenCalledWith("new");
     expect(controller.getSnapshot()).toMatchObject({ pendingUser: { id: "u7" }, live: { runId: "r7" } });
     expect(sources[0].url).toBe("/api/v1/runs/r7/events");
@@ -214,6 +214,31 @@ describe("thread controller", () => {
 
     await vi.waitFor(() => expect(controller.getSnapshot().live).toBeNull());
     expect(controller.getSnapshot().traces.r1).toMatchObject({ totalSeconds: 19, steps: [{ agent: "support", status: "done" }] });
+  });
+
+  it("sends research mode and keeps the run's tool steps and approvals for its stored answer", async () => {
+    const started = { run_id: "r1", user_message: question };
+    const sendMessage = vi.fn(async () => started);
+    const getConversation = vi.fn().mockResolvedValueOnce(detail([])).mockResolvedValue(detail([question, answer]));
+    const { deps, sources } = harness({ getConversation, sendMessage });
+    const onRunEnded = vi.fn();
+    const controller = createThreadController({ conversationId: "c1", deps, onRunEnded });
+    controller.subscribe(() => {});
+    await vi.waitFor(() => expect(controller.getSnapshot().status).toBe("ready"));
+
+    await controller.send("Prepare the weekly report and email it to leadership@acme.test", "research");
+    expect(sendMessage).toHaveBeenCalledWith("c1", "Prepare the weekly report and email it to leadership@acme.test", "research");
+    sources[0].emit("run.started", "1-0", {});
+    sources[0].emit("tool.step", "2-0", { tool: "search_knowledge", ok: true, error: null });
+    sources[0].emit("approval.required", "3-0", { approval_id: "ap1", tool: "send_email", summary: "Send an email" });
+    sources[0].emit("run.completed", "4-0", { message_id: "a1", usage: {}, approvals: ["ap1"] });
+
+    await vi.waitFor(() => expect(controller.getSnapshot().live).toBeNull());
+    expect(controller.getSnapshot().research.r1).toEqual({
+      toolSteps: [{ tool: "search_knowledge", ok: true, error: null }],
+      approvals: [{ id: "ap1", tool: "send_email", summary: "Send an email" }],
+    });
+    expect(onRunEnded).toHaveBeenCalledWith(expect.objectContaining({ runId: "r1", phase: "completed" }));
   });
 });
 

@@ -1,7 +1,7 @@
 /** One view model for an assistant answer, live (from a run) or stored (from history). */
 
 import type { Citation, Message, Source, Usage } from "@/lib/chat/api";
-import type { RunState } from "@/lib/chat/run-reducer";
+import type { ApprovalRef, RunState, ToolStep } from "@/lib/chat/run-reducer";
 import { traceFromRun, type AgentTrace } from "@/lib/chat/trace";
 
 export type AnswerPhase = "searching" | "streaming" | "complete" | "cancelled" | "failed";
@@ -23,6 +23,15 @@ export interface AnswerView {
   message: Message | null;
   /** Department agents behind the answer; only known for runs seen live in this tab. */
   trace: AgentTrace | null;
+  /** Research runs: tool calls (live or seen in this tab) and the actions they proposed. */
+  toolSteps: ToolStep[];
+  approvals: ApprovalRef[];
+}
+
+/** What a finished research run leaves behind in this tab (stored messages don't keep it). */
+export interface ResearchActivity {
+  toolSteps: ToolStep[];
+  approvals: ApprovalRef[];
 }
 
 export function answerFromRun(run: RunState): AnswerView {
@@ -48,10 +57,17 @@ export function answerFromRun(run: RunState): AnswerView {
     error: run.error,
     message: null,
     trace: traceFromRun(run),
+    toolSteps: run.toolSteps,
+    approvals: run.approvals,
   };
 }
 
-export function answerFromMessage(message: Message, question: string | null, trace: AgentTrace | null = null): AnswerView {
+export function answerFromMessage(
+  message: Message,
+  question: string | null,
+  trace: AgentTrace | null = null,
+  research: ResearchActivity | null = null,
+): AnswerView {
   const searchedFor =
     message.search_query && question && message.search_query.trim() !== question.trim() ? message.search_query : null;
   return {
@@ -68,6 +84,8 @@ export function answerFromMessage(message: Message, question: string | null, tra
     error: message.status === "failed" ? { code: "failed", message: "This answer failed." } : null,
     message,
     trace,
+    toolSteps: research?.toolSteps ?? [],
+    approvals: research?.approvals ?? [],
   };
 }
 

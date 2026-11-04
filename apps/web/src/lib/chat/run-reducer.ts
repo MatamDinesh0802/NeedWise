@@ -4,6 +4,9 @@
  * verification → run.completed | run.failed | run.cancelled.
  * Agent steps are merged by agent and never go backwards, so their order doesn't matter.
  *
+ * Research runs ("Research & act") instead stream run.started → (tool.step, approval.required?)* →
+ * token* → run.completed {approvals}. A proposed action never runs here: it waits as an approval.
+ *
  * Every event carries a stream id ("<ms>-<seq>"). Reconnects and re-attaches replay
  * events, so anything at or before the last applied id is ignored: tokens never double.
  */
@@ -25,6 +28,8 @@ export type AgentStatus = "pending" | "running" | "done" | "failed";
 
 export interface AgentStep {
   agent: string;
+  /** Display name from the API (agent definitions); empty for older runs. */
+  name: string;
   goal: string;
   status: AgentStatus;
   /** The goal while running; the error when failed. */
@@ -32,6 +37,20 @@ export interface AgentStep {
   findings: number;
   sources: number;
   seconds: number | null;
+}
+
+/** One tool call of a research run, in the order they happened. */
+export interface ToolStep {
+  tool: string;
+  ok: boolean;
+  error: string | null;
+}
+
+/** A proposed action waiting for a person (`approval.required`). */
+export interface ApprovalRef {
+  id: string;
+  tool: string;
+  summary: string;
 }
 
 export interface RunState {
@@ -55,6 +74,9 @@ export interface RunState {
   /** Server time (ms) of the first and last applied events, from the stream ids. */
   startedAtMs: number | null;
   endedAtMs: number | null;
+  /** Research runs: tool calls and the approvals they proposed. */
+  toolSteps: ToolStep[];
+  approvals: ApprovalRef[];
 }
 
 export interface RunEvent {
@@ -85,6 +107,8 @@ export function initialRunState(runId: string): RunState {
     agents: [],
     startedAtMs: null,
     endedAtMs: null,
+    toolSteps: [],
+    approvals: [],
   };
 }
 
@@ -116,7 +140,7 @@ function upsertAgent(agents: AgentStep[], agent: string, patch: Partial<AgentSte
   const index = agents.findIndex((a) => a.agent === agent);
   const base: AgentStep =
     index === -1
-      ? { agent, goal: "", status: "pending", label: "", findings: 0, sources: 0, seconds: null }
+      ? { agent, name: "", goal: "", status: "pending", label: "", findings: 0, sources: 0, seconds: null }
       : agents[index];
   // Never go backwards: a late "running" must not undo "done".
   if (patch.status && STATUS_RANK[patch.status] < STATUS_RANK[base.status]) {
@@ -158,20 +182,25 @@ export function reduceRunEvent(state: RunState, event: RunEvent): RunState {
         ? data.subtasks
             .map(record)
             .filter((t) => typeof t.agent === "string")
-            .map((t) => ({ agent: t.agent as string, goal: str(t.goal) ?? "" }))
+            .map((t) => ({ agent: t.agent as string, name: str(t.name) ?? "", goal: str(t.goal) ?? "" }))
         : [];
       const mode = (["direct", "single", "fan_out"] as const).find((m) => m === data.mode) ?? "direct";
       // Merge with steps that may have arrived first; plan order wins, extras keep their place after.
       let agents: AgentStep[] = [];
       for (const task of subtasks) {
         const seen = next.agents.find((a) => a.agent === task.agent);
-        agents = [...agents, seen ? { ...seen, goal: seen.goal || task.goal } : { agent: task.agent, goal: task.goal, status: "pending", label: task.goal, findings: 0, sources: 0, seconds: null }];
+        agents = [
+          ...agents,
+          seen
+            ? { ...seen, name: seen.name || task.name, goal: seen.goal || task.goal }
+            : { agent: task.agent, name: task.name, goal: task.goal, status: "pending", label: task.goal, findings: 0, sources: 0, seconds: null },
+        ];
       }
       agents = [...agents, ...next.agents.filter((a) => !subtasks.some((t) => t.agent === a.agent))];
       return {
         ...next,
         phase: next.phase === "connecting" ? "searching" : next.phase,
-        plan: { mode, routedBy: str(data.routed_by) ?? "planner", subtasks },
+        plan: { mode, routedBy: str(data.routed_by) ?? "planner", subtasks: subtasks.map(({ agent, goal }) => ({ agent, goal })) },
         agents,
       };
     }
@@ -180,12 +209,15 @@ export function reduceRunEvent(state: RunState, event: RunEvent): RunState {
       const status = (["running", "done", "failed"] as const).find((s) => s === data.status);
       if (!agent || !status) return next;
       const label = str(data.label) ?? "";
+      const known = next.agents.find((a) => a.agent === agent);
+      const name = str(data.name) || known?.name || "";
       const patch: Partial<AgentStep> =
         status === "running"
-          ? { status, label, goal: next.agents.find((a) => a.agent === agent)?.goal || label }
+          ? { status, label, name, goal: known?.goal || label }
           : {
               status,
               label,
+              name,
               findings: num(data.findings),
               sources: num(data.sources),
               seconds: typeof data.seconds === "number" ? data.seconds : null,
@@ -217,11 +249,29 @@ export function reduceRunEvent(state: RunState, event: RunEvent): RunState {
         ...next,
         unknownMarkers: Array.isArray(data.unknown_markers) ? data.unknown_markers.filter((m): m is string => typeof m === "string") : [],
       };
+    case "tool.step": {
+      const tool = str(data.tool);
+      if (!tool) return next;
+      return {
+        ...next,
+        phase: next.phase === "connecting" ? "searching" : next.phase,
+        toolSteps: [...next.toolSteps, { tool, ok: data.ok !== false, error: str(data.error) }],
+      };
+    }
+    case "approval.required": {
+      const approvalId = str(data.approval_id);
+      if (!approvalId || next.approvals.some((a) => a.id === approvalId)) return next;
+      return {
+        ...next,
+        approvals: [...next.approvals, { id: approvalId, tool: str(data.tool) ?? "", summary: str(data.summary) ?? "" }],
+      };
+    }
     case "run.completed":
       return {
         ...next,
         endedAtMs: at,
         phase: "completed",
+        approvals: mergeApprovalIds(next.approvals, data.approvals),
         messageId: str(data.message_id),
         usage: record(data.usage) as Usage,
         abstained: data.abstained === true,
@@ -242,11 +292,22 @@ export function reduceRunEvent(state: RunState, event: RunEvent): RunState {
   }
 }
 
+/** `run.completed.approvals` lists every proposal; keep the ones we know, add any we missed. */
+function mergeApprovalIds(known: ApprovalRef[], ids: unknown): ApprovalRef[] {
+  if (!Array.isArray(ids)) return known;
+  const missing = ids
+    .filter((id): id is string => typeof id === "string" && !known.some((a) => a.id === id))
+    .map((id) => ({ id, tool: "", summary: "" }));
+  return missing.length > 0 ? [...known, ...missing] : known;
+}
+
 export const RUN_EVENT_TYPES = [
   "run.started",
   "query.rewritten",
   "plan",
   "agent.step",
+  "tool.step",
+  "approval.required",
   "retrieval",
   "token",
   "citation",

@@ -34,6 +34,11 @@ export function agentName(key: string): string {
   return `${words.charAt(0).toUpperCase()}${words.slice(1)} agent`;
 }
 
+/** The agent's display name from the API, or one derived from its key (older runs). */
+export function stepName(step: Pick<AgentStep, "agent" | "name">): string {
+  return step.name?.trim() || agentName(step.agent);
+}
+
 /** 8.1 → "8.1 s", 19.4 → "19 s", 75 → "1 min 15 s". */
 export function formatSeconds(seconds: number): string {
   if (seconds < 10) return `${Math.max(0, seconds).toFixed(1)} s`;
@@ -78,7 +83,7 @@ export function failureText(step: AgentStep): string {
 
 /** One live line: "Finance agent: hotel limit in London… ✓ 6 findings · 8.1 s". */
 export function stepLine(step: AgentStep): { name: string; goal: string; status: string } {
-  const name = agentName(step.agent);
+  const name = stepName(step);
   const goal = step.goal || step.label;
   switch (step.status) {
     case "pending":

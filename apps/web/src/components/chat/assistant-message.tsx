@@ -1,10 +1,11 @@
 "use client";
 
 import { Check, CircleAlert, Copy, Library, RotateCw, Search, SearchX, ShieldAlert, Square, ThumbsDown, ThumbsUp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { AgentTraceLive, AgentTraceSummary } from "@/components/chat/agent-trace";
 import { AnswerMarkdown, type ChipInfo } from "@/components/chat/answer-markdown";
+import { ToolActivity } from "@/components/chat/research-activity";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,6 +23,7 @@ export function AssistantMessage({
   onRetry,
   onUpdated,
   sourcesOpen,
+  children,
 }: {
   answer: AnswerView;
   /** Open the sources panel for this answer, optionally focused on one marker. */
@@ -29,6 +31,8 @@ export function AssistantMessage({
   onRetry?: () => void;
   onUpdated?: (message: Message) => void;
   sourcesOpen: boolean;
+  /** Shown under the answer text (e.g. approval cards of a research run). */
+  children?: ReactNode;
 }) {
   const live = answer.phase === "searching" || answer.phase === "streaming";
   const chips = useMemo(() => {
@@ -61,9 +65,13 @@ export function AssistantMessage({
       {/* Agents: live list while answering (under "Searching…" until text arrives), then one line. */}
       {answer.trace && answer.phase === "streaming" ? <AgentTraceLive trace={answer.trace} /> : null}
       {answer.trace && !live ? <AgentTraceSummary trace={answer.trace} /> : null}
+      {/* Research runs: what the assistant did (live under "Working…" until the text arrives). */}
+      {answer.toolSteps.length > 0 && answer.phase !== "searching" ? <ToolActivity steps={answer.toolSteps} live={false} /> : null}
 
       <div aria-live={live ? "polite" : undefined} aria-busy={live || undefined}>
-        {answer.phase === "searching" && !answer.text ? (
+        {answer.phase === "searching" && !answer.text && answer.toolSteps.length > 0 ? (
+          <ToolActivity steps={answer.toolSteps} live />
+        ) : answer.phase === "searching" && !answer.text ? (
           <div className="flex flex-col gap-2">
             <Searching found={answer.sources.length} agents={answer.trace?.steps.length ?? 0} />
             {answer.trace ? <AgentTraceLive trace={answer.trace} /> : null}
@@ -85,6 +93,8 @@ export function AssistantMessage({
           </div>
         )}
       </div>
+
+      {children}
 
       {answer.phase === "cancelled" ? (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

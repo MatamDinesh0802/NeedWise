@@ -29,6 +29,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStore } from "@/hooks/use-store";
 import { chatApi, type Conversation } from "@/lib/chat/api";
+import type { ChatMode } from "@/lib/chat/research";
 import { formatRelative } from "@/lib/format";
 import { createPagedList } from "@/lib/stores/paged-list";
 import { cn } from "@/lib/utils";
@@ -51,7 +52,8 @@ function ChatFrame({ children }: { children: ReactNode }) {
     }),
   );
   const [historyOpen, setHistoryOpen] = useState(false);
-  const context = { conversations, refreshConversations: () => void conversations.refresh() };
+  const [mode, setMode] = useState<ChatMode>("answer");
+  const context = { conversations, refreshConversations: () => void conversations.refresh(), mode, setMode };
 
   return (
     <ChatContext.Provider value={context}>

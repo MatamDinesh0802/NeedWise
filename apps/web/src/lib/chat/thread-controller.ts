@@ -5,7 +5,9 @@
  */
 
 import { ApiError } from "@/lib/api";
+import type { ResearchActivity } from "@/lib/chat/answer";
 import { chatApi, type ConversationDetail, type Message } from "@/lib/chat/api";
+import type { ChatMode } from "@/lib/chat/research";
 import type { RunState } from "@/lib/chat/run-reducer";
 import { createRunStream, type RunStream } from "@/lib/chat/run-stream";
 import { hasStoredAnswer, runToAttach } from "@/lib/chat/thread";
@@ -21,6 +23,8 @@ export interface ThreadState {
   sending: boolean;
   /** Agent traces of runs that ended in this tab, by run id (stored messages don't keep them). */
   traces: Readonly<Record<string, AgentTrace>>;
+  /** Tool calls and proposed actions of research runs that ended in this tab, by run id. */
+  research: Readonly<Record<string, ResearchActivity>>;
 }
 
 export interface ThreadDeps {
@@ -31,7 +35,7 @@ export interface ThreadDeps {
 export interface ThreadController {
   getSnapshot: () => ThreadState;
   subscribe: (listener: () => void) => () => void;
-  send: (content: string) => Promise<void>;
+  send: (content: string, mode?: ChatMode) => Promise<void>;
   cancel: () => Promise<void>;
   /** Replace a stored message (e.g. after feedback). */
   updateMessage: (message: Message) => void;
@@ -49,6 +53,7 @@ export function createThreadController({
   onConversationCreated,
   onActivity,
   onBusy,
+  onRunEnded,
 }: {
   conversationId: string | null;
   deps?: ThreadDeps;
@@ -58,6 +63,8 @@ export function createThreadController({
   onActivity?: () => void;
   /** 409 run_in_progress: still answering. */
   onBusy?: () => void;
+  /** A followed run ended (e.g. refresh approvals it proposed). */
+  onRunEnded?: (run: RunState) => void;
 }): ThreadController {
   let conversationId = initialId;
   const blank = (): ThreadState => ({
@@ -68,6 +75,7 @@ export function createThreadController({
     pendingUser: null,
     sending: false,
     traces: {},
+    research: {},
   });
   let state: ThreadState = blank();
   let stream: RunStream | null = null;
@@ -94,8 +102,13 @@ export function createThreadController({
     detach();
     const current = deps.createStream(runId, () => {
       finished.add(runId);
-      const trace = traceFromRun(current.getSnapshot());
+      const run = current.getSnapshot();
+      const trace = traceFromRun(run);
       if (trace) set({ traces: { ...state.traces, [runId]: trace } });
+      if (run.toolSteps.length > 0 || run.approvals.length > 0) {
+        set({ research: { ...state.research, [runId]: { toolSteps: run.toolSteps, approvals: run.approvals } } });
+      }
+      onRunEnded?.(run);
       void refetch();
     });
     stream = current;
@@ -153,7 +166,7 @@ export function createThreadController({
       if (state.status === "idle") void load();
       return () => listeners.delete(listener);
     },
-    async send(content) {
+    async send(content, mode = "answer") {
       const question = content.trim();
       if (!question || state.sending || (state.live && !["completed", "failed", "cancelled"].includes(state.live.phase))) {
         return;
@@ -165,7 +178,7 @@ export function createThreadController({
           conversationId = (await deps.api.createConversation()).id;
           createdNew = true;
         }
-        const started = await deps.api.sendMessage(conversationId, question);
+        const started = await deps.api.sendMessage(conversationId, question, mode);
         set({ sending: false, pendingUser: started.user_message });
         attach(started.run_id);
         onActivity?.();

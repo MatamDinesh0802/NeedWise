@@ -15,6 +15,7 @@ import {
 
 const step = (overrides: Partial<AgentStep>): AgentStep => ({
   agent: "finance",
+  name: "",
   goal: "hotel limit in London",
   status: "done",
   label: "hotel limit in London",
@@ -57,6 +58,11 @@ describe("formatting", () => {
     ["", "Agent"],
   ])("agentName(%j) → %s", (key, name) => {
     expect(agentName(key)).toBe(name);
+  });
+
+  it("prefers the display name the API sends over one derived from the key", () => {
+    expect(stepLine(step({ agent: "support", name: "Customer Support" })).name).toBe("Customer Support");
+    expect(stepLine(step({ agent: "support", name: "" })).name).toBe("Support agent");
   });
 
   it.each([
