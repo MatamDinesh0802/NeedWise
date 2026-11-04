@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from workmind.api.ops import system
-from workmind.api.v1 import admin, assistant, knowledge, me, tokens
+from workmind.api.v1 import admin, assistant, conversations, knowledge, me, tokens
 
 router = APIRouter()
 router.include_router(system)
@@ -13,3 +13,4 @@ router.include_router(admin.router)
 router.include_router(knowledge.router)
 router.include_router(knowledge.admin_router)
 router.include_router(assistant.router)
+router.include_router(conversations.router)

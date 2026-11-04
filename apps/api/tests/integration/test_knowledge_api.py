@@ -360,3 +360,19 @@ async def test_editors_correct_labels_and_the_index_follows_at_once(
     )
     assert after_reindex["sensitivity"] == "restricted"  # a manual label survives re-indexing
     assert restricted_points == 2
+
+
+async def test_only_pdfs_open_inline(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    handbook = await _collection_id(app_sessions, acme, "company-handbook")
+    document = _upload(api, acme, "alice", handbook, "inline.md", POLICY).json()["document"]
+    _wait_ready(api, acme, "alice", document["id"])
+
+    response = api.get(
+        f"/api/v1/documents/{document['id']}/file",
+        params={"inline": "true"},
+        headers=acme.as_("bob"),
+    )
+
+    assert response.headers["content-disposition"].startswith("attachment;")

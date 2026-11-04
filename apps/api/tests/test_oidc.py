@@ -173,3 +173,14 @@ async def test_logout_token_rejections(
 ) -> None:
     with pytest.raises(OidcError, match=reason):
         await oidc.verify_logout_token(_token(claims))
+
+
+async def test_switching_accounts_prefills_the_name_and_asks_for_a_password(
+    oidc: OidcClient,
+) -> None:
+    plain = httpx.URL((await oidc.begin_login()).url).params
+    hinted = httpx.URL((await oidc.begin_login(login_hint="bob@acme.test")).url).params
+
+    assert "login_hint" not in plain
+    assert "prompt" not in plain
+    assert (hinted["login_hint"], hinted["prompt"]) == ("bob@acme.test", "login")

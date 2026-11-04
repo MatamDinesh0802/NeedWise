@@ -67,12 +67,16 @@ class OidcClient:
             return metadata
         return self._metadata
 
-    async def begin_login(self) -> LoginRequest:
+    async def begin_login(self, *, login_hint: str | None = None) -> LoginRequest:
         metadata = await self.metadata()
         state, nonce = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         code_verifier = secrets.token_urlsafe(64)
+        # Switching to a named account (the demo "view as" menu): prefill it and ask for the
+        # password even if Keycloak still has a session for someone else.
+        hint = {"login_hint": login_hint, "prompt": "login"} if login_hint else {}
         query = urlencode(
             {
+                **hint,
                 "response_type": "code",
                 "client_id": self._client_id,
                 "redirect_uri": self._redirect_uri,

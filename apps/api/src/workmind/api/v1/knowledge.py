@@ -288,7 +288,12 @@ async def get_chunks(ctx: ReadContext, request: Request, document_id: uuid.UUID)
 
 
 @router.get("/documents/{document_id}/file")
-async def download_document(ctx: ReadContext, request: Request, document_id: uuid.UUID) -> Response:
+async def download_document(
+    ctx: ReadContext,
+    request: Request,
+    document_id: uuid.UUID,
+    inline: Annotated[bool, Query(description="open PDFs in the browser (for #page=N)")] = False,
+) -> Response:
     resources = resources_of(request)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         document, _ = await _document_for(session, ctx, document_id)
@@ -305,15 +310,14 @@ async def download_document(ctx: ReadContext, request: Request, document_id: uui
     data = await resources.storage.get(key)
     # RFC 6266: an ASCII fallback plus the exact UTF-8 name (RFC 5987) for non-ASCII names.
     fallback = filename.encode("ascii", "replace").decode().replace('"', "").replace("?", "_")
-    disposition = f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename)}"
-    return Response(
-        content=data,
-        media_type=mime,
-        headers={
-            "Content-Disposition": disposition,
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    # Only PDFs open inline: uploaded HTML or SVG shown on our origin could run scripts.
+    show_inline = inline and mime == "application/pdf"
+    kind = "inline" if show_inline else "attachment"
+    disposition = f"{kind}; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename)}"
+    headers = {"Content-Disposition": disposition, "X-Content-Type-Options": "nosniff"}
+    if show_inline:
+        headers["Content-Security-Policy"] = "sandbox"
+    return Response(content=data, media_type=mime, headers=headers)
 
 
 @router.post("/documents/{document_id}/reindex", status_code=202)

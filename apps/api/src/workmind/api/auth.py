@@ -6,10 +6,11 @@ Tokens never reach the browser; it only ever holds an opaque, HttpOnly session c
 
 import hmac
 import json
+from typing import Annotated
 from urllib.parse import parse_qs, urlsplit
 
 import structlog
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
@@ -68,10 +69,14 @@ def _clear_flow_cookie(response: Response, settings: Settings) -> None:
 
 
 @router.get("/login", summary="Start sign-in (redirects to Keycloak)")
-async def login(request: Request, return_to: str | None = None) -> RedirectResponse:
+async def login(
+    request: Request,
+    return_to: str | None = None,
+    login_hint: Annotated[str | None, Query(max_length=254, pattern=r"^[^\s<>\"']+$")] = None,
+) -> RedirectResponse:
     settings, resources = settings_of(request), resources_of(request)
     try:
-        attempt = await resources.oidc.begin_login()
+        attempt = await resources.oidc.begin_login(login_hint=login_hint)
     except OidcError as exc:
         log.warning("login_unavailable", reason=str(exc))
         return RedirectResponse("/?auth_error=login_unavailable", status_code=303)

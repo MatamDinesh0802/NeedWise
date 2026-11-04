@@ -7,7 +7,7 @@ Markers in the answer are checked against the sources it was given; unknown ones
 
 import html
 import re
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
@@ -105,9 +105,19 @@ def render_sources(passages: Sequence[Passage]) -> str:
 
 
 def build_request(
-    organization: str, question: str, passages: Sequence[Passage], history: Sequence[LLMMessage]
+    organization: str,
+    question: str,
+    passages: Sequence[Passage],
+    history: Sequence[LLMMessage],
+    summary: str = "",
 ) -> LLMRequest:
     system = SYSTEM.format(organization=organization, abstain=ABSTAIN)
+    if summary:
+        # Context for follow-ups only: facts must still come from the sources (rule 1).
+        system += (
+            "\n\nEarlier in this conversation (a summary, not a source):\n"
+            f"<conversation_summary>\n{summary}\n</conversation_summary>"
+        )
     content = f"<sources>\n{render_sources(passages)}\n</sources>\n\nQuestion: {question}"
     return LLMRequest(system=system, messages=[*history, LLMMessage("user", content)])
 
@@ -182,10 +192,11 @@ async def answer_stream(
     *,
     organization: str,
     history: Sequence[LLMMessage] = (),
+    summary: str = "",
     search_query: str | None = None,
     policy: RestrictedPolicy = "local_only",
     local_llm: LLMProvider | None = None,
-) -> AsyncIterator[StreamEvent]:
+) -> AsyncGenerator[StreamEvent]:
     retrieved = await retriever.search(ctx, search_query or question)
     chosen = route(retrieved.passages, policy=policy, llm=llm, local_llm=local_llm)
     yield SourcesEvent(chosen.passages, chosen.withheld)
@@ -198,7 +209,7 @@ async def answer_stream(
         return
     parts: list[str] = []
     usage = LLMUsage()
-    request = build_request(organization, question, chosen.passages, history)
+    request = build_request(organization, question, chosen.passages, history, summary)
     async for event in chosen.llm.stream("answer", request):
         if isinstance(event, TextDelta):
             parts.append(event.text)

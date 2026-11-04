@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from workmind.core.config import Settings
 from workmind.core.db import create_engine, create_session_factory
 from workmind.modules.authz.openfga import OpenFgaClient
+from workmind.modules.conversations.events import RunEvents
+from workmind.modules.conversations.registry import RunRegistry
 from workmind.modules.identity.oidc import OidcClient
 from workmind.modules.identity.sessions import SessionStore
 from workmind.modules.knowledge.dispatch import CeleryDispatcher, Dispatcher, InlineDispatcher
@@ -39,6 +41,7 @@ class Resources:
     ingestion: Dispatcher
     collection_name: str
     retriever: Retriever
+    runs: RunRegistry
 
     @classmethod
     def create(cls, settings: Settings) -> Self:
@@ -90,9 +93,11 @@ class Resources:
                 sparse_weight=settings.retrieval_sparse_weight,
                 rrf_k=settings.retrieval_rrf_k,
             ),
+            runs=RunRegistry(RunEvents(valkey)),
         )
 
     async def aclose(self) -> None:
+        await self.runs.shutdown()
         await self.http.aclose()
         await self.valkey.aclose()
         await self.engine.dispose()
