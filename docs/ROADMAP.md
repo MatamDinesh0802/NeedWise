@@ -421,9 +421,45 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
-### Phase 12 — Production hardening (v1.0)
+### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged; load tuning, benchmarks, a cluster install, the case study and the final review remain
 
 **Goal:** a release companies can trust in production.
+
+**Status (2026-11-13):**
+- [x] **Security review** against the OWASP Top 10 for LLM Applications (2025) and a threat
+  model: 11 fixes, each with a regression test ([review](security/owasp-llm-top10.md),
+  [threat model](security/threat-model.md)). Red team grown from 16 to 59 attacks on four
+  surfaces. Live, after the merges, on the rebuilt and re-seeded stack: the retrieval permission
+  gate 0 leaks in 156 checks ([report](../evals/results/2026-11-12-permission-gate.md)); all 59
+  attacks answered with Claude Sonnet 5.5, 0 leaks and 2 violations after a scoring fix, neither
+  an obeyed instruction ([report](../evals/results/2026-11-12-redteam-v1.md),
+  [rescored](../evals/results/2026-11-12-redteam-v1-rescored.md)). One model, one run.
+- [x] **Dependency and image scanning in CI** ([supply chain](security/supply-chain.md)):
+  osv-scanner, Trivy (repository, images, the rendered Helm chart), hadolint, actionlint, zizmor,
+  SBOMs, CodeQL, Dependabot; images, actions and scanners pinned. `make scan` passes locally;
+  the workflows have never run on GitHub (no repository yet).
+- [ ] **Load tests and performance tuning.** The Locust harness and a stub model are built and
+  checked on small runs (0 failures; [load testing](load-testing.md)). Not done: a run at
+  increasing load on the main stack, and any tuning. No performance numbers yet.
+- [x] **Multi-tenant hardening** ([multi-tenancy](multi-tenancy.md)): tenant-prefixed Valkey
+  keys, the tenant scope inside the Qdrant client, rate limits, `wm tenant`, and a test that
+  sends every route another tenant's ids. Load with many tenants is not measured.
+- [x] **Backup and restore; upgrades tested from v0.x** ([backup and restore](operations/backup-restore.md),
+  [upgrades](operations/upgrade.md)): a restore drill into a separate stack with identical rows,
+  points and files, about a minute at the demo's size; the upgrade from v0.1.0 passed 17 of 17
+  checks, and rolling back by restoring the pre-upgrade backup worked.
+- [ ] **Helm chart** ([Kubernetes](deploy/kubernetes.md)): written and validated with
+  `helm lint`, kubeconform (Kubernetes 1.33) and its own security rules, with Helm 3.19 and
+  4.0. Not yet installed on a cluster (kind is next).
+- [x] **Docs site** (MkDocs, `make docs`, strict build in CI), with the configuration and HTTP
+  API reference generated from the code. Not published: Pages needs a public repository.
+- [x] **Browser end-to-end suite** in CI (`e2e/browser`): 162 tests pass on the rebuilt stack,
+  including the 3 that call the model; the API end-to-end tests pass too (16, model tests
+  included).
+- [ ] **Benchmarks for v1.0** (quality, latency, cost, leak rate) and the v1.0 release itself
+  ([releasing](operations/releasing.md)).
+- [ ] **A case study write-up.**
+- [ ] **A final review** of the merged code.
 
 **Scope:**
 - Security review against the OWASP Top 10 for LLM Applications. Threat model review. Red-team expansion.
