@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/v17.6.0/schemas/config.json",
+  "release-type": "simple",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "bump-minor-pre-major": true,
+  "bootstrap-sha": "d849c13310479ccd95e577c87452ee1c5c648509",
+  "pull-request-title-pattern": "chore: release ${version}",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "eval", "section": "Evaluation" },
+    { "type": "build", "section": "Build and supply chain" },
+    { "type": "ci", "section": "Build and supply chain" },
+    { "type": "docs", "section": "Documentation" },
+    { "type": "refactor", "section": "Refactoring", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "chore", "section": "Miscellaneous", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "package-name": "workmind",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "toml", "path": "apps/api/pyproject.toml", "jsonpath": "$.project.version" },
+        { "type": "toml", "path": "ee/python/pyproject.toml", "jsonpath": "$.project.version" },
+        {
+          "type": "toml",
+          "path": "apps/api/uv.lock",
+          "jsonpath": "$.package[?(@.name.value == 'workmind' || @.name.value == 'workmind-ee')].version"
+        },
+        { "type": "json", "path": "apps/web/package.json", "jsonpath": "$.version" }
+      ]
+    }
+  }
+}

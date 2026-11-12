@@ -1,18 +1,53 @@
+# Weekly, grouped update PRs (one per ecosystem). New versions wait 7 days before they are
+# proposed (cooldown), so a release that is pulled soon after publishing never reaches a PR;
+# security updates are not delayed. Not covered here: the scanner images pinned in
+# scripts/security-scan.sh (docs/security/supply-chain.md, "Updating the scanners").
 version: 2
 updates:
   - package-ecosystem: uv
     directory: /apps/api
-    schedule: { interval: weekly }
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 7 }
     groups:
-      python: { patterns: ["*"] }
-  - package-ecosystem: npm
+      python:
+        applies-to: version-updates
+        patterns: ["*"]
+      python-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: npm # pnpm-lock.yaml
     directory: /apps/web
-    schedule: { interval: weekly }
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 7 }
     groups:
-      web: { patterns: ["*"] }
+      web:
+        applies-to: version-updates
+        patterns: ["*"]
+      web-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # Base images in the Dockerfiles: tag and digest are updated together.
   - package-ecosystem: docker
     directories: [/apps/api, /apps/web]
-    schedule: { interval: weekly }
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 7 }
+    groups:
+      base-images: { patterns: ["*"] }
+
+  # Third-party images in compose.yaml.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 7 }
+    groups:
+      compose-images: { patterns: ["*"] }
+
+  # Actions are pinned to commit SHAs with a version comment; Dependabot updates both.
   - package-ecosystem: github-actions
     directory: /
-    schedule: { interval: weekly }
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 7 }
+    groups:
+      actions: { patterns: ["*"] }

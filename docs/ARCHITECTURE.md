@@ -1075,7 +1075,7 @@ Checklist reference: **OWASP Top 10 for LLM Applications**.
 | Secret leakage | Connector OAuth tokens | Envelope encryption (per-tenant data keys, master key from env/KMS), never logged, minimal OAuth scopes |
 | Session attacks | Session hijacking, CSRF | httpOnly Secure cookies, SameSite, Origin checks, CSRF token, short sessions, back-channel logout |
 | Abuse / cost blow-up | Scripted spam, runaway agent loops | Rate limits per user and tenant, per-run step and token budgets, tenant quotas |
-| Supply chain | Malicious dependency or image | Lockfiles (`uv.lock`, `pnpm-lock.yaml`), Dependabot, pinned image digests, SBOM (syft), image scanning (Trivy), CodeQL, gitleaks |
+| Supply chain | Malicious dependency or image | Lockfiles (`uv.lock`, `pnpm-lock.yaml`), Dependabot, pinned image digests, SBOM (syft), image scanning (Trivy), CodeQL, gitleaks. *As built* ([docs/security/supply-chain.md](security/supply-chain.md)): osv-scanner and Trivy gate the lockfiles, the repository and the images; images, actions and scanners are pinned by digest or commit SHA; releases carry SBOM and provenance attestations ([releasing](operations/releasing.md)) |
 | Audit tampering | An admin deletes evidence | Append-only table, hash chain, restricted DB role, export to external storage (Enterprise) |
 
 **Secure defaults:**

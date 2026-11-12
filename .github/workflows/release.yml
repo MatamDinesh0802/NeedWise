@@ -1,0 +1,392 @@
+# Publishes a release (docs/operations/releasing.md): multi-arch api and web images on GHCR with
+# SBOM and provenance attestations, scanned before they get a version tag; the permission gate run
+# against those exact images; SBOMs and eval reports attached to the GitHub Release.
+#
+# Started by release-please.yml when its release PR is merged, by pushing a vX.Y.Z tag by hand,
+# or again for an existing tag from the Actions tab (Run workflow).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: The tag to publish, e.g. v1.0.0
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing tag to publish again, e.g. v1.0.0
+        type: string
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  # Pinned so a release is built and emulated with known versions (bumped by hand, like the
+  # scanner images in scripts/security-scan.sh).
+  BUILDKIT_IMAGE: moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
+  BINFMT_IMAGE: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+
+jobs:
+  prepare:
+    name: Version and image names
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      minor: ${{ steps.v.outputs.minor }}
+      registry: ${{ steps.v.outputs.registry }}
+    steps:
+      - id: v
+        name: The tag is vX.Y.Z (or vX.Y.Z-pre)
+        run: |
+          if [[ ! "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Not a release tag: $TAG (expected vX.Y.Z or vX.Y.Z-pre)"
+            exit 1
+          fi
+          version="${TAG#v}"
+          # A pre-release gets only its own tag; X.Y follows the newest X.Y.Z.
+          minor=""
+          if [ -z "${BASH_REMATCH[4]}" ]; then minor="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"; fi
+          {
+            echo "version=$version"
+            echo "minor=$minor"
+            echo "registry=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          } >>"$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      # The API reports this version (/api/v1/system/status). release-please bumps all of them;
+      # a tag pushed by hand must come after the same bump.
+      - name: The tagged source carries the tag's version
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys, tomllib
+
+          want = os.environ["VERSION"]
+          found = {
+              "apps/api/pyproject.toml": tomllib.load(open("apps/api/pyproject.toml", "rb"))["project"]["version"],
+              "ee/python/pyproject.toml": tomllib.load(open("ee/python/pyproject.toml", "rb"))["project"]["version"],
+              "apps/web/package.json": json.load(open("apps/web/package.json"))["version"],
+          }
+          wrong = {path: v for path, v in found.items() if v != want}
+          for path, v in wrong.items():
+              print(f"::error file={path}::version is {v}, the tag says {want}")
+          sys.exit(1 if wrong else 0)
+          EOF
+
+  images:
+    name: Image · ${{ matrix.image }} (build, attest, scan)
+    needs: prepare
+    runs-on: ubuntu-latest
+    # arm64 is built under QEMU emulation: slow (the web build most), but works on any plan.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write # push the image by digest
+      id-token: write # sign the provenance attestation (Sigstore)
+      attestations: write # store it with the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            context: apps/api
+            build-contexts: ee=ee
+            licenses: Apache-2.0 AND LicenseRef-WorkMind-Enterprise
+            description: WorkMind AI API, workers and migrations (Enterprise code inactive without a license)
+          - image: web
+            context: apps/web
+            build-contexts: ""
+            licenses: Apache-2.0
+            description: WorkMind AI web app (Next.js)
+    env:
+      REPO: ${{ needs.prepare.outputs.registry }}/workmind-${{ matrix.image }}
+      IMAGE: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      - name: Commit and time of the tagged source
+        id: src
+        run: |
+          {
+            echo "revision=$(git rev-parse HEAD)"
+            echo "created=$(git log -1 --format=%cI)"
+            echo "epoch=$(git log -1 --format=%ct)"
+          } >>"$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: ${{ env.BINFMT_IMAGE }}
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Pushed by digest only: the version tags are added after the scans and the permission gate
+      # pass. No build cache, so nothing from another run can end up in a release.
+      - name: Build and push linux/amd64 + linux/arm64 (SBOM and provenance attestations)
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.src.outputs.epoch }}
+        with:
+          context: ${{ matrix.context }}
+          build-contexts: ${{ matrix.build-contexts }}
+          platforms: linux/amd64,linux/arm64
+          outputs: type=image,name=${{ env.REPO }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.title=workmind-${{ matrix.image }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.src.outputs.revision }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.created=${{ steps.src.outputs.created }}
+            org.opencontainers.image.licenses=${{ matrix.licenses }}
+          annotations: |
+            index:org.opencontainers.image.description=${{ matrix.description }}
+            index:org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            index:org.opencontainers.image.revision=${{ steps.src.outputs.revision }}
+            index:org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            index:org.opencontainers.image.licenses=${{ matrix.licenses }}
+      # GitHub-signed build provenance (gh attestation verify). Artifact attestations need a
+      # public repository (or GitHub Enterprise Cloud); BuildKit's own provenance is always there.
+      - uses: actions/attest-build-provenance@v4
+        if: github.event.repository.visibility == 'public'
+        with:
+          subject-name: ${{ env.REPO }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Scan both platforms (fixable CRITICAL/HIGH vulnerabilities and secrets fail)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/security-scan.sh remote "$REPO@$DIGEST" linux/amd64
+          scripts/security-scan.sh remote "$REPO@$DIGEST" linux/arm64
+      - name: SBOMs from the attestations, and the digest, for the later jobs
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          for arch in amd64 arm64; do
+            docker buildx imagetools inspect "$REPO@$DIGEST" \
+              --format "{{ json (index .SBOM \"linux/$arch\").SPDX }}" \
+              >"$out/workmind-$IMAGE-$VERSION-linux-$arch.spdx.json"
+          done
+          echo "$DIGEST" >"$out/digest-$IMAGE"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.image }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
+          retention-days: 30
+
+  permission-gate:
+    name: Permission gate on the release images (seeded stack, every red-team attack)
+    needs: [prepare, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read # pull the images pushed above
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: ${{ runner.temp }}/release
+          merge-multiple: true
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run the stack from the release images, by digest
+        env:
+          REGISTRY: ${{ needs.prepare.outputs.registry }}
+        run: |
+          {
+            echo "WORKMIND_API_IMAGE=$REGISTRY/workmind-api@$(cat "$RUNNER_TEMP/release/digest-api")"
+            echo "WORKMIND_WEB_IMAGE=$REGISTRY/workmind-web@$(cat "$RUNNER_TEMP/release/digest-web")"
+          } >>"$GITHUB_ENV"
+          # As in ci.yml: deterministic hash embeddings (no embedding model server here), and no
+          # relevance floor, so the permission gate checks every candidate a search can return.
+          printf 'EMBEDDING_PROVIDER=hash\nEMBEDDING_MODEL=hash-ci\nRETRIEVAL_MIN_SIMILARITY=0\n' >.env
+      - run: docker compose --profile tools pull --quiet
+      - run: docker compose up -d --no-build --wait
+      - name: Seed the demo company through the real ingestion pipeline
+        run: docker compose --profile tools run --rm seed
+      - name: Permission gate - every red-team attack, every retrieval mode, zero leaks
+        run: |
+          # The container runs as uid 10001 and writes the report here.
+          mkdir -p "$RUNNER_TEMP/gate-out" && chmod a+rwx "$RUNNER_TEMP/gate-out"
+          docker compose --profile tools run --rm -v "$PWD/evals:/evals:ro" \
+            -v "$RUNNER_TEMP/gate-out:/gate-out" -e WORKMIND_EVALS_DIR=/evals seed \
+            python -m workmind.evals --retrieval-only --out /gate-out --label "permission-gate-$TAG"
+      # The image has no git, so the report says "commit: unknown": record what was tested.
+      - name: Add the release and the image digests to the report
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/gate"
+          cp "$RUNNER_TEMP"/gate-out/permission-gate-* "$RUNNER_TEMP/gate/"
+          {
+            echo
+            echo "## Release"
+            echo
+            echo "- tag: \`$TAG\`, commit \`$(git rev-parse HEAD)\`"
+            echo "- api image: \`$WORKMIND_API_IMAGE\`"
+            echo "- web image: \`$WORKMIND_WEB_IMAGE\`"
+            echo "- run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } >>"$RUNNER_TEMP/gate/permission-gate-$TAG.md"
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: permission-gate
+          path: ${{ runner.temp }}/gate/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Diagnostics
+        if: failure()
+        run: docker compose ps -a && docker compose logs --no-color | tail -n 300
+      - name: Tear down
+        if: always()
+        run: docker compose --profile tools down -v
+
+  publish-images:
+    name: Tag the images ${{ needs.prepare.outputs.version }}
+    needs: [prepare, images, permission-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: ${{ runner.temp }}/release
+          merge-multiple: true
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The same index (digest, platforms, attestations) gets the tags: X.Y.Z, and X.Y unless
+      # this is a pre-release. There is deliberately no "latest": pin a version.
+      - name: Add the version tags
+        env:
+          REGISTRY: ${{ needs.prepare.outputs.registry }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          MINOR: ${{ needs.prepare.outputs.minor }}
+        run: |
+          for image in api web; do
+            repo="$REGISTRY/workmind-$image"
+            digest="$(cat "$RUNNER_TEMP/release/digest-$image")"
+            tags=(-t "$repo:$VERSION")
+            if [ -n "$MINOR" ]; then tags+=(-t "$repo:$MINOR"); fi
+            docker buildx imagetools create "${tags[@]}" "$repo@$digest"
+            docker buildx imagetools inspect "$repo:$VERSION"
+          done
+
+  github-release:
+    name: Release assets and notes
+    needs: [prepare, images, permission-gate, publish-images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create or edit the release and upload its assets
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/artifacts
+          merge-multiple: true
+      - name: Create the release if no release exists for the tag (a tag pushed by hand)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          fi
+      - name: Upload SBOMs and eval reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          a="$RUNNER_TEMP/artifacts"
+          # The committed evaluation reports with real models (quality, latency, cost), as of
+          # this tag, and the permission gate this workflow ran on the release images.
+          tar -czf "$RUNNER_TEMP/eval-reports-$TAG.tar.gz" evals/README.md evals/results/*.md
+          cp "$a/permission-gate-$TAG.md" "$RUNNER_TEMP/permission-gate-$TAG.md"
+          gh release upload "$TAG" --clobber \
+            "$a"/*.spdx.json \
+            "$RUNNER_TEMP/permission-gate-$TAG.md" \
+            "$RUNNER_TEMP/eval-reports-$TAG.tar.gz"
+      - name: Add the image digests and how to verify them to the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REGISTRY: ${{ needs.prepare.outputs.registry }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          body="$RUNNER_TEMP/notes.md"
+          gh release view "$TAG" --json body --jq .body >"$body"
+          if grep -q '<!-- workmind-images -->' "$body"; then exit 0; fi
+          a="$RUNNER_TEMP/artifacts"
+          {
+            echo
+            echo '<!-- workmind-images -->'
+            echo '## Container images'
+            echo
+            echo 'linux/amd64 and linux/arm64. Pin the digest in production.'
+            echo
+            echo '```text'
+            for image in api web; do
+              echo "$REGISTRY/workmind-$image:$VERSION@$(cat "$a/digest-$image")"
+            done
+            echo '```'
+            echo
+            echo 'Verify the build provenance (public repository) and inspect the SBOMs:'
+            echo
+            echo '```bash'
+            echo "gh attestation verify oci://$REGISTRY/workmind-api:$VERSION --owner $OWNER"
+            echo "docker buildx imagetools inspect $REGISTRY/workmind-api:$VERSION --format '{{ json .SBOM }}'"
+            echo '```'
+            echo
+            echo "Attached: SPDX SBOMs per image and platform, \`permission-gate-$TAG.md\` (the"
+            echo 'retrieval permission gate run on these images: hash embeddings, no model calls, leaks'
+            echo "must be 0), and \`eval-reports-$TAG.tar.gz\` (the committed evaluation reports with"
+            echo 'real models, see evals/README.md). Upgrade notes: docs/operations/releasing.md.'
+          } >>"$body"
+          gh release edit "$TAG" --notes-file "$body"

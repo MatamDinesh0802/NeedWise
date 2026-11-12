@@ -1,0 +1,19 @@
+# osv-scanner exceptions for apps/api/uv.lock and apps/web/pnpm-lock.yaml
+# (scripts/security-scan.sh deps). Any other known vulnerability fails the Security workflow.
+# Each exception says why it is acceptable and expires, so it gets looked at again.
+# docs/security/supply-chain.md lists them too.
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2027-02-12
+reason = """minimatch 10.2.6 (moderate, CVE-2026-118764): pattern amplification when an attacker \
+controls the glob pattern. Development only: typescript-eslint and shadcn's ts-morph use it with \
+patterns from our own config, and it is not in the web image (Next.js standalone output). The fix \
+is minimatch 11, which @typescript-eslint/typescript-estree 8.72 does not accept (^10.2.2)."""
+
+[[IgnoredVulns]]
+id = "GHSA-gcqx-w48m-w2h4"
+ignoreUntil = 2027-02-12
+reason = """deepmerge 4.3.1 (low, CVE-2026-93753): prototype poisoning of merged objects. \
+Development only: the shadcn CLI (@shadcn/registry) merges its own registry metadata; not in the \
+web image. No fixed version exists."""

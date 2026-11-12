@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:18.6
+        image: postgres:18.6@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
         env:
           POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
@@ -26,10 +26,10 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 3s --health-retries 20
       valkey:
-        image: valkey/valkey:9.1.3-alpine
+        image: valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
         ports: ["6379:6379"]
       qdrant:
-        image: qdrant/qdrant:v1.20.0
+        image: qdrant/qdrant:v1.20.0@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2
         ports: ["6333:6333"]
     env:
       TEST_DATABASE_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
@@ -42,7 +42,7 @@ jobs:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock
@@ -50,7 +50,8 @@ jobs:
         run: |
           docker run -d --name openfga -p 8401:8080 \
             -e OPENFGA_AUTHN_METHOD=preshared -e OPENFGA_AUTHN_PRESHARED_KEYS=ci-only-key \
-            -e OPENFGA_PLAYGROUND_ENABLED=false openfga/openfga:v1.22.1 run
+            -e OPENFGA_PLAYGROUND_ENABLED=false \
+            openfga/openfga:v1.22.1@sha256:b852071314f1fda1194d341a6ebac0a4f619b3cd87a6626d2ccc7048af4ec671 run
           for _ in $(seq 1 30); do curl -fs http://localhost:8401/healthz && break; sleep 1; done
       # With the Enterprise package installed: the tests prove it stays unloaded without a license.
       - run: uv sync --locked --extra ee
@@ -71,7 +72,7 @@ jobs:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v7
@@ -90,13 +91,14 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MODEL_DIR: apps/api/src/workmind/modules/authz/openfga
+      FGA_CLI: openfga/cli:v0.8.2@sha256:31a565d14d1c5ca8170d3a2225eb66517d9f490539967bcb3421613c5e2538a4
     steps:
       - uses: actions/checkout@v7
       - name: Authorization matrix (model.fga.yaml)
-        run: docker run --rm -v "$PWD/$MODEL_DIR:/model:ro" openfga/cli:v0.8.2 model test --tests /model/model.fga.yaml
+        run: docker run --rm -v "$PWD/$MODEL_DIR:/model:ro" "$FGA_CLI" model test --tests /model/model.fga.yaml
       - name: model.json was regenerated from model.fga (run `make authz-model`)
         run: |
-          docker run --rm -v "$PWD/$MODEL_DIR:/model:ro" openfga/cli:v0.8.2 \
+          docker run --rm -v "$PWD/$MODEL_DIR:/model:ro" "$FGA_CLI" \
             model transform --file /model/model.fga > "$RUNNER_TEMP/model.json"
           diff <(python3 -m json.tool --sort-keys "$RUNNER_TEMP/model.json") \
                <(python3 -m json.tool --sort-keys "$MODEL_DIR/model.json")
@@ -108,10 +110,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Install gitleaks
+      - name: Install gitleaks (checksum from the release's checksums.txt)
         run: |
-          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
-            | tar -xz gitleaks
+          curl -fsSL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
       - run: ./gitleaks git --redact --verbose .
 
   dco:
@@ -161,7 +165,7 @@ jobs:
           docker compose --profile tools run --rm -v "$PWD/evals:/evals:ro"
           -e WORKMIND_EVALS_DIR=/evals seed
           python -m workmind.evals --retrieval-only --out /tmp/eval-results --label ci
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock

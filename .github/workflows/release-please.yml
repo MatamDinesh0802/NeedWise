@@ -1,0 +1,49 @@
+# Release PRs from Conventional Commits (docs/operations/releasing.md). release-please keeps one
+# open PR that bumps the versions (release-please-config.json) and the changelog; merging it
+# tags vX.Y.Z, creates the GitHub Release, and then release.yml publishes the images and assets.
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Release PR, or tag and GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # the release commit's tag and the GitHub Release
+      pull-requests: write # open and update the release PR
+      issues: write # create the "autorelease" labels it puts on that PR
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      # The default token: the release PR and the tag it creates start no other workflow (GitHub's
+      # rule for this token). The publish job below therefore calls release.yml itself, and CI
+      # runs on the release PR once someone closes and reopens it (releasing.md).
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    name: Publish ${{ needs.release-please.outputs.tag_name }}
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}

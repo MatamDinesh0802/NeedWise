@@ -1,0 +1,131 @@
+# Supply-chain checks: known vulnerabilities in the lockfiles and images, misconfigurations and
+# secrets in the repository, Dockerfile and workflow lint, and SBOMs. The scanners run from
+# images pinned by digest in scripts/security-scan.sh (run the same checks locally: make scan).
+# Policy and current exceptions: docs/security/supply-chain.md.
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, so new advisories against unchanged code are found too (Mondays, 05:17 UTC).
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependencies:
+    name: Dependencies · osv-scanner (uv.lock, pnpm-lock.yaml), source SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Known vulnerabilities (any finding fails unless osv-scanner.toml excepts it)
+        run: scripts/security-scan.sh deps
+      - name: SBOM of the repository (SPDX JSON, from the lockfiles and manifests)
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/sbom"
+          scripts/security-scan.sh sbom . "$RUNNER_TEMP/sbom/workmind-source.spdx.json"
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: sbom-source
+          path: ${{ runner.temp }}/sbom/
+          if-no-files-found: error
+          retention-days: 90
+
+  repository:
+    name: Repository · Trivy (vulnerabilities, misconfigurations, secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Fixable CRITICAL/HIGH vulnerabilities, misconfigurations and secrets fail
+        run: scripts/security-scan.sh fs
+
+  lint:
+    name: Dockerfiles and workflows · hadolint, actionlint, zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: scripts/security-scan.sh dockerfiles
+      - if: ${{ !cancelled() }}
+        # The token lets zizmor check that pinned SHAs belong to their actions' repositories.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/security-scan.sh workflows
+
+  images:
+    name: Image · ${{ matrix.image }} (Trivy, SBOM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            context: apps/api
+            build-contexts: ee=ee
+          - image: web
+            context: apps/web
+            build-contexts: ""
+    env:
+      IMAGE: workmind-${{ matrix.image }}:scan
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # linux/amd64 only here; release.yml scans both platforms of what it publishes.
+      - name: Build ${{ env.IMAGE }}
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          build-contexts: ${{ matrix.build-contexts }}
+          tags: ${{ env.IMAGE }}
+          load: true
+          push: false
+          provenance: false
+          cache-from: type=gha,scope=security-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=security-${{ matrix.image }}
+      - name: SBOM (SPDX JSON)
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          scripts/security-scan.sh sbom "$IMAGE" "$RUNNER_TEMP/out/workmind-${MATRIX_IMAGE}.spdx.json"
+        env:
+          MATRIX_IMAGE: ${{ matrix.image }}
+      - name: Fixable CRITICAL/HIGH vulnerabilities and secrets fail (full report kept as JSON)
+        run: >-
+          scripts/security-scan.sh image "$IMAGE"
+          "$RUNNER_TEMP/out/trivy-workmind-${MATRIX_IMAGE}.json"
+        env:
+          MATRIX_IMAGE: ${{ matrix.image }}
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: sbom-and-scan-${{ matrix.image }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          retention-days: 90
