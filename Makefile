@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license backup restore upgrade-test
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -99,3 +99,15 @@ ee-dev-license: ## Write a development Enterprise license to .workmind/ (APP_ENV
 
 seed: ## Create the Acme Robotics demo company and its logins (safe to re-run)
 	$(COMPOSE) --profile tools run --rm --build seed
+
+# Operations (docs/operations/). Options: OUTPUT=<dir>, BACKUP_FLAGS="--offline" (or --online),
+# RESTORE_FLAGS="--force --public-url https://workmind.example.com", FROM=<tag>.
+backup: ## Back up the databases, Qdrant, objects and license to ./backups/workmind-<time>
+	scripts/backup.sh $(if $(OUTPUT),--output "$(OUTPUT)") $(BACKUP_FLAGS)
+
+restore: ## Restore a backup into this stack: make restore BACKUP=backups/workmind-<time>
+	@test -n "$(BACKUP)" || { echo "usage: make restore BACKUP=<backup directory>"; exit 2; }
+	scripts/restore.sh "$(BACKUP)" $(RESTORE_FLAGS)
+
+upgrade-test: ## Upgrade a throwaway stack from an older release to this code: FROM=v0.1.0
+	scripts/upgrade-test.sh $(or $(FROM),v0.1.0)
