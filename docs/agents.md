@@ -135,10 +135,9 @@ The **Test console** tab runs the definition *as it is in the form*, saved or no
    it would have said.
 
 Nothing is stored as a conversation. Each run is audited as `agent.test` (draft or saved,
-plan, cited documents, tokens). Model calls are real and cost money. *Usage attribution and
-budgets:* usage metering and budgets are not merged yet; the places to record console runs
-(feature `agent_test`) and to check the administrator's budget first are marked `TODO(usage)` in
-`api/v1/agents.py`.
+plan, cited documents, tokens). Model calls are real and cost money: they are recorded in usage
+as feature `agent_test`, for the administrator and the tested agent, and a used-up budget
+refuses the run with `429 budget_exceeded` before it starts ([docs/usage.md](usage.md)).
 
 ## How routing works
 
@@ -288,8 +287,6 @@ slug_taken`, `404 not_found`.
 - **An agent on a model other than the default** has been tested with scripted models only
   (the routing evaluation measures the planner, which uses the `router` role, not the agents'
   own models).
-- **Usage attribution and budgets** for test console runs (feature `agent_test`) wait for usage
-  metering and budgets, which are not merged yet (`TODO(usage)` in `api/v1/agents.py`).
 - Agent tools are offered in agents mode only; the planner does not see an agent's tools when it
   plans, only its description.
 - The test console runs synchronously (no streaming); a slow model makes the request wait up to

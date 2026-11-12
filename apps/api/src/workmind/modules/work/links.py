@@ -17,6 +17,11 @@ def meeting_link(meeting_id: uuid.UUID) -> str:
     return f"/meetings/{meeting_id}"
 
 
+def usage_link() -> str:
+    """The usage page: everyone sees the budgets that apply to them there (docs/usage.md)."""
+    return "/analytics"
+
+
 def workflow_link(key: str, run_id: uuid.UUID | None = None) -> str:
     """Admin > Workflows with this workflow's runs open (the run, when given, expanded)."""
     query = {"workflow": key, **({"run": str(run_id)} if run_id else {})}

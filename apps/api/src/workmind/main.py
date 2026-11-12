@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from mcp.server.transport_security import TransportSecuritySettings
 from opentelemetry.sdk.trace import TracerProvider
@@ -20,7 +20,12 @@ from workmind.api import auth, v1
 from workmind.api.deps import require_feature
 from workmind.api.ops import probes
 from workmind.core.config import Settings, get_settings
-from workmind.core.errors import ApiError, api_error_handler, validation_error_handler
+from workmind.core.errors import (
+    ApiError,
+    api_error_handler,
+    problem_response,
+    validation_error_handler,
+)
 from workmind.core.extensions import ExtensionRegistry, load_extensions
 from workmind.core.health import build_health_checks
 from workmind.core.logging import configure_logging
@@ -30,8 +35,16 @@ from workmind.core.telemetry import configure_telemetry
 from workmind.modules.authz.sync import OutboxWorker
 from workmind.modules.mcp_server.auth import RequireAccessToken
 from workmind.modules.mcp_server.server import build_mcp_server
+from workmind.modules.usage.budgets import BudgetExceededError
 
 log = structlog.get_logger("workmind")
+
+
+async def budget_exceeded_handler(_request: Request, exc: Exception) -> Response:
+    """A model call refused by a used-up budget, anywhere in a request: 429 with its status."""
+    if not isinstance(exc, BudgetExceededError):  # registered only for BudgetExceededError
+        raise exc
+    return problem_response(exc.problem())
 
 
 @asynccontextmanager
@@ -99,6 +112,7 @@ def create_app(
     app.add_middleware(RequestContextMiddleware)
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(BudgetExceededError, budget_exceeded_handler)
     app.include_router(probes)
     app.include_router(auth.router)
     app.include_router(v1.router, prefix="/api/v1")

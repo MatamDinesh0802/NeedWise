@@ -365,11 +365,16 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >   every model call. Tested with scripted models; no real provider was called through a tenant
 >   key.
 > - **Open core ([docs/enterprise.md](enterprise.md)):** license keys, development licenses, the
->   extension registry and `GET /api/v1/edition`. No Enterprise feature is built in `main` yet.
-> - **Usage and budgets:** the screens are merged (the Usage page, Admin › Budgets, "Your usage
->   this month" on the Overview), but the API they call (usage metering, budgets, budget checks
->   before model calls) is not: those requests answer 404 until it is merged. The places it
->   plugs in are marked `TODO(usage)`.
+>   extension registry and `GET /api/v1/edition`. Enterprise features built: department budgets
+>   and the chargeback report.
+> - **Usage and budgets ([docs/usage.md](usage.md)):** one usage event per model call (failed
+>   and stopped calls included, never the text), attributed to the person, their department,
+>   the agent, the feature and the record; costs from the catalog's prices; the Usage page,
+>   Admin › Budgets and "Your usage this month" on the Overview; organization budgets, personal
+>   and default caps that warn or block (429 `budget_exceeded`, or the chat run's error event),
+>   checked before every model call; `wm usage backfill` for older answers. Enterprise:
+>   department budgets and the chargeback CSV. Tested with scripted models only; the overshoot
+>   bound and what is not recorded are in the doc.
 > - **Knowledge governance** (audit log explorer, retention policies, document owners, review
 >   reminders, the official approval flow) is being built and is not in `main`.
 

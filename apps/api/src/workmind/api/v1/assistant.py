@@ -16,6 +16,8 @@ from workmind.modules.assistant.answer import answer
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import Tenant
 from workmind.modules.retrieval.service import Mode, Passage
+from workmind.modules.usage.budgets import BudgetExceededError
+from workmind.modules.usage.calls import attribute
 from workmind.providers.llm import LLMError
 
 router = APIRouter(tags=["assistant"])
@@ -113,20 +115,24 @@ async def ask(
     body: AskRequest,
 ) -> AskOut:
     resources = resources_of(request)
+    await resources.usage.check(ctx)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         tenant = await session.get(Tenant, ctx.tenant_id)
     organization = tenant.name if tenant else "the company"
     llm = await resources.models.for_tenant(ctx.tenant_id)
     try:
-        result = await answer(
-            llm,
-            resources.retriever,
-            ctx,
-            body.question,
-            organization=organization,
-            policy=llm.max_external_sensitivity,
-            local_llm=llm.local,
-        )
+        with attribute("chat", user_id=ctx.user_id):
+            result = await answer(
+                llm,
+                resources.retriever,
+                ctx,
+                body.question,
+                organization=organization,
+                policy=llm.max_external_sensitivity,
+                local_llm=llm.local,
+            )
+    except BudgetExceededError:
+        raise  # 429 budget_exceeded (main.py)
     except LLMError as exc:
         raise ApiError(
             502, "model_unavailable", "The language model is unavailable", str(exc)[:200]
@@ -200,18 +206,22 @@ async def research_question(
     """The research agent: the model picks tools (company search, configured MCP servers, web
     search if enabled). Tools with side effects stop at the approval gate."""
     resources = resources_of(request)
+    await resources.usage.check(ctx)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         tenant = await session.get(Tenant, ctx.tenant_id)
     try:
-        result = await research(
-            await resources.models.for_tenant(ctx.tenant_id),
-            resources.tools,
-            resources.db,
-            ctx,
-            body.question,
-            organization=tenant.name if tenant else "the company",
-            tool_names=body.tools,
-        )
+        with attribute("research", user_id=ctx.user_id):
+            result = await research(
+                await resources.models.for_tenant(ctx.tenant_id),
+                resources.tools,
+                resources.db,
+                ctx,
+                body.question,
+                organization=tenant.name if tenant else "the company",
+                tool_names=body.tools,
+            )
+    except BudgetExceededError:
+        raise  # 429 budget_exceeded (main.py)
     except LLMError as exc:
         raise ApiError(502, "model_unavailable", "The language model is unavailable") from exc
     usage = result.usage[-1] if result.usage else None

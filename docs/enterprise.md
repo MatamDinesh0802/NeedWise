@@ -21,21 +21,21 @@ only with a valid license key. The Enterprise features the core knows about:
 | Feature name | What it is for | Status |
 |---|---|---|
 | `retention_policies` | Rules for how long data is kept before it is deleted | Not built yet |
-| `department_budgets` | Spending limits on model usage per department | Not built yet |
-| `chargeback_reports` | Usage and model costs per department, for internal billing | Not built yet |
+| `department_budgets` | Spending limits on model usage per department | Built ([docs/usage.md](usage.md#enterprise)) |
+| `chargeback_reports` | Usage and model costs per department, for internal billing | Built: `GET /api/v1/usage/export.csv` ([docs/usage.md](usage.md#enterprise)) |
 | `advanced_audit_export` | Audit log exports for security tools and long-term retention | Not built yet |
 
 ### What exists today
 
 Built: license verification, the edition object, `GET /api/v1/edition`, the `require_feature`
-dependency (402), the extension registry, the `workmind-ee` package (its `setup` registers
-nothing yet), development licenses (`make ee-dev-license`) and the web components
-`EnterpriseGate` and `EnterpriseBadge`.
+dependency (402), the extension registry, the `workmind-ee` package, development licenses
+(`make ee-dev-license`), the web components `EnterpriseGate` and `EnterpriseBadge`, and two
+features: department budgets and the chargeback report (`ee/python/src/workmind_ee/budgets.py`
+and `chargeback.py`, registered on the usage hooks).
 
-Not built: any Enterprise feature; official licenses (no production signing key is published,
-so `PRODUCTION_PUBLIC_KEYS` is empty and only development licenses exist); license revocation,
-online activation, seat counts; a screen to upload a license. A valid license today shows
-"enterprise" and its features in `/api/v1/edition`, and nothing else changes.
+Not built: retention policies and advanced audit export; official licenses (no production
+signing key is published, so `PRODUCTION_PUBLIC_KEYS` is empty and only development licenses
+exist); license revocation, online activation, seat counts; a screen to upload a license.
 
 ## How licensing works
 
@@ -225,16 +225,22 @@ afterwards.
 ```python
 from workmind.core.extensions import Hook
 
-BEFORE_MODEL_CALL = Hook[[uuid.UUID, int], None]("usage.before_model_call")  # in a core module
-registry.add_hook(BEFORE_MODEL_CALL, check_budget, feature="department_budgets")  # in setup
-resources.extensions.call(BEFORE_MODEL_CALL, department_id, tokens)  # where the core calls it
+# in a core module (workmind/modules/usage/extensions.py)
+CHARGEBACK_REPORT = Hook[[AsyncSession, ChargebackQuery], Awaitable[str]]("usage.chargeback_report")
+# in setup (workmind_ee/__init__.py)
+registry.add_hook(CHARGEBACK_REPORT, chargeback_csv, feature="chargeback_reports")
+# where the core calls it (api/v1/usage.py)
+reports = resources.extensions.call(CHARGEBACK_REPORT, session, query)  # [] in Community
 ```
 
 `call` runs the licensed implementations in registration order and returns their results
 (an empty list in Community). Exceptions propagate to the caller, so a hook that guards
-something cannot fail open. Hooks compare by identity: use the core's constant. The core
-declares no hooks yet; the first Enterprise feature that needs one adds it next to the code
-that calls it.
+something cannot fail open. Hooks compare by identity: use the core's constant. A hook is
+declared next to the code that calls it. The core declares two, both in
+`modules/usage/extensions.py`: `usage.department_budgets` (returns the object that decides which
+departments a budget may name, binds, shows and warns) and `usage.chargeback_report` (returns
+the CSV). The route that serves a feature stays in the core behind `require_feature`, so it
+answers 402 in Community instead of 404.
 
 **The edition** is on `resources.edition` (and `app.state.extensions.edition`); ask
 `edition.has("feature")`, never `edition.enterprise`, so each feature follows its own license.

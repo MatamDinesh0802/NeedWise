@@ -44,6 +44,8 @@ class FakeLLM:
         tool_text: str = "Done.",
         tool_script: Callable[[LLMRequest], Sequence[ToolTurn]] | None = None,
         structured_script: Callable[[LLMRequest], Any] | None = None,
+        model: str = "fake",
+        scale: int = 1,
     ) -> None:
         self.tokens = [reply] if isinstance(reply, str) else list(reply)
         self.rewrite = rewrite
@@ -60,11 +62,22 @@ class FakeLLM:
         self.structured_script = structured_script
         self.offered: list[ToolSpec] = []
         self.tool_replies: list[ToolReply] = []
+        # The usage every reply reports: the model's name (a priced one, e.g.
+        # "claude-opus-5-5", makes calls cost money) and a factor on the token counts.
+        self.model = model
+        self.scale = scale
+
+    def usage(self, input_tokens: int, output_tokens: int) -> LLMUsage:
+        return LLMUsage(
+            model=self.model,
+            input_tokens=input_tokens * self.scale,
+            output_tokens=output_tokens * self.scale,
+        )
 
     async def complete(self, role: Role, request: LLMRequest) -> tuple[str, LLMUsage]:
         self.requests.append((role, request))
         text = self.rewrite if role == "router" and self.rewrite else "A short summary."
-        return text, LLMUsage(model="fake", input_tokens=20, output_tokens=5)
+        return text, self.usage(20, 5)
 
     async def stream(self, role: Role, request: LLMRequest) -> AsyncIterator[StreamEvent]:
         self.requests.append((role, request))
@@ -72,7 +85,7 @@ class FakeLLM:
             if self.delay:
                 await asyncio.sleep(self.delay)
             yield TextDelta(token)
-        yield Done(LLMUsage(model="fake", input_tokens=100, output_tokens=len(self.tokens)))
+        yield Done(self.usage(100, len(self.tokens)))
 
     async def structured(self, role: Role, request: LLMRequest, schema: Any) -> Any:
         self.requests.append((role, request))
@@ -82,7 +95,7 @@ class FakeLLM:
             reply = self.structured_script(request)
         if isinstance(reply, Exception):
             raise reply
-        return reply, LLMUsage(model="fake", input_tokens=30, output_tokens=8)
+        return reply, self.usage(30, 8)
 
     async def run_tools(
         self,
@@ -108,13 +121,13 @@ class FakeLLM:
             if number >= max_steps:
                 result.stopped = "max_steps"
                 return result
-            result.usage.append(LLMUsage(model="fake", input_tokens=50, output_tokens=10))
+            result.usage.append(self.usage(50, 10))
             for index, (name, arguments) in enumerate(turn):
                 call = ToolCall(f"call-{number}-{index}", name, dict(arguments))
                 result.calls.append(call)
                 content, is_error = await execute(call)
                 self.tool_replies.append(ToolReply(name, content, is_error))
-        result.usage.append(LLMUsage(model="fake", input_tokens=60, output_tokens=12))
+        result.usage.append(self.usage(60, 12))
         result.text = self.tool_text
         return result
 

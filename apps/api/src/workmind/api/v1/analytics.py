@@ -33,6 +33,7 @@ from workmind.modules.analytics.agent import AnalyticsAnswer, AnswerColumn
 from workmind.modules.analytics.semantic import GRAINS
 from workmind.modules.analytics.service import AnalyticsError, ModelDescription
 from workmind.modules.identity.models import Tenant
+from workmind.modules.usage.calls import attribute
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 admin_router = APIRouter(prefix="/admin/analytics", tags=["admin"])
@@ -164,15 +165,17 @@ async def ask(ctx: AskContext, request: Request, body: AskIn) -> AnalyticsAnswer
     """Answer a question with queries run as the caller. Always 200 with an answer: its status
     says whether it was answered, refused (no_access) or failed. The answer is stored."""
     resources = resources_of(request)
+    await resources.usage.check(ctx)  # 429 budget_exceeded before anything is stored
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         tenant = await session.get(Tenant, ctx.tenant_id)
-    return await agent.answer(
-        await resources.models.for_tenant(ctx.tenant_id),
-        resources.analytics,
-        ctx,
-        body.question,
-        organization=tenant.name if tenant else "the company",
-    )
+    with attribute("analytics", user_id=ctx.user_id):
+        return await agent.answer(
+            await resources.models.for_tenant(ctx.tenant_id),
+            resources.analytics,
+            ctx,
+            body.question,
+            organization=tenant.name if tenant else "the company",
+        )
 
 
 @router.get("/runs")

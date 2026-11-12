@@ -16,6 +16,7 @@ from workmind.api.v1 import (
     model_catalog,
     sources,
     tokens,
+    usage,
     work,
 )
 
@@ -40,3 +41,5 @@ router.include_router(meetings.router)
 router.include_router(analytics.router)
 router.include_router(analytics.admin_router)
 router.include_router(model_catalog.admin_router)
+router.include_router(usage.router)
+router.include_router(usage.admin_router)

@@ -202,8 +202,11 @@ with real retrieval (sources above the threshold go to the local model or are wi
 the external model is not called); the provider test's error reporting; tenant isolation.
 
 Not measured: latency added by resolution (one indexed query per tenant every 5 seconds per
-process, plus the first load), and any real provider through a tenant key. Not built: quotas and
-budgets per tenant or model (Phase 11 usage work, not merged yet: `TODO(usage)` in
-`model_catalog/resolver.py` marks where the meter and budget checks wrap model calls), a rate
-limit on the provider test, streaming
-in the provider test, and the policy for tool results noted above.
+process, plus the first load), and any real provider through a tenant key. Not built: budgets
+per model (budgets are per organization, department or person: [docs/usage.md](usage.md); the
+resolution is where every call is metered and checked against them), a rate limit on the
+provider test, streaming in the provider test, and the policy for tool results noted above.
+
+Catalog prices are what usage and budgets count: a model with a price in the catalog is costed
+at it, one without falls back to the static table in `providers/pricing.py`, and one with
+neither has no cost ([docs/usage.md](usage.md)). The provider test is not recorded in usage.

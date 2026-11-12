@@ -9,8 +9,11 @@ pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra
 
 from workmind.core.edition import FEATURES, Edition, License
 from workmind.core.extensions import ENTRY_POINT_GROUP, ExtensionRegistry, enable_extensions
+from workmind.modules.usage.extensions import CHARGEBACK_REPORT, DEPARTMENT_BUDGETS
 
 import workmind_ee
+from workmind_ee.budgets import DepartmentBudgets
+from workmind_ee.chargeback import safe_cell
 
 NOW = datetime(2026, 11, 12, tzinfo=UTC)
 
@@ -44,3 +47,46 @@ def test_the_installed_package_enables_enterprise() -> None:
     registry = enable_extensions(_enterprise())
     assert registry.edition.enterprise
     assert registry.edition.has("retention_policies")
+
+
+def _licensed(*features: str) -> Edition:
+    license_ = License(
+        licensee="Acme Robotics",
+        features=frozenset(features),
+        issued_at=NOW - timedelta(days=1),
+        expires_at=NOW + timedelta(days=30),
+        key_id="test",
+    )
+    return Edition(license_, clock=lambda: NOW)
+
+
+def test_setup_plugs_department_budgets_and_chargeback_into_the_usage_hooks() -> None:
+    registry = ExtensionRegistry(_enterprise())
+    workmind_ee.setup(registry, registry.edition)
+
+    assert registry.implemented(DEPARTMENT_BUDGETS)
+    assert registry.implemented(CHARGEBACK_REPORT)
+    assert isinstance(registry.call(DEPARTMENT_BUDGETS)[0], DepartmentBudgets)
+
+
+def test_each_hook_follows_its_own_feature() -> None:
+    registry = ExtensionRegistry(_licensed("chargeback_reports"))
+    workmind_ee.setup(registry, registry.edition)
+
+    assert registry.implemented(CHARGEBACK_REPORT)
+    assert not registry.implemented(DEPARTMENT_BUDGETS)
+    assert registry.call(DEPARTMENT_BUDGETS) == []
+
+
+@pytest.mark.parametrize(
+    ("name", "cell"),
+    [
+        ("People & HR", "People & HR"),
+        ('=HYPERLINK("http://x")', '\'=HYPERLINK("http://x")'),
+        ("+1 Sales", "'+1 Sales"),
+        ("-Ops", "'-Ops"),
+        ("@Legal", "'@Legal"),
+    ],
+)
+def test_department_names_never_run_as_spreadsheet_formulas(name: str, cell: str) -> None:
+    assert safe_cell(name) == cell

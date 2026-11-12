@@ -5,6 +5,9 @@ wm seed [options]         seed a demo company (see `wm seed --help`)
 wm license dev [options]  write a development Enterprise license (see `wm license dev --help`)
 wm reindex <tenant>       re-index a tenant's documents
 wm secrets rotate         re-encrypt stored model provider keys with SECRETS_ENCRYPTION_KEY
+wm usage backfill [<tenant>]
+                          import usage stored before usage events existed (all active tenants
+                          by default); safe to run again (docs/usage.md)
 """
 
 import sys
@@ -33,8 +36,48 @@ def main(argv: list[str] | None = None) -> int:
         import asyncio
 
         return asyncio.run(_rotate_secrets())
+    if command == "usage" and rest[:1] == ["backfill"] and len(rest) <= 2:
+        import asyncio
+
+        return asyncio.run(_backfill_usage(rest[1] if len(rest) == 2 else None))
     print(__doc__, file=sys.stderr)
     return 0 if command in ("-h", "--help") else 1
+
+
+async def _backfill_usage(tenant_slug: str | None) -> int:
+    from sqlalchemy import select
+
+    from workmind.core.config import Settings
+    from workmind.core.db import create_engine, create_session_factory
+    from workmind.core.tenancy import global_transaction
+    from workmind.modules.identity.models import Tenant
+    from workmind.modules.usage.backfill import backfill_tenant
+
+    settings = Settings()
+    engine = create_engine(settings.database_url)
+    sessions = create_session_factory(engine)
+    try:
+        async with global_transaction(sessions) as session:
+            query = select(Tenant.id, Tenant.slug)
+            query = (
+                query.where(Tenant.slug == tenant_slug)
+                if tenant_slug
+                else query.where(Tenant.status == "active")
+            )
+            tenants = list((await session.execute(query)).all())
+        if tenant_slug and not tenants:
+            print(f"tenant {tenant_slug!r} not found", file=sys.stderr)
+            return 1
+        for tenant_id, slug in tenants:
+            result = await backfill_tenant(sessions, tenant_id)
+            print(
+                f"{slug}: imported {result.messages} answers, {result.analytics_runs} BI "
+                f"answers, {result.meetings} meetings",
+                file=sys.stderr,
+            )
+    finally:
+        await engine.dispose()
+    return 0
 
 
 async def _reindex(tenant_slug: str) -> int:

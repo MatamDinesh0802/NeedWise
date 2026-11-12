@@ -43,6 +43,8 @@ from workmind.modules.knowledge.models import Collection
 from workmind.modules.model_catalog.catalog import Catalog
 from workmind.modules.model_catalog.store import load_config
 from workmind.modules.tools.registry import ToolRegistry
+from workmind.modules.usage.budgets import BudgetExceededError
+from workmind.modules.usage.calls import attribute
 from workmind.providers.llm import LLMError, LLMUsage
 from workmind.providers.pricing import cost_usd
 
@@ -447,10 +449,10 @@ def _reason(mode: str, routed_by: str, picked: list[str]) -> str:
 @router.post("/test")
 async def test_agent(ctx: AdminContext, request: Request, body: TestRequest) -> TestOut:
     """Routing and an answer for one question, with an unsaved draft or a saved agent. Runs as
-    the administrator: their permissions, narrowed to the agent's collections."""
+    the administrator: their permissions, narrowed to the agent's collections. Its model calls
+    count in usage as "agent_test", for this administrator and the tested agent."""
     resources = resources_of(request)
-    # TODO(usage): check the administrator's budgets here before any model call (budget_exceeded,
-    # 429), once budgets are merged (branch p11-usage).
+    await resources.usage.check(ctx)  # 429 budget_exceeded before any work
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         tenant = await session.get(Tenant, ctx.tenant_id)
         ids = await collection_ids(session)
@@ -474,21 +476,21 @@ async def test_agent(ctx: AdminContext, request: Request, body: TestRequest) -> 
         tools=resources.tools,
     )
     try:
-        run = await run_console(
-            deps,
-            ctx,
-            body.question,
-            tested,
-            organization=tenant.name if tenant else "the company",
-            policy=llm.max_external_sensitivity,
-        )
+        with attribute("agent_test", user_id=ctx.user_id, agent_key=tested.key if tested else None):
+            run = await run_console(
+                deps,
+                ctx,
+                body.question,
+                tested,
+                organization=tenant.name if tenant else "the company",
+                policy=llm.max_external_sensitivity,
+            )
+    except BudgetExceededError:
+        raise  # 429 budget_exceeded (main.py)
     except LLMError as exc:
         raise ApiError(
             502, "model_unavailable", "The language model is unavailable", str(exc)[:200]
         ) from exc
-    # TODO(usage): usage metering and budgets are not merged yet (branch p11-usage). Record
-    # `run.usage` here, attributed to this administrator and to the tested agent with feature
-    # "agent_test", so console runs show in usage analytics but never as conversations.
     plan = run.plan
     routing = RoutingOut(
         mode=plan.mode,

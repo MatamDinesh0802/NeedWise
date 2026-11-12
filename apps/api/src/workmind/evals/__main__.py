@@ -44,6 +44,7 @@ from workmind.evals.runner import (
     summarize_retrieval,
 )
 from workmind.modules.retrieval.service import Mode
+from workmind.modules.usage.calls import attribute
 from workmind.providers.factory import role_configs
 from workmind.providers.llm import LLMUsage, Role
 
@@ -346,7 +347,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parse(argv)
     if args.rescore:
         return rescore(args)
-    return asyncio.run(run(args))
+    # Every model call of the run counts as "eval" in usage (no user), and no budget stops it:
+    # an operator runs it on purpose (docs/usage.md).
+    with attribute("eval", user_id=None, enforce=False):
+        return asyncio.run(run(args))
 
 
 if __name__ == "__main__":

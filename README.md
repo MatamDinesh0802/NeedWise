@@ -34,6 +34,10 @@ Engineering…) handle department work. Actions that leave the system need human
   OpenAI-compatible server, hosted or local) with encrypted, write-only keys, a catalog with
   prices, which model serves each role and each agent, and how sensitive data sent to external
   models may be ([docs/models.md](docs/models.md)).
+- **Usage, costs and budgets.** Every model call is recorded (tokens and cost, never the text)
+  for the person, department, agent and feature it served; managers see their departments,
+  everyone their own usage. Organization budgets and personal caps warn or stop model use
+  ([docs/usage.md](docs/usage.md)).
 - **Restricted data stays local** if you want: per-company policy routes restricted sources
   to a local model, or leaves them out and says so.
 - **Knowledge Hub:** upload PDF, Word, Excel, PowerPoint, Markdown, HTML, CSV or Slack exports;
@@ -159,8 +163,8 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Commits need 
 
 Community (everything outside `ee/`) is complete and Apache-2.0, security basics included.
 Enterprise adds features for large organizations from `ee/` and runs only with a license key.
-None of those features is built yet; the boundary, license checks and development licenses
-(`make ee-dev-license`) are. See [docs/enterprise.md](docs/enterprise.md).
+Built so far: department budgets and the chargeback report; with them the boundary, license
+checks and development licenses (`make ee-dev-license`). See [docs/enterprise.md](docs/enterprise.md).
 
 ## License
 

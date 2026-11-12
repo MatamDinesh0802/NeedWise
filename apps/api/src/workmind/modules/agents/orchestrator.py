@@ -42,6 +42,8 @@ from workmind.modules.assistant.answer import (
 )
 from workmind.modules.retrieval.service import Passage, Retriever
 from workmind.modules.tools.registry import ToolRegistry
+from workmind.modules.usage.budgets import BudgetExceededError
+from workmind.modules.usage.calls import refine
 from workmind.providers.llm import (
     LLMError,
     LLMMessage,
@@ -307,24 +309,28 @@ async def run_agent_bounded(
     organization: str,
     policy: RestrictedPolicy,
 ) -> AgentResult:
-    """Budgets and failure isolation: one slow or broken agent never sinks the answer."""
+    """Budgets and failure isolation: one slow or broken agent never sinks the answer. The
+    agent's model calls are attributed to it (its key) in usage accounting."""
     try:
         async with asyncio.timeout(AGENT_TIMEOUT_S):
             llm = await deps.models.agent_llm(ctx.tenant_id, agent.model, deps.llm)
             tools = AgentTools(deps.tools, deps.sessions) if deps.tools is not None else None
-            return await run_agent(
-                llm,
-                deps.retriever,
-                ctx,
-                agent,
-                goal,
-                organization=organization,
-                policy=policy,
-                local_llm=deps.local_llm,
-                tools=tools,
-            )
+            with refine(agent_key=agent.key):
+                return await run_agent(
+                    llm,
+                    deps.retriever,
+                    ctx,
+                    agent,
+                    goal,
+                    organization=organization,
+                    policy=policy,
+                    local_llm=deps.local_llm,
+                    tools=tools,
+                )
     except TimeoutError:
         return AgentResult(agent=agent.key, goal=goal, error="timed out")
+    except BudgetExceededError as exc:  # the answer that follows is refused the same way
+        return AgentResult(agent=agent.key, goal=goal, error=str(exc)[:300])
     except LLMError as exc:
         log.warning("agent_model_failed", agent=agent.key, error=str(exc)[:300])
         return AgentResult(agent=agent.key, goal=goal, error=f"model unavailable: {exc}"[:300])

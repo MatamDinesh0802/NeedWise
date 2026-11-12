@@ -41,6 +41,7 @@ from workmind.modules.conversations.models import Conversation, Message
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.retrieval.service import Passage, Retriever
 from workmind.modules.tools.registry import ToolRegistry
+from workmind.modules.usage.budgets import BudgetExceededError
 from workmind.providers.llm import LLMError, LLMMessage, LLMProvider, LLMRequest, LLMUsage
 from workmind.providers.pricing import cost_usd
 
@@ -236,7 +237,9 @@ async def execute_run(
     user_message_id: uuid.UUID,
     organization: str,
     policy: RestrictedPolicy,
+    answer_id: uuid.UUID | None = None,
 ) -> None:
+    """`answer_id`: the id the answer is stored under (usage events refer to it)."""
     events, run_id = deps.events, meta.run_id
     await events.emit(
         run_id, "run.started", {"run_id": str(run_id), "conversation_id": str(meta.conversation_id)}
@@ -246,6 +249,7 @@ async def execute_run(
     final: Answer | None = None
     search_query = question
     status, error = "complete", None
+    budget: BudgetExceededError | None = None
     try:
         history = await load_history(
             deps.sessions, ctx, meta.conversation_id, before=user_message_id
@@ -316,6 +320,9 @@ async def execute_run(
             run_id, "run.failed", {"code": "interrupted", "message": "The server restarted."}
         )
         raise
+    except BudgetExceededError as exc:
+        status, budget = "failed", exc
+        log.info("run_budget_exceeded", run_id=str(run_id), budget_id=str(exc.status.id))
     except LLMError as exc:
         status, error = "failed", ("model_unavailable", "The language model is unavailable.")
         log.warning("run_model_error", run_id=str(run_id), error=str(exc)[:300])
@@ -343,7 +350,15 @@ async def execute_run(
         await events.emit(run_id, "verification", {"unknown_markers": final.unknown_markers})
 
     message_id = await _store(
-        deps, ctx, meta, final, "".join(parts), status, search_query, usage.as_dict()
+        deps,
+        ctx,
+        meta,
+        final,
+        "".join(parts),
+        status,
+        search_query,
+        usage.as_dict(),
+        message_id=answer_id,
     )
     if status == "complete":
         await events.emit(
@@ -360,10 +375,26 @@ async def execute_run(
     elif status == "cancelled":
         await events.emit(run_id, "run.cancelled", {"message_id": str(message_id)})
     else:
-        code, message = error or ("internal", "Something went wrong.")
-        await events.emit(
-            run_id, "run.failed", {"code": code, "message": message, "message_id": str(message_id)}
+        await _emit_failure(deps, run_id, message_id, error, budget)
+
+
+async def _emit_failure(
+    deps: RunDeps,
+    run_id: uuid.UUID,
+    message_id: uuid.UUID,
+    error: tuple[str, str] | None,
+    budget: BudgetExceededError | None,
+) -> None:
+    """`run.failed`; for a used-up budget, with code budget_exceeded and the budget's status."""
+    if budget is not None:
+        await deps.events.emit(
+            run_id, "run.failed", {**budget.event(), "message_id": str(message_id)}
         )
+        return
+    code, message = error or ("internal", "Something went wrong.")
+    await deps.events.emit(
+        run_id, "run.failed", {"code": code, "message": message, "message_id": str(message_id)}
+    )
 
 
 async def execute_research_run(
@@ -374,6 +405,7 @@ async def execute_research_run(
     question: str,
     user_message_id: uuid.UUID,
     organization: str,
+    answer_id: uuid.UUID | None = None,
 ) -> None:
     """A chat turn answered by the research agent: it may search, call tools, and propose actions
     (an email, a task) that wait for the person's approval as inline cards (`approval.required`)."""
@@ -383,6 +415,7 @@ async def execute_research_run(
     )
     usage = Usage()
     status, error, text = "complete", None, ""
+    budget: BudgetExceededError | None = None
     approvals: list[str] = []
     steps: list[dict[str, Any]] = []  # stored with the answer: a reload shows them as live
 
@@ -429,6 +462,9 @@ async def execute_research_run(
         text = result.text
         for start in range(0, len(text), 60):  # the loop isn't token-streamed; replay it in pieces
             await events.emit(run_id, "token", {"text": text[start : start + 60]})
+    except BudgetExceededError as exc:
+        status, budget = "failed", exc
+        log.info("research_budget_exceeded", run_id=str(run_id), budget_id=str(exc.status.id))
     except LLMError as exc:
         status, error = "failed", ("model_unavailable", "The language model is unavailable.")
         log.warning("research_model_error", run_id=str(run_id), error=str(exc)[:300])
@@ -436,7 +472,16 @@ async def execute_research_run(
         status, error = "failed", ("internal", "Something went wrong while working on this.")
         log.exception("research_failed", run_id=str(run_id))
     message_id = await _store(
-        deps, ctx, meta, None, text, status, question, usage.as_dict(), tool_steps=steps
+        deps,
+        ctx,
+        meta,
+        None,
+        text,
+        status,
+        question,
+        usage.as_dict(),
+        tool_steps=steps,
+        message_id=answer_id,
     )
     if status == "complete":
         await events.emit(
@@ -445,10 +490,7 @@ async def execute_research_run(
             {"message_id": str(message_id), "usage": usage.as_dict(), "approvals": approvals},
         )
     else:
-        code, message = error or ("internal", "Something went wrong.")
-        await events.emit(
-            run_id, "run.failed", {"code": code, "message": message, "message_id": str(message_id)}
-        )
+        await _emit_failure(deps, run_id, message_id, error, budget)
 
 
 async def _store(
@@ -462,10 +504,12 @@ async def _store(
     usage: dict[str, Any],
     *,
     tool_steps: list[dict[str, Any]] | None = None,
+    message_id: uuid.UUID | None = None,
 ) -> uuid.UUID:
     content = final.text if final and status == "complete" else partial  # research: the text
     async with tenant_transaction(deps.sessions, ctx.tenant_id) as session:
         message = Message(
+            **({"id": message_id} if message_id else {}),
             tenant_id=ctx.tenant_id,
             conversation_id=meta.conversation_id,
             role="assistant",
