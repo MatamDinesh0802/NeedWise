@@ -272,6 +272,43 @@ async def test_a_used_up_budget_refuses_every_model_entry_point_with_429(
         assert (await session.scalars(select(Message))).all() == []  # the question was not kept
 
 
+async def test_a_used_up_budget_refuses_the_mcp_ask_tool_with_a_tool_error(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    await spend(app_sessions, acme, "carol", 1.5)
+    assert put_budgets(api, acme, [budget("tenant", 1.0)]).status_code == 200
+    created = api.post(
+        "/api/v1/me/tokens",
+        json={"name": "mcp-bob", "scopes": ["assistant:ask"]},
+        headers=acme.as_("bob", write=True),
+    )
+    assert created.status_code == 201, created.text
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "ask", "arguments": {"question": "Parental leave?"}},
+    }
+
+    response = api.post(
+        "/mcp",
+        json=body,
+        headers={
+            "Accept": "application/json, text/event-stream",
+            "Authorization": f"Bearer {created.json()['token']}",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["result"]
+    assert result["isError"] is True
+    text = "\n".join(c.get("text", "") for c in result["content"])
+    assert "The monthly organization budget of $1.00 is used up" in text
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        events = (await session.scalars(select(UsageEvent))).all()
+    assert len(events) == 1  # the spending above; no model was called for the refused question
+
+
 async def test_a_persons_cap_limits_only_them_and_the_default_everyone_else(
     meter: UsageMeter, api: TestClient, acme: Acme, app_sessions: SessionFactory
 ) -> None:

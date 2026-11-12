@@ -33,6 +33,7 @@ from workmind.modules.identity.models import Tenant
 from workmind.modules.knowledge.service import visible_collections
 from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError
+from workmind.modules.usage.budgets import BudgetExceededError
 from workmind.modules.usage.calls import attribute
 
 INSTRUCTIONS = """WorkMind answers questions from a company's documents, with citations, using \
@@ -165,16 +166,22 @@ def build_mcp_server(resources_of_app: Callable[[], Resources], version: str) ->
         async with tenant_transaction(resources.db, rc.tenant_id) as session:
             tenant = await session.get(Tenant, rc.tenant_id)
         llm = await resources.models.for_tenant(rc.tenant_id)
-        with attribute("chat", user_id=rc.user_id):  # a budget that is used up refuses it
-            result = await answer(
-                llm,
-                resources.retriever,
-                rc,
-                question,
-                organization=tenant.name if tenant else "the company",
-                policy=llm.max_external_sensitivity,
-                local_llm=llm.local,
-            )
+        try:
+            with attribute("chat", user_id=rc.user_id):
+                # A used-up budget refuses the question before any work, like POST /ask, and
+                # again before each model call (docs/usage.md).
+                await resources.usage.check(rc)
+                result = await answer(
+                    llm,
+                    resources.retriever,
+                    rc,
+                    question,
+                    organization=tenant.name if tenant else "the company",
+                    policy=llm.max_external_sensitivity,
+                    local_llm=llm.local,
+                )
+        except BudgetExceededError as exc:
+            raise McpToolError(exc.detail) from exc
         sources = [
             f"[{c.marker}] {c.title}"
             + (f" > {c.section}" if c.section else "")

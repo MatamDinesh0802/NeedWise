@@ -147,7 +147,7 @@ budget of the department their usage counts for. When a blocking one is used up:
 - The same test runs before **every model call**, so a chat answer that crosses the limit half
   way ends with its usual `run.failed` event carrying `code: "budget_exceeded"`, the same detail
   (as `message` and `detail`) and the `budget`. The partial answer is stored as failed.
-- The MCP `ask` tool returns a tool error with the same detail.
+- The MCP `ask` tool returns a tool error with the same detail, also before doing anything.
 - Meeting extraction fails the meeting with that detail as its error; a workflow run fails its
   research step and ends `failed` with it (the owner is notified as for any failed run). Neither
   answers 429: they run in the background.
@@ -251,9 +251,9 @@ costs, attribution, one event per call of each kind, partial usage of failed and
 refused calls), `tests/integration/test_usage_features.py` (one event per call for chat, agents
 mode, research, the test console, workflows and meetings, with person, department, agent and
 record; a chat run stopped half way by a budget), `test_usage_analytics.py` (Insights),
-`test_usage_budgets.py` (saving and validating budgets, 429 on every entry point, caps, period
-boundaries, warnings once, append-only, tenant isolation, the backfill, who sees what, the
-event list) and `test_usage_editions.py` (department budgets and the chargeback CSV with the real
+`test_usage_budgets.py` (saving and validating budgets, 429 on every entry point and the MCP
+`ask` tool error, caps, period boundaries, warnings once, append-only, tenant isolation, the
+backfill, who sees what, the event list) and `test_usage_editions.py` (department budgets and the chargeback CSV with the real
 `workmind-ee` loaded; nothing enforced once the license expires).
 
 Not measured: the time recording adds to a model call against a loaded database, and usage of a
