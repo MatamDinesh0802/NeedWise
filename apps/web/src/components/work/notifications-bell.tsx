@@ -16,6 +16,7 @@ import {
   badgeLabel,
   bellLabel,
   getNotificationsStore,
+  notificationHref,
   notificationTone,
   unreadCount,
   type NotificationTone,
@@ -125,8 +126,9 @@ function NotificationItem({ notification: n, onOpen }: { notification: Notificat
     </>
   );
   const className = cn("flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none", unread && "bg-sky-500/5");
-  return n.link?.startsWith("/") ? (
-    <Link href={n.link} className={className} onClick={onOpen}>
+  const href = notificationHref(n.link);
+  return href ? (
+    <Link href={href} className={className} onClick={onOpen}>
       {body}
     </Link>
   ) : (

@@ -33,6 +33,15 @@ export function notificationTone(kind: string): NotificationTone {
   return "info";
 }
 
+/**
+ * Where a notification opens ("meeting.ready" → /meetings/{id}, "task.assigned" → /tasks/{id}).
+ * Only paths in this app: "//host" and "/\host" would leave the site, so they get no link.
+ */
+export function notificationHref(link: string | null | undefined): `/${string}` | null {
+  if (!link || !/^\/(?![/\\])/.test(link)) return null;
+  return link as `/${string}`;
+}
+
 export interface NotificationsState {
   status: "idle" | "loading" | "ready" | "error";
   items: Notification[];

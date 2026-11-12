@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Notification } from "@/lib/work/api";
 
-import { badgeLabel, bellLabel, createNotificationsStore, notificationTone, unreadCount } from "./notifications";
+import { badgeLabel, bellLabel, createNotificationsStore, notificationHref, notificationTone, unreadCount } from "./notifications";
 
 const note = (id: string, read = false): Notification => ({
   id,
@@ -44,6 +44,15 @@ describe("badge", () => {
     expect(notificationTone("workflow.failed")).toBe("problem");
     expect(notificationTone("task.assigned")).toBe("task");
     expect(notificationTone("something.else")).toBe("info");
+  });
+
+  it("opens what it is about, and only pages of this app", () => {
+    expect(notificationHref("/meetings/0195a3c1-0000-7000-8000-000000000001")).toBe("/meetings/0195a3c1-0000-7000-8000-000000000001");
+    expect(notificationHref("/tasks/t1")).toBe("/tasks/t1");
+    expect(notificationHref("//evil.example/phish")).toBeNull();
+    expect(notificationHref("/\\evil.example")).toBeNull();
+    expect(notificationHref("https://evil.example")).toBeNull();
+    expect(notificationHref(null)).toBeNull();
   });
 });
 
