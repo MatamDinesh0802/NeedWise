@@ -97,6 +97,14 @@
   --viz-8: #e34948;
   --viz-grid: #e1e0d9;
   --viz-axis: #c3c2b7;
+  /*
+   * Status colours (budget meters): the dataviz skill's fixed status steps, the same in both
+   * modes and never used for a series. Warning is under 3:1 on white, so a status always comes
+   * with an icon and words, never colour alone.
+   */
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-critical: #d03b3b;
 }
 
 .dark {

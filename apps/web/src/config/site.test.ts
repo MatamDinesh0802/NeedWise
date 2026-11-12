@@ -39,11 +39,16 @@ describe("navigation config", () => {
     }
   });
 
-  it("has working sections up to Phase 10 (Insights); later phases are placeholders", () => {
+  it("has working sections up to Phase 11 (Usage); later phases are placeholders", () => {
     const placeholder = (href: string) => readFileSync(`${appDir}${href}/page.tsx`, "utf8").includes("<PagePlaceholder");
     for (const item of navItems.filter((i) => i.href !== "/")) {
-      expect(placeholder(item.href), item.href).toBe(item.phase > 10);
+      expect(placeholder(item.href), item.href).toBe(item.phase > 11);
     }
+  });
+
+  it("no longer promises usage summaries for a later phase", () => {
+    expect(findNavItem("/")?.description).not.toContain("Phase 11");
+    expect(findNavItem("/analytics")?.title).toBe("Usage");
   });
 
   it("puts Admin under administration and Settings under account", () => {
