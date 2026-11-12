@@ -444,6 +444,13 @@ def routing_by_agent(records: Sequence[RoutingRecord]) -> dict[str, dict[str, in
     return out
 
 
+def meeting_sources(item: MeetingItem, folder: Path, *, audio: bool) -> list[str]:
+    """What a meeting is extracted from: its transcript, and with `audio` its recording too,
+    when the meeting has one (mt-02 is a transcript only: no recording to transcribe)."""
+    recording = (folder / item.file).with_suffix(".m4a")
+    return ["transcript", "audio"] if audio and recording.is_file() else ["transcript"]
+
+
 class Evaluator:
     def __init__(
         self,
@@ -482,8 +489,7 @@ class Evaluator:
             directory = await load_directory(session)
         records: list[MeetingRecord] = []
         for item in items:
-            sources = ["transcript", "audio"] if audio else ["transcript"]
-            for source in sources:
+            for source in meeting_sources(item, folder, audio=audio):
                 records.append(await self._meeting(item, folder, source, directory, tenant.name))
         return records
 

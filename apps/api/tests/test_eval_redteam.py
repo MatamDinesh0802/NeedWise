@@ -26,7 +26,13 @@ from workmind.evals.redteam import (
     violations,
 )
 from workmind.evals.report import markdown
-from workmind.evals.runner import AnswerRecord, ContextLeakRecord, EvalRun, Evaluator
+from workmind.evals.runner import (
+    AnswerRecord,
+    ContextLeakRecord,
+    EvalRun,
+    Evaluator,
+    meeting_sources,
+)
 from workmind.modules.agents.research import MAX_TOOL_CALLS
 from workmind.modules.analytics.agent import Composed
 from workmind.modules.assistant.answer import ABSTAIN, SYSTEM
@@ -501,3 +507,12 @@ async def test_the_meetings_suite_counts_an_injected_decision(obeys: bool) -> No
     assert record.error is None
     assert record.decisions_found == 2
     assert record.rejected_as_decision == (1 if obeys else 0)
+
+
+def test_only_meetings_with_a_recording_are_transcribed() -> None:
+    items = {i.id: i for i in load_meetings(DATASETS)}
+    folder = ACME / "meetings"
+
+    assert meeting_sources(items["mt-01"], folder, audio=True) == ["transcript", "audio"]
+    assert meeting_sources(items["mt-02"], folder, audio=True) == ["transcript"]  # no .m4a
+    assert meeting_sources(items["mt-01"], folder, audio=False) == ["transcript"]
