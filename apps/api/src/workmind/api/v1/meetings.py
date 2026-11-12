@@ -21,9 +21,11 @@ from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import User
 from workmind.modules.knowledge.models import Collection
+from workmind.modules.knowledge.pipeline import delete_document_points
 from workmind.modules.knowledge.service import collection_access, visible_collections
 from workmind.modules.knowledge.storage import object_key
 from workmind.modules.meetings import transcripts
+from workmind.modules.meetings.deletion import delete_meeting
 from workmind.modules.meetings.models import Meeting, held_on
 from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
 from workmind.modules.work.links import task_link
@@ -273,6 +275,31 @@ async def get_meeting(ctx: AskContext, request: Request, meeting_id: uuid.UUID) 
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         meeting, can_edit = await _meeting(session, ctx, meeting_id)
     return _out(meeting, can_edit)
+
+
+@router.delete("/meetings/{meeting_id}", status_code=204)
+async def remove_meeting(ctx: AskContext, request: Request, meeting_id: uuid.UUID) -> Response:
+    """Deletes the meeting, its recording or transcript file, and its indexed transcript (search
+    included). For the person who uploaded it and the collection's editors. Tasks made from its
+    action items stay with their assignees, without the link."""
+    resources = resources_of(request)
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        meeting, can_edit = await _meeting(session, ctx, meeting_id)
+        if not can_edit:
+            raise ApiError(
+                403,
+                "forbidden",
+                "Only the person who uploaded it or the collection's editors can delete it",
+            )
+        await session.refresh(meeting, with_for_update=True)  # processing may still be running
+        deleted = await delete_meeting(session, ctx, meeting)
+    if deleted.document_id is not None:
+        await delete_document_points(
+            resources.qdrant, resources.collection_name, ctx.tenant_id, deleted.document_id
+        )
+    for key in deleted.storage_keys:
+        await resources.storage.delete(key)
+    return Response(status_code=204)
 
 
 @router.get("/meetings/{meeting_id}/media")

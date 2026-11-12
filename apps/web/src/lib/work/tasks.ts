@@ -112,7 +112,12 @@ export interface TaskOrigin {
 
 /** Where a task came from (`origin.via`); null for tasks people created here. */
 export function taskOrigin(task: Pick<Task, "origin">): TaskOrigin | null {
-  const { via, meeting_id: meetingId } = task.origin;
+  const { via, meeting_id: meetingId, meeting_deleted: deleted, meeting_title: title } = task.origin;
+  if (via === "meeting" && deleted === true) {
+    // The meeting was deleted; the task stays, naming it without a link.
+    const label = typeof title === "string" && title ? `From “${title}” (deleted meeting)` : "From a deleted meeting";
+    return { kind: "meeting", label, href: null };
+  }
   if (via === "meeting") {
     return { kind: "meeting", label: "From a meeting", href: typeof meetingId === "string" ? `/meetings/${encodeURIComponent(meetingId)}` : null };
   }

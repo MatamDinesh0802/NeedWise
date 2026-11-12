@@ -12,13 +12,15 @@ import {
   PencilLine,
   Play,
   ScrollText,
+  Trash2,
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SignedInGate } from "@/components/auth/signed-in-gate";
+import { ConfirmDialog } from "@/components/data/confirm-dialog";
 import { Field, SimpleSelect } from "@/components/data/form";
 import { EmptyState, ErrorAlert, TableSkeleton } from "@/components/data/states";
 import { MeetingStatusBadge } from "@/components/meetings/meetings-view";
@@ -41,6 +43,8 @@ import {
   formatTimestamp,
   isProcessing,
   jumpTarget,
+  MEETING_DELETION_KEYS,
+  meetingDeletionText,
   meetingErrorMessage,
   meetingPeople,
   mergePeople,
@@ -111,7 +115,10 @@ function MeetingDetail({ id, me, startAt }: { id: string; me: Me; startAt: numbe
             <span className="font-mono text-xs leading-5 break-all">{m.filename}</span>
           </p>
         </div>
-        <MeetingStatusBadge status={m.status} />
+        <div className="flex items-center gap-2">
+          <MeetingStatusBadge status={m.status} />
+          {m.can_edit ? <DeleteMeeting meeting={m} /> : null}
+        </div>
       </header>
       {m.status === "ready" ? (
         <ReadyMeeting meeting={m} me={me} startAt={startAt} />
@@ -133,6 +140,35 @@ function MeetingDetail({ id, me, startAt }: { id: string; me: Me; startAt: numbe
       ) : (
         <Processing meeting={m} />
       )}
+    </>
+  );
+}
+
+/** The uploader and the collection's editors (`can_edit`) may delete a meeting. */
+function DeleteMeeting({ meeting }: { meeting: Meeting }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const tasks = meeting.action_items.filter((item) => item.task_id).length;
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+        <Trash2 data-icon="inline-start" />
+        Delete
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Delete “${meeting.title}”?`}
+        description={meetingDeletionText(tasks)}
+        confirmLabel="Delete meeting"
+        onConfirm={async () => {
+          await meetingsApi.remove(meeting.id);
+          // Not this meeting's own entry: it would refetch, and say "not found", before we leave.
+          await Promise.all(MEETING_DELETION_KEYS.map((key) => invalidateQueries(key)));
+          toast({ title: `“${meeting.title}” deleted` });
+          router.replace("/meetings");
+        }}
+      />
     </>
   );
 }
