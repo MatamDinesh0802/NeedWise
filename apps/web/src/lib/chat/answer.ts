@@ -105,12 +105,26 @@ export function answerFromMessage(
     withheld: message.withheld ?? 0,
     abstained: message.abstained,
     usage: message.usage ?? null,
-    error: message.status === "failed" ? { code: "failed", message: "This answer failed." } : null,
+    error: message.status === "failed" ? storedError(message) : null,
     message,
     trace,
     toolSteps: activity?.toolSteps ?? [],
     approvals: activity?.approvals ?? [],
   };
+}
+
+const FAILED = "This answer failed.";
+
+/**
+ * Why a stored answer failed, as its run said it: a used-up budget keeps its budget, so the
+ * thread shows which one and when it resets after the run ends or the page reloads. Answers
+ * stored before the API kept this get a generic line.
+ */
+function storedError(message: Message): RunError {
+  const stored = message.error;
+  if (!stored || typeof stored.code !== "string" || !stored.code) return { code: "failed", message: FAILED };
+  const text = typeof stored.message === "string" && stored.message ? stored.message : FAILED;
+  return { code: stored.code, message: text, budget: (stored.budget as RunError["budget"]) ?? null };
 }
 
 export const ABSTAIN_FALLBACK = "I couldn't find this in the sources available to you.";

@@ -28,7 +28,7 @@ export interface ThreadState {
 }
 
 export interface ThreadDeps {
-  api: Pick<typeof chatApi, "getConversation" | "createConversation" | "sendMessage" | "cancelRun">;
+  api: Pick<typeof chatApi, "getConversation" | "createConversation" | "sendMessage" | "cancelRun" | "deleteConversation">;
   createStream: (runId: string, onTerminal: () => void) => RunStream;
 }
 
@@ -172,8 +172,8 @@ export function createThreadController({
         return;
       }
       set({ sending: true, error: null });
+      let createdNew = false;
       try {
-        let createdNew = false;
         if (!conversationId) {
           conversationId = (await deps.api.createConversation()).id;
           createdNew = true;
@@ -185,6 +185,13 @@ export function createThreadController({
         if (createdNew) onConversationCreated?.(conversationId);
       } catch (error) {
         set({ sending: false });
+        if (createdNew && conversationId) {
+          // The question was refused (a used-up budget, a server error): the conversation made
+          // for it holds nothing, so it must not stay in History as an empty "New conversation".
+          const empty = conversationId;
+          conversationId = null;
+          void deps.api.deleteConversation(empty).catch(() => undefined);
+        }
         if (error instanceof ApiError && error.code === "run_in_progress") {
           onBusy?.();
           void refetch(); // pick up the run that is still going

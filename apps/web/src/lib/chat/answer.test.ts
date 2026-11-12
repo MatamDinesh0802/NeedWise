@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { budgetBlockFromRun } from "@/lib/usage/budget-error";
 import type { Approval } from "@/lib/work/api";
 
 import { answerFromMessage, approvalsByRunId, researchFromMessage } from "./answer";
@@ -83,6 +84,37 @@ describe("answerFromMessage", () => {
     const view = answerFromMessage(researched, "Email the weekly report");
     expect(view.toolSteps).toHaveLength(4);
     expect(view.approvals.map((a) => a.id)).toEqual(["ap1"]);
+  });
+
+  it("keeps why a stored answer failed: a used-up budget is still a budget after the run ends", () => {
+    const budget = {
+      id: "b1",
+      scope: "user",
+      subject: { id: "u-carol", name: "Carol Lindqvist" },
+      period: "day",
+      limit_usd: 0.01,
+      spent_usd: 0.012,
+      warn_at: 0.8,
+      status: "exceeded",
+      resets_at: "2026-11-13T00:00:00Z",
+    };
+    const detail = "Your daily cap of $0.01 is used up ($0.01 spent).";
+    const failed = message({
+      role: "assistant",
+      status: "failed",
+      error: { code: "budget_exceeded", message: detail, detail, budget },
+    });
+    const view = answerFromMessage(failed, "Hotel limit in Paris?");
+    expect(view.error).toEqual({ code: "budget_exceeded", message: detail, budget });
+    expect(budgetBlockFromRun(view.error)).toEqual({ detail, budget });
+
+    const older = answerFromMessage(message({ role: "assistant", status: "failed" }), "q");
+    expect(older.error).toEqual({ code: "failed", message: "This answer failed." });
+    const model = answerFromMessage(
+      message({ role: "assistant", status: "failed", error: { code: "model_unavailable", message: "The language model is unavailable." } }),
+      "q",
+    );
+    expect(model.error).toEqual({ code: "model_unavailable", message: "The language model is unavailable.", budget: null });
   });
 
   it("prefers this tab's memory of the live run when it has one", () => {

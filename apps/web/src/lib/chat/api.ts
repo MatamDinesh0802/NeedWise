@@ -76,10 +76,22 @@ export interface Message {
   /** Research answers only; [] otherwise (and missing from older API versions). */
   tool_steps?: StoredToolStep[];
   usage: Usage;
+  /**
+   * Why a failed answer failed, as its run.failed event said it: for a used-up budget, code
+   * "budget_exceeded" with the budget. Null otherwise (and missing from older API versions).
+   */
+  error?: StoredError | null;
   abstained: boolean;
   withheld: number;
   feedback: Rating | null;
   feedback_comment: string | null;
+}
+
+export interface StoredError {
+  code: string;
+  message?: string;
+  detail?: string;
+  budget?: unknown;
 }
 
 export interface ConversationDetail extends Conversation {

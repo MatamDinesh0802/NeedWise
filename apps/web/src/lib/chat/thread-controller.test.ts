@@ -60,6 +60,7 @@ function harness(api: Partial<ThreadDeps["api"]>) {
       createConversation: vi.fn(),
       sendMessage: vi.fn(),
       cancelRun: vi.fn(async () => undefined),
+      deleteConversation: vi.fn(async () => undefined),
       ...api,
     } as ThreadDeps["api"],
     createStream: (runId, onTerminal) =>
@@ -137,6 +138,27 @@ describe("thread controller", () => {
     expect(onConversationCreated).toHaveBeenCalledWith("new");
     expect(controller.getSnapshot()).toMatchObject({ pendingUser: { id: "u7" }, live: { runId: "r7" } });
     expect(sources[0].url).toBe("/api/v1/runs/r7/events");
+  });
+
+  it("removes the conversation it made when the first question is refused (a used-up budget)", async () => {
+    const refused = new ApiError({ status: 429, title: "Budget exceeded", code: "budget_exceeded" });
+    const createConversation = vi
+      .fn()
+      .mockResolvedValueOnce({ id: "empty-1", title: "", created_at: "", last_message_at: "" })
+      .mockResolvedValueOnce({ id: "empty-2", title: "", created_at: "", last_message_at: "" });
+    const sendMessage = vi.fn(async (_id: string) => Promise.reject(refused));
+    const deleteConversation = vi.fn(async () => undefined);
+    const { deps } = harness({ createConversation, sendMessage, deleteConversation });
+    const onConversationCreated = vi.fn();
+    const controller = createThreadController({ conversationId: null, deps, onConversationCreated });
+    controller.subscribe(() => {});
+
+    await expect(controller.send("Hotel limit?")).rejects.toBe(refused);
+    await expect(controller.send("Hotel limit?")).rejects.toBe(refused); // a second try: a new one, removed too
+
+    expect(deleteConversation.mock.calls).toEqual([["empty-1"], ["empty-2"]]);
+    expect(sendMessage.mock.calls.map((c) => c[0])).toEqual(["empty-1", "empty-2"]);
+    expect(onConversationCreated).not.toHaveBeenCalled();
   });
 
   it("reports 409 run_in_progress and picks up the running answer instead of failing", async () => {
