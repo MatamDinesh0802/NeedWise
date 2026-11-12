@@ -1,6 +1,7 @@
 """API errors as RFC 9457 problem details (application/problem+json)."""
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import Request
@@ -10,12 +11,22 @@ from fastapi.responses import JSONResponse, Response
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, code: str, title: str, detail: str | None = None) -> None:
+    def __init__(
+        self,
+        status: int,
+        code: str,
+        title: str,
+        detail: str | None = None,
+        *,
+        extra: Mapping[str, Any] | None = None,
+    ) -> None:
         super().__init__(title)
         self.status = status
         self.code = code
         self.title = title
         self.detail = detail
+        # More members of the problem document (e.g. "budget" for budget_exceeded).
+        self.extra: dict[str, Any] = dict(extra or {})
 
 
 def problem_response(error: ApiError) -> JSONResponse:
@@ -27,6 +38,8 @@ def problem_response(error: ApiError) -> JSONResponse:
     }
     if error.detail:
         content["detail"] = error.detail
+    for key, value in error.extra.items():
+        content.setdefault(key, value)
     return JSONResponse(
         status_code=error.status, content=content, media_type="application/problem+json"
     )

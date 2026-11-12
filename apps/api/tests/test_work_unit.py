@@ -12,7 +12,13 @@ from pydantic import ValidationError
 import workmind
 from workmind.modules.knowledge.models import Collection
 from workmind.modules.work.events import DocumentReady, listens_to
-from workmind.modules.work.links import approval_link, meeting_link, task_link, workflow_link
+from workmind.modules.work.links import (
+    approval_link,
+    meeting_link,
+    task_link,
+    usage_link,
+    workflow_link,
+)
 from workmind.modules.work.workflows import Definition, render
 
 WEB_APP = Path(__file__).resolve().parents[2] / "web" / "src" / "app"
@@ -87,6 +93,7 @@ def _page_exists(path: str) -> bool:
         meeting_link(ID),
         workflow_link("weekly-ops-report"),
         workflow_link("weekly-ops-report", ID),
+        usage_link(),
     ],
 )
 def test_every_notification_link_opens_a_page_that_exists(link: str) -> None:
@@ -102,7 +109,7 @@ def test_the_workflow_link_names_the_workflow_and_the_run() -> None:
 
 
 def test_notifications_take_their_links_from_the_links_module() -> None:
-    helpers = ("approval_link(", "task_link(", "meeting_link(", "workflow_link(")
+    helpers = ("approval_link(", "task_link(", "meeting_link(", "workflow_link(", "usage_link(")
     passthrough = {"link", "n.link"}  # notify() itself, and the notifications API
     offenders = [
         f"{file.name}: link={value}"

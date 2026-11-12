@@ -15,12 +15,20 @@ Celery workers) within `ttl_s`; the process that made it drops its cache at once
 
 A tenant key is decrypted when the tenant's configuration loads, kept in memory, given only to
 that provider's client, and scrubbed from any error the provider returns.
+
+Usage accounting happens here too, at the one place every model call passes (docs/usage.md):
+before a call, the meter checks the budgets that bind it (and may refuse it with
+BudgetExceededError); after it, finished, failed or cancelled, the meter records one usage event
+with what the provider reported, attributed from `workmind.modules.usage.calls`.
 """
 
+import asyncio
+import contextlib
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from typing import NoReturn
 
 import anthropic
 import httpx
@@ -44,6 +52,7 @@ from workmind.modules.model_catalog.policy import Sensitivity
 from workmind.modules.model_catalog.secrets import KeyRing
 from workmind.modules.model_catalog.store import load_config, read_stamp
 from workmind.modules.model_catalog.urls import UnsafeUrlError, check_base_url
+from workmind.modules.usage.calls import Attribution, CallMeter, ModelCall, current
 from workmind.providers.factory import create_llm, single_model_roles
 from workmind.providers.llm import (
     AnthropicLLM,
@@ -58,6 +67,7 @@ from workmind.providers.llm import (
     ToolExecutor,
     ToolLoopResult,
     ToolSpec,
+    UsageProbe,
     tenant_client,
 )
 
@@ -161,12 +171,41 @@ class Target:
     external: bool
     price: tuple[float, float] | None = None  # the tenant's catalog price
     secret: str | None = field(default=None, repr=False)  # scrubbed from provider errors
+    name: str = ""  # the model name the provider expects
+    provider: str = ""  # the provider's kind: "anthropic" or "openai_compatible"
 
     def stamp(self, usage: LLMUsage) -> LLMUsage:
         return replace(usage, catalog_model=self.model_id, price_per_mtok=self.price)
 
     def error(self, exc: LLMError) -> LLMError:
         return type(exc)(scrub(str(exc), self.secret))
+
+    def raise_from(self, exc: BaseException) -> NoReturn:
+        """Re-raises `exc`, with the tenant's key cut out of a provider error."""
+        if isinstance(exc, LLMError) and self.secret is not None:
+            raise self.error(exc) from None
+        raise exc
+
+
+@dataclass
+class _Call:
+    """One metered call in progress."""
+
+    target: Target
+    method: str
+    role: Role
+    request: LLMRequest  # with the probe the adapter reports usage to
+    probe: UsageProbe
+    attribution: Attribution | None  # read when the call started
+    started: float
+
+
+def _status(error: BaseException | None) -> str:
+    if error is None:
+        return "ok"
+    if isinstance(error, asyncio.CancelledError | GeneratorExit):
+        return "cancelled"
+    return "failed"
 
 
 class TenantLLM:
@@ -184,12 +223,16 @@ class TenantLLM:
         max_external_sensitivity: Sensitivity,
         local: "TenantLLM | None",
         override: Callable[[str], "TenantLLM | None"] | None = None,
+        tenant_id: uuid.UUID | None = None,
+        meter: CallMeter | None = None,
     ) -> None:
         self.targets = dict(targets)
         self.external = any(t.external for t in self.targets.values())
         self.max_external_sensitivity: Sensitivity = max_external_sensitivity
         self.local = local
+        self.tenant_id = tenant_id
         self._override = override
+        self._meter = meter
 
     def model_for(self, role: Role) -> str:
         """The catalog id of the model that serves `role`."""
@@ -206,37 +249,108 @@ class TenantLLM:
             return self
         return chosen
 
+    # --- Metering ------------------------------------------------------------------------------
+
+    async def _start(self, role: Role, method: str, request: LLMRequest) -> _Call:
+        """Reads the attribution and lets the meter refuse the call (BudgetExceededError) before
+        anything reaches a model."""
+        attribution = current()
+        if self._meter is not None and self.tenant_id is not None:
+            await self._meter.admit(self.tenant_id, attribution)
+        probe = UsageProbe()
+        return _Call(
+            self.targets[role],
+            method,
+            role,
+            replace(request, probe=probe),
+            probe,
+            attribution,
+            time.perf_counter(),
+        )
+
+    async def _end(
+        self,
+        call: _Call,
+        *,
+        usages: list[LLMUsage] | None = None,
+        error: BaseException | None = None,
+    ) -> None:
+        """One usage event for the call: what it returned, else what the provider reported
+        before it failed or was stopped."""
+        if self._meter is None or self.tenant_id is None:
+            return
+        target = call.target
+        seen = usages if usages is not None else [target.stamp(u) for u in call.probe.seen]
+        await self._meter.record(
+            self.tenant_id,
+            call.attribution,
+            ModelCall(
+                method=call.method,
+                role=call.role,
+                model_id=target.model_id,
+                model=next((u.model for u in reversed(seen) if u.model), target.name),
+                provider=target.provider,
+                local=not target.external,
+                status=_status(error),  # pyright: ignore[reportArgumentType]
+                latency_ms=round((time.perf_counter() - call.started) * 1000),
+                usages=seen,
+                price_per_mtok=target.price,
+            ),
+        )
+
+    # --- LLMProvider --------------------------------------------------------------------------
+
     async def complete(self, role: Role, request: LLMRequest) -> tuple[str, LLMUsage]:
-        target = self.targets[role]
+        call = await self._start(role, "complete", request)
+        target = call.target
         try:
-            text, usage = await target.client.complete(role, request)
-        except LLMError as exc:
-            if target.secret is None:
-                raise
-            raise target.error(exc) from None
-        return text, target.stamp(usage)
+            text, usage = await target.client.complete(role, call.request)
+        except BaseException as exc:
+            await self._end(call, error=exc)
+            target.raise_from(exc)
+        usage = target.stamp(usage)
+        await self._end(call, usages=[usage])
+        return text, usage
 
     async def stream(self, role: Role, request: LLMRequest) -> AsyncIterator[StreamEvent]:
-        target = self.targets[role]
+        """Recorded when the stream ends: finished, failed, or stopped by the consumer (then
+        with what the provider had reported so far)."""
+        call = await self._start(role, "stream", request)
+        target = call.target
+        inner = target.client.stream(role, call.request)
+        final: LLMUsage | None = None
         try:
-            async for event in target.client.stream(role, request):
-                yield Done(target.stamp(event.usage)) if isinstance(event, Done) else event
-        except LLMError as exc:
-            if target.secret is None:
-                raise
-            raise target.error(exc) from None
+            async for event in inner:
+                if isinstance(event, Done):
+                    final = target.stamp(event.usage)
+                    yield Done(final)
+                else:
+                    yield event
+        except BaseException as exc:
+            close = getattr(inner, "aclose", None)
+            if close is not None and final is None:
+                with contextlib.suppress(Exception):  # already failing: closing is best effort
+                    await close()
+            if final is not None:  # the consumer stopped after the last event: it finished
+                await self._end(call, usages=[final])
+            else:
+                await self._end(call, error=exc)
+            target.raise_from(exc)
+        await self._end(call, usages=[final] if final is not None else None)
 
     async def structured[T: BaseModel](
         self, role: Role, request: LLMRequest, schema: type[T]
     ) -> tuple[T, LLMUsage]:
-        target = self.targets[role]
+        call = await self._start(role, "structured", request)
+        target = call.target
         try:
-            value, usage = await target.client.structured(role, request, schema)
-        except LLMError as exc:
-            if target.secret is None:
-                raise
-            raise target.error(exc) from None
-        return value, target.stamp(usage)
+            value, usage = await target.client.structured(role, call.request, schema)
+        except BaseException as exc:  # a reply that fails validation was still billed
+            await self._end(call, error=exc)
+            target.raise_from(exc)
+        usage = target.stamp(usage)
+        await self._end(call, usages=[usage])
+        return value, usage
 
     async def run_tools(
         self,
@@ -247,16 +361,18 @@ class TenantLLM:
         *,
         max_steps: int = 6,
     ) -> ToolLoopResult:
-        target = self.targets[role]
+        """One event for the whole loop, with the usage of every model turn."""
+        call = await self._start(role, "run_tools", request)
+        target = call.target
         try:
             result = await target.client.run_tools(
-                role, request, tools, execute, max_steps=max_steps
+                role, call.request, tools, execute, max_steps=max_steps
             )
-        except LLMError as exc:
-            if target.secret is None:
-                raise
-            raise target.error(exc) from None
+        except BaseException as exc:
+            await self._end(call, error=exc)
+            target.raise_from(exc)
         result.usage = [target.stamp(u) for u in result.usage]
+        await self._end(call, usages=result.usage)
         return result
 
 
@@ -303,6 +419,8 @@ class LLMResolver:
         self._catalog: SystemCatalog = system_catalog(settings)
         # Builds tenant providers' clients and the deployment's other models (assignable).
         self.build = build or tenant_llm_factory(http, fallbacks=settings.llm_fallbacks)
+        # Usage accounting and budgets for every call (docs/usage.md). None: not metered.
+        self.meter: CallMeter | None = None
         self.build_system: Callable[[str], LLMProvider] = build_system or (
             lambda name: create_llm(settings, http, model=name)
         )
@@ -322,7 +440,7 @@ class LLMResolver:
 
     async def for_tenant(self, tenant_id: uuid.UUID) -> TenantLLM:
         entry = await self._entry(tenant_id)
-        return self._view(Catalog(self._catalog, entry.config), entry)
+        return self._view(tenant_id, Catalog(self._catalog, entry.config), entry)
 
     # --- Loading ------------------------------------------------------------------------------
 
@@ -348,7 +466,14 @@ class LLMResolver:
 
     # --- Resolution ---------------------------------------------------------------------------
 
-    def _view(self, catalog: Catalog, entry: _Entry, *, model_id: str | None = None) -> TenantLLM:
+    def _view(
+        self,
+        tenant_id: uuid.UUID,
+        catalog: Catalog,
+        entry: _Entry,
+        *,
+        model_id: str | None = None,
+    ) -> TenantLLM:
         roles = catalog.roles
         targets: dict[Role, Target] = {
             role: self._target(catalog, entry, model_id or roles[role], role) for role in roles
@@ -366,18 +491,22 @@ class LLMResolver:
                     local_targets,
                     max_external_sensitivity=catalog.max_external_sensitivity,
                     local=None,
+                    tenant_id=tenant_id,
+                    meter=self.meter,
                 )
 
         def override(chosen: str) -> TenantLLM | None:
             if not catalog.usable(chosen):
                 return None
-            return self._view(catalog, entry, model_id=chosen)
+            return self._view(tenant_id, catalog, entry, model_id=chosen)
 
         return TenantLLM(
             targets,
             max_external_sensitivity=catalog.max_external_sensitivity,
             local=local,
             override=override,
+            tenant_id=tenant_id,
+            meter=self.meter,
         )
 
     def _default_local_id(self) -> str | None:
@@ -389,12 +518,26 @@ class LLMResolver:
     def _target(self, catalog: Catalog, entry: _Entry, model_id: str, role: Role) -> Target:
         model = catalog.model(model_id)
         provider_id = model.provider_id if model else model_id.split(":", 1)[0]
+        unlisted = model_id.split(":", 1)[-1]
         if provider_id == SYSTEM_LOCAL:
             client = self.system_local or BrokenLLM("No local model is configured.")
-            return Target(model_id, client, client.external)
+            return Target(
+                model_id,
+                client,
+                client.external,
+                name=model.name if model else unlisted,
+                provider="openai_compatible",
+            )
+        system_kind = self.settings.llm_provider
         if provider_id == SYSTEM:
             if model is None:  # not reachable through Catalog.roles
-                return Target(model_id, BrokenLLM("This model is not in the catalog."), True)
+                return Target(
+                    model_id,
+                    BrokenLLM("This model is not in the catalog."),
+                    True,
+                    name=unlisted,
+                    provider=system_kind,
+                )
             name = model.name
             if name == self._catalog.role_models[role]:
                 client = self.system  # exactly what the deployment does for this role
@@ -402,10 +545,16 @@ class LLMResolver:
                 if name not in self._system_clients:
                     self._system_clients[name] = self.build_system(name)
                 client = self._system_clients[name]
-            return Target(model_id, client, client.external)
+            return Target(model_id, client, client.external, name=name, provider=system_kind)
         provider = catalog.provider(provider_id)
         if model is None or provider is None:  # not reachable through Catalog.roles
-            return Target(model_id, BrokenLLM("This model is not in the catalog."), True)
+            return Target(
+                model_id,
+                BrokenLLM("This model is not in the catalog."),
+                True,
+                name=unlisted,
+                provider=provider.kind if provider else "",
+            )
         if model_id not in entry.clients:
             if provider.id in entry.config.key_errors:
                 entry.clients[model_id] = BrokenLLM(
@@ -423,4 +572,6 @@ class LLMResolver:
             provider.external or client.external,
             price=model.price,
             secret=entry.config.keys.get(provider.id),
+            name=model.name,
+            provider=provider.kind,
         )

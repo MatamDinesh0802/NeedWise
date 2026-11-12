@@ -44,17 +44,6 @@ class LLMMessage:
     content: str
 
 
-@dataclass(frozen=True)
-class LLMRequest:
-    system: str
-    messages: list[LLMMessage]
-    max_tokens: int = 16000
-    effort: Effort | None = None  # None: the role's configured effort
-    # None: the role's configured model. Set by PinnedModel (an agent configured with its own
-    # model, docs/agents.md): the same provider, a different model for this one request.
-    model: str | None = None
-
-
 @dataclass
 class LLMUsage:
     model: str = ""
@@ -66,6 +55,47 @@ class LLMUsage:
     # served the call, and the tenant's price for it (USD per million input, output tokens).
     catalog_model: str = ""
     price_per_mtok: tuple[float, float] | None = None
+
+
+@dataclass
+class UsageProbe:
+    """What one call has used so far, filled in by the adapter as the provider reports it, so
+    a call that fails or is cancelled part-way is still accounted for (docs/usage.md).
+
+    `responses` holds every finished model response of the call (a tool loop has several),
+    `partial` the response being streamed until it finishes. The tenant resolver hands one to
+    each call; adapters that are given none report nothing."""
+
+    responses: list[LLMUsage] = field(default_factory=list[LLMUsage])
+    partial: LLMUsage | None = None
+
+    def add(self, usage: LLMUsage) -> None:
+        self.responses.append(usage)
+        self.partial = None
+
+    @property
+    def seen(self) -> list[LLMUsage]:
+        return [*self.responses, *([self.partial] if self.partial is not None else [])]
+
+
+@dataclass(frozen=True)
+class LLMRequest:
+    system: str
+    messages: list[LLMMessage]
+    max_tokens: int = 16000
+    effort: Effort | None = None  # None: the role's configured effort
+    # None: the role's configured model. Set by PinnedModel (an agent configured with its own
+    # model, docs/agents.md): the same provider, a different model for this one request.
+    model: str | None = None
+    # Set by the tenant resolver: the adapter reports usage here as soon as it knows it.
+    probe: UsageProbe | None = field(default=None, compare=False, repr=False)
+
+
+def report(request: LLMRequest, usage: LLMUsage) -> LLMUsage:
+    """Records a finished response's usage on the request's probe, if it has one."""
+    if request.probe is not None:
+        request.probe.add(usage)
+    return usage
 
 
 @dataclass(frozen=True)
@@ -173,9 +203,7 @@ class AnthropicLLM:
         return params
 
     @staticmethod
-    def _usage(message: BetaMessage) -> LLMUsage:
-        if message.stop_reason == "refusal":
-            raise LLMRefusalError("the model declined this request")
+    def _read_usage(message: BetaMessage) -> LLMUsage:
         usage = message.usage
         return LLMUsage(
             model=message.model,
@@ -185,6 +213,15 @@ class AnthropicLLM:
             stop_reason=message.stop_reason or "",
         )
 
+    @classmethod
+    def _usage(cls, message: BetaMessage, request: LLMRequest) -> LLMUsage:
+        """The response's usage, reported to the request's probe first: a refusal is billed
+        too."""
+        usage = report(request, cls._read_usage(message))
+        if message.stop_reason == "refusal":
+            raise LLMRefusalError("the model declined this request")
+        return usage
+
     async def complete(self, role: Role, request: LLMRequest) -> tuple[str, LLMUsage]:
         try:
             message: BetaMessage = await self._client.beta.messages.create(
@@ -192,19 +229,23 @@ class AnthropicLLM:
             )
         except anthropic.APIError as exc:
             raise LLMError(f"Claude API error: {exc}") from exc
-        usage = self._usage(message)
+        usage = self._usage(message, request)
         return "".join(b.text for b in message.content if b.type == "text"), usage
 
     async def stream(self, role: Role, request: LLMRequest) -> AsyncIterator[StreamEvent]:
+        probe = request.probe
         try:
             async with self._client.beta.messages.stream(**self._params(role, request)) as stream:
                 async for event in stream:
                     if event.type == "content_block_delta" and event.delta.type == "text_delta":
                         yield TextDelta(event.delta.text)
+                    elif probe is not None and event.type in ("message_start", "message_delta"):
+                        # What is used so far, should the stream break or be stopped.
+                        probe.partial = self._read_usage(stream.current_message_snapshot)
                 final: BetaMessage = await stream.get_final_message()
         except anthropic.APIError as exc:
             raise LLMError(f"Claude API error: {exc}") from exc
-        yield Done(self._usage(final))
+        yield Done(self._usage(final, request))
 
     async def structured[T: BaseModel](
         self, role: Role, request: LLMRequest, schema: type[T]
@@ -218,7 +259,7 @@ class AnthropicLLM:
             message: BetaMessage = await self._client.beta.messages.create(**params)
         except anthropic.APIError as exc:
             raise LLMError(f"Claude API error: {exc}") from exc
-        usage = self._usage(message)
+        usage = self._usage(message, request)
         text = next((b.text for b in message.content if b.type == "text"), "")
         return schema.model_validate_json(text), usage
 
@@ -248,7 +289,7 @@ class AnthropicLLM:
                 message: BetaMessage = await self._client.beta.messages.create(**params)
             except anthropic.APIError as exc:
                 raise LLMError(f"Claude API error: {exc}") from exc
-            result.usage.append(self._usage(message))
+            result.usage.append(self._usage(message, request))
             text = "".join(b.text for b in message.content if b.type == "text")
             if message.stop_reason == "pause_turn":
                 messages.append({"role": "assistant", "content": message.content})
@@ -363,7 +404,7 @@ class OpenAICompatibleLLM:
         result = ToolLoopResult(text="")
         for _ in range(max_steps):
             reply = await self._post({**body, "messages": messages})
-            result.usage.append(self._usage(reply))
+            result.usage.append(report(request, self._usage(reply)))
             message = reply["choices"][0]["message"]
             calls = message.get("tool_calls") or []
             result.text = message.get("content") or ""
@@ -404,7 +445,8 @@ class OpenAICompatibleLLM:
 
     async def complete(self, role: Role, request: LLMRequest) -> tuple[str, LLMUsage]:
         body = await self._post(self._body(role, request))
-        return body["choices"][0]["message"]["content"] or "", self._usage(body)
+        usage = report(request, self._usage(body))
+        return body["choices"][0]["message"]["content"] or "", usage
 
     async def stream(self, role: Role, request: LLMRequest) -> AsyncIterator[StreamEvent]:
         usage = LLMUsage(model=request.model or self._roles[role].model)
@@ -426,12 +468,14 @@ class OpenAICompatibleLLM:
                     chunk = json.loads(line[6:])
                     if chunk.get("usage"):
                         usage = self._usage(chunk)
+                        if request.probe is not None:
+                            request.probe.partial = usage
                     for choice in chunk.get("choices", []):
                         if text := (choice.get("delta") or {}).get("content"):
                             yield TextDelta(text)
         except httpx.HTTPError as exc:
             raise LLMError(f"model server unreachable at {self._url}: {exc!r}") from exc
-        yield Done(usage)
+        yield Done(report(request, usage))
 
     async def structured[T: BaseModel](
         self, role: Role, request: LLMRequest, schema: type[T]
@@ -450,9 +494,8 @@ class OpenAICompatibleLLM:
                 },
             )
         )
-        return schema.model_validate_json(body["choices"][0]["message"]["content"]), self._usage(
-            body
-        )
+        usage = report(request, self._usage(body))  # before validating: a bad reply is billed
+        return schema.model_validate_json(body["choices"][0]["message"]["content"]), usage
 
 
 class PinnedModel:

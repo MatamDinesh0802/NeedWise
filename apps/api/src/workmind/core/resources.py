@@ -33,6 +33,7 @@ from workmind.modules.retrieval.service import Retriever
 from workmind.modules.tools.builtin import draft_email_tool, search_knowledge_tool, web_search_tool
 from workmind.modules.tools.mcp_client import RemoteServer, RemoteServerConfig, import_tools
 from workmind.modules.tools.registry import ToolRegistry
+from workmind.modules.usage.meter import UsageMeter
 from workmind.modules.work.tools import create_task_tool, send_email_tool
 from workmind.modules.work.workflows import WorkflowDeps, start_queued
 from workmind.providers.email import SmtpMailer
@@ -77,6 +78,8 @@ class Resources:
     # Community or Enterprise (ADR 0011); `edition.has(feature)` gates Enterprise features.
     edition: Edition
     extensions: ExtensionRegistry
+    # Usage events and budgets for every model call (docs/usage.md); also on `models.meter`.
+    usage: UsageMeter
 
     @property
     def llm(self) -> LLMProvider:
@@ -157,6 +160,16 @@ class Resources:
         tools.register(create_task_tool(db))
         if settings.searxng_url:
             tools.register(web_search_tool(http, settings.searxng_url))
+        usage = UsageMeter(db, valkey, extensions)
+        models = LLMResolver(
+            db,
+            settings,
+            http,
+            KeyRing.from_settings(settings),
+            system=create_llm(settings, http),
+            system_local=create_local_llm(settings, http),
+        )
+        models.meter = usage
         resources = cls(
             engine=engine,
             db=db,
@@ -178,14 +191,7 @@ class Resources:
             storage=storage,
             qdrant=qdrant,
             embeddings=embeddings,
-            models=LLMResolver(
-                db,
-                settings,
-                http,
-                KeyRing.from_settings(settings),
-                system=create_llm(settings, http),
-                system_local=create_local_llm(settings, http),
-            ),
+            models=models,
             ingestion=InlineDispatcher(deps)
             if settings.ingestion_mode == "inline"
             else CeleryDispatcher(),
@@ -208,6 +214,7 @@ class Resources:
             analytics=analytics,
             edition=extensions.edition,
             extensions=extensions,
+            usage=usage,
         )
         if isinstance(resources.ingestion, InlineDispatcher):
             resources.ingestion.start_runs = resources.start_workflow_runs
@@ -215,7 +222,7 @@ class Resources:
 
     async def start_workflow_runs(self, tenant_id: uuid.UUID, run_ids: Sequence[uuid.UUID]) -> None:
         """Starts runs an event queued, in the background (with the model and tools of now)."""
-        deps = WorkflowDeps(self.db, self.llm, self.tools)
+        deps = WorkflowDeps(self.db, self.llm, self.tools, self.models)
 
         async def start() -> None:
             for run_id in run_ids:
