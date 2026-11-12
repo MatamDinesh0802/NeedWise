@@ -28,7 +28,16 @@ def _in(column: str, values: tuple[str, ...]) -> str:
 
 
 TASK_STATUSES = ("open", "in_progress", "done", "cancelled")
-APPROVAL_STATUSES = ("pending", "approved", "rejected", "expired", "executed", "failed")
+# superseded: one of several approvers asked for the same request decided it first.
+APPROVAL_STATUSES = (
+    "pending",
+    "approved",
+    "rejected",
+    "expired",
+    "executed",
+    "failed",
+    "superseded",
+)
 RUN_STATUSES = ("running", "waiting_approval", "succeeded", "failed", "cancelled")
 
 

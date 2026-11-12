@@ -53,6 +53,10 @@ class Collection(Base, TenantScoped, Timestamps):
         CheckConstraint(_in("scope", SCOPES), name="scope"),
         CheckConstraint(_in("default_trust", TRUST_LEVELS), name="default_trust"),
         CheckConstraint(_in("default_sensitivity", SENSITIVITIES), name="default_sensitivity"),
+        CheckConstraint(
+            "review_interval_days IS NULL OR review_interval_days BETWEEN 1 AND 3650",
+            name="review_interval_days",
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_primary_key()
@@ -64,6 +68,8 @@ class Collection(Base, TenantScoped, Timestamps):
     owner_id: Mapped[uuid.UUID | None]
     default_trust: Mapped[str] = mapped_column(String(16), server_default="reference")
     default_sensitivity: Mapped[str] = mapped_column(String(16), server_default="internal")
+    # Documents are due for review this many days after their last review (None: never).
+    review_interval_days: Mapped[int | None] = mapped_column(Integer)
 
 
 class CollectionGrant(Base, TenantScoped):
@@ -118,6 +124,23 @@ class Document(Base, TenantScoped, Timestamps):
             ["sources.tenant_id", "sources.id"],
             ondelete="SET NULL (source_id)",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "owner_id"],
+            ["users.tenant_id", "users.id"],
+            ondelete="SET NULL (owner_id)",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "reviewed_by"],
+            ["users.tenant_id", "users.id"],
+            ondelete="SET NULL (reviewed_by)",
+        ),
+        # The daily review reminder looks up documents whose review date has passed.
+        Index(
+            "ix_documents_next_review",
+            "tenant_id",
+            "next_review_at",
+            postgresql_where=text("next_review_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_primary_key()
@@ -140,6 +163,13 @@ class Document(Base, TenantScoped, Timestamps):
     current_version_id: Mapped[uuid.UUID | None]
     created_by: Mapped[uuid.UUID | None]
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Governance (docs/governance.md): who answers for the content, and its review cycle.
+    owner_id: Mapped[uuid.UUID | None]
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[uuid.UUID | None]
+    next_review_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The open reminder task of the current review cycle; cleared when the document is reviewed.
+    review_task_id: Mapped[uuid.UUID | None]
 
 
 class DocumentVersion(Base, TenantScoped):
