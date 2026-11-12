@@ -65,8 +65,11 @@ function AuditExplorer() {
   const router = useRouter();
   const pathname = usePathname();
   const colleagues = useColleagues();
-  const [applied, setApplied] = useState<AuditFilterState>(() => filtersFromSearch(params));
-  const search = filtersToSearch(applied);
+  // The URL is the only source of the filters. Next keeps visited routes mounted
+  // (cacheComponents), so state copied from the URL once would go stale when a link (the
+  // Governance overview's "audit log") or the tab comes back here with another query.
+  const search = filtersToSearch(filtersFromSearch(params));
+  const applied = useMemo(() => filtersFromSearch(new URLSearchParams(search)), [search]);
   // An actor from the URL has only an id; the directory names them once it has loaded.
   const shown = useMemo<AuditFilterState>(() => {
     const known = applied.actor ? colleagues.byId.get(applied.actor.id) : undefined;
@@ -83,7 +86,6 @@ function AuditExplorer() {
   }, [search]);
 
   function apply(next: AuditFilterState) {
-    setApplied(next);
     const query = filtersToSearch(next);
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }

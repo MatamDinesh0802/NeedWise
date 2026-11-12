@@ -120,7 +120,7 @@ export function GovernanceOverviewView({ overview, now, footer }: { overview: Go
             <TableBody>
               {overview.without_owner.map((doc) => (
                 <TableRow key={doc.id}>
-                  <TableCell className="max-w-80">
+                  <TableCell className="max-w-80 whitespace-normal">
                     <DocumentCell doc={doc} collection={collections.get(doc.collection_id)} />
                   </TableCell>
                   <TableCell>{collections.get(doc.collection_id)?.name ?? "—"}</TableCell>
@@ -273,7 +273,7 @@ function ReviewTable({
           const left = doc.next_review_at ? daysUntil(doc.next_review_at, now) : null;
           return (
             <TableRow key={doc.id}>
-              <TableCell className="max-w-80">
+              <TableCell className="max-w-80 whitespace-normal">
                 <span className="flex flex-wrap items-center gap-2">
                   <DocumentCell doc={doc} collection={collections.get(doc.collection_id)} />
                   {doc.trust === "official" ? <TrustBadge trust="official" /> : null}

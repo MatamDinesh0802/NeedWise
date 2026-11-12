@@ -77,7 +77,7 @@ export function ViewToggle({ view, onChange }: { view: "chart" | "table"; onChan
           aria-pressed={view === value}
           onClick={() => onChange(value)}
           className={cn(
-            "inline-flex h-6 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors",
+            "inline-flex h-6 items-center gap-1 rounded-md px-2 text-xs font-medium text-foreground/75 transition-colors",
             "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
             view === value && "bg-background text-foreground shadow-sm",
           )}
