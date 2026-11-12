@@ -4,10 +4,10 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check backup restore upgrade-test helm-check
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e e2e-browser seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check backup restore upgrade-test helm-check
 
 help: ## List available commands
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 quickstart: ## First run on any OS: embeddings in Docker, the full stack, the Acme demo data
 	@test -f .env || cp .env.example .env
@@ -86,6 +86,12 @@ e2e: ## End-to-end tests against the running, seeded stack (`make up seed` first
 
 helm-check: ## Lint, render and validate the Helm chart (needs helm and kubeconform on PATH)
 	PYTHON="uv run --no-project --with pyyaml==6.0.2 python" deploy/helm/validate.sh
+
+# Browser suite (e2e/browser/README.md). E2E_MODEL=1 adds the @model tests (they call the model).
+E2E_BASE_URL ?= http://localhost:$(HTTP_PORT)
+e2e-browser: ## Browser end-to-end tests (Playwright, Chromium) against the running, seeded stack
+	cd e2e/browser && pnpm install --frozen-lockfile && pnpm exec playwright install chromium
+	cd e2e/browser && E2E_BASE_URL=$(E2E_BASE_URL) pnpm exec playwright test
 
 # Local embeddings: EmbeddingGemma-300M on llama.cpp (Apple GPU via Metal). 4 slots x 2048 tokens.
 EMBED_GGUF ?= $(firstword $(wildcard $(HOME)/.cache/huggingface/hub/models--ggml-org--embeddinggemma-300M-GGUF/snapshots/*/embeddinggemma-300M-Q8_0.gguf))

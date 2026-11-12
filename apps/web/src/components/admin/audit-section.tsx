@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ColleaguePicker } from "@/components/work/colleague-picker";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { useColleagues } from "@/hooks/use-people";
 import { useStore } from "@/hooks/use-store";
 import { adminApi, type AuditEvent, type ChainResult } from "@/lib/admin/api";
@@ -202,6 +203,10 @@ export function AuditFilterForm({ initial, onApply }: { initial: AuditFilterStat
 
 export function ExportCard({ filters }: { filters: AuditFilterState }) {
   const filtered = activeFilterCount(filters) > 0;
+  // A date filter means midnight in the browser's time zone, which the server can't know: with
+  // one, the link gets its address once the page runs in the browser.
+  const hydrated = useHydrated();
+  const href = hydrated || !(filters.from || filters.to) ? adminApi.auditCsvUrl(auditQuery(filters)) : undefined;
   return (
     <Card size="sm">
       <CardHeader>
@@ -212,7 +217,7 @@ export function ExportCard({ filters }: { filters: AuditFilterState }) {
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-2">
         <div className="flex flex-col items-start gap-2">
-          <a href={adminApi.auditCsvUrl(auditQuery(filters))} download className={buttonVariants({ variant: "outline", size: "sm" })}>
+          <a href={href} download className={buttonVariants({ variant: "outline", size: "sm" })}>
             <Download data-icon="inline-start" aria-hidden="true" />
             {filtered ? "Download this view as CSV" : "Download as CSV"}
           </a>

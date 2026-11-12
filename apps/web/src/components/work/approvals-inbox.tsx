@@ -45,7 +45,8 @@ function Inbox({ me }: { me: Me }) {
   return (
     <Tabs defaultValue="waiting" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <TabsList>
+        {/* Three tabs are wider than a 375 px phone: they scroll inside their row, not the page. */}
+        <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="waiting">
             Waiting for you
             {waiting.length > 0 ? (

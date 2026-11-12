@@ -1,8 +1,9 @@
 "use client";
 
 import { FlaskConical, LoaderCircle, Route, Search, Wrench } from "lucide-react";
-import { useState } from "react";
+import { useId, useMemo, useState } from "react";
 
+import { AnswerMarkdown, type ChipInfo } from "@/components/chat/answer-markdown";
 import { Field } from "@/components/data/form";
 import { ErrorAlert } from "@/components/data/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -18,6 +19,7 @@ import {
   stepLabel,
   testRequest,
   type AgentForm,
+  type AgentTestCitation,
   type AgentTestResult,
 } from "@/lib/admin/agents";
 
@@ -112,8 +114,21 @@ export function AgentTestConsole({
   );
 }
 
+/** Citation markers for the answer's chips: every citation the agent returned was cited. */
+export function citationChips(citations: readonly AgentTestCitation[]): Map<string, ChipInfo> {
+  return new Map(citations.map((c) => [c.marker, { title: c.title, cited: true }]));
+}
+
 export function TestResultView({ result, question }: { result: AgentTestResult; question: string }) {
   const { routing, answer } = result;
+  const citationsId = useId();
+  const chips = useMemo(() => citationChips(answer?.citations ?? []), [answer]);
+  // A chip moves focus to its entry in the citation list below the answer.
+  const showCitation = (marker: string) => {
+    const entry = document.getElementById(`${citationsId}-${marker}`);
+    entry?.scrollIntoView({ block: "nearest" });
+    entry?.focus();
+  };
   return (
     <div className="flex flex-col gap-4">
       <section aria-labelledby="test-routing-heading" className="flex flex-col gap-2 rounded-xl border p-4">
@@ -152,7 +167,8 @@ export function TestResultView({ result, question }: { result: AgentTestResult; 
           {answer.error ? (
             <p className="text-sm text-destructive">The agent could not answer: {answer.error}</p>
           ) : (
-            <p className="text-sm whitespace-pre-wrap">{answer.text}</p>
+            // The chat's renderer and rules: no raw HTML, no images loaded, safe links, [S1] chips.
+            <AnswerMarkdown text={answer.text} sources={chips} onCite={showCitation} />
           )}
           {answer.withheld > 0 ? (
             <p className="text-xs text-muted-foreground">
@@ -169,7 +185,12 @@ export function TestResultView({ result, question }: { result: AgentTestResult; 
             ) : (
               <ol className="flex flex-col gap-1 text-sm">
                 {answer.citations.map((c) => (
-                  <li key={`${c.marker}-${c.document_id}`} className="flex flex-wrap items-center gap-2">
+                  <li
+                    key={`${c.marker}-${c.document_id}`}
+                    id={`${citationsId}-${c.marker}`}
+                    tabIndex={-1}
+                    className="flex flex-wrap items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  >
                     <Badge variant="outline" className="font-mono">
                       {c.marker}
                     </Badge>

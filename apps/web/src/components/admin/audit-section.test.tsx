@@ -42,6 +42,14 @@ describe("ExportCard", () => {
     expect(html).not.toContain("export.jsonl");
   });
 
+  it("leaves a date-filtered link's address to the browser, whose time zone sets the dates", () => {
+    // On the server (and while hydrating) the link has no address: React would otherwise keep
+    // the server's idea of midnight in the browser.
+    const html = renderToStaticMarkup(<ExportCard filters={filters({ action: "auth.", from: "2026-01-01" })} />);
+    expect(html).toContain("Download this view as CSV");
+    expect(html).not.toContain("export.csv");
+  });
+
   it("exports everything without filters", () => {
     const html = renderToStaticMarkup(<ExportCard filters={EMPTY_AUDIT_FILTERS} />);
     expect(html).toContain('href="/api/v1/admin/audit-events/export.csv"');
