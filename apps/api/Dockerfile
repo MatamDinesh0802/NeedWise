@@ -8,6 +8,9 @@
 # Base images are pinned by digest (the tag is for people); Dependabot proposes new digests.
 # docs/security/supply-chain.md explains the scans this image goes through.
 
+# uv as a stage of its own, so Dependabot sees its FROM line too.
+FROM ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b AS uv
+
 FROM python:3.13.18-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -20,7 +23,7 @@ RUN apt-get update \
     && python -m pip uninstall --yes --root-user-action=ignore pip
 
 FROM base AS builder
-COPY --from=ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b /uv /bin/uv
+COPY --from=uv /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
