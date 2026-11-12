@@ -14,8 +14,9 @@ The method: reading the code of every surface below, then trying to break it wit
 which a scripted model (`apps/api/tests/fakes.py`) does exactly what an injected instruction
 asks, so that only code stands between the attack and the data. The fixes this review made are
 listed in [owasp-llm-top10.md](owasp-llm-top10.md#fixes-made-in-this-review). The red team
-(`evals/datasets/red_team.jsonl`, 59 attacks) has not yet been run against a real model on this
-code: its retrieval part runs in CI without a model, its answer part needs `wm eval` with a model.
+(`evals/datasets/red_team.jsonl`, 59 attacks): its retrieval part runs in CI without a model; its
+answer part was run once with Claude Sonnet 5.5 after the Phase 12 merges (2026-11-12): 0 leaks,
+2 violations after a scoring fix ([owasp-llm-top10.md](owasp-llm-top10.md)).
 
 ## 1. Assets
 
@@ -229,8 +230,8 @@ E: elevation of privilege. "Residual" lists what is not prevented.
    can still be steered by a document: wrong facts, a misleading summary, a research search
    the person did not intend, an action proposed for approval. Code bounds the damage
    (permissions, approvals, no images, tool caps); it cannot make the text true. The red team
-   reports how often the model obeys (violations); it has not been run with a model on this
-   code yet.
+   reports how often the model obeys (violations): 2 of 59 in its one live run, neither an
+   obeyed instruction or a leak (owasp-llm-top10.md).
 2. **A malicious insider admin** can grant themselves restricted collections, steer every
    answer through agent instructions, run workflows with their own access on every new
    document, and point outbound requests at internal hosts. All of it is audited; none of it

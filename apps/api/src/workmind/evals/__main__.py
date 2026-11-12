@@ -31,6 +31,7 @@ from workmind.evals.datasets import (
     load_red_team,
     load_routing,
 )
+from workmind.evals.redteam import rescored_violations
 from workmind.evals.report import as_json, markdown
 from workmind.evals.runner import (
     AnswerRecord,
@@ -345,9 +346,11 @@ async def run(args: argparse.Namespace) -> int:
 
 
 def rescore(args: argparse.Namespace) -> int:
-    """Fact spellings get fixed ("6.1" vs "6,100,000"); stored answers don't need re-asking."""
+    """Fact spellings get fixed ("6.1" vs "6,100,000") and red-team scoring changes; stored
+    answers don't need re-asking."""
     saved = json.loads(args.rescore.read_text())
     items = {i.id: i for i in [*load_qa(args.datasets), *load_cross(args.datasets)]}
+    attacks = {i.id: i for i in load_red_team(args.datasets)}
     run = EvalRun(
         retrieval=[RetrievalRecord(**r) for r in saved["retrieval"]],
         routing=[RoutingRecord(**r) for r in saved.get("routing", [])],
@@ -361,6 +364,12 @@ def rescore(args: argparse.Namespace) -> int:
         record = AnswerRecord(**raw)
         if (item := items.get(record.id)) and record.suite in ("qa", "cross"):
             record.facts_missing = [str(f) for f in item.facts if not fact_present(f, record.text)]
+        if (attack := attacks.get(record.id)) and record.suite == "redteam":
+            # Research and analytics answers were scored without citation markers (runner.py).
+            markers = record.unknown_markers if attack.surface in ("chat", "agents") else []
+            record.violations = rescored_violations(
+                attack, record.text, record.violations, unknown_markers=markers
+            )
         run.answers.append(record)
     meta = {**saved["meta"], "rescored": dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")}
     labels = list(saved["summary"])
