@@ -17,8 +17,16 @@ See [Local development](README.md#local-development). In short: `make install`, 
 
 ## Commit messages
 
-We use [Conventional Commits](https://www.conventionalcommits.org): `feat:`, `fix:`, `docs:`,
-`refactor:`, `test:`, `chore:`, `ci:`. They drive the changelog and version numbers.
+We use [Conventional Commits](https://www.conventionalcommits.org): `feat:`, `fix:`, `perf:`,
+`eval:`, `build:`, `ci:`, `docs:`, `refactor:`, `test:`, `chore:`. release-please turns them into
+the changelog and the next version ([docs/operations/releasing.md](docs/operations/releasing.md)).
+
+## Dependencies and images
+
+Lockfiles (`apps/api/uv.lock`, `apps/web/pnpm-lock.yaml`) are committed, images are pinned by
+digest and third-party actions by commit SHA. `make scan` runs the same supply-chain checks as
+CI, with Docker only. A known vulnerability in a dependency needs a fix or a written, expiring
+exception ([docs/security/supply-chain.md](docs/security/supply-chain.md)).
 
 ## Developer Certificate of Origin (DCO)
 
