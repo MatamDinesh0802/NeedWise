@@ -489,8 +489,63 @@ async def test_routing_items_for_a_missing_agent_are_skipped_not_failed() -> Non
     report = "\n".join(routing_section(records))
     assert "Exact agent set: **2/2**" in report
     assert "- b: skipped (agent missing: legal)" in report
-    assert "Near misses kept away from the agent they sound like: **1/1**" in report
+    # d must avoid legal, which does not exist: it cannot pick it, so it is not scored.
+    assert records[3].not_agents == []
+    assert records[3].not_agents_missing == ["legal"]
+    assert "Near misses kept away" not in report
+    assert "1 near miss(es) not counted: the agent they must avoid does not exist" in report
     assert "| hr | 2 | 2/2 | 2/2 | 0 |" in report
+
+
+async def test_near_misses_are_scored_once_the_agent_they_avoid_exists() -> None:
+    items = [
+        RoutingItem(
+            id="d", question="probation?", mode="single", agents=["hr"], not_agents=["legal"]
+        ),
+        RoutingItem(
+            id="e", question="patent bonus?", mode="single", agents=["hr"], not_agents=["legal"]
+        ),
+    ]
+    plans = iter([["hr"], ["hr", "legal"]])
+    llm = FakeLLM(
+        structured_script=lambda request: PlanOut(
+            mode="single",
+            subtasks=[Subtask(agent=key, goal="x") for key in next(plans)],
+        )
+    )
+
+    records = await route_items(llm, None, [agent("hr"), agent("legal")], items)  # type: ignore[arg-type]
+    report = "\n".join(routing_section(records))
+
+    assert "Near misses kept away from the agent they sound like: **1/2**" in report
+    assert "not counted" not in report
+
+
+def test_a_report_marks_uncommitted_changes_in_its_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    from workmind.evals import __main__ as evals
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)  # noqa: S603, S607
+
+    git("init", "-q")
+    (tmp_path / "planner.py").write_text("RULE = 1\n")
+    git("add", "planner.py")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x")
+    monkeypatch.setattr(evals, "REPO", tmp_path)
+
+    clean = evals._commit()  # pyright: ignore[reportPrivateUsage]
+    (tmp_path / "planner.py").write_text("RULE = 2\n")
+    dirty = evals._commit()  # pyright: ignore[reportPrivateUsage]
+    (tmp_path / "planner.py").write_text("RULE = 3\n")
+    other = evals._commit()  # pyright: ignore[reportPrivateUsage]
+
+    assert "dirty" not in clean
+    assert dirty.startswith(f"{clean}-dirty (diff ")
+    assert other != dirty  # a different change, a different mark
 
 
 def test_per_agent_accuracy_counts_misses_and_false_positives() -> None:

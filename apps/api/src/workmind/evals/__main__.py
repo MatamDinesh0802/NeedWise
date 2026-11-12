@@ -11,6 +11,7 @@ Exits with status 2 if any permission leak is found (the CI gate, ARCHITECTURE 2
 import argparse
 import asyncio
 import datetime as dt
+import hashlib
 import json
 import os
 import subprocess
@@ -124,20 +125,32 @@ def parse_modes(value: str) -> list[Mode]:
     return [MODES[m] for m in value.split(",") if m in MODES]
 
 
+def _git(*args: str) -> str:
+    return subprocess.run(  # noqa: S603 (fixed git arguments)
+        ["git", *args],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=REPO,
+    ).stdout
+
+
 def _commit() -> str:
+    """The commit the run used. Uncommitted changes to tracked files are marked, with a hash
+    of the diff, so a report never names a commit that does not reproduce it:
+    `d855f5c-dirty (diff 3f2a9c1e)`."""
     try:
-        return subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=True,
-            cwd=REPO,
-        ).stdout.strip()
+        head = _git("rev-parse", "--short", "HEAD").strip()
+        diff = _git("diff", "HEAD", "--no-ext-diff", "--binary")
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+    if not diff:
+        return head
+    return f"{head}-dirty (diff {hashlib.sha256(diff.encode()).hexdigest()[:8]})"
 
 
 async def run(args: argparse.Namespace) -> int:
+    commit = _commit()  # the code the run starts with, not what the tree holds when it ends
     modes = parse_modes(args.modes)
     suites = set(args.suites.split(","))
     qa, red_team, abstention = (
@@ -229,7 +242,7 @@ async def run(args: argparse.Namespace) -> int:
     meta = {
         "label": args.label,
         "date": dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC"),
-        "commit": _commit(),
+        "commit": commit,
         "tenant": f"{tenant.name} (external models receive up to: {askers.policy})",
         "indexed chunks": points,
         "embedding model": f"{settings.embedding_model} ({settings.embedding_dimensions} dims)",

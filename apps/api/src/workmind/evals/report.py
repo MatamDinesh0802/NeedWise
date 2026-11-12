@@ -125,6 +125,14 @@ def routing_section(records: list[RoutingRecord]) -> list[str]:
             "",
             f"Near misses kept away from the agent they sound like: **{len(kept)}/{len(near)}**.",
         ]
+    unscored = [r for r in ran if r.not_agents_missing and not r.not_agents]
+    if unscored:
+        missing = sorted({k for r in unscored for k in r.not_agents_missing})
+        out += [
+            "",
+            f"{len(unscored)} near miss(es) not counted: the agent they must avoid does not "
+            f"exist in this tenant ({', '.join(missing)}), so they cannot pick it.",
+        ]
     wrong = [r for r in ran if not r.correct]
     if wrong:
         out += ["", "### Wrong plans", ""]

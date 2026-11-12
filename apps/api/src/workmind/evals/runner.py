@@ -209,6 +209,9 @@ class RoutingRecord:
     # "agent missing: legal": the suite runs before every agent it covers is configured.
     skipped: str | None = None
     not_agents: list[str] = field(default_factory=list[str])  # near misses: must not get it
+    # Agents a near miss must avoid that do not exist in the tenant: such an item cannot pick
+    # them, so it says nothing about keeping them away and is not scored as a near miss.
+    not_agents_missing: list[str] = field(default_factory=list[str])
 
     @property
     def correct(self) -> bool:
@@ -356,6 +359,8 @@ async def route_items(
 
     async def one(item: RoutingItem) -> RoutingRecord:
         expected = sorted(item.agents)
+        avoid = [k for k in item.not_agents if k in known]
+        avoid_missing = [k for k in item.not_agents if k not in known]
         if missing := [key for key in expected if key not in known]:
             return RoutingRecord(
                 item.id,
@@ -366,7 +371,8 @@ async def route_items(
                 "",
                 0,
                 skipped=f"agent missing: {', '.join(missing)}",
-                not_agents=list(item.not_agents),
+                not_agents=avoid,
+                not_agents_missing=avoid_missing,
             )
         started = time.perf_counter()
         try:
@@ -374,7 +380,8 @@ async def route_items(
         except Exception as exc:
             return RoutingRecord(
                 item.id, item.mode, expected, "error", [], "", 0, str(exc)[:300],
-                not_agents=list(item.not_agents),
+                not_agents=avoid,
+                not_agents_missing=avoid_missing,
             )  # fmt: skip
         return RoutingRecord(
             item.id,
@@ -384,7 +391,8 @@ async def route_items(
             sorted(plan.agents),
             plan.routed_by,
             (time.perf_counter() - started) * 1000,
-            not_agents=list(item.not_agents),
+            not_agents=avoid,
+            not_agents_missing=avoid_missing,
         )
 
     return await bounded(concurrency, [lambda i=i: one(i) for i in items])
