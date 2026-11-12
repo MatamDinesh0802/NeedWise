@@ -5,9 +5,14 @@ page says what was run, what each step measured before and after tuning, what li
 stack, what was changed, what limits it now, and a sizing recommendation that is an
 extrapolation from these numbers, not a measurement of a real deployment.
 
-How the harness works and how to read a report: [load testing](../load-testing.md). Every
-number below comes from a committed report under
-[`loadtests/results/`](../../loadtests/results/2026-11-12-1905-before-100u.md).
+How the harness works and how to read a report: [load testing](../load-testing.md). The numbers
+in the tables (requests, failures, latencies, CPU, connections, Valkey, the audit lock, model
+calls) come from the committed reports under
+[`loadtests/results/`](../../loadtests/results/2026-11-12-1905-before-100u.md). Some figures in
+the text do not: they were read during the runs and their output was not kept, so nothing in the
+repository backs them. They are marked *(not kept)*: the py-spy profiles (raw directories hold
+only Locust's files), the embedding server's own throughput, Locust's and the stub's CPU, the
+Qdrant mean since it started, and the usage-summary and `pool_pre_ping` timings.
 
 ## Summary
 
@@ -17,7 +22,7 @@ number below comes from a committed report under
 - **At 400 users the API's single process was the bottleneck.** Its event loop was busy 90% of
   the time, the database pool was exhausted, and search p95 went from 46 ms to 420 ms. A
   profile put 27% of the event loop in the per-token event path and 8% in access-token
-  authentication.
+  authentication *(not kept)*.
 - **Tuning:** streamed text is now sent as at most one event per 50 ms (the first piece at once),
   each event is one Valkey round trip instead of two, the event stream no longer checks for a
   disconnect per event, and the API runs two processes by default (`API_WORKERS`, Helm
@@ -42,7 +47,7 @@ otherwise the planner decides), with `loadtests/compose.stub.yaml` (every model 
 rate limits off, in-flight cap 100) and, for measurement only, Postgres started with
 `pg_stat_statements`. Embeddings were real: EmbeddingGemma-300M (Q8_0) on llama.cpp's server
 on the host GPU with 4 slots. Measured alone, it embedded 139 queries per second at concurrency
-1 (p50 7 ms) and about 500 per second at concurrency 8 to 32 (p50 15 to 62 ms).
+1 (p50 7 ms) and about 500 per second at concurrency 8 to 32 (p50 15 to 62 ms) *(not kept)*.
 
 **Data.** The Acme demo tenant: one tenant, 20 people, 49 documents (421 chunks), the analytics
 dataset. Every simulated user acts as one of the 9 demo logins, so per-person data is small and
@@ -59,7 +64,7 @@ department agents and a composed answer.
 upload 1), think time 3 to 10 s, 3 minutes per step, spawn rate 5 per second (10 from 100 users).
 Uploads went to the restricted `loadtest-uploads` collection. One Locust process up to 100 users,
 four at 200 and 400, six at 800. In the 200- and 400-user steps Locust used at most 44% of a core
-in total and the stub at most 5% (sampled with `ps`).
+in total and the stub at most 5% (sampled with `ps`; *not kept*).
 At 10 users Locust gave no user to the agents, login and upload classes (their weight is too
 small for 10 users), so those columns are empty for that step.
 
@@ -73,7 +78,9 @@ to the API process from a sidecar container, in separate runs that are not in th
 
 Before: commit 0888b5b plus the monitor. After: the tuning below (commits 68e1976 and 1c63c1a).
 Times in milliseconds. CPU in % of one core, the API container's total (all its processes).
-"DB connections" is the API's peak, with those idle in a transaction in parentheses.
+"DB connections" is the peak number of client connections to the `workmind` database, with
+those idle in a transaction in parentheses. The monitor counts every client of that database
+(`pg_stat_activity`), so the Celery worker and beat are included, not only the API's pools.
 
 | Users | | req/s | Failed | Chat first token p50 / p95 | Agents first token p95 | Search p50 / p95 / p99 | Conversations list p95 | Insights data model p95 | Upload ready p95 | Sign-in p95 | API CPU mean / peak | DB connections | Valkey cmd/s |
 |---:|---|---:|---:|---|---:|---|---:|---:|---:|---:|---|---|---:|
@@ -127,18 +134,21 @@ the stub's configured model time. On average the API used 3 to 30% of one core, 
 statement with the most total time at 200 users (the audit log's lock, below) used 0.4 s in 3
 minutes. Qdrant answered 95% of queries in under 1 ms at 100 users and under 5 ms at 200 (its
 histogram's buckets); over all 31,752 queries since it started, the 800-user step included, its
-mean was 1.75 ms. The embedding server saw a few queries per second against a capacity of about
+mean was 1.75 ms *(not kept: reports made before the monitor fix show a dash for the mean)*. The
+embedding server saw a few queries per second against a capacity of about
 500.
 
 **400 users: the API's one process.** The API container used 73% of a core on average and up
-to 123% (the event loop plus a few threads). The database pool (10 + 10) was full: 20
-connections, 15 of them idle in a transaction, held by requests waiting for the busy event
+to 123% (the event loop plus a few threads). The database pool (10 + 10) looked full: 20
+connections to the database, 15 of them idle in a transaction (that count includes the worker,
+which was indexing uploads at about 0.7 per second, so not all 20 were the API's), held by requests waiting for the busy event
 loop to resume them. Every endpoint's tail grew: search p95 420 ms (46 ms at 100 users),
 conversation list p95 220 ms (10 ms), sign-in p95 560 ms. Postgres, Qdrant, Valkey, OpenFGA and
 Keycloak stayed under 15% of a core each on average.
 
 A py-spy profile of the API process during a separate 400-user run (45 s at 50 Hz, blocking
-mode; shares of the event loop thread, which was idle 10% of the time):
+mode; shares of the event loop thread, which was idle 10% of the time; *not kept*: the raw
+directory of that run holds only Locust's files):
 
 | Where the event loop's time went (400 users, before) | Share |
 |---|---:|
@@ -203,7 +213,7 @@ container's CPU peak from 126% to 87% of a core.
 
 Profiles of the two processes in a separate 400-user run: the event loops were idle 24 and 25% of
 the time (10% before, with one process); the per-event path took 11 to 13% of each loop (27%
-before); authentication 8 to 9%, parsing the model's stream 9%, retrieval 6%.
+before); authentication 8 to 9%, parsing the model's stream 9%, retrieval 6% *(not kept)*.
 
 ## What limits it now
 
@@ -212,7 +222,8 @@ once) the tuned stack degrades, without failures:
 
 - **The API processes.** The container used 151% of a core on average and 241% at peak: both
   processes saturated. Chat time to first token p50 2.5 s, p95 4.4 s; search p95 1.4 s.
-- **Database connections.** 41 of the 2 x 20 the pools allow, 31 of them idle in a transaction.
+- **Database connections.** 41 connections to the database, 31 of them idle in a transaction.
+  The API's two pools allow 40; the count also includes the worker and beat.
 - **The audit log's lock.** Every audited action (an answer, a sign-in, an insights query, an
   upload) appends to its tenant's hash chain under a per-tenant advisory lock held until the
   transaction commits. Its wait grew with load and with parallel processes: mean 0.14 ms at 100
@@ -221,7 +232,7 @@ once) the tuned stack degrades, without failures:
   makes the others wait longer. It is the first limit that more API processes do not remove.
 - **Usage reports grow with usage.** The usage summary reads every usage event of the period:
   after the test runs, 19,748 events took 11 ms per query when idle (a sequential scan, about
-  0.55 microseconds per event) and the summary runs three such queries; 11 to 17 ms per query
+  0.55 microseconds per event; *not kept*) and the summary runs three such queries; 11 to 17 ms per query
   under load. At 1,000 employees asking 20 questions a day with about 3 model calls each, a
   30-day period holds about 1.8 million events: about a second per query by this rate, three
   seconds for the Analytics page.
@@ -240,7 +251,8 @@ once) the tuned stack degrades, without failures:
   example per-day or batched appends), a decision of its own.
 - **Usage rollups.** A daily rollup table would make the usage reports independent of volume; not
   built yet.
-- **`pool_pre_ping`.** It costs a round trip per checkout, 0.2% of the event loop; it keeps a
+- **`pool_pre_ping`.** It costs a round trip per checkout, 0.2% of the event loop *(not kept)*;
+  it keeps a
   restarted Postgres from failing the first requests.
 
 ## Recommended sizing (extrapolation)

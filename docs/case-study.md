@@ -45,9 +45,11 @@ One Docker Compose stack on a laptop (Apple M5, 24 GB): Caddy in front of the Ne
 and the FastAPI API (two processes), a Celery worker and scheduler, PostgreSQL, Qdrant, Valkey,
 Keycloak, OpenFGA and Mailpit; the embedding model (EmbeddingGemma-300M) on the laptop's GPU;
 Claude Sonnet 5.5 through Anthropic's API for answers, planning, agents and extraction. The
-Acme tenant holds 20 people with 9 demo logins, 14 collections, 49 documents (421 chunks), an
-analytics dataset, 9 department agents (one of them, Legal, created in the browser without
-code) and an Enterprise development license.
+Acme tenant holds 20 people with 9 demo logins, 14 collections (15 during the v1.0 runs: the
+load test had added an empty one), 47 seed documents (364 chunks) plus 2 meeting transcripts
+that tests indexed (49 documents, 421 chunks in the measured index), an analytics dataset, 9
+department agents (one of them, Legal, created in the browser without code) and an Enterprise
+development license.
 
 ## Architecture choices, and why
 
@@ -160,8 +162,9 @@ composite keys.
   unbounded answers in progress per person and unbounded research tool calls
   ([review](security/owasp-llm-top10.md)).
 
-**Found by the load test:** at 400 simulated users the API's one process spent 27% of its event
-loop writing and reading one event per streamed word, and its database pool filled up. Batched
+**Found by the load test:** at 400 simulated users a profile showed the API's one process
+spending 27% of its event loop writing and reading one event per streamed word (the profile's
+output was not kept), and its database connections reached the pool's 20. Batched
 token events, one Valkey round trip per event and two API processes brought 400 users back to
 unloaded latencies ([load benchmarks](benchmarks/load.md)).
 

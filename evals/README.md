@@ -4,7 +4,9 @@ WorkMind is evaluated against **Acme Robotics**, a fictional company whose 47 do
 a fact plan (`seed/acme/corpus_plan.yaml`) and are checked against it: 34 generated in Phase 2,
 10 legal documents written by hand for Phase 11 and rendered with the same converters, and 3
 prompt-injection fixtures written by hand for Phase 12 (vendor release notes, a meeting
-transcript, a Slack export; see [Red team](#red-team)). Every
+transcript, a Slack export; see [Red team](#red-team)). The v1.0 measurements ran on a
+development index that also held 2 meeting transcripts indexed by tests (49 documents, 421
+chunks; the seed alone gives 364). Every
 question is asked **as a specific employee**. The runner builds the same request context as a
 signed-in request, so both permission locks, the tenant's model policy and the real models
 are exercised (ARCHITECTURE section 22).
@@ -171,13 +173,17 @@ about 6%, so the trust boost and BM25 noise decide the order. See
 **Caveat:** the fusion settings were tuned on this same question set. They are configurable
 (`RETRIEVAL_RRF_K`, `RETRIEVAL_SPARSE_WEIGHT`) and will be re-validated on a larger corpus.
 
-**On 47 documents (2026-11-12, [report](results/2026-11-12-permission-gate.md)).** The same 82
-questions, default hybrid settings, after the 10 legal documents (Phase 11) and the 3 injection
-documents (Phase 12) were added, 421 chunks: Doc Recall@1 96.3% (was 98.8%), Doc Recall@5 100%,
+**On 49 documents (2026-11-12, [report](results/2026-11-12-permission-gate.md)).** The same 82
+questions, default hybrid settings, on the development stack's index of 421 chunks: the 47 seed
+documents (364 chunks: the 34 of the baseline, 10 legal documents from Phase 11 and 3 injection
+documents from Phase 12) plus 2 meeting transcripts (57 chunks, "Weekly operations sync" and its
+"run 2") that meetings tests indexed on 2026-11-04, after the 294-chunk baseline. A fresh
+`make seed` gives 364 chunks, not this index. Against the baseline: Doc Recall@1 96.3% (was 98.8%), Doc Recall@5 100%,
 Evidence@1 90.2% (was 92.7%), Evidence MRR 0.942 (was 0.957). Four questions changed rank: pp-08
 now ranks a Phase 11 legal policy first (the answer at 4), pp-29 has its evidence passage second,
 qa-42 ranks the Slack export first (the answer at 2), and qa-26 improved. None of the three
-injection documents is in the top three of any of them. Which added documents cause the drop
+injection documents is in the top three of any of them. 15 documents and 127 chunks were
+added in between, 57 of those chunks from the two transcripts. Which added documents cause the drop
 was not separated further.
 
 ### Restricted data kept local ([report](results/2026-11-04-local-only.md))
