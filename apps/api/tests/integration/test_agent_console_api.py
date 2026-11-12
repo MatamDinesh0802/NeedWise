@@ -45,7 +45,7 @@ DRAFT: dict[str, Any] = {
     "collections": ["legal-contracts"],
     "tools": ["draft_email"],
     "max_tool_calls": 1,
-    "model": "system:claude-test-model",
+    "model": "system:claude-opus-5-5",  # in the catalog; not the agent role's default
 }
 
 
@@ -151,8 +151,8 @@ async def test_an_unsaved_draft_is_routed_and_answers_with_its_tools_and_model(
     # The agent's own calls use its model; planning and composing keep their roles' models.
     assert [(role, r.model) for role, r in llm.requests] == [
         ("router", None),
-        ("agent", "claude-test-model"),
-        ("agent", "claude-test-model"),
+        ("agent", "claude-opus-5-5"),
+        ("agent", "claude-opus-5-5"),
         ("answer", None),
     ]
     tools = [d for a, d in audit if a == "tool.called"]
