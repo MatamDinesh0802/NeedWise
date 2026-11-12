@@ -1,5 +1,6 @@
 """Schema and validation for seed/<company>/company.yaml."""
 
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -74,6 +75,12 @@ class CollectionSpec(_Strict):
     trust: Trust = "reference"
     sensitivity: Sensitivity = "internal"
     description: str = ""
+    # Governance (docs/governance.md): the owner (an email) approves official status and owns
+    # the seeded documents; documents are due for review `review_interval_days` after
+    # `last_reviewed` (a fixed date, so the demo is the same on every machine).
+    owner: str | None = None
+    review_interval_days: int | None = Field(default=None, ge=1, le=3650)
+    last_reviewed: date | None = None
 
 
 class AgentSpec(_Strict):
@@ -130,6 +137,10 @@ class CompanySpec(_Strict):
                 kind, _, key = principal.partition(":")
                 if kind not in known or key.lower() not in known[kind]:
                     problems.append(f"collection {collection.key}: unknown viewer '{principal}'")
+            if collection.owner and collection.owner.lower() not in emails:
+                problems.append(f"collection {collection.key}: unknown owner '{collection.owner}'")
+            if collection.last_reviewed and not collection.review_interval_days:
+                problems.append(f"collection {collection.key}: last_reviewed needs an interval")
 
         collection_keys = {c.key for c in self.collections}
         _unique("agent", [a.key for a in self.agents], problems)

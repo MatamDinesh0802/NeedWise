@@ -245,6 +245,7 @@ async def _seed_collections(
     """Collections and their grants exactly as the company file says (grants are replaced)."""
     ids: dict[str, uuid.UUID] = {}
     for collection in spec.collections:
+        owner = user_ids[collection.owner.lower()] if collection.owner else None
         collection_id = (
             await session.execute(
                 insert(Collection)
@@ -259,6 +260,8 @@ async def _seed_collections(
                     else None,
                     default_trust=collection.trust,
                     default_sensitivity=collection.sensitivity,
+                    owner_id=owner,
+                    review_interval_days=collection.review_interval_days,
                 )
                 .on_conflict_do_update(
                     index_elements=["tenant_id", "key"],
@@ -268,6 +271,8 @@ async def _seed_collections(
                         "scope": collection.scope,
                         "default_trust": collection.trust,
                         "default_sensitivity": collection.sensitivity,
+                        "owner_id": owner,
+                        "review_interval_days": collection.review_interval_days,
                         "updated_at": func.now(),
                     },
                 )

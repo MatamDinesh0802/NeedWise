@@ -66,18 +66,29 @@ people:
 # trust: official | reference | discussion;  sensitivity: internal | confidential | restricted
 # viewers/editors: department:<key> (members), department-manager:<key>, group:<key>, user:<email>.
 # Department collections default to department managers as editors.
+# Governance (docs/governance.md): `owner` approves official status and owns the seeded
+# documents; they are due for review `review_interval_days` after `last_reviewed`. The dates are
+# fixed so that, in November 2026, the handbook and HR guidance are overdue and engineering,
+# finance and operations are due within 30 days. Owners are people who already edit the
+# collection, so owning one gives nobody new access.
 collections:
   - key: company-handbook
     name: Company Handbook
     scope: enterprise
     trust: official
     editors: [department-manager:hr]
+    owner: alice@acme.test
+    review_interval_days: 365
+    last_reviewed: 2025-11-03
     description: Company-wide policies (leave, travel, expenses, code of conduct, security).
   - key: hr-guidance
     name: HR Guidance (internal)
     scope: department
     department: hr
     trust: reference
+    owner: alice@acme.test
+    review_interval_days: 180
+    last_reviewed: 2026-04-20
     description: HR-internal procedures, policy drafts, including an outdated 2025 leave policy.
   - key: hr-employee-records
     name: Employee Records
@@ -91,6 +102,9 @@ collections:
     scope: department
     department: engineering
     trust: reference
+    owner: marcus.bell@acme.test
+    review_interval_days: 180
+    last_reviewed: 2026-06-01
     description: ADRs, API documentation, runbooks, incident postmortems.
   - key: finance-reports
     name: Finance Reports
@@ -98,6 +112,9 @@ collections:
     department: finance
     viewers: [group:leadership]
     sensitivity: confidential
+    owner: hannah.schmidt@acme.test
+    review_interval_days: 90
+    last_reviewed: 2026-09-01
     description: Monthly P&L, budgets, revenue by product line (XLSX + PDF).
   - key: finance-payroll
     name: Payroll
@@ -121,12 +138,18 @@ collections:
     scope: department
     department: support
     viewers: [department:engineering]
+    owner: samuel.mensah@acme.test
+    review_interval_days: 180
+    last_reviewed: 2026-08-03
     description: Ticket resolutions, known issues, escalation guides.
   - key: operations-sops
     name: Operations SOPs
     scope: enterprise
     trust: official
     editors: [department-manager:operations]
+    owner: olivia.grant@acme.test
+    review_interval_days: 365
+    last_reviewed: 2025-12-01
     description: Standard operating procedures for warehouses, shipping and on-call.
   - key: leadership-strategy
     name: Leadership Strategy
