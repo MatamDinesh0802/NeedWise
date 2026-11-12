@@ -163,19 +163,15 @@ def build_mcp_server(resources_of_app: Callable[[], Resources], version: str) ->
         _require(rc, "assistant:ask")
         async with tenant_transaction(resources.db, rc.tenant_id) as session:
             tenant = await session.get(Tenant, rc.tenant_id)
-        policy = (
-            "allow"
-            if tenant and tenant.settings.get("restricted_data") == "allow"
-            else "local_only"
-        )
+        llm = await resources.models.for_tenant(rc.tenant_id)
         result = await answer(
-            resources.llm,
+            llm,
             resources.retriever,
             rc,
             question,
             organization=tenant.name if tenant else "the company",
-            policy=policy,
-            local_llm=resources.local_llm,
+            policy=llm.max_external_sensitivity,
+            local_llm=llm.local,
         )
         sources = [
             f"[{c.marker}] {c.title}"

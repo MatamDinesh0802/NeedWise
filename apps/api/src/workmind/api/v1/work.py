@@ -117,7 +117,7 @@ async def decide_approval(
                 raise ApiError(
                     422, "invalid_input", "The edited action is not valid", str(exc)[:500]
                 ) from exc
-    deps = WorkflowDeps(resources.db, resources.llm, resources.tools)
+    deps = WorkflowDeps(resources.db, resources.llm, resources.tools, resources.models)
     decided = await decide(
         resources.db,
         resources.tools,
@@ -471,7 +471,7 @@ async def run_workflow(ctx: AdminContext, request: Request, key: str) -> RunOut:
         if workflow is None:
             raise ApiError(404, "not_found", "Workflow not found")
         workflow_id = workflow.id
-    deps = WorkflowDeps(resources.db, resources.llm, resources.tools)
+    deps = WorkflowDeps(resources.db, resources.llm, resources.tools, resources.models)
     run_id = await create_run(deps, ctx.tenant_id, workflow_id, trigger="manual")
     resources.runs.start(_advance(deps, ctx.tenant_id, run_id))  # may take a minute: not here
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:

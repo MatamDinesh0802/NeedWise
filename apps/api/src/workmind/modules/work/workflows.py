@@ -31,6 +31,7 @@ from workmind.modules.agents.research import research
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN, Tenant, User
 from workmind.modules.identity.service import load_identity
+from workmind.modules.model_catalog.resolver import LLMResolver
 from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError, ToolRegistry
 from workmind.modules.work.approvals import propose
@@ -114,8 +115,16 @@ class WorkflowDeps:
         sessions: async_sessionmaker[AsyncSession],
         llm: LLMProvider,
         tools: ToolRegistry,
+        models: LLMResolver | None = None,
     ) -> None:
         self.sessions, self.llm, self.tools = sessions, llm, tools
+        self.models = models
+
+    async def llm_for(self, tenant_id: uuid.UUID) -> LLMProvider:
+        """The tenant's models (docs/models.md); `llm` itself when no resolver is given."""
+        if self.models is None:
+            return self.llm
+        return await self.models.for_tenant(tenant_id)
 
 
 async def _owner(session: AsyncSession, workflow: Workflow) -> RequestContext | None:
@@ -190,7 +199,7 @@ async def advance(deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID) -
             if step.research is not None:
                 question = str(render(step.research, context))
                 result = await research(
-                    deps.llm,
+                    await deps.llm_for(tenant_id),
                     deps.tools,
                     deps.sessions,
                     owner,

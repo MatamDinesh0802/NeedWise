@@ -43,7 +43,8 @@ from workmind.evals.runner import (
     summarize_retrieval,
 )
 from workmind.modules.retrieval.service import Mode
-from workmind.providers.llm import LLMUsage
+from workmind.providers.factory import role_configs
+from workmind.providers.llm import LLMUsage, Role
 
 REPO = Path(__file__).resolve().parents[5]
 DEFAULT_DATASETS = Path(os.environ.get("WORKMIND_EVALS_DIR", REPO / "evals")) / "datasets"
@@ -217,21 +218,23 @@ async def run(args: argparse.Namespace) -> int:
     finally:
         await resources.aclose()
 
+    def model_of(role: Role) -> str:
+        """The model the tenant's resolution used for `role` (docs/models.md)."""
+        if askers.models is not None:
+            return askers.models.model_for(role)
+        return role_configs(settings)[role].model
+
     meta = {
         "label": args.label,
         "date": dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC"),
         "commit": _commit(),
-        "tenant": f"{tenant.name} (restricted_data: {askers.policy})",
+        "tenant": f"{tenant.name} (external models receive up to: {askers.policy})",
         "indexed chunks": points,
         "embedding model": f"{settings.embedding_model} ({settings.embedding_dimensions} dims)",
         "hybrid fusion": f"RRF k={settings.retrieval_rrf_k}, BM25 weight "
         f"{settings.retrieval_sparse_weight}, trust boost on",
-        "answer model": "none (retrieval only)"
-        if args.retrieval_only
-        else settings.llm_model_answer or settings.llm_model,
-        "judge model": (settings.llm_model_judge or settings.llm_model)
-        if args.judge
-        else "not used",
+        "answer model": "none (retrieval only)" if args.retrieval_only else model_of("answer"),
+        "judge model": model_of("judge") if args.judge else "not used",
         "assistant": args.assistant
         + (
             f" (fast path: score >= {settings.agent_fast_path_min_score}, margin >= "
@@ -244,8 +247,8 @@ async def run(args: argparse.Namespace) -> int:
         f"{len(analytics_items)} analytics",
     }
     if result.analytics:
-        meta["analytics agent model"] = settings.llm_model_agent or settings.llm_model
-        meta["analytics compose model"] = settings.llm_model_answer or settings.llm_model
+        meta["analytics agent model"] = model_of("agent")
+        meta["analytics compose model"] = model_of("answer")
         meta["analytics questions asked on"] = args.today.isoformat()
     args.out.mkdir(parents=True, exist_ok=True)
     report = args.out / f"{args.label}.md"

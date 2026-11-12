@@ -59,6 +59,10 @@ class LLMUsage:
     output_tokens: int = 0
     cache_read_tokens: int = 0
     stop_reason: str = ""
+    # Set by the tenant resolver (modules/model_catalog/resolver.py): the catalog model that
+    # served the call, and the tenant's price for it (USD per million input, output tokens).
+    catalog_model: str = ""
+    price_per_mtok: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -135,10 +139,18 @@ class AnthropicLLM:
     external = True  # requests leave your infrastructure (ARCHITECTURE 11.6)
 
     def __init__(
-        self, roles: Mapping[Role, RoleConfig], *, api_key: str | None, fallbacks: bool = True
+        self,
+        roles: Mapping[Role, RoleConfig],
+        *,
+        api_key: str | None,
+        fallbacks: bool = True,
+        client: anthropic.AsyncAnthropic | None = None,
     ) -> None:
         # api_key=None lets the SDK resolve ANTHROPIC_API_KEY / `ant auth login` profiles itself.
-        self._client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=3, timeout=300)
+        # A tenant's provider passes its own client (tenant_client): its key, its base URL.
+        self._client = client or anthropic.AsyncAnthropic(
+            api_key=api_key, max_retries=3, timeout=300
+        )
         self._roles = roles
         self._fallbacks = fallbacks
 
@@ -263,6 +275,21 @@ class AnthropicLLM:
         return result
 
 
+def tenant_client(
+    *, api_key: str, base_url: str | None, timeout: float = 300, max_retries: int = 3
+) -> anthropic.AsyncAnthropic:
+    """A client for a tenant's own Anthropic key. Explicit credentials and URL, so the SDK never
+    falls back to the deployment's environment (ANTHROPIC_API_KEY, profiles, ANTHROPIC_BASE_URL);
+    no redirects, so the key goes to `base_url` and nowhere else."""
+    return anthropic.AsyncAnthropic(
+        api_key=api_key,
+        base_url=base_url or "https://api.anthropic.com",
+        max_retries=max_retries,
+        timeout=timeout,
+        http_client=anthropic.DefaultAsyncHttpxClient(follow_redirects=False),
+    )
+
+
 class OpenAICompatibleLLM:
     """For local or self-hosted models. Effort has no equivalent here and is ignored."""
 
@@ -274,12 +301,14 @@ class OpenAICompatibleLLM:
         base_url: str,
         api_key: str | None = None,
         external: bool = False,
+        timeout: float = 300,
     ) -> None:
         self.external = external
         self._http = http
         self._url = base_url.rstrip("/") + "/chat/completions"
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._roles = roles
+        self._timeout = timeout
 
     def _body(self, role: Role, request: LLMRequest, **extra: Any) -> dict[str, Any]:
         return {
@@ -293,7 +322,11 @@ class OpenAICompatibleLLM:
     async def _post(self, body: dict[str, Any]) -> dict[str, Any]:
         try:
             response = await self._http.post(
-                self._url, json=body, headers=self._headers, timeout=300
+                self._url,
+                json=body,
+                headers=self._headers,
+                timeout=self._timeout,
+                follow_redirects=False,  # the key goes to this URL only
             )
         except httpx.HTTPError as exc:
             raise LLMError(f"model server unreachable at {self._url}: {exc!r}") from exc
@@ -374,7 +407,12 @@ class OpenAICompatibleLLM:
         body = self._body(role, request, stream=True, stream_options={"include_usage": True})
         try:
             async with self._http.stream(
-                "POST", self._url, json=body, headers=self._headers, timeout=300
+                "POST",
+                self._url,
+                json=body,
+                headers=self._headers,
+                timeout=self._timeout,
+                follow_redirects=False,
             ) as response:
                 if response.is_error:
                     raise LLMError(f"model server HTTP {response.status_code}")
