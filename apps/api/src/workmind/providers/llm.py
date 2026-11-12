@@ -12,7 +12,7 @@ a model, so one deployment can mix providers' models without touching business c
 
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
 
 import anthropic
@@ -50,6 +50,9 @@ class LLMRequest:
     messages: list[LLMMessage]
     max_tokens: int = 16000
     effort: Effort | None = None  # None: the role's configured effort
+    # None: the role's configured model. Set by PinnedModel (an agent configured with its own
+    # model, docs/agents.md): the same provider, a different model for this one request.
+    model: str | None = None
 
 
 @dataclass
@@ -156,14 +159,15 @@ class AnthropicLLM:
 
     def _params(self, role: Role, request: LLMRequest) -> dict[str, Any]:
         config = self._roles[role]
+        model = request.model or config.model
         params: dict[str, Any] = {
-            "model": config.model,
+            "model": model,
             "max_tokens": request.max_tokens,
             "system": request.system,
             "messages": [{"role": m.role, "content": m.content} for m in request.messages],
             "output_config": {"effort": request.effort or config.effort},
         }
-        if self._fallbacks and config.model in FALLBACK_MODELS:
+        if self._fallbacks and model in FALLBACK_MODELS:
             params["betas"] = [FALLBACK_BETA]
             params["fallbacks"] = "default"  # re-run a declined request on Anthropic's pick
         return params
@@ -312,7 +316,7 @@ class OpenAICompatibleLLM:
 
     def _body(self, role: Role, request: LLMRequest, **extra: Any) -> dict[str, Any]:
         return {
-            "model": self._roles[role].model,
+            "model": request.model or self._roles[role].model,
             "max_tokens": request.max_tokens,
             "messages": [{"role": "system", "content": request.system}]
             + [{"role": m.role, "content": m.content} for m in request.messages],
@@ -403,7 +407,7 @@ class OpenAICompatibleLLM:
         return body["choices"][0]["message"]["content"] or "", self._usage(body)
 
     async def stream(self, role: Role, request: LLMRequest) -> AsyncIterator[StreamEvent]:
-        usage = LLMUsage(model=self._roles[role].model)
+        usage = LLMUsage(model=request.model or self._roles[role].model)
         body = self._body(role, request, stream=True, stream_options={"include_usage": True})
         try:
             async with self._http.stream(
@@ -448,6 +452,47 @@ class OpenAICompatibleLLM:
         )
         return schema.model_validate_json(body["choices"][0]["message"]["content"]), self._usage(
             body
+        )
+
+
+class PinnedModel:
+    """Sends every request to one model of the wrapped provider, whatever the role says.
+
+    An agent configured with its own model (docs/agents.md) runs through this. Everything else
+    (effort per role, the provider, whether requests leave your infrastructure) stays the
+    wrapped provider's, so sensitivity routing still sees the right `external` flag."""
+
+    def __init__(self, inner: LLMProvider, model: str) -> None:
+        self.inner = inner
+        self.model = model
+        self.external = inner.external
+
+    def _pin(self, request: LLMRequest) -> LLMRequest:
+        return replace(request, model=self.model)
+
+    async def complete(self, role: Role, request: LLMRequest) -> tuple[str, LLMUsage]:
+        return await self.inner.complete(role, self._pin(request))
+
+    async def stream(self, role: Role, request: LLMRequest) -> AsyncIterator[StreamEvent]:
+        async for event in self.inner.stream(role, self._pin(request)):
+            yield event
+
+    async def structured[T: BaseModel](
+        self, role: Role, request: LLMRequest, schema: type[T]
+    ) -> tuple[T, LLMUsage]:
+        return await self.inner.structured(role, self._pin(request), schema)
+
+    async def run_tools(
+        self,
+        role: Role,
+        request: LLMRequest,
+        tools: Sequence[ToolSpec],
+        execute: ToolExecutor,
+        *,
+        max_steps: int = 6,
+    ) -> ToolLoopResult:
+        return await self.inner.run_tools(
+            role, self._pin(request), tools, execute, max_steps=max_steps
         )
 
 

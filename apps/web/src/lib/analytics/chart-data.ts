@@ -10,8 +10,18 @@
  *   colour is never generated or reused (dataviz rule: no 9th hue).
  */
 
-import type { Cell, ChartSpec, ResultColumn, ValueFormat } from "@/lib/analytics/api";
-import { categoryLabels, cellText, humanize, measureLabel, parseIsoDate, percentScale, toNumber, type PercentScale } from "@/lib/analytics/format";
+import type { Cell, ChartSpec, ResultColumn } from "@/lib/analytics/api";
+import {
+  categoryLabels,
+  cellText,
+  humanize,
+  measureLabel,
+  parseIsoDate,
+  percentScale,
+  toNumber,
+  type ChartFormat,
+  type PercentScale,
+} from "@/lib/analytics/format";
 
 export const MAX_SERIES = 8;
 /** Bars past this many categories can't be read; the table shows them instead. */
@@ -34,7 +44,7 @@ export interface ChartData {
   xLabel: string;
   categories: { key: string; label: string }[];
   series: ChartSeries[];
-  yFormat: ValueFormat;
+  yFormat: ChartFormat;
   percentScale: PercentScale;
   /** How many series were folded into "Other" (0 when none). */
   folded: number;

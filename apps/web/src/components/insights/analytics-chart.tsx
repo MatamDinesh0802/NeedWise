@@ -62,7 +62,8 @@ export function AnalyticsChart({ data }: { data: ChartData }) {
   );
 }
 
-function ViewToggle({ view, onChange }: { view: "chart" | "table"; onChange: (view: "chart" | "table") => void }) {
+/** "Show as: Chart | Table". Every chart has a table twin; this switches between them. */
+export function ViewToggle({ view, onChange }: { view: "chart" | "table"; onChange: (view: "chart" | "table") => void }) {
   const options = [
     { value: "chart", label: "Chart", icon: ChartColumnBig },
     { value: "table", label: "Table", icon: Table2 },

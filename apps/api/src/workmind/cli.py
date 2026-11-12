@@ -2,9 +2,9 @@
 
 wm eval [options]         run the evaluation suites (see `wm eval --help`)
 wm seed [options]         seed a demo company (see `wm seed --help`)
+wm license dev [options]  write a development Enterprise license (see `wm license dev --help`)
 wm reindex <tenant>       re-index a tenant's documents
 wm secrets rotate         re-encrypt stored model provider keys with SECRETS_ENCRYPTION_KEY
-wm license dev [options]  write a development Enterprise license (see `wm license dev --help`)
 """
 
 import sys

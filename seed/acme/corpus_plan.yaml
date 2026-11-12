@@ -260,6 +260,97 @@ documents:
       - Customers must request a return authorisation (RMA) within 30 days of delivery.
       - Robots ship from the Rotterdam warehouse with a 5-working-day lead time.
 
+  # --- Legal & Contracts (enterprise, official; owner: Priya Raman) -----------------------------
+  # Written by hand for Phase 11 (no model call) and rendered with this generator's converters.
+  # The Legal agent that searches them is created in the UI (docs/agents.md), not seeded.
+  - file: legal-contracts/contract-signature-authority-matrix.xlsx
+    title: Contract Signature Authority Matrix
+    brief: A spreadsheet of who may sign which contracts at which total contract value, plus the rules that apply to every contract.
+    facts:
+      - Customer contracts up to 250,000 euros are signed by the VP Sales (Diego Alvarez).
+      - Customer contracts from 250,000 to 1,000,000 euros are signed by the CFO (Hannah Schmidt) and the VP Sales.
+      - Customer contracts above 1,000,000 euros are signed by the CEO (Priya Raman) and the CFO, after Legal & Compliance review.
+      - Supplier contracts up to 25,000 euros are signed by the budget-owning department manager, from 25,000 to 150,000 euros by the CFO, and above 150,000 euros by the CEO and the CFO.
+      - Contracts longer than 3 years, or with unlimited liability, are signed by the CEO whatever their value.
+      - Signed contracts are uploaded to ContractHub within 5 business days of signature.
+  - file: legal-contracts/nda-policy.md
+    title: NDA Policy
+    brief: When employees may sign the standard mutual NDA themselves, and when Legal & Compliance must review an NDA.
+    facts:
+      - The standard mutual NDA template LEG-NDA-02 may be signed without legal review by any department manager when the other party is a prospective customer, supplier or partner, the text is unchanged except names, addresses and purpose, the term is at most 3 years, no source code, unreleased firmware or personal data is shared, and the other party is not a competitor.
+      - Confidentiality obligations survive for 5 years after the term ends.
+      - Legal & Compliance reviews other NDAs within 3 business days, and a reviewed NDA is signed by the CFO.
+  - file: legal-contracts/supplier-contract-review-checklist.docx
+    title: Supplier Contract Review Checklist
+    brief: The checklist completed before signing a supplier contract.
+    facts:
+      - The checklist is required for supplier contracts above 25,000 euros, for suppliers processing personal data, and for suppliers with access to FleetOS production systems or customer data.
+      - Purchases above 50,000 euros need three written quotes.
+      - Standard supplier payment terms are payment within 45 days of receiving a correct invoice.
+      - The supplier's liability cap must be at least 1 times the annual contract value, and IT suppliers need professional liability insurance of at least 2 million euros.
+      - Contracts above 150,000 euros go to Legal & Compliance at least 5 business days before signature.
+  - file: legal-contracts/data-processing-agreements-and-gdpr.pdf
+    title: Data Processing Agreements and GDPR
+    brief: Acme's roles under the GDPR, data processing agreements with customers and suppliers, breaches and data deletion.
+    facts:
+      - Every FleetOS customer is offered the standard DPA template LEG-DPA-01, signed by the CFO after Legal & Compliance review.
+      - Customers get 30 days' notice before a new sub-processor is added.
+      - Affected customers are told about a breach of FleetOS data within 48 hours; notifiable breaches of Acme's own data go to the Dutch Data Protection Authority within 72 hours.
+      - Customer FleetOS data is deleted within 90 days after the contract ends.
+      - FleetOS customer data is hosted in the EU (Frankfurt region).
+  - file: legal-contracts/standard-customer-terms-2026.pdf
+    title: Standard Customer Terms 2026
+    brief: The standard terms attached to every robot and FleetOS sale, and who approves deviations.
+    facts:
+      - Invoices are payable within 30 days of the invoice date (net 30).
+      - Acme's total liability is capped at the fees the customer paid in the 12 months before the claim.
+      - Robots carry a 24-month hardware warranty from delivery.
+      - Payment terms longer than 45 days need CFO approval, and a liability cap above 12 months' fees needs the CEO.
+      - FleetOS subscription prices may rise by at most 5 percent a year.
+  - file: legal-contracts/export-control-amr-hardware.docx
+    title: Export Control for AMR Hardware
+    brief: Sanctions screening, embargoed destinations, end-use rules and records for robots shipped outside the EU.
+    facts:
+      - Customers outside the EU and EEA are screened against EU, UN and US sanctions lists before a quotation is sent.
+      - Orders above 100,000 euros outside the EU and EEA need a signed end-user statement.
+      - The Export Control Officer is Olivia Grant, who answers within 2 business days at export@acme.test.
+      - Export records are kept for 7 years.
+      - Acme does not sell to military end users.
+  - file: legal-contracts/records-retention-and-litigation-hold.docx
+    title: Records Retention and Litigation Hold
+    brief: How long each kind of record is kept, and how a litigation hold works.
+    facts:
+      - Customer contracts are kept for 7 years after the contract ends.
+      - Personnel files are kept for 2 years after employment ends, support tickets for 3 years after closure, and FleetOS telemetry for 24 months.
+      - Custodians must confirm a litigation hold notice within 2 business days.
+      - IT suspends automatic deletion within 1 business day of a hold notice.
+      - Only Legal & Compliance can release a hold.
+  - file: legal-contracts/ip-and-invention-assignment.md
+    title: IP and Invention Assignment Policy
+    brief: Who owns what employees create, how to report inventions, inventor awards, open source and side projects.
+    facts:
+      - Inventions must be disclosed to legal@acme.test within 30 days of the idea first working.
+      - Each named inventor receives 1,000 euros when a patent application is filed and 2,500 euros when it is granted.
+      - Acme holds 6 granted patents and 4 pending applications.
+      - Copyleft code (GPL, AGPL) needs CTO and Legal & Compliance approval before it is added to FleetOS.
+  - file: legal-contracts/anti-bribery-and-gifts-policy.pdf
+    title: Anti-Bribery and Gifts Policy
+    brief: Bribery, gifts and hospitality received and given, public officials, distributors and agents. Consistent with the Code of Conduct.
+    facts:
+      - Gifts from suppliers up to 50 euros may be accepted if occasional; gifts above 50 euros are declared to Finance.
+      - Gifts given are limited to Acme-branded items up to 50 euros per person per year, and hospitality to 150 euros per person per event.
+      - Anything for a public official needs written pre-approval by Legal & Compliance.
+      - Agent commissions above 10 percent need approval from the CFO and the CEO.
+      - The anti-bribery e-learning is due by 31 March every year.
+  - file: legal-contracts/working-with-legal-2026.pptx
+    title: Working with Legal & Compliance 2026
+    brief: A short slide deck on how to work with Legal & Compliance, self-service options, turnaround times and ContractHub.
+    facts:
+      - Legal & Compliance has 2 in-house counsel and takes requests at legal@acme.test.
+      - NDA reviews take 3 business days; deviations from the customer terms, supplier contracts above 150,000 euros and DPAs take 5 business days.
+      - ContractHub sends renewal reminders 120 days before a renewal or notice date.
+      - The customer DPA should be signed with every FleetOS customer by 2026-12-31.
+
   # --- Leadership strategy (restricted: leadership group) ---------------------------------------
   - file: leadership-strategy/board-update-q3-2026.pptx
     title: Board Update Q3 2026

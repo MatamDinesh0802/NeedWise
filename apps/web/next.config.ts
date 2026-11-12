@@ -55,6 +55,8 @@ const nextConfig: NextConfig = {
     return [
       { source: "/assistant", destination: "/chat", permanent: false },
       { source: "/workflows", destination: "/approvals", permanent: false },
+      // Notifications stored before workflow links moved to Admin › Workflows (work/links.py).
+      { source: "/workflows/:key", destination: "/admin/workflows?workflow=:key", permanent: false },
     ];
   },
   async rewrites() {

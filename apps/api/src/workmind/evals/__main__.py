@@ -40,6 +40,7 @@ from workmind.evals.runner import (
     RetrievalRecord,
     RoutingRecord,
     Variant,
+    routing_by_agent,
     summarize_retrieval,
 )
 from workmind.modules.retrieval.service import Mode
@@ -274,9 +275,19 @@ async def run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     if result.routing:
-        right = sum(r.correct for r in result.routing)
-        fast = sum(r.routed_by == "fast_path" for r in result.routing)
-        print(f"routing: {right}/{len(result.routing)} correct, {fast} fast path", file=sys.stderr)
+        ran = [r for r in result.routing if r.skipped is None]
+        right = sum(r.correct for r in ran)
+        fast = sum(r.routed_by == "fast_path" for r in ran)
+        print(f"routing: {right}/{len(ran)} correct, {fast} fast path", file=sys.stderr)
+        for reason in sorted({r.skipped for r in result.routing if r.skipped}):
+            count = sum(r.skipped == reason for r in result.routing)
+            print(f"  routing: {count} skipped ({reason})", file=sys.stderr)
+        for key, s in routing_by_agent(result.routing).items():
+            print(
+                f"  {key:>12}: {s['exact']}/{s['expected']} exact, "
+                f"{s['false_positives']} picked when not expected",
+                file=sys.stderr,
+            )
     if result.analytics:
         s = summarize(result.analytics)
         print(

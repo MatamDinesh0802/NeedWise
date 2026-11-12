@@ -6,7 +6,8 @@
 
 import { ApiError } from "@/lib/api";
 import { errorMessage, type ErrorMessage } from "@/lib/error-messages";
-import type { ActionEdit, ActionItem, Commitment, Decision, Meeting, MeetingStatus, Segment, Speaker } from "@/lib/meetings/api";
+import { meetingsKeys, type ActionEdit, type ActionItem, type Commitment, type Decision, type Meeting, type MeetingStatus, type Segment, type Speaker } from "@/lib/meetings/api";
+import { workKeys } from "@/lib/work/api";
 import { dueText } from "@/lib/work/tasks";
 
 // --- Upload -----------------------------------------------------------------------------------
@@ -106,6 +107,22 @@ export function meetingErrorMessage(error: unknown): ErrorMessage {
   }
   return errorMessage(error);
 }
+
+// --- Deleting ---------------------------------------------------------------------------------
+
+/** What deleting removes and what stays, for the confirmation (`tasks`: action items made tasks). */
+export function meetingDeletionText(tasks: number): string {
+  const kept =
+    tasks === 0
+      ? ""
+      : tasks === 1
+        ? " The task made from one of its action items stays with its owner."
+        : ` The ${tasks} tasks made from its action items stay with their owners.`;
+  return `The meeting, its recording or transcript file, and its searchable transcript are removed for everyone who can see this collection.${kept} This can't be undone.`;
+}
+
+/** Lists a deleted meeting leaves stale: the meetings list, "My commitments", and task lists. */
+export const MEETING_DELETION_KEYS: readonly string[] = [meetingsKeys.list, meetingsKeys.commitments, workKeys.tasks];
 
 /** What happens next, for the toast after an upload. */
 export function uploadedText(kind: FileKind | null): string {

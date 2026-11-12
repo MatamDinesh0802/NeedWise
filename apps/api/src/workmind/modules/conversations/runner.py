@@ -196,7 +196,14 @@ def assistant_stream(
 ) -> AsyncGenerator[OrchestratorEvent]:
     if deps.mode in ("agents", "auto"):
         return orchestrate(
-            OrchestratorDeps(deps.sessions, deps.llm, deps.local_llm, deps.retriever, deps.router),
+            OrchestratorDeps(
+                deps.sessions,
+                deps.llm,
+                deps.local_llm,
+                deps.retriever,
+                deps.router,
+                tools=deps.tools,  # agents configured with read-level tools call them
+            ),
             ctx,
             question,
             organization=organization,
@@ -377,8 +384,18 @@ async def execute_research_run(
     usage = Usage()
     status, error, text = "complete", None, ""
     approvals: list[str] = []
+    steps: list[dict[str, Any]] = []  # stored with the answer: a reload shows them as live
 
     async def on_step(step: ResearchStep) -> None:
+        steps.append(
+            {
+                "tool": step.tool,
+                "ok": step.ok,
+                "error": step.error,
+                "approval_id": step.approval_id,
+                "summary": step.summary,
+            }
+        )
         await events.emit(
             run_id, "tool.step", {"tool": step.tool, "ok": step.ok, "error": step.error}
         )
@@ -418,7 +435,9 @@ async def execute_research_run(
     except Exception:
         status, error = "failed", ("internal", "Something went wrong while working on this.")
         log.exception("research_failed", run_id=str(run_id))
-    message_id = await _store(deps, ctx, meta, None, text, status, question, usage.as_dict())
+    message_id = await _store(
+        deps, ctx, meta, None, text, status, question, usage.as_dict(), tool_steps=steps
+    )
     if status == "complete":
         await events.emit(
             run_id,
@@ -441,6 +460,8 @@ async def _store(
     status: str,
     search_query: str,
     usage: dict[str, Any],
+    *,
+    tool_steps: list[dict[str, Any]] | None = None,
 ) -> uuid.UUID:
     content = final.text if final and status == "complete" else partial  # research: the text
     async with tenant_transaction(deps.sessions, ctx.tenant_id) as session:
@@ -468,6 +489,7 @@ async def _store(
             usage=usage,
             abstained=final.abstained if final else False,
             withheld=final.withheld if final else 0,
+            tool_steps=tool_steps or [],
         )
         session.add(message)
         conversation = await session.get(Conversation, meta.conversation_id)

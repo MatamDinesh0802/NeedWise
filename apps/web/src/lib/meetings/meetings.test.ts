@@ -15,6 +15,8 @@ import {
   formatTimestamp,
   isCommitmentClosed,
   jumpTarget,
+  MEETING_DELETION_KEYS,
+  meetingDeletionText,
   meetingErrorMessage,
   meetingLink,
   meetingPeople,
@@ -337,5 +339,19 @@ describe("my commitments", () => {
       commitment({ text: "no deadline, newer meeting", due: null, meeting_date: "2026-11-09" }),
     ]);
     expect(sorted.map((c) => c.text)).toEqual(["soon", "later", "no deadline, newer meeting", "no deadline", "done"]);
+  });
+});
+
+describe("deleting a meeting", () => {
+  it("says what goes and that tasks made from it stay", () => {
+    expect(meetingDeletionText(0)).toMatch(/^The meeting, its recording or transcript file, and its searchable transcript are removed/);
+    expect(meetingDeletionText(0)).not.toContain("task");
+    expect(meetingDeletionText(1)).toContain("The task made from one of its action items stays with its owner.");
+    expect(meetingDeletionText(3)).toContain("The 3 tasks made from its action items stay with their owners.");
+    expect(meetingDeletionText(3)).toMatch(/This can't be undone\.$/);
+  });
+
+  it("refreshes the lists it changes, not the deleted meeting itself", () => {
+    expect(MEETING_DELETION_KEYS).toEqual(["meetings/list", "meetings/commitments", "work/tasks"]);
   });
 });

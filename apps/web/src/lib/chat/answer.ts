@@ -1,8 +1,9 @@
 /** One view model for an assistant answer, live (from a run) or stored (from history). */
 
 import type { Citation, Message, Source, Usage } from "@/lib/chat/api";
-import type { ApprovalRef, RunState, ToolStep } from "@/lib/chat/run-reducer";
+import type { ApprovalRef, RunError, RunState, ToolStep } from "@/lib/chat/run-reducer";
 import { traceFromRun, type AgentTrace } from "@/lib/chat/trace";
+import type { Approval } from "@/lib/work/api";
 
 export type AnswerPhase = "searching" | "streaming" | "complete" | "cancelled" | "failed";
 
@@ -18,20 +19,41 @@ export interface AnswerView {
   withheld: number;
   abstained: boolean;
   usage: Usage | null;
-  error: { code: string; message: string } | null;
+  error: RunError | null;
   /** Stored message (feedback needs its id); null while live. */
   message: Message | null;
   /** Department agents behind the answer; only known for runs seen live in this tab. */
   trace: AgentTrace | null;
-  /** Research runs: tool calls (live or seen in this tab) and the actions they proposed. */
+  /** Research runs: tool calls (live, or stored with the message) and the actions they proposed. */
   toolSteps: ToolStep[];
   approvals: ApprovalRef[];
 }
 
-/** What a finished research run leaves behind in this tab (stored messages don't keep it). */
+/** What a research run did: its tool calls, and the actions it proposed for approval. */
 export interface ResearchActivity {
   toolSteps: ToolStep[];
   approvals: ApprovalRef[];
+}
+
+/** The steps stored with a research answer (`tool_steps`), as the live run showed them. */
+export function researchFromMessage(message: Pick<Message, "tool_steps">): ResearchActivity | null {
+  const steps = message.tool_steps ?? [];
+  if (steps.length === 0) return null;
+  return {
+    toolSteps: steps.map((s) => ({ tool: s.tool, ok: s.ok, error: s.error ?? null })),
+    approvals: steps.flatMap((s) => (s.approval_id ? [{ id: s.approval_id, tool: s.tool, summary: s.summary ?? "" }] : [])),
+  };
+}
+
+/** A conversation's approvals, grouped by the run (answer) that proposed them. */
+export function approvalsByRunId(approvals: readonly Approval[], conversationId: string): Map<string, Approval[]> {
+  const byRun = new Map<string, Approval[]>();
+  for (const approval of approvals) {
+    const runId = approval.origin.run_id;
+    if (approval.origin.conversation_id !== conversationId || typeof runId !== "string") continue;
+    byRun.set(runId, [...(byRun.get(runId) ?? []), approval]);
+  }
+  return byRun;
 }
 
 export function answerFromRun(run: RunState): AnswerView {
@@ -66,8 +88,10 @@ export function answerFromMessage(
   message: Message,
   question: string | null,
   trace: AgentTrace | null = null,
+  /** This tab's memory of the live run; otherwise what the message stored. */
   research: ResearchActivity | null = null,
 ): AnswerView {
+  const activity = research ?? researchFromMessage(message);
   const searchedFor =
     message.search_query && question && message.search_query.trim() !== question.trim() ? message.search_query : null;
   return {
@@ -84,8 +108,8 @@ export function answerFromMessage(
     error: message.status === "failed" ? { code: "failed", message: "This answer failed." } : null,
     message,
     trace,
-    toolSteps: research?.toolSteps ?? [],
-    approvals: research?.approvals ?? [],
+    toolSteps: activity?.toolSteps ?? [],
+    approvals: activity?.approvals ?? [],
   };
 }
 
