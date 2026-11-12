@@ -503,7 +503,13 @@ def compose_request(
 def render_model(model: ModelDescription) -> str:
     lines = [f"{model.name}: {model.description}", "", "Tables (use these names in run_sql):"]
     for table in model.tables:
-        rows = f"{table.rows} rows" if table.rows is not None else "not loaded"
+        rows = (
+            "only the rows your row policy allows"
+            if table.restricted
+            else f"{table.rows} rows"
+            if table.rows is not None
+            else "not loaded"
+        )
         dated = f"; date column {table.time_column}" if table.time_column else ""
         lines.append(f"- {table.name} ({rows}{dated}): {table.description}")
         for column in table.columns:

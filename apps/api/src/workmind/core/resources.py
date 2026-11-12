@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from workmind.core.config import Settings
 from workmind.core.db import create_engine, create_session_factory
 from workmind.modules.agents.planning import FastRouter
+from workmind.modules.analytics.engine import QueryPool
 from workmind.modules.analytics.service import Analytics
 from workmind.modules.analytics.tools import describe_data_tool, query_data_tool
 from workmind.modules.authz.openfga import OpenFgaClient
@@ -96,6 +97,11 @@ class Resources:
             settings.analytics_path,
             max_rows=settings.analytics_max_rows,
             timeout_s=settings.analytics_timeout_s,
+            pool=QueryPool(
+                workers=settings.analytics_workers,
+                memory_mb=settings.analytics_worker_memory_mb,
+                per_owner=settings.analytics_queries_per_user,
+            ),
         )
         tools = ToolRegistry()
         tools.register(search_knowledge_tool(retriever))
@@ -175,6 +181,7 @@ class Resources:
                 )
 
     async def aclose(self) -> None:
+        self.analytics.close()
         await self.runs.shutdown()
         await self.http.aclose()
         await self.valkey.aclose()

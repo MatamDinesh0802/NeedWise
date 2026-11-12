@@ -207,6 +207,30 @@ CTE_TRICKS = [
     "WITH a AS (SELECT * FROM secret), secret AS (SELECT 1 AS x) SELECT * FROM a",
     "WITH secret AS (SELECT * FROM secret) SELECT * FROM secret",
     "WITH a AS (SELECT 1 AS x) SELECT * FROM main.a",
+    # RECURSIVE does not make every self-reference recursive: DuckDB binds these to the table
+    # or catalog view of that name (a table outside the model, duckdb_tables, pg_settings).
+    "WITH RECURSIVE secret AS (SELECT * FROM secret) SELECT * FROM secret",
+    "WITH RECURSIVE duckdb_tables AS (SELECT * FROM duckdb_tables) SELECT * FROM duckdb_tables",
+    "WITH RECURSIVE duckdb_databases AS (SELECT * FROM duckdb_databases) SELECT path FROM "
+    "duckdb_databases",
+    "WITH RECURSIVE pg_settings AS (SELECT * FROM pg_settings) SELECT * FROM pg_settings",
+    "WITH RECURSIVE secret AS MATERIALIZED (SELECT * FROM secret) SELECT * FROM secret",
+    "WITH RECURSIVE secret AS ((SELECT * FROM secret)) SELECT * FROM secret",
+    "WITH RECURSIVE secret AS (SELECT * FROM (SELECT 1 AS x UNION ALL SELECT * FROM secret)) "
+    "SELECT * FROM secret",
+    # In the anchor (left) side of the UNION, or in a UNION that is not the body's top level.
+    "WITH RECURSIVE secret AS (SELECT * FROM secret UNION ALL SELECT 1 WHERE false) "
+    "SELECT * FROM secret",
+    "WITH RECURSIVE secret AS (SELECT 1 AS x UNION SELECT * FROM secret UNION SELECT 2) "
+    "SELECT * FROM secret",
+    # Only UNION [ALL] is recursive; BY NAME, INTERSECT and EXCEPT read the real table.
+    "WITH RECURSIVE secret AS (SELECT 1 AS x UNION ALL BY NAME SELECT * FROM secret) "
+    "SELECT * FROM secret",
+    "WITH RECURSIVE secret AS (SELECT 1 AS x INTERSECT SELECT * FROM secret) SELECT * FROM secret",
+    "WITH RECURSIVE secret AS (SELECT 1 AS x EXCEPT SELECT * FROM secret) SELECT * FROM secret",
+    # The guard's own names are reserved.
+    "WITH _wm_rows_customers AS (SELECT * FROM products) SELECT * FROM _wm_rows_customers",
+    "SELECT * FROM _wm_rows_customers",
 ]
 
 TABLE_SYNTAX = [
@@ -265,6 +289,30 @@ def test_reasons_say_what_to_fix(sql: str, words: str) -> None:
         check(sql)
 
 
+def test_deeply_nested_queries_are_rejected_not_crashed() -> None:
+    nested = "SELECT " + "(" * 400 + "1" + ")" * 400
+
+    with pytest.raises(guard.QueryRejectedError, match="nested too deeply"):
+        check(nested)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 3) "
+        "SELECT * FROM n",
+        "WITH RECURSIVE n(i) AS ((SELECT 1) UNION (SELECT i + 1 FROM n WHERE i < 3)) "
+        "SELECT * FROM n",
+        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM (SELECT * FROM n) m "
+        "WHERE i < 3) SELECT * FROM n",
+        "WITH RECURSIVE n(i) AS (SELECT 1 UNION SELECT 2 UNION SELECT i + 1 FROM n WHERE i < 3) "
+        "SELECT * FROM n",
+    ],
+)
+def test_recursive_terms_may_read_their_cte(sql: str) -> None:
+    assert check(sql).tables == ()
+
+
 def test_overlong_queries_are_rejected() -> None:
     with pytest.raises(guard.QueryRejectedError, match="too long"):
         check("SELECT 1" + " " * guard.MAX_SQL_CHARS)
@@ -273,17 +321,30 @@ def test_overlong_queries_are_rejected() -> None:
 # --- Accepted, and the rewrite ---------------------------------------------------------------
 
 
-def test_filtered_tables_become_policy_subqueries_keeping_aliases() -> None:
+def test_filtered_tables_are_read_through_fences_keeping_aliases() -> None:
     checked = check(
         "SELECT c.name, i.amount_eur FROM customers c JOIN invoice_lines i USING (customer_id)"
     )
 
     assert checked.sql == (
-        "SELECT c.name, i.amount_eur FROM (SELECT * FROM customers WHERE "
-        "(customers.account_owner = 'dan@acme.test')) AS c JOIN (SELECT * FROM invoice_lines "
-        "WHERE (invoice_lines.customer_id IN (SELECT customer_id FROM customers WHERE "
-        "account_owner = 'dan@acme.test'))) AS i USING (customer_id) LIMIT 101"
+        "SELECT c.name, i.amount_eur FROM _wm_rows_customers AS c JOIN _wm_rows_invoice_lines "
+        "AS i USING (customer_id) LIMIT 101"
     )
+    assert [(f.name, f.table, f.sql) for f in checked.fences] == [
+        (
+            "_wm_rows_customers",
+            "customers",
+            "SELECT * FROM customers WHERE (customers.account_owner = 'dan@acme.test')",
+        ),
+        (
+            "_wm_rows_invoice_lines",
+            "invoice_lines",
+            "SELECT * FROM invoice_lines WHERE (invoice_lines.customer_id IN (SELECT customer_id "
+            "FROM customers WHERE account_owner = 'dan@acme.test'))",
+        ),
+    ]
+    assert checked.statements.startswith("CREATE TEMP TABLE _wm_rows_customers AS SELECT")
+    assert checked.statements.endswith(checked.sql)
     assert checked.tables == ("customers", "invoice_lines")
     assert checked.filtered == ("customers", "invoice_lines")
     assert checked.query == (
@@ -305,12 +366,19 @@ def test_without_filters_nothing_is_rewritten() -> None:
     assert checked.sql == "SELECT * FROM customers LIMIT 101"
 
 
-def test_the_policy_subquery_is_not_rewritten_again() -> None:
-    # The invoice_lines policy reads customers: that inner reference stays the plain table.
+def test_the_policy_reads_the_real_tables_and_the_query_only_the_fence() -> None:
+    # The invoice_lines policy reads customers: in the fence, that is the plain table.
     checked = check("SELECT count(*) FROM invoice_lines")
 
-    assert checked.sql.count("FROM customers WHERE account_owner") == 1
-    assert checked.sql.count("SELECT * FROM customers") == 0
+    (fence,) = checked.fences
+    assert "FROM customers WHERE account_owner" in fence.sql
+    assert "_wm_rows" not in fence.sql
+    assert checked.sql == "SELECT COUNT(*) FROM _wm_rows_invoice_lines AS invoice_lines LIMIT 101"
+
+
+def test_tables_without_a_policy_get_no_fence() -> None:
+    assert check("SELECT * FROM products").fences == ()
+    assert check("SELECT * FROM customers", filters=False).fences == ()
 
 
 @pytest.mark.parametrize(
@@ -326,8 +394,8 @@ def test_the_policy_subquery_is_not_rewritten_again() -> None:
 def test_quoted_mixed_case_and_main_qualified_names_are_filtered(sql: str, alias: str) -> None:
     checked = check(sql)
 
-    policy = "(SELECT * FROM customers WHERE (customers.account_owner = 'dan@acme.test'))"
-    assert checked.sql == " ".join(["SELECT * FROM", policy, "AS", alias, "LIMIT 101"])
+    assert checked.sql == " ".join(["SELECT * FROM _wm_rows_customers AS", alias, "LIMIT 101"])
+    assert [f.table for f in checked.fences] == ["customers"]
 
 
 def test_user_values_in_policies_are_escaped_literals() -> None:
@@ -337,7 +405,7 @@ def test_user_values_in_policies_are_escaped_literals() -> None:
     filters = row_filters(resolved(), context(SALES), "o'brien@acme.test' OR '1'='1")
     checked = guard.check("SELECT * FROM customers", tables=TABLES, row_filters=filters)
 
-    assert "account_owner = 'o''brien@acme.test'' OR ''1''=''1'" in checked.sql
+    assert "account_owner = 'o''brien@acme.test'' OR ''1''=''1'" in checked.fences[0].sql
 
 
 def test_comments_never_reach_the_executed_sql() -> None:
@@ -473,20 +541,73 @@ def test_counts_as_dan(acme: Path, sql: str, expected: int) -> None:
     assert run(acme, sql, dan_filters()).rows == [[expected]]
 
 
-def test_error_oracles_do_not_reveal_hidden_rows(acme: Path) -> None:
-    # If DuckDB evaluated these predicates on rows outside the policy, the query would fail.
-    probes = [
-        "SELECT count(*) FROM customers WHERE CASE WHEN customer_id = 'C001' "
-        "THEN error('hidden row') ELSE true END",
-        "SELECT count(*) FROM invoice_lines WHERE CASE WHEN customer_id = 'C001' "
-        "THEN error('hidden row') ELSE true END",
-        "SELECT count(*) FROM opportunities WHERE CASE WHEN owner = 'diego.alvarez@acme.test' "
-        "THEN error('hidden row') ELSE true END",
-    ]
-    for sql in probes:
-        count = run(acme, sql, dan_filters()).rows[0][0]
-        assert isinstance(count, int)
-        assert count > 0
+def test_error_is_refused() -> None:
+    with pytest.raises(guard.QueryRejectedError, match=r"error\(\)"):
+        check("SELECT count(*) FROM customers WHERE error('x') IS NULL")
+
+
+# A selective condition made DuckDB build its semi join on the filtered side and evaluate the
+# rest of the query's WHERE on rows the policy excludes, when the policy was a subquery: a
+# failing CAST then quoted the hidden row. With fences, the query never reads those rows.
+ORACLES = {
+    "invoice_lines": (
+        "invoice_line_id",
+        "SELECT count(*) FROM invoice_lines WHERE invoice_line_id = '{id}' AND "
+        "CAST(invoice_line_id || '|' || customer_id || '|' || amount_eur::VARCHAR AS INTEGER) = 0",
+    ),
+    "customers": (
+        "customer_id",
+        "SELECT count(*) FROM customers WHERE customer_id = '{id}' AND "
+        "CAST(name || '|' || account_owner AS INTEGER) = 0",
+    ),
+    "opportunities": (
+        "opportunity_id",
+        "SELECT count(*) FROM opportunities o WHERE o.opportunity_id = '{id}' AND "
+        "CAST(o.name || '|' || o.amount_eur::VARCHAR AS INTEGER) = 0",
+    ),
+}
+
+
+@pytest.mark.parametrize("table", sorted(ORACLES))
+def test_selective_conversion_oracles_never_see_hidden_rows(acme: Path, table: str) -> None:
+    key, template = ORACLES[table]
+    owner = "owner" if table == "opportunities" else "account_owner"
+    if table == "invoice_lines":
+        mine = dan_customer_ids()
+        hidden = [r[key] for r in csv_rows(table) if r["customer_id"] not in mine]
+    else:
+        hidden = [r[key] for r in csv_rows(table) if r[owner] != DAN]
+    assert hidden
+
+    for row_id in hidden:
+        # Runs, and counts nothing: the CAST is never evaluated on the hidden row.
+        assert run(acme, template.format(id=row_id), dan_filters()).rows == [[0]], row_id
+
+
+def test_a_join_with_a_selective_oracle_never_sees_hidden_rows(acme: Path) -> None:
+    # The CAST fails on every customer but Dan's own; INV-00001 is one of Diego's lines.
+    sql = (
+        "SELECT count(*) FROM invoice_lines i JOIN customers c USING (customer_id) "
+        "WHERE i.invoice_line_id = 'INV-00001' AND CAST(CASE WHEN c.account_owner = "
+        "'dan@acme.test' THEN '0' ELSE c.name END AS INTEGER) = 0"
+    )
+
+    assert run(acme, sql, dan_filters()).rows == [[0]]
+
+
+def test_value_errors_do_not_quote_the_value(acme: Path) -> None:
+    mine = next(r for r in csv_rows("invoice_lines") if r["customer_id"] in dan_customer_ids())
+    template = (
+        "SELECT count(*) FROM invoice_lines WHERE invoice_line_id = '{id}' "
+        "AND CAST(customer_id || '-x' AS INTEGER) = 0"
+    )
+    sql = template.format(id=mine["invoice_line_id"])
+
+    with pytest.raises(engine.QueryFailedError) as failed:
+        run(acme, sql, dan_filters())
+
+    assert "Conversion Error" in failed.value.message
+    assert mine["customer_id"] not in failed.value.message
 
 
 def test_conversion_errors_only_show_values_dan_may_see(acme: Path) -> None:

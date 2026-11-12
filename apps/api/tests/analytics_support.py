@@ -101,7 +101,11 @@ def run(
     """The guard, then the engine: what the service does for a query."""
     model = acme_model()
     checked = guard.check(sql, tables=model.tables.keys(), row_filters=filters, max_rows=max_rows)
-    return engine.execute_sync(path, checked.sql, max_rows=max_rows)
+    return engine.execute_sync(path, checked.sql, max_rows=max_rows, fences=fences(checked))
+
+
+def fences(checked: guard.GuardedQuery) -> list[tuple[str, str]]:
+    return [(f.name, f.sql) for f in checked.fences]
 
 
 DAN_POLICY = (
@@ -195,12 +199,14 @@ class LocalAnalytics:
                 400, "query_rejected", "The query was refused", exc.reason
             ) from exc
         try:
-            result = await engine.execute(self.path, checked.sql, max_rows=cap)
+            result = await engine.execute(
+                self.path, checked.sql, max_rows=cap, fences=fences(checked)
+            )
         except engine.EngineError as exc:
             raise AnalyticsError(
                 400, "query_failed", "The query could not run", exc.message
             ) from exc
-        self.executed.append(checked.sql)
+        self.executed.append(checked.statements)
         return QueryResult(
             columns=[
                 ResultColumn(
@@ -215,7 +221,7 @@ class LocalAnalytics:
             truncated=result.truncated,
             elapsed_ms=result.elapsed_ms,
             sql=checked.query,
-            executed_sql=checked.sql,
+            executed_sql=checked.statements,
             tables=list(checked.tables),
             row_policies=["Own accounts only"] if checked.filtered else [],
         )

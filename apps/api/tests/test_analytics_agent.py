@@ -198,6 +198,29 @@ async def test_the_prompts_carry_the_model_the_date_and_the_rules(acme_file: Pat
     assert result.main_query == "Q1"
 
 
+async def test_a_restricted_person_is_not_told_the_tables_total_rows(acme_file: Path) -> None:
+    composed = Composed(narrative="Revenue.", chart=None, main_query="Q1")
+    llm = model(
+        composed,
+        composed,
+        turns=[
+            [("query_metrics", {"metrics": ["revenue"]})],
+            [("query_metrics", {"metrics": ["revenue"]})],
+        ],
+    )
+
+    await answer(llm, LocalAnalytics(acme_file, as_dan=True), CTX, "Total revenue?", today=TODAY)
+    await answer(llm, LocalAnalytics(acme_file), CTX, "Total revenue?", today=TODAY)
+
+    (_, dan), _, (_, carol), _ = llm.requests
+    # Dan sees 13 customers and 234 lines: the totals would tell him how many are hidden.
+    assert "customers (24 rows" not in dan.system
+    assert "invoice_lines (478 rows" not in dan.system
+    assert "customers (only the rows your row policy allows" in dan.system
+    assert "products (4 rows" in dan.system  # no policy on products
+    assert "customers (24 rows" in carol.system
+
+
 async def test_no_access_means_no_model_call(acme_file: Path) -> None:
     analytics = LocalAnalytics(acme_file, can_query=False)
     llm = model()

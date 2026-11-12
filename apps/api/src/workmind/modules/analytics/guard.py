@@ -8,13 +8,18 @@ SQL to execute, rebuilt by sqlglot from the parsed tree (the text that was sent 
    UNION / INTERSECT / EXCEPT, with CTEs. No DDL, DML, COPY, ATTACH, PRAGMA, SET, INSTALL, LOAD,
    CALL, EXPORT, transactions, SUMMARIZE, DESCRIBE, SHOW or SELECT ... INTO, at any depth.
 2. Every table reference is a plain name, optionally `main.<name>`, of a table in the model, or
-   a CTE visible at that point (resolved with DuckDB's scoping rules). No table functions
-   (read_csv, glob, range, ...), file paths, other schemas or catalogs (information_schema,
-   pg_catalog, duckdb_*), and no CTE may be named like a model table.
+   a CTE visible at that point (resolved with DuckDB's scoping rules, including when a
+   RECURSIVE CTE really is recursive). No table functions (read_csv, glob, range, ...), file
+   paths, other schemas or catalogs (information_schema, pg_catalog, duckdb_*), and no CTE may
+   be named like a model table or start with the reserved prefix `_wm_`.
 3. No function from a deny-list of file, network, configuration and catalog functions.
-4. Rewrite: every reference to a table with a row filter for this user becomes
-   `(SELECT * FROM <table> WHERE <filter>) AS <alias or table name>`, so joins, subqueries,
-   window functions and recursive CTEs only ever see the rows the user may see.
+4. Row policies, as fences: for every table with a row filter for this user, the engine first
+   copies the rows the user may see into a temporary table (`Fence`: `CREATE TEMP TABLE
+   _wm_rows_<table> AS SELECT * FROM <table> WHERE <filter>`, a statement of its own), and every
+   reference to the table becomes `_wm_rows_<table> AS <alias or table name>`. The query never
+   reads the table itself, so no plan DuckDB picks can run the query's own conditions (an
+   error(), a failing CAST) on a hidden row: joins, subqueries, window functions and recursive
+   CTEs only ever see the rows the user may see.
 5. A row cap: LIMIT min(existing, cap + 1), so the caller can tell when a result was truncated.
 
 The engine (engine.py) is the second lock: even SQL that skipped this guard cannot touch files,
@@ -32,7 +37,9 @@ from sqlglot.errors import SqlglotError
 
 DIALECT = "duckdb"
 MAX_SQL_CHARS = 20_000
+RESERVED_PREFIX = "_wm_"  # names the guard and the engine generate; refused in queries
 RESULT_ALIAS = "_wm_result"
+FENCE_PREFIX = "_wm_rows_"
 
 # Lower-case shell patterns, matched against every function name in the query.
 DENIED_FUNCTIONS: tuple[str, ...] = (
@@ -80,6 +87,7 @@ DENIED_FUNCTIONS: tuple[str, ...] = (
     "setval",
     "pg_*",
     "sql_auto_complete",
+    "error",  # raises with any text: an oracle on the rows it is evaluated on
 )
 
 
@@ -156,11 +164,29 @@ class QueryRejectedError(Exception):
 
 
 @dataclass(frozen=True)
+class Fence:
+    """The rows of a restricted table this user may see, which the engine copies into a
+    temporary table before the query runs (its own statement: nothing in the query can be
+    evaluated on the rows it leaves out)."""
+
+    name: str  # the temporary table, _wm_rows_<table>
+    table: str  # the model table
+    sql: str  # SELECT * FROM <table> WHERE <the user's row filter>
+
+
+@dataclass(frozen=True)
 class GuardedQuery:
-    sql: str  # what to execute: row policies applied, row cap enforced
+    sql: str  # what to execute, after the fences: row policies applied, row cap enforced
     query: str  # the checked query as written (normalized), before policies and the cap
     tables: tuple[str, ...]  # model tables the query reads
     filtered: tuple[str, ...]  # of those, the ones a row policy restricted
+    fences: tuple[Fence, ...] = ()  # one per restricted table the query reads
+
+    @property
+    def statements(self) -> str:
+        """Everything the engine runs, in order, as one text (to show and to audit)."""
+        created = [f"CREATE TEMP TABLE {f.name} AS {f.sql}" for f in self.fences]
+        return ";\n".join([*created, self.sql])
 
 
 def check(
@@ -180,26 +206,45 @@ def check(
     if unknown:
         raise ValueError(f"row filters for tables outside the model: {sorted(unknown)}")
 
-    tree = _parse_one(sql)
-    used = validate(tree, allowed)
-    query = tree.sql(dialect=DIALECT, comments=False)
+    try:
+        tree = _parse_one(sql)
+        used = validate(tree, allowed)
+        query = tree.sql(dialect=DIALECT, comments=False)
 
-    _apply_row_filters(tree, filters)
-    capped = _cap(tree, max_rows + 1)
-    final = capped.sql(dialect=DIALECT, comments=False)
+        fenced = _apply_row_filters(tree, filters)
+        capped = _cap(tree, max_rows + 1)
+        final = capped.sql(dialect=DIALECT, comments=False)
 
-    # Defence in depth: what will run must itself parse back to one valid query, unchanged.
-    reparsed = _parse_one(final)
-    validate(reparsed, allowed)
-    if reparsed.sql(dialect=DIALECT, comments=False) != final:
-        raise QueryRejectedError("The query could not be rewritten safely.")
+        # Defence in depth: what will run must itself parse back to one valid query, unchanged,
+        # that reads no restricted table except through its fence.
+        reparsed = _parse_one(final)
+        validate(reparsed, (allowed - set(filters)) | {fence_name(t) for t in fenced})
+        if reparsed.sql(dialect=DIALECT, comments=False) != final:
+            raise QueryRejectedError("The query could not be rewritten safely.")
+        fences = tuple(_fence(table, filters[table], allowed) for table in sorted(fenced))
+    except RecursionError as exc:  # sqlglot parses and walks recursively
+        raise QueryRejectedError("The query is nested too deeply.") from exc
 
     return GuardedQuery(
         sql=final,
         query=query,
         tables=tuple(sorted(used)),
         filtered=tuple(sorted(used & set(filters))),
+        fences=fences,
     )
+
+
+def fence_name(table: str) -> str:
+    return f"{FENCE_PREFIX}{table.lower()}"
+
+
+def _fence(table: str, condition: exp.Expr, tables: frozenset[str]) -> Fence:
+    """The statement that selects the rows of `table` this user may see. The condition is the
+    admin's policy (validated when the model was saved), with the user's values as literals."""
+    select = exp.select("*").from_(exp.Table(this=exp.to_identifier(table))).where(condition.copy())
+    sql = select.sql(dialect=DIALECT, comments=False)
+    validate(_parse_one(sql), tables)
+    return Fence(name=fence_name(table), table=table, sql=sql)
 
 
 def _parse_one(sql: str) -> exp.Expr:
@@ -254,6 +299,10 @@ def validate(tree: exp.Expr, tables: frozenset[str]) -> set[str]:
                 raise QueryRejectedError(
                     f"The CTE name {cte!r} is the name of a table; choose another name."
                 )
+            if cte.startswith(RESERVED_PREFIX):
+                raise QueryRejectedError(
+                    f"CTE names starting with {RESERVED_PREFIX} are reserved; choose another name."
+                )
 
     used: set[str] = set()
     for table in tree.find_all(exp.Table):
@@ -293,9 +342,12 @@ def is_cte_reference(table: exp.Table) -> bool:
     """Whether DuckDB resolves this table name to a CTE (never a qualified name).
 
     A CTE is visible in the body of the query its WITH belongs to (including nested
-    subqueries), and inside the WITH only to the CTEs after it, or to itself with RECURSIVE.
-    DuckDB resolves anything else, including a forward reference, to a real table, and so does
-    this function: such a name then has to be a model table."""
+    subqueries), and inside the WITH only to the CTEs after it. With RECURSIVE, it is visible
+    to itself only where DuckDB treats it as recursive: its body is a UNION [ALL] (not BY NAME,
+    INTERSECT or EXCEPT) and the reference is in the right-hand side of that UNION. DuckDB binds
+    anything else, including a forward reference or `WITH RECURSIVE x AS (SELECT * FROM x)`, to a
+    real table or catalog view, and so does this function: such a name then has to be a model
+    table."""
     if table.args.get("db") or table.args.get("catalog"):
         return False
     name = table.name.lower()
@@ -310,7 +362,11 @@ def is_cte_reference(table: exp.Table) -> bool:
                 below = path[-2] if len(path) > 1 else None
                 index = next((i for i, c in enumerate(ctes) if c is below), None)
                 visible = [] if index is None else names[:index]
-                if index is not None and with_.args.get("recursive"):
+                if (
+                    index is not None
+                    and with_.args.get("recursive")
+                    and _in_recursive_term(ctes[index], path)
+                ):
                     visible.append(names[index])
             else:
                 visible = names
@@ -319,6 +375,19 @@ def is_cte_reference(table: exp.Table) -> bool:
         path.append(node)
         node = node.parent
     return False
+
+
+def _in_recursive_term(cte: exp.Expr, path: list[exp.Expr]) -> bool:
+    """Whether a reference (whose ancestors are `path`) is in the recursive term of `cte`: the
+    right-hand side of the UNION that is the CTE's body. That is the only place DuckDB binds
+    a CTE's own name to itself."""
+    body = cte.this
+    while isinstance(body, exp.Subquery) and not body.alias:
+        body = body.this
+    if type(body) is not exp.Union or body.args.get("by_name"):
+        return False
+    recursive = body.expression
+    return any(node is recursive for node in path)
 
 
 def denied_function(node: exp.Func) -> str | None:
@@ -345,27 +414,22 @@ def function_names(node: exp.Func) -> set[str]:
     return names
 
 
-def _apply_row_filters(tree: exp.Expr, filters: Mapping[str, exp.Expr]) -> None:
-    """Collect the table references first, then replace them, so the policy subqueries (and the
-    tables inside policy conditions) are never rewritten again."""
+def _apply_row_filters(tree: exp.Expr, filters: Mapping[str, exp.Expr]) -> set[str]:
+    """Point every reference to a restricted table at its fence, under the same alias (or the
+    table's own name). Returns the restricted tables the query reads."""
     targets = [
         t for t in tree.find_all(exp.Table) if not is_cte_reference(t) and t.name.lower() in filters
     ]
     for table in targets:
-        name = table.name.lower()
         alias = table.args.get("alias")
-        policy = (
-            exp.select("*")
-            .from_(exp.Table(this=exp.to_identifier(name)))
-            .where(filters[name].copy())
-        )
-        replacement = exp.Subquery(
-            this=policy,
+        replacement = exp.Table(
+            this=exp.to_identifier(fence_name(table.name)),
             alias=alias.copy()
             if isinstance(alias, exp.TableAlias)
             else exp.TableAlias(this=table.this.copy()),
         )
         table.replace(replacement)
+    return {t.name.lower() for t in targets}
 
 
 def _cap(tree: exp.Expr, limit: int) -> exp.Expr:

@@ -123,7 +123,9 @@ class QueryResult(BaseModel):
     truncated: bool  # the query had more rows than the cap
     elapsed_ms: int
     sql: str  # the query as checked, before row policies: what to show as "the SQL"
-    executed_sql: str  # what actually ran, with this user's row policies and the row cap
+    # What actually ran: this user's row-policy fences (CREATE TEMP TABLE ...;), then the query
+    # reading them, with the row cap.
+    executed_sql: str
     tables: list[str]
     row_policies: list[str]  # names of the row policies that restricted this result
 
@@ -151,7 +153,10 @@ class TableDescription(BaseModel):
     description: str
     time_column: str | None
     columns: list[ColumnDescription]
-    rows: int | None  # from the loaded dataset; None when the table is not loaded
+    # From the loaded dataset; None when the table is not loaded, or when a row policy
+    # restricts it for this person (the total would tell them how many rows they cannot see).
+    rows: int | None
+    restricted: bool = False  # a row policy limits the rows this person sees
 
 
 class FieldDescription(BaseModel):
@@ -276,11 +281,21 @@ class Analytics:
         *,
         max_rows: int = 1000,
         timeout_s: float = engine.DEFAULT_TIMEOUT_S,
+        pool: engine.QueryPool | None = None,
     ) -> None:
         self.sessions = sessions
         self.root = root
         self.max_rows = max_rows
         self.timeout_s = timeout_s
+        # Queries run in worker processes (memory and time limits that hold, a bounded number
+        # at once and per person); a pool starts its workers on first use.
+        self.pool = pool or engine.shared_pool()
+        self._owns_pool = pool is not None
+
+    def close(self) -> None:
+        """Stop the pool's workers, unless it is the process's shared pool."""
+        if self._owns_pool:
+            self.pool.close()
 
     # --- Reading ---
 
@@ -668,6 +683,10 @@ class Analytics:
             await self._audit(ctx, audit)
             if isinstance(exc, engine.DatasetMissingError):
                 raise _not_configured(exc.message) from exc
+            if isinstance(exc, engine.QueryBusyError):
+                raise AnalyticsError(
+                    429, "analytics_busy", "Too many queries at once", exc.message
+                ) from exc
             status, code = (
                 (408, "query_timeout")
                 if isinstance(exc, engine.QueryTimeoutError)
@@ -681,7 +700,7 @@ class Analytics:
             result.truncated,
             result.elapsed_ms,
         )
-        audit.executed_sha256 = hashlib.sha256(guarded.sql.encode()).hexdigest()
+        audit.executed_sha256 = hashlib.sha256(guarded.statements.encode()).hexdigest()
         await self._audit(ctx, audit)
         return QueryResult(
             columns=[
@@ -697,7 +716,7 @@ class Analytics:
             truncated=result.truncated,
             elapsed_ms=result.elapsed_ms,
             sql=guarded.query,
-            executed_sql=guarded.sql,
+            executed_sql=guarded.statements,
             tables=list(guarded.tables),
             row_policies=audit.row_policies,
         )
@@ -708,8 +727,17 @@ class Analytics:
         path = prepared.loaded.dataset_path(self.root, ctx.tenant_id)
         if path is None:
             raise engine.DatasetMissingError("No data has been loaded for analytics yet.")
+        fences = [(f.name, f.sql) for f in guarded.fences]
+        owner = f"{ctx.tenant_id}:{ctx.user_id}"
         try:
-            return await engine.execute(path, guarded.sql, max_rows=cap, timeout_s=self.timeout_s)
+            return await self.pool.execute(
+                path,
+                guarded.sql,
+                max_rows=cap,
+                timeout_s=self.timeout_s,
+                fences=fences,
+                owner=owner,
+            )
         except engine.DatasetMissingError:
             # The dataset was switched to a new version (and the old file removed) between
             # reading the model and opening the file: open the current version once more.
@@ -722,7 +750,14 @@ class Analytics:
                 or fresh.dataset_version == prepared.loaded.dataset_version
             ):
                 raise
-            return await engine.execute(path, guarded.sql, max_rows=cap, timeout_s=self.timeout_s)
+            return await self.pool.execute(
+                path,
+                guarded.sql,
+                max_rows=cap,
+                timeout_s=self.timeout_s,
+                fences=fences,
+                owner=owner,
+            )
 
     async def _audit(self, ctx: RequestContext, audit: "_Audit") -> None:
         async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
@@ -843,6 +878,7 @@ def _access_info(
 
 
 def _describe(loaded: LoadedModel, model: SemanticModel, access: AccessInfo) -> ModelDescription:
+    restricted = set(access.restricted_tables)
     tables = [
         TableDescription(
             name=name,
@@ -857,7 +893,8 @@ def _describe(loaded: LoadedModel, model: SemanticModel, access: AccessInfo) -> 
                 )
                 for column_name, column in table.columns.items()
             ],
-            rows=_rows(loaded.dataset_tables, name),
+            rows=None if name in restricted else _rows(loaded.dataset_tables, name),
+            restricted=name in restricted,
         )
         for name, table in model.tables.items()
     ]

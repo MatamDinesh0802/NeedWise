@@ -148,6 +148,11 @@ class Settings(BaseSettings):
     # <object_storage_path>/analytics; every query is read-only, sandboxed and capped. ---
     analytics_max_rows: int = Field(default=1000, gt=0, le=10_000)
     analytics_timeout_s: float = Field(default=10.0, gt=0, le=120)
+    # Queries run in worker processes: how many at once, the resident memory at which a worker
+    # is stopped, and how many of one person's queries run at once (more wait their turn).
+    analytics_workers: int = Field(default=3, ge=1, le=32)
+    analytics_worker_memory_mb: int = Field(default=1024, ge=256, le=65_536)
+    analytics_queries_per_user: int = Field(default=1, ge=1, le=32)
 
     # Sessions (ARCHITECTURE section 6.3): sliding idle timeout, hard absolute lifetime.
     session_idle_timeout_s: int = Field(default=1800, gt=0)

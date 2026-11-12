@@ -157,6 +157,33 @@ async def test_dan_sees_only_his_customers_invoices_and_deals(acme: AcmeAnalytic
     assert access.row_policies[0].startswith("Own accounts only: Account executives see only")
 
 
+async def test_error_oracles_and_the_catalog_are_out_of_dans_reach(acme: AcmeAnalytics) -> None:
+    ctx = await acme.ctx("dan")
+    hidden = [r for r in csv_rows("invoice_lines") if r["customer_id"] not in DAN_CUSTOMERS][:5]
+
+    oracle = (
+        "SELECT count(*) FROM invoice_lines WHERE invoice_line_id = '{id}' AND "
+        "CAST(invoice_line_id || '|' || customer_id || '|' || amount_eur::VARCHAR AS "
+        "INTEGER) = 0"
+    )
+    for row in hidden:
+        # A selective CAST that fails on the row: it runs, and counts nothing.
+        assert await acme.sql("dan", oracle.format(id=row["invoice_line_id"])) == [[0]]
+    with pytest.raises(AnalyticsError) as refused:
+        await acme.service.run_sql(
+            ctx,
+            "SELECT count(*) FROM invoice_lines WHERE invoice_line_id = 'INV-00001' AND "
+            "error('LEAK ' || customer_id) IS NULL",
+        )
+    assert refused.value.code == "query_rejected"
+    assert "C002" not in (refused.value.detail or "")
+    recursive = "WITH RECURSIVE {view} AS (SELECT * FROM {view}) SELECT * FROM {view}"
+    for view in ("duckdb_tables", "duckdb_databases", "pg_settings"):
+        with pytest.raises(AnalyticsError) as refused:
+            await acme.service.run_sql(ctx, recursive.format(view=view))
+        assert refused.value.code == "query_rejected"
+
+
 @pytest.mark.parametrize("name", ["diego.alvarez", "carol", "hannah.schmidt", "priya.raman"])
 async def test_managers_finance_and_leadership_see_every_row(
     acme: AcmeAnalytics, name: str
@@ -197,7 +224,16 @@ async def test_describe_lists_the_model_and_admins_see_the_yaml(acme: AcmeAnalyt
         "invoice_lines",
         "opportunities",
     ]
-    assert {t.name: t.rows for t in for_dan.tables}["invoice_lines"] == 478
+    # Dan's row policy restricts these tables: their totals would tell him what he cannot see.
+    rows = {t.name: (t.rows, t.restricted) for t in for_dan.tables}
+    assert rows == {
+        "customers": (None, True),
+        "products": (4, False),
+        "invoice_lines": (None, True),
+        "opportunities": (None, True),
+    }
+    for_carol = await acme.service.describe(await acme.ctx("carol"))
+    assert {t.name: t.rows for t in for_carol.tables}["invoice_lines"] == 478
     assert "revenue" in [m.name for m in for_dan.metrics]
     assert for_dan.data_through is not None
     assert for_dan.data_through.isoformat() == "2026-09-30"
