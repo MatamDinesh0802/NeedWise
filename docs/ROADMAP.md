@@ -333,7 +333,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #11 — "Letting an LLM write SQL against company data, safely."**
 
-### Phase 11 — Admin, governance and usage analytics (v0.11)
+### Phase 11 — Admin, governance and usage analytics (v0.11) 🚧 In progress: agents as configuration, model management and the open-core boundary are built, and a Legal agent made from configuration routes 15/15 in the routing eval; the usage and budgets backend and knowledge governance are still being built
 
 **Goal:** organizations can run WorkMind themselves: configure, control and account for it.
 
@@ -347,12 +347,31 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **DoD:** an admin creates a new "Legal agent" from the UI without code, and it routes correctly in the routing eval.
 
-> **Agent configuration, as built ([docs/agents.md](agents.md)):** tools (read-level only, run as
-> the asker), a model catalog id per agent, limits, numbered versions with diff and restore, and a
-> test console that routes and answers with an unsaved draft. A Legal & Contracts collection (10
-> documents) and 15 legal routing questions are seeded; the Legal agent itself is created in the
-> UI, and its routing questions are reported as skipped until it exists. Not yet measured: the
-> routing eval with the Legal agent and a real model.
+> **Status on 2026-11-12, as merged into `main`:**
+>
+> - **Agent configuration ([docs/agents.md](agents.md)):** tools (read-level only, run as the
+>   asker), a model per agent from the organization's catalog (checked when saved, applied when
+>   it runs), limits, numbered versions with diff and restore, and a test console that routes
+>   and answers with an unsaved draft. A Legal & Contracts collection (10 documents) and 15
+>   legal routing questions are seeded; the Legal agent itself is not.
+> - **DoD, measured through the API:** the Legal agent created as docs/agents.md describes (no
+>   code) is picked for 15 of 15 legal questions (14 exact plans) and for none it should not
+>   be, 53/56 overall with Claude Sonnet 5.5, 54/56 with Opus 5.5 planning
+>   ([evals/README.md](../evals/README.md#routing-with-an-agent-made-from-configuration-phase-11)).
+>   The run caught a planner rule that let a new agent change an unrelated plan; fixed. Creating
+>   the agent in the browser is still to be recorded.
+> - **Models ([docs/models.md](models.md)):** providers with encrypted bring-your-own keys, a
+>   catalog with prices, a model per role and the data policy, resolved per organization for
+>   every model call. Tested with scripted models; no real provider was called through a tenant
+>   key.
+> - **Open core ([docs/enterprise.md](enterprise.md)):** license keys, development licenses, the
+>   extension registry and `GET /api/v1/edition`. No Enterprise feature is built in `main` yet.
+> - **Usage and budgets:** the screens are merged (the Usage page, Admin › Budgets, "Your usage
+>   this month" on the Overview), but the API they call (usage metering, budgets, budget checks
+>   before model calls) is not: those requests answer 404 until it is merged. The places it
+>   plugs in are marked `TODO(usage)`.
+> - **Knowledge governance** (audit log explorer, retention policies, document owners, review
+>   reminders, the official approval flow) is being built and is not in `main`.
 
 > **Knowledge governance, the audit explorer and retention, as built
 > ([docs/governance.md](governance.md), [docs/enterprise.md](enterprise.md#retention-policies)):**

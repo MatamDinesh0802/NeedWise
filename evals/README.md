@@ -29,7 +29,7 @@ every push, with deterministic hash embeddings and the full corpus.
 | `red_team.jsonl` | 16 | user, attack, forbidden documents and canary strings: direct, indirect, adjacent role, admin, owner, guest, auditor, prompt injection (direct and via ticket SUP-4471), social engineering |
 | `abstention.jsonl` | 6 | questions with no answer in any source the user can see: 3 absent everywhere, 3 that exist but are restricted |
 | `cross_department.jsonl` | 15 | questions that need two or three departments, with expected agents, documents and facts |
-| `routing.jsonl` | 56 | question → expected agents (single area, several areas, or none). 15 expect the Legal agent, which is created in the UI (`docs/agents.md`): until it exists they are reported as skipped, not failed. Near misses list in `not_agents` the agent they sound like but must not go to |
+| `routing.jsonl` | 56 | question → expected agents (single area, several areas, or none). 15 expect the Legal agent, which an administrator creates (`docs/agents.md`): until it exists they are reported as skipped, not failed. Near misses list in `not_agents` the agent they sound like but must not go to |
 | `meetings.jsonl` | 1 | a meeting file → its decisions, ideas nobody agreed to, and action items with owners and due dates |
 | `analytics.jsonl` | 51 | asking user, question, and either gold SQL with how to compare it (36), or the expected refusal: no access (5) or an attack (10) |
 
@@ -115,6 +115,30 @@ The planner routes 36/36 questions to the right agents; the fast path skips the 
 of them with no mistakes. Specialists only pay off for questions that span three areas, so
 the single pipeline stays the default. Planner and judge calls are not deterministic: repeated
 runs move individual items, not the picture.
+
+### Routing with an agent made from configuration (Phase 11)
+
+`wm eval --skip-retrieval --suites routing --concurrency 3` on the 56 routing questions, after
+creating the Legal agent through the API exactly as [docs/agents.md](../docs/agents.md#create-the-legal-agent-step-by-step)
+describes (no code, no seed change). 15 questions expect Legal; 3 near misses must not reach the
+agent they sound like.
+
+| | Sonnet 5.5 (default) | Opus 5.5 planner |
+|---|---|---|
+| Exact plans, 56 questions | **53/56** | 54/56 |
+| Legal picked when expected / exact plan | **15/15 / 14/15** | 15/15 / 14/15 |
+| Legal picked when not expected | **0** | 0 |
+| Near misses kept away | **3/3** | 3/3 |
+| The 36 questions of 2026-11-04 | 34/36 (34/36 then) | 35/36 (36/36 then) |
+| Fast path used (all correct) | 10 | 10 |
+
+Reports: [Sonnet](results/2026-11-12-routing-legal-after-fix.md), [Opus](results/2026-11-12-routing-legal-opus.md)
+(planner on Opus via `LLM_MODEL_ROUTER` in the eval process), and
+[before the planner fix](results/2026-11-12-routing-legal.md). The legal miss is the same in every
+run: a question about reporting an invention and a patent bonus also goes to HR. Sonnet's two
+misses on the older questions are the same two as on 2026-11-04 (an extra agent each). Opus
+added Engineering to "What is Project Heron?". One run per configuration: single items move
+between runs.
 
 ### Text-to-SQL (analytics)
 
@@ -220,6 +244,11 @@ recalibrate it when changing the embedding model.
 - **The BI agent overrode the model's main query.** For a share, a growth rate or a win rate the
   model named the query with the answer and charted the breakdown; the agent reported the
   charted query as the answer. 3 of 36 questions scored as misses because of it.
+- **A new agent changed an unrelated plan.** With the Legal agent listed, the planner sent
+  "What is Project Heron?" to no agent at all (`direct`) in 5 of 5 plans; without it, to
+  Leadership in 5 of 5. The planner's rule for `direct` ("not tied to any area above") fit an
+  unknown project name literally; it now means "needs none of the company's documents".
+  Planner only, over all 56 questions twice: 104/112 exact before, 106/112 after.
 - **Indexing renamed meeting documents.** A meeting's transcript was titled "Meeting: …" and
   then retitled from its first heading when indexed; an integration test failed one run in
   three on that race.

@@ -9,9 +9,12 @@ Design: [ARCHITECTURE section 12](ARCHITECTURE.md#12-agent-orchestration).
 
 Built (in `apps/api/src/workmind/modules/agents/`, `api/v1/agents.py`, migration `0013`, and
 `apps/web/src/components/admin/agent-*.tsx`): everything on this page. The tests use a
-scripted model (`tests/fakes.py`). **Not measured yet:** the routing evaluation with a real
-model and the Legal agent created as described [below](#create-the-legal-agent-step-by-step);
-this branch had no model key. See [Not built and not measured](#not-built-and-not-measured).
+scripted model (`tests/fakes.py`). **Measured** on 2026-11-12 with Claude Sonnet 5.5 planning:
+with the Legal agent created as described [below](#create-the-legal-agent-step-by-step) (through
+the API, with exactly these fields), the routing evaluation picks it for 15 of 15 legal
+questions (14 with exactly the expected agents), never picks it for a question that does not
+need it, and gets 53 of 56 questions exactly right ([results](#measured-routing-with-the-legal-agent)).
+See [Not built and not measured](#not-built-and-not-measured).
 
 ## Where agents run
 
@@ -66,25 +69,33 @@ only chooses what to search for.
 
 ## Model
 
-An agent stores a **model catalog id** or nothing:
+An agent stores a **model catalog id** ([docs/models.md](models.md)) or nothing:
 
-- nothing: the model the deployment maps to the `agent` role (`LLM_MODEL_AGENT`, else
-  `LLM_MODEL`);
+- nothing: the model the organization maps to the `agent` role in **Admin › Models**, else the
+  deployment's (`LLM_MODEL_AGENT`, else `LLM_MODEL`);
 - `system:<model>`: that model on the deployment's own provider, for example
-  `system:claude-sonnet-5-5`;
+  `system:claude-opus-5-5` (`system-local:<model>` for the deployment's local model);
 - `<provider id>:<model>`: a model of a provider an administrator added (bring-your-own key or a
-  local server), from `GET /api/v1/admin/models`.
+  local server).
 
-The API checks the id's shape. The model applies to the agent's own calls (the tool loop and
-extracting findings); planning keeps the `router` role and the final answer the `answer` role.
-Sensitivity routing is unchanged: if restricted sources must stay local, they go to the local
-model whatever the agent's model is. An id the deployment cannot run fails that agent's run
-("model unavailable") instead of quietly using another provider; the answer then uses the other
-agents or the plain search, and says what is missing.
+**When it is saved** (create, update, restore, and a draft in the test console), the id must
+be an enabled model of an enabled provider in the organization's catalog: otherwise `422
+unknown_model` (the catalog has no such model) or `422 model_disabled` (it or its provider is
+disabled). From then on, Admin › Models refuses to delete or disable that model or its provider
+(`409 model_in_use`, "the agent 'Legal agent'") until no agent uses it.
 
-The editor fills the model select from the model catalog. Where the catalog endpoint does not
-exist (404), it offers only *Default for its role*; a saved model the catalog no longer offers
-stays selectable, marked, so opening and saving an agent never changes its model.
+**When it runs**, the agent's own calls (the tool loop and extracting findings) go through the
+organization's model resolution with every role on that model, in chat and in the test console
+alike; planning keeps the `router` role's model and the final answer the `answer` role's. If the
+model became unusable anyway (the deployment's own model list changed), that agent's run fails
+("model unavailable") instead of quietly using another model; the answer then uses the other
+agents or the plain search, and says what is missing. Sensitivity routing is unchanged: if
+restricted sources must stay local, they go to the local model whatever the agent's model is.
+
+The editor fills the model select from `GET /api/v1/admin/models`, the same query as
+Admin › Models: *Default for its role* (naming the model that is), then the enabled models of
+enabled providers. A saved model the catalog no longer offers stays selectable, marked, so
+opening and saving an agent never changes its model.
 
 ## Versions
 
@@ -124,9 +135,10 @@ The **Test console** tab runs the definition *as it is in the form*, saved or no
    it would have said.
 
 Nothing is stored as a conversation. Each run is audited as `agent.test` (draft or saved,
-plan, cited documents, tokens). Model calls are real and cost money. *Usage attribution:* the
-usage and cost analytics are being built separately; the place to record console runs (feature
-`agent_test`) is marked in `api/v1/agents.py`.
+plan, cited documents, tokens). Model calls are real and cost money. *Usage attribution and
+budgets:* usage metering and budgets are not merged yet; the places to record console runs
+(feature `agent_test`) and to check the administrator's budget first are marked `TODO(usage)` in
+`api/v1/agents.py`.
 
 ## How routing works
 
@@ -135,8 +147,10 @@ usage and cost analytics are being built separately; the place to record console
    at least `AGENT_FAST_PATH_MIN_SCORE` (0.3) and leads the runner-up by
    `AGENT_FAST_PATH_MIN_MARGIN` (0.15), it gets the question with no model call.
 2. **Planner.** Otherwise the `router` model gets each agent's key and description and returns a
-   plan: `direct`, `single` or `fan_out` (at most 4 subtasks). Unknown keys, duplicates and empty
-   goals are dropped before anything runs.
+   plan: `direct`, `single` or `fan_out` (at most 4 subtasks). `direct` is only for questions
+   that need none of the company's documents (a greeting, thanks, a general writing request);
+   it runs the plain assistant. Unknown keys, duplicates and empty goals are dropped before
+   anything runs.
 3. **Freshness.** Definitions are read from the database for every question, so a created,
    edited or disabled agent takes effect on the next question in every API process and worker.
    The fast path caches profile embeddings by the profile's *text*: an edited description or
@@ -189,7 +203,7 @@ seeded**: this is the Phase 11 check that a new agent needs no code.
 5. Check routing with the evaluation, from `apps/api`:
 
    ```bash
-   uv run wm eval --skip-retrieval --suites routing --label 2026-11-12-routing-legal
+   uv run wm eval --skip-retrieval --suites routing --concurrency 3 --label 2026-11-12-routing-legal
    ```
 
    (`uv run wm eval --suites routing` also runs the retrieval checks first.) Before the agent
@@ -198,6 +212,43 @@ seeded**: this is the Phase 11 check that a new agent needs no code.
    table: questions that expect the agent, exact plans, how often it was picked, and how often it
    was picked when it should not have been (near misses: employment-contract questions that must
    go to HR).
+
+## Measured: routing with the Legal agent
+
+On 2026-11-12 the Legal agent was created through the API as `erin@acme.test` with exactly the
+fields above, the three console questions of step 3 routed as described (Legal by the fast path;
+HR, with the note that the Legal agent was not picked; Legal and Sales), and the routing
+evaluation ran against the seeded stack (56 questions, 3 at a time, fast path on):
+
+| Run | Planner | Exact plans | Legal: picked / exact | Near misses kept away | Report |
+|---|---|---|---|---|---|
+| Before the planner fix | Sonnet 5.5 | 53/56 | 15/15 / 14/15 | 3/3 | [`2026-11-12-routing-legal`](../evals/results/2026-11-12-routing-legal.md) |
+| **After the planner fix** | **Sonnet 5.5** | **53/56** | **15/15 / 14/15** | **3/3** | [`2026-11-12-routing-legal-after-fix`](../evals/results/2026-11-12-routing-legal-after-fix.md) |
+| After the fix | Opus 5.5 | 54/56 | 15/15 / 14/15 | 3/3 | [`2026-11-12-routing-legal-opus`](../evals/results/2026-11-12-routing-legal-opus.md) |
+
+- **The miss on legal questions** is the same in all three runs: *"I came up with a new charging
+  technique at work. Do I need to report it, and is there a bonus if it gets patented?"* goes to
+  Legal **and HR** (a bonus sounds like pay). Nothing was lost (Legal was among the agents), it
+  costs one extra agent. The Legal agent was never picked for a question that did not need it.
+- **The other agents.** On the 36 questions measured on 2026-11-04, Sonnet 5.5 scores 34/36 after
+  the fix, with the same two misses as the 2026-11-04 Sonnet run
+  ([`2026-11-04-sonnet-baseline`](../evals/results/2026-11-04-sonnet-baseline.md)): an extra
+  Engineering agent for the engineering budget, an extra Finance agent for cost per lead. Opus 5.5
+  scores 35/36 (36/36 on 2026-11-04,
+  [`2026-11-04-routing`](../evals/results/2026-11-04-routing.md)); its miss adds Engineering to
+  *"What is Project Heron?"*.
+- **What the evaluation caught.** Adding the Legal agent changed an unrelated plan: *"What is
+  Project Heron?"* went to `direct` (no agent) in 5 of 5 plans with the Legal agent listed, and to
+  Leadership in 5 of 5 without it. The planner's rule for `direct` read "general, chit-chat, or not
+  tied to any area above", and an unknown project name fits that literally. The rule now says
+  the question needs none of the company's documents. Planner only, two plans per question:
+  104/112 exact before, 106/112 after, with no new miss. A longer wording that also told the
+  planner to route names it does not recognise fixed Project Heron but added an agent to two
+  marketing questions (52/56, [report](../evals/results/2026-11-12-routing-legal-rejected-rule.md));
+  it was not kept. The dataset was not changed.
+- Planner calls are not deterministic: one run moves single items, as the 2026-11-04 runs did.
+
+The API-made Legal agent was deleted afterwards, so that it can be created again in the UI.
 
 ## The routing dataset
 
@@ -225,18 +276,20 @@ All under `/api/v1/admin` (organization owners and administrators):
 | `POST /agents/test` | `{question, draft?, key?}` → `{routing: {mode, agents, routed_by, reason, tested_agent_picked}, answer: {text, citations, usage, steps, …} \| null}`. |
 | `GET /tools` | Every registered tool, its side-effect level, and whether an agent may have it. |
 
-Errors: `422 unknown_collection`, `unknown_tool`, `tool_not_allowed`, `validation_error` (a
-malformed model id, limits out of range), `409 slug_taken`, `404 not_found`.
+Errors: `422 unknown_collection`, `unknown_tool`, `tool_not_allowed`, `unknown_model`,
+`model_disabled`, `validation_error` (a malformed model id, limits out of range), `409
+slug_taken`, `404 not_found`.
 
 ## Not built and not measured
 
-- **Routing accuracy with the Legal agent** has not been measured with a real model: this branch
-  ran without a model key, with a scripted planner. The last measured routing result,
-  36 of 36 on the earlier 36-question set, is in `evals/results/2026-11-04-routing.md`.
-- **The model catalog check.** The API checks a model id's shape; checking it against the
-  organization's catalog (enabled provider and model, sensitivity policy) and running models of
-  tenant-added providers come with the model catalog. Until then, only `system:` models run.
-- **Usage attribution** of test console runs (feature `agent_test`) waits for usage analytics.
+- **Creating the Legal agent in the browser.** It was measured after creating it through the
+  API with the same fields; the walk-through of step 1 to 4 in the UI has not been recorded
+  here.
+- **An agent on a model other than the default** has been tested with scripted models only
+  (the routing evaluation measures the planner, which uses the `router` role, not the agents'
+  own models).
+- **Usage attribution and budgets** for test console runs (feature `agent_test`) wait for usage
+  metering and budgets, which are not merged yet (`TODO(usage)` in `api/v1/agents.py`).
 - Agent tools are offered in agents mode only; the planner does not see an agent's tools when it
   plans, only its description.
 - The test console runs synchronously (no streaming); a slow model makes the request wait up to
