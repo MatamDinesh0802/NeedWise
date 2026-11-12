@@ -254,7 +254,8 @@ A report (`loadtests/results/<date>-<label>.md`) has:
 - **what people waited for**: the custom metrics above;
 - **failures**: Locust's failure table, most frequent first;
 - **calls to the stub**: by kind and schema, to check that a run used the stub and how many
-  model calls a scenario makes (in `auto` mode, one planner call per chat question);
+  model calls a scenario makes (in `auto` mode, a planner call for each chat question the fast
+  path does not route);
 - **the target before the run**: the preflight's findings; **notes** given with `--note`.
 
 Percentiles are Locust's, from its histogram: times are rounded to 10 ms above 100 ms and to
