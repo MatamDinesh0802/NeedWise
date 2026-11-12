@@ -245,15 +245,31 @@ jobs:
         run: docker compose --profile tools run --rm seed
       - name: Permission gate - every red-team attack, every retrieval mode, zero leaks
         run: |
-          mkdir -p "$RUNNER_TEMP/eval" && chmod a+rwx "$RUNNER_TEMP/eval"
+          # The container runs as uid 10001 and writes the report here.
+          mkdir -p "$RUNNER_TEMP/gate-out" && chmod a+rwx "$RUNNER_TEMP/gate-out"
           docker compose --profile tools run --rm -v "$PWD/evals:/evals:ro" \
-            -v "$RUNNER_TEMP/eval:/eval-out" -e WORKMIND_EVALS_DIR=/evals seed \
-            python -m workmind.evals --retrieval-only --out /eval-out --label "permission-gate-$TAG"
+            -v "$RUNNER_TEMP/gate-out:/gate-out" -e WORKMIND_EVALS_DIR=/evals seed \
+            python -m workmind.evals --retrieval-only --out /gate-out --label "permission-gate-$TAG"
+      # The image has no git, so the report says "commit: unknown": record what was tested.
+      - name: Add the release and the image digests to the report
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/gate"
+          cp "$RUNNER_TEMP"/gate-out/permission-gate-* "$RUNNER_TEMP/gate/"
+          {
+            echo
+            echo "## Release"
+            echo
+            echo "- tag: \`$TAG\`, commit \`$(git rev-parse HEAD)\`"
+            echo "- api image: \`$WORKMIND_API_IMAGE\`"
+            echo "- web image: \`$WORKMIND_WEB_IMAGE\`"
+            echo "- run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } >>"$RUNNER_TEMP/gate/permission-gate-$TAG.md"
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: permission-gate
-          path: ${{ runner.temp }}/eval/
+          path: ${{ runner.temp }}/gate/
           if-no-files-found: error
           retention-days: 30
       - name: Diagnostics

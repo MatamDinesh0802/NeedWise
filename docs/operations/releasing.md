@@ -4,10 +4,15 @@ How a version gets from `main` to a GitHub Release with images on GHCR, what a r
 contains, and how to cut v1.0.0. The policy is [ROADMAP §6](../ROADMAP.md#6-release-process);
 the checks the images pass are in [docs/security/supply-chain.md](../security/supply-chain.md).
 
-> **Status:** the workflows pass actionlint, zizmor and the GitHub workflow schema, and the
-> release-please version updates were checked by running release-please's own updaters on the
-> repository's files. Nothing has run on GitHub yet: there is no repository to run it in
-> ([ROADMAP §8](../ROADMAP.md#8-checklist-before-going-public)).
+> **Status:** not run on GitHub yet, because there is no repository to run it in
+> ([ROADMAP §8](../ROADMAP.md#8-checklist-before-going-public)). Checked so far: the workflows
+> pass actionlint, zizmor and the GitHub workflow schema; release-please 17.6.0's own updaters,
+> run on the repository's files, bump all five version entries and leave `uv lock --check`
+> passing; and the `permission-gate` job's commands, run locally against images built from this
+> branch (their own compose project and tags, started with `--no-build` through
+> `WORKMIND_API_IMAGE` and `WORKMIND_WEB_IMAGE`), gave a healthy stack, the seeded Acme corpus
+> and 0 leaks in 48 retrieval checks. Building for arm64 under QEMU, pushing to GHCR, the
+> attestations and the release upload are untested.
 
 ## Versions
 

@@ -112,6 +112,12 @@ What the fixable ones were, and the fix:
   standalone Next.js server needs only `node`, so npm, corepack and yarn are removed from the
   runtime image. With `apk upgrade`, the web image has no known vulnerability at any severity.
 
+The hardened images were then run as a whole stack (a separate compose project, started from
+those images with `--no-build`): migrations, the API, worker and beat (as 10001:10001, beat
+writing its schedule to its volume), the web app behind Caddy, seeding the Acme corpus through
+ingestion, and the retrieval permission gate with 0 leaks. The full backend test suite (1115
+tests) and the frontend gate (lint, types, 1023 tests, build) pass on the branch.
+
 What stays in the api image: 205 findings, none with a fix available, all in Debian 13 packages
 (47 HIGH, among them util-linux, sqlite, ncurses, systemd libraries, perl-base and acl). None is
 in a Python package. They clear when Debian ships fixes; the weekly scan reports it.
