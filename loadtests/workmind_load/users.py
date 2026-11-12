@@ -74,7 +74,7 @@ STATE = State()
 
 def add_options(parser: Any) -> None:
     """Locust command-line options; each also reads its environment variable."""
-    group = parser.add_argument_group("WorkMind")
+    group = parser  # not an argument group: only Locust's own add_argument knows is_secret
     group.add_argument("--wm-tokens", env_var="WM_LOAD_TOKENS", default=str(Settings.tokens),
                        help="token file from `tokens create`")  # fmt: skip
     group.add_argument("--wm-mix", env_var="WM_LOAD_MIX", default="",
@@ -93,7 +93,7 @@ def add_options(parser: Any) -> None:
     group.add_argument("--wm-uploader", env_var="WM_LOAD_UPLOADER", default=Settings.uploader)
     group.add_argument("--wm-admin", env_var="WM_LOAD_ADMIN", default=Settings.admin)
     group.add_argument("--wm-password", env_var="DEMO_PASSWORD", default=Settings.password,
-                       help="the demo logins' password")  # fmt: skip
+                       is_secret=True, help="the demo logins' password")  # fmt: skip
 
 
 def settings_from(options: Namespace | None) -> Settings:
