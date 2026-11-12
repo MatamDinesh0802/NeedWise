@@ -196,7 +196,14 @@ def assistant_stream(
 ) -> AsyncGenerator[OrchestratorEvent]:
     if deps.mode in ("agents", "auto"):
         return orchestrate(
-            OrchestratorDeps(deps.sessions, deps.llm, deps.local_llm, deps.retriever, deps.router),
+            OrchestratorDeps(
+                deps.sessions,
+                deps.llm,
+                deps.local_llm,
+                deps.retriever,
+                deps.router,
+                tools=deps.tools,  # agents configured with read-level tools call them
+            ),
             ctx,
             question,
             organization=organization,

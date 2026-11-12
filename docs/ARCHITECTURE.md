@@ -736,7 +736,7 @@ flowchart TD
 
 ### 12.2 Core ideas
 
-- **Agents are data, not code.** There is one parameterized `department_agent` subgraph. Each agent (HR, Finance, Engineering…) is a row in `agent_definitions`: description (used for routing), system prompt, allowed tools, knowledge scopes, model role, step and token limits. Adding a new agent needs **no code**.
+- **Agents are data, not code.** There is one parameterized `department_agent` subgraph. Each agent (HR, Finance, Engineering…) is a row in `agent_definitions`: description (used for routing), instructions, knowledge scopes (collections), example questions, read-level tools, a model catalog id (or the default of its role), and limits on searches, tool calls and output tokens. Adding a new agent needs **no code**: administrators create, test (on an unsaved draft) and version agents in Admin › Agents, and every save is a numbered version in `agent_definition_versions` that can be restored. Department agents cannot pause for approvals, so they may only have tools with `read` side effects, which run as the asking user. See [docs/agents.md](agents.md).
 - **No confused deputy.** The `RequestContext` of the user flows into every agent and every tool. An agent can never see more than the user can. The supervisor cannot "ask HR" for data the user is not allowed to see.
 - **Bounded loops.** Each department agent runs a tool loop limited to about 5 steps, with a timeout and a token budget. It returns structured `Evidence`: claims, citations, confidence and gaps.
 - **Fast-path routing.** Simple questions are routed by embedding similarity to agent descriptions and examples, skipping the LLM supervisor call (lower cost and latency). Ambiguous requests go to the LLM planner. Routing accuracy is measured (§22).

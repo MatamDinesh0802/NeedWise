@@ -74,6 +74,7 @@ class CollectionSpec(_Strict):
     trust: Trust = "reference"
     sensitivity: Sensitivity = "internal"
     description: str = ""
+    owner: str | None = None  # e-mail of the person accountable for the collection's content
 
 
 class AgentSpec(_Strict):
@@ -126,6 +127,8 @@ class CompanySpec(_Strict):
                 problems.append(f"collection {collection.key}: unknown '{collection.department}'")
             if collection.scope == "restricted" and not collection.viewers:
                 problems.append(f"collection {collection.key}: restricted needs viewers")
+            if collection.owner and collection.owner.lower() not in emails:
+                problems.append(f"collection {collection.key}: unknown owner '{collection.owner}'")
             for principal in [*collection.viewers, *collection.editors]:
                 kind, _, key = principal.partition(":")
                 if kind not in known or key.lower() not in known[kind]:

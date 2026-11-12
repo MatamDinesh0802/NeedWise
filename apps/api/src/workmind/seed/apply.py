@@ -6,11 +6,12 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from sqlalchemy import delete, func
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.tenancy import global_transaction, tenant_transaction
+from workmind.modules.agents.definitions import add_version, latest_version, snapshot
 from workmind.modules.agents.models import AgentDefinition
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import (
@@ -147,13 +148,18 @@ async def seed_database(
                 "examples": agent.examples,
                 "max_searches": agent.max_searches,
             }
-            await session.execute(
-                insert(AgentDefinition)
-                .values(tenant_id=tenant_id, key=agent.key, **fields)
-                .on_conflict_do_update(
-                    index_elements=["tenant_id", "key"], set_={**fields, "updated_at": func.now()}
+            agent_id = (
+                await session.execute(
+                    insert(AgentDefinition)
+                    .values(tenant_id=tenant_id, key=agent.key, **fields)
+                    .on_conflict_do_update(
+                        index_elements=["tenant_id", "key"],
+                        set_={**fields, "updated_at": func.now()},
+                    )
+                    .returning(AgentDefinition.id)
                 )
-            )
+            ).scalar_one()
+            await _version_seeded_agent(session, agent_id)
 
         await record_event(
             session,
@@ -173,6 +179,25 @@ async def seed_database(
         keycloak_logins=len(keycloak_subjects),
         collections=collection_ids,
     )
+
+
+async def _version_seeded_agent(session: AsyncSession, agent_id: uuid.UUID) -> None:
+    """A seeded agent gets a version like one created in the UI, but only when the file
+    changed it: re-seeding an unchanged file adds nothing to its history."""
+    agent = (
+        await session.scalars(
+            select(AgentDefinition)
+            .where(AgentDefinition.id == agent_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).one()
+    latest = await latest_version(session, agent.id)
+    if latest is None or latest.snapshot != snapshot(agent):
+        await add_version(session, agent, author_id=None, note=SEED_NOTE)
+
+
+SEED_NOTE = "Seeded from company.yaml"
 
 
 async def _upsert(
@@ -245,6 +270,8 @@ async def _seed_collections(
     """Collections and their grants exactly as the company file says (grants are replaced)."""
     ids: dict[str, uuid.UUID] = {}
     for collection in spec.collections:
+        # Only a file that names an owner sets one, so an owner chosen in the product stays.
+        owner = {"owner_id": user_ids[collection.owner.lower()]} if collection.owner else {}
         collection_id = (
             await session.execute(
                 insert(Collection)
@@ -259,6 +286,7 @@ async def _seed_collections(
                     else None,
                     default_trust=collection.trust,
                     default_sensitivity=collection.sensitivity,
+                    **owner,
                 )
                 .on_conflict_do_update(
                     index_elements=["tenant_id", "key"],
@@ -268,6 +296,7 @@ async def _seed_collections(
                         "scope": collection.scope,
                         "default_trust": collection.trust,
                         "default_sensitivity": collection.sensitivity,
+                        **owner,
                         "updated_at": func.now(),
                     },
                 )

@@ -9,7 +9,7 @@
 {"id": "qa-09", "user": "dan", "question": "What is the hotel limit per night in London?", "expected": ["travel-and-expenses-policy.pdf"], "facts": ["250"], "category": "policy"}
 {"id": "qa-10", "user": "carol", "question": "How soon do I have to submit my expense receipts?", "expected": ["travel-and-expenses-policy.pdf"], "facts": ["30 days"], "category": "policy"}
 {"id": "qa-11", "user": "bob", "question": "Where can I report an ethics concern?", "expected": ["code-of-conduct.md"], "facts": ["ethics@acme.test"], "category": "policy"}
-{"id": "qa-12", "user": "dan", "question": "Do I have to declare gifts from suppliers?", "expected": ["code-of-conduct.md"], "facts": [["50 euros", "€50", "50 eur", "50 €", "€ 50"]], "category": "policy"}
+{"id": "qa-12", "user": "dan", "question": "Do I have to declare gifts from suppliers?", "expected": ["code-of-conduct.md", "anti-bribery-and-gifts-policy.pdf"], "facts": [["50 euros", "€50", "50 eur", "50 €", "€ 50"]], "category": "policy"}
 {"id": "qa-13", "user": "carol", "question": "How long must my password be?", "expected": ["information-security-policy.docx"], "facts": ["14"], "category": "policy"}
 {"id": "qa-14", "user": "bob", "question": "How quickly must I report a security incident?", "expected": ["information-security-policy.docx"], "facts": [["1 hour", "one hour", "60 minutes"]], "category": "policy"}
 {"id": "qa-15", "user": "dan", "question": "Is King's Day a company holiday in 2026?", "expected": ["company-holidays-2026.xlsx"], "facts": [["2026-04-27", "27 April", "April 27"]], "category": "table"}
@@ -54,7 +54,7 @@
 {"id": "pp-12", "user": "bob", "question": "Who do I escalate to if an outage still isn't fixed after a quarter of an hour?", "expected": ["oncall-runbook.md"], "facts": ["Wei Zhang"], "category": "paraphrase"}
 {"id": "pp-13", "user": "bob", "question": "Why did the API gateway go down in July?", "expected": ["incident-postmortem-inc-2026-031.docx"], "facts": ["certificate"], "category": "paraphrase"}
 {"id": "pp-14", "user": "bob", "question": "How do customer integrations prove who they are when calling our robot API?", "expected": ["fleet-api-reference.md"], "facts": ["client credentials"], "category": "paraphrase"}
-{"id": "pp-15", "user": "samuel.mensah", "question": "A customer's robot battery is down to 65 percent health. Do we replace it for free?", "expected": ["known-issue-amr-200-battery-degradation.md"], "facts": ["70"], "category": "paraphrase"}
+{"id": "pp-15", "user": "samuel.mensah", "question": "A customer's robot battery is down to 65 percent health. Do we replace it for free?", "expected": ["known-issue-amr-200-battery-degradation.md", "standard-customer-terms-2026.pdf"], "facts": ["70"], "category": "paraphrase"}
 {"id": "pp-16", "user": "samuel.mensah", "question": "How fast must we react when a customer's whole fleet is down?", "expected": ["support-sla.md"], "facts": [["1 hour", "one hour"]], "category": "paraphrase"}
 {"id": "pp-17", "user": "bob", "question": "How close can I walk to one of the big robots while it is driving?", "expected": ["warehouse-safety-sop.pdf"], "facts": ["1.5"], "category": "paraphrase"}
 {"id": "pp-18", "user": "dan", "question": "Where do our robots ship from, and how long does delivery take to prepare?", "expected": ["shipping-and-returns-sop.docx"], "facts": ["Rotterdam"], "category": "paraphrase"}

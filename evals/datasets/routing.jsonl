@@ -8,7 +8,7 @@
 {"id": "ro-s08", "question": "What is the Fleet API rate limit?", "mode": "single", "agents": ["engineering"]}
 {"id": "ro-s09", "question": "When is FleetOS 3.0 planned to be released?", "mode": "single", "agents": ["engineering"]}
 {"id": "ro-s10", "question": "Why did we lose the Harbor Logistics deal?", "mode": "single", "agents": ["sales"]}
-{"id": "ro-s11", "question": "When does the Bluefin Freight contract renew?", "mode": "single", "agents": ["sales"]}
+{"id": "ro-s11", "question": "When does the Bluefin Freight contract renew?", "mode": "single", "agents": ["sales"], "not_agents": ["legal"]}
 {"id": "ro-s12", "question": "What is the first response time for standard support tickets?", "mode": "single", "agents": ["support"]}
 {"id": "ro-s13", "question": "Which firmware helps with AMR-200 battery degradation?", "mode": "single", "agents": ["support"]}
 {"id": "ro-s14", "question": "How big is the exclusion zone around moving AMR-500 robots?", "mode": "single", "agents": ["operations"]}
@@ -34,3 +34,23 @@
 {"id": "ro-xd-13", "question": "Prepare a short leadership brief: Q3 2026 revenue, the root cause of INC-2026-031, and the first-response time we promise customers for P1 incidents.", "mode": "fan_out", "agents": ["engineering", "finance", "support"]}
 {"id": "ro-xd-14", "question": "For my on-call week: how do I restart the fleet controller, what P1 response time do customers get, and how close may I get to a moving AMR-500?", "mode": "fan_out", "agents": ["engineering", "operations", "support"]}
 {"id": "ro-xd-15", "question": "A customer escalation needs a trip to Zurich: what's the hotel cap there, which firmware fixes AMR-200 battery degradation, and how long does the customer have to request a return?", "mode": "fan_out", "agents": ["finance", "operations", "support"]}
+{"id": "ro-s19", "question": "A customer says one robot keeps throwing charging errors. What priority should the ticket get?", "mode": "single", "agents": ["support"]}
+{"id": "ro-s20", "question": "How many AMR-200 robots did Nordlicht Grocers buy from us?", "mode": "single", "agents": ["sales"]}
+{"id": "ro-s21", "question": "Which channel brought in the most leads in Q3 2026?", "mode": "single", "agents": ["marketing"]}
+{"id": "ro-lg-01", "question": "I need to sign a supplier contract worth 80,000 euros. Can I sign it myself, or who has to?", "mode": "single", "agents": ["legal"]}
+{"id": "ro-lg-02", "question": "A prospect wants an NDA before our demo next week. Can I just use the standard mutual NDA without sending it to legal?", "mode": "single", "agents": ["legal"]}
+{"id": "ro-lg-03", "question": "What liability cap do we offer customers in our standard terms?", "mode": "single", "agents": ["legal"]}
+{"id": "ro-lg-04", "question": "A distributor wants to resell AMR-500s in Kazakhstan. What export checks do I need before sending a quote?", "mode": "single", "agents": ["legal"]}
+{"id": "ro-lg-05", "question": "Do we need a data processing agreement with a FleetOS customer, and who signs it?", "mode": "single", "agents": ["legal"]}
+{"id": "ro-lg-06", "question": "I just got a litigation hold notice. What do I have to do, and by when?", "mode": "single", "agents": ["legal"]}
+{"id": "ro-lg-07", "question": "I came up with a new charging technique at work. Do I need to report it, and is there a bonus if it gets patented?", "mode": "single", "agents": ["legal"]}
+{"id": "ro-lg-08", "question": "Can I take a contact from a state-owned port authority out to dinner?", "mode": "single", "agents": ["legal"]}
+{"id": "ro-lg-09", "question": "How long do we have to keep old customer contracts after they end?", "mode": "single", "agents": ["legal"]}
+{"id": "ro-lg-10", "question": "What payment terms do customers get by default on our standard terms?", "mode": "single", "agents": ["legal"]}
+{"id": "ro-xd-16", "question": "The Kestrel Retail proposal: how much is it worth, and who has to sign a contract of that size?", "mode": "fan_out", "agents": ["legal", "sales"]}
+{"id": "ro-xd-17", "question": "Before I sign a 200,000 euro supplier contract: what does the review checklist require, and what is the draft 2027 engineering budget?", "mode": "fan_out", "agents": ["finance", "legal"]}
+{"id": "ro-xd-18", "question": "For a new engineer: how long is the probation period, and does the invention assignment policy cover side projects?", "mode": "fan_out", "agents": ["hr", "legal"]}
+{"id": "ro-xd-19", "question": "When does the Bluefin Freight contract renew, and what liability cap do our standard customer terms set?", "mode": "fan_out", "agents": ["legal", "sales"]}
+{"id": "ro-xd-20", "question": "What was Q3 2026 revenue, and how many years do we have to keep invoices?", "mode": "fan_out", "agents": ["finance", "legal"]}
+{"id": "ro-nm-01", "question": "How long is the probation period in my employment contract?", "mode": "single", "agents": ["hr"], "not_agents": ["legal"]}
+{"id": "ro-nm-02", "question": "Does my employment contract let me work from Portugal for a few weeks?", "mode": "single", "agents": ["hr"], "not_agents": ["legal"]}

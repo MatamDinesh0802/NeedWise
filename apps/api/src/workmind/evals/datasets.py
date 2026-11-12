@@ -44,11 +44,26 @@ class CrossItem(QAItem):
 
 
 class RoutingItem(BaseModel):
+    """`agents`: exactly the agents the plan must pick (none for "direct"). `not_agents`: a
+    near miss names the agent it sounds like but must not go to (reported separately)."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     question: str
     mode: Literal["direct", "single", "fan_out"]
     agents: list[str]
+    not_agents: list[str] = []
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "RoutingItem":
+        expected = {"direct": 0, "single": 1}.get(self.mode)
+        if expected is not None and len(self.agents) != expected:
+            raise ValueError(f"{self.id}: mode {self.mode} needs {expected} agent(s)")
+        if self.mode == "fan_out" and len(self.agents) < 2:
+            raise ValueError(f"{self.id}: fan_out needs at least two agents")
+        if set(self.agents) & set(self.not_agents):
+            raise ValueError(f"{self.id}: an agent is both expected and excluded")
+        return self
 
 
 class MeetingItem(BaseModel):
