@@ -272,7 +272,16 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #9 — "Designing human-in-the-loop for AI agents: when should the AI ask permission?"**
 
-### Phase 9 — Meeting intelligence (v0.9) ✅ Backend done; UI in progress (see `docs/meetings.md`)
+### Phase 9 — Meeting intelligence (v0.9) ✅ Done (see `docs/meetings.md`)
+
+> Built: transcript and recording upload with a consent notice, transcription (faster-whisper),
+> structured extraction with timestamps checked against the transcript, action items → tasks,
+> "My commitments" on `/tasks`, transcripts indexed as knowledge, the meeting-extraction eval set,
+> and the pages (`/meetings`, `/meetings/{id}`) with clickable timestamps that play the recording
+> or scroll the transcript. Measured: extraction and transcription times in `docs/meetings.md`. The
+> UI was checked end to end in Chromium with a scripted model, not a real one. Not built:
+> pyannote diarization (so speaker mapping covers transcripts with named speakers only) and
+> topic segmentation.
 
 **Goal:** meetings turn into decisions, tasks and searchable knowledge.
 

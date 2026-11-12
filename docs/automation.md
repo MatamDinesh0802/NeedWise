@@ -37,9 +37,12 @@ action, which the chat shows as an inline card.
 ## Tasks
 
 Tasks belong to a person, or to a department queue when nobody is assigned yet.
-`GET /api/v1/tasks?scope=mine|queues|created`, `POST /api/v1/tasks`,
-`PATCH /api/v1/tasks/{id}` (status, claim). The assistant creates them with the `create_task`
-tool, which needs approval like every change.
+`GET /api/v1/tasks?scope=mine|queues|created`, `POST /api/v1/tasks`, `GET /api/v1/tasks/{id}`
+(assignee, creator or the queue's department; others get a 404), and `PATCH /api/v1/tasks/{id}`
+(status, claim, hand over). Whoever a task is assigned or handed to gets a `task.assigned`
+notification, unless they assigned it to themselves. The assistant creates them with the
+`create_task` tool, which needs approval like every change. In the app, `/tasks/{id}` shows one
+task, and members pick assignees from the colleague directory (`GET /api/v1/people?q=`).
 
 ## Workflows
 

@@ -50,7 +50,7 @@ Permissions follow the collection instead, so meetings never need a second permi
 | `POST /meetings?collection=&filename=&title=` | Upload. Body: the raw file. 202, processed in the background |
 | `GET /meetings` | Meetings in collections you can view |
 | `GET /meetings/{id}` | Segments, speakers, summary, decisions, action items, timings |
-| `GET /meetings/{id}/media` | The original recording, for playback from a timestamp |
+| `GET /meetings/{id}/media` | The original recording, for playback from a timestamp. Answers `Range` requests with 206: Chromium only lets a player seek in media served that way |
 | `PUT /meetings/{id}/speakers` | Map speaker labels to colleagues. Action items owned by that label are re-linked |
 | `PATCH /meetings/{id}/actions/{index}` | Correct an action item: `text`, `owner_user_id`, `due` (before it becomes a task) |
 | `POST /meetings/{id}/actions/{index}/task` | Turn an action item into a task for its owner (who is notified). Once per item |
@@ -58,6 +58,37 @@ Permissions follow the collection instead, so meetings never need a second permi
 
 Status: `pending` → `transcribing` → `extracting` → `ready`, or `failed` with the reason, such as
 transcription being off for a recording. The uploader is notified when the notes are ready.
+
+## In the app
+
+- **`/meetings`** lists the meetings in collections you can view, and polls every 3 seconds while
+  one is being processed. Uploading needs edit access to a collection. The form shows the consent
+  notice ("Everyone in the recording should know it is being processed") and won't upload until
+  you confirm it. Uploads show their progress and can be cancelled. A failed meeting shows its
+  reason in the list and on its page.
+- **`/meetings/{id}`** shows the summary, decisions, action items and the transcript, with
+  speakers' names. A decision or action item with a valid segment has a timestamp. For a
+  recording, the timestamp plays the recording from that moment. For a transcript, it scrolls the
+  transcript to that segment and moves focus there. Items without a valid segment have no
+  timestamp, and a note says why. Editors (the uploader and the collection's editors) can map
+  speakers to colleagues, correct an action item's text, owner or date, and make a task from it.
+  After that, the item links to its task.
+- **My commitments** is a section of `/tasks`: action items that name you as the owner, with the
+  due date, the task's status and a link that opens the meeting at that moment (`?t=271.4`).
+- **`/tasks/{id}`** shows one task (`GET /tasks/{id}`). A task made from a meeting links back to
+  that meeting.
+
+How it was checked: unit tests for the logic (timestamps, jump targets, the correction payload,
+sorting commitments) and for the rendered detail view, plus one end-to-end run in headless
+Chromium. That run used this branch's API on a throwaway database and the Next.js dev server, with
+a scripted model and a transcriber that returns the demo transcript. It made 47 checks, all
+passing: upload, status polling, timestamps, transcript scrolling and focus, corrections, a task
+made once (409 the second time), My commitments opening the meeting at its moment, editors versus
+viewers, a 404 for outsiders, and a failed recording. For seeking, the 23-minute demo recording was
+converted to WAV (Playwright's Chromium has no AAC decoder). A click on the 8:36 timestamp put the
+player at 516.0 s. When the same file was served without Range support, as the endpoint did before,
+the same browser reported it seekable from 0 to 0 s, and setting the time to 516 s left the player
+at 0. The run is not yet an automated test in CI, and it did not use a real model.
 
 ## Measured
 
@@ -105,6 +136,8 @@ hand (`PATCH /meetings/{id}/actions/{index}`) before an item becomes a task.
 - **Speaker diarization** (pyannote in the design). It needs PyTorch, several GB, and a gated
   model behind a Hugging Face token, too heavy for the default image. Recordings therefore have
   no speaker labels, and owners come from names said in the meeting (above). Transcripts from
-  meeting tools already name their speakers.
+  meeting tools already name their speakers. For the same reason, "Who is who" (speaker
+  mapping) only appears for transcripts with named speakers. A recording has no labels to map, so
+  its owners are corrected item by item.
 - Topic segmentation, open questions and risks in the extraction; DOCX transcripts.
 - Zoom, Teams and Meet connectors, and checking later meetings for progress on commitments.
