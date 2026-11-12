@@ -17,7 +17,9 @@ databaseOwnerPassword: {generate: password, required: true}
 postgresPassword: {generate: {{ ternary "password" "" $v.postgresql.enabled | quote }}, required: {{ $v.postgresql.enabled }}}
 keycloakDbPassword: {generate: {{ ternary "password" "" $v.keycloak.enabled | quote }}, required: {{ $v.keycloak.enabled }}}
 openfgaDbPassword: {generate: {{ ternary "password" "" $v.openfga.enabled | quote }}, required: {{ $v.openfga.enabled }}}
-valkeyPassword: {generate: {{ ternary "password" "" (and $v.valkey.enabled $v.valkey.auth.enabled) | quote }}, required: {{ $v.valkey.auth.enabled }}}
+{{- /* fromShared false: not read from credentials.existingSecret (it goes into URLs; an optional
+reference to a missing key would leave "$(WM_VALKEY_PASSWORD)" in them). */}}
+valkeyPassword: {generate: {{ ternary "password" "" (and $v.valkey.enabled $v.valkey.auth.enabled) | quote }}, required: {{ $v.valkey.auth.enabled }}, fromShared: {{ $v.valkey.auth.enabled }}}
 openfgaApiKey: {generate: {{ ternary "password" "" $v.openfga.enabled | quote }}, required: true}
 oidcClientSecret: {generate: {{ ternary "password" "" $v.keycloak.enabled | quote }}, required: true}
 secretsKey: {generate: aes, required: true}
@@ -50,7 +52,7 @@ optional: false
 secret: {{ include "workmind.credentialsSecretName" $root | quote }}
 key: {{ $c.key | quote }}
 optional: false
-{{- else if $root.Values.credentials.existingSecret -}}
+{{- else if and $root.Values.credentials.existingSecret (or (not (hasKey $spec "fromShared")) $spec.fromShared) -}}
 secret: {{ $root.Values.credentials.existingSecret | quote }}
 key: {{ $c.key | quote }}
 optional: {{ not $spec.required }}
