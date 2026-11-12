@@ -116,9 +116,9 @@ case "$cmd" in
     if [ -n "${GH_TOKEN:-}" ]; then mode=--no-progress; fi
     docker run --rm -v "$ROOT:/repo:ro" -w /repo -e GH_TOKEN "$ZIZMOR" \
       --config .github/zizmor.yml --min-severity medium "$mode" .github/workflows || status=1
-    echo "== shellcheck: scripts/*.sh, scripts/lib/*.sh, deploy/helm/validate.sh" >&2
+    echo "== shellcheck: scripts/*.sh, scripts/lib/*.sh, deploy/helm/*.sh" >&2
     docker run --rm -v "$ROOT:/repo:ro" -w /repo --entrypoint sh "$ACTIONLINT" \
-      -c 'shellcheck -x -P SCRIPTDIR scripts/*.sh scripts/lib/*.sh deploy/helm/validate.sh' || status=1
+      -c 'shellcheck -x -P SCRIPTDIR scripts/*.sh scripts/lib/*.sh deploy/helm/*.sh' || status=1
     exit "$status"
     ;;
   image)
