@@ -52,8 +52,8 @@ export const navItems: readonly NavItem[] = [
     title: "Overview",
     href: "/",
     icon: LayoutDashboard,
-    description: "Your recent activity, tasks, commitments and workspace usage at a glance.",
-    phase: 4,
+    description: "Your commitments from meetings and the system's health. Activity and usage summaries arrive with usage analytics (Phase 11).",
+    phase: 9,
     group: "workspace",
   },
   {

@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useApiQuery } from "@/hooks/use-api-query";
 import { ApiError } from "@/lib/api";
 import { pdfPageUrl, type Source } from "@/lib/chat/api";
+import { snippetParts } from "@/lib/chat/snippet";
 import { groupSources } from "@/lib/chat/thread";
 import { knowledgeApi, knowledgeKeys } from "@/lib/knowledge/api";
 import { cn } from "@/lib/utils";
@@ -131,8 +132,48 @@ const SNIPPET = "rounded-lg bg-muted/40 px-3 py-2 text-[13px] leading-relaxed wh
 
 /** Live sources carry their text; from history it's fetched (permission-checked) on demand. */
 function Snippet({ source }: { source: Source }) {
-  if (source.text) return <p className={cn(SNIPPET, "line-clamp-[12]")}>{source.text}</p>;
+  if (source.text) return <SnippetText text={source.text} />;
   return <StoredSnippet source={source} />;
+}
+
+/** A passage: plain text, with its markdown tables drawn as tables. */
+export function SnippetText({ text }: { text: string }) {
+  const parts = snippetParts(text);
+  if (parts.every((part) => part.kind === "text")) return <p className={cn(SNIPPET, "line-clamp-[12]")}>{text}</p>;
+  return (
+    <div className="flex max-h-72 flex-col gap-2 overflow-auto rounded-lg bg-muted/40 px-3 py-2 text-[13px] leading-relaxed">
+      {parts.map((part, i) =>
+        part.kind === "text" ? (
+          <p key={i} className="whitespace-pre-wrap">
+            {part.text}
+          </p>
+        ) : (
+          <table key={i} className="w-full border-collapse text-left text-xs">
+            <thead>
+              <tr>
+                {part.header.map((cell, c) => (
+                  <th key={c} scope="col" className="border-b px-2 py-1 font-medium">
+                    {cell}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {part.rows.map((row, r) => (
+                <tr key={r}>
+                  {row.map((cell, c) => (
+                    <td key={c} className="border-b border-border/50 px-2 py-1 align-top">
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ),
+      )}
+    </div>
+  );
 }
 
 function StoredSnippet({ source }: { source: Source }) {
@@ -153,5 +194,5 @@ function StoredSnippet({ source }: { source: Source }) {
   if (!chunk) {
     return <p className="text-xs text-muted-foreground">This passage changed since; the document was re-indexed.</p>;
   }
-  return <p className={cn(SNIPPET, "line-clamp-[12]")}>{chunk.text}</p>;
+  return <SnippetText text={chunk.text} />;
 }
