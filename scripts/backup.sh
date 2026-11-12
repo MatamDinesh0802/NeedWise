@@ -27,7 +27,7 @@
 # SECRETS_ENCRYPTION_KEY): keep those apart from the backups.
 #
 # Environment: DEPLOY_DIR, COMPOSE_PROJECT_NAME/COMPOSE_FILE, PGHOST/PGPORT/PGUSER/PGPASSWORD
-# (see scripts/lib/common.sh), QDRANT_URL, QDRANT_API_KEY, API_URL, OBJECTS_DIR, LICENSE_DIR,
+# (see scripts/lib/common.sh; PGUSER must be a superuser or BYPASSRLS role), QDRANT_URL, QDRANT_API_KEY, API_URL, OBJECTS_DIR, LICENSE_DIR,
 # PG_DATABASES, QDRANT_INCLUDE/QDRANT_EXCLUDE (regular expressions), STOP_TIMEOUT.
 set -euo pipefail
 # shellcheck source=lib/common.sh
@@ -53,6 +53,8 @@ if [[ -n $NO_COMPOSE ]]; then
   [[ -n ${PGHOST:-} ]] || die "--no-compose needs PGHOST (and PGPASSWORD) to reach Postgres"
   [[ $MODE == online ]] || die "--no-compose can only take --online backups (it stops nothing)"
 fi
+# A plain number: bash evaluates `[[ $KEEP -gt 0 ]]` as arithmetic, which can run commands.
+[[ $KEEP =~ ^[0-9]+$ ]] || die "--keep takes a number of backups, not '$KEEP'"
 
 PG_DATABASES=${PG_DATABASES:-workmind keycloak openfga}
 APP_DB=${APP_DB:-workmind}
@@ -67,12 +69,42 @@ STARTED=$(date +%s)
 CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 TARGET="$OUTPUT/workmind-$(date -u +%Y%m%dT%H%M%SZ)"
 TMP="$TARGET/tmp"
+# Hard links to the object tree (see "Objects" below), inside it so they are on its filesystem.
+PIN="$OBJECTS_DIR/.backup-pin-${TARGET##*/}"
+PINNED=""
+STOPPED=()
+resume() {
+  if [[ ${#STOPPED[@]} -gt 0 ]]; then
+    say "Starting ${STOPPED[*]} again"
+    compose start "${STOPPED[@]}" >/dev/null 2>&1 || warn "could not start ${STOPPED[*]}: start them by hand"
+  fi
+}
+# On any exit: start what was stopped and drop the pins. On failure also remove the unfinished
+# backup: it may hold full database dumps that --keep would never expire (it rotates only
+# backups with a manifest).
+on_exit() {
+  local status=$?
+  resume
+  [[ -n $PINNED && -d $PIN ]] && rm -rf -- "$PIN"
+  if [[ $status -ne 0 && -d $TARGET && ! -f $TARGET/manifest.json ]]; then
+    rm -rf -- "$TARGET"
+    warn "the backup failed; its unfinished directory $TARGET was removed"
+  fi
+}
+trap on_exit EXIT
 mkdir -p "$TARGET/postgres" "$TARGET/qdrant" "$TMP"
 
 say "Backup of $(if [[ -n $NO_COMPOSE ]]; then echo "$PGHOST:${PGPORT:-5432}"; else echo "the compose project in $DEPLOY_DIR"; fi) to $TARGET ($MODE)"
 command -v docker >/dev/null || die "docker is required"
 command -v "${PYTHON:-python3}" >/dev/null || die "python3 is required"
 PG_VERSION=$(psql_value -d postgres -c 'SHOW server_version') || die "cannot reach Postgres"
+# Every WorkMind table has FORCE ROW LEVEL SECURITY. pg_dump runs with row_security off, which
+# only a superuser or a BYPASSRLS role may do (not the table owner), and the row counts would
+# see nothing under RLS. Refuse early instead of failing in the middle.
+PG_ROLE_OK=$(psql_value -d postgres -c "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user") ||
+  die "cannot read the Postgres role's attributes"
+[[ $PG_ROLE_OK == t ]] ||
+  die "the Postgres role ${PGUSER:-postgres} is neither SUPERUSER nor BYPASSRLS, so pg_dump cannot read WorkMind's tables (row-level security); use such a role (docs/operations/backup-restore.md)"
 tool http-json "$QDRANT_URL/collections" >/dev/null || die "cannot reach Qdrant at $QDRANT_URL"
 
 # --- What is running ---------------------------------------------------------------------------
@@ -105,14 +137,6 @@ GIT_COMMIT=${GIT_COMMIT:-$(git -C "$DEPLOY_DIR" rev-parse HEAD 2>/dev/null || tr
 GIT_DESCRIBE=${GIT_DESCRIBE:-$(git -C "$DEPLOY_DIR" describe --tags --always --dirty 2>/dev/null || true)}
 
 # --- Pause the background writers ------------------------------------------------------------
-STOPPED=()
-resume() {
-  if [[ ${#STOPPED[@]} -gt 0 ]]; then
-    say "Starting ${STOPPED[*]} again"
-    compose start "${STOPPED[@]}" >/dev/null 2>&1 || warn "could not start ${STOPPED[*]}: start them by hand"
-  fi
-}
-trap resume EXIT
 candidates=()
 case $MODE in
   pause) candidates=(beat worker) ;;
@@ -125,6 +149,22 @@ PAUSED_AT=$(date +%s)
 if [[ ${#STOPPED[@]} -gt 0 ]]; then
   say "Stopping ${STOPPED[*]} (running jobs get up to ${STOP_TIMEOUT}s to finish)"
   compose stop -t "$STOP_TIMEOUT" "${STOPPED[@]}" >/dev/null 2>&1
+fi
+
+# --- Pin the objects, before the database snapshot ---------------------------------------------
+# The API keeps deleting objects while the backup runs (a document, a meeting, a replaced
+# analytics dataset). A hard link keeps a deleted file's content, and objects are never
+# rewritten in place, so pinning every object now and every new one after the dump captures
+# every object the dump can refer to. Where links are not possible (another filesystem, or
+# files this user may not link), the objects are archived from the live tree instead: an object
+# deleted between the dump and the archive is then missing from the backup.
+if [[ -d $OBJECTS_DIR ]]; then
+  if tool pin-tree "$OBJECTS_DIR" "$PIN" 2>"$TMP/pin.log"; then
+    PINNED=1
+  else
+    warn "could not hard-link the objects ($(tail -n 1 "$TMP/pin.log")); archiving the live tree"
+    rm -rf -- "$PIN"
+  fi
 fi
 
 # --- Postgres ----------------------------------------------------------------------------------
@@ -183,18 +223,22 @@ tool qdrant-backup --url "$QDRANT_URL" --out "$TARGET/qdrant"
 T_QDRANT=$(since "$step")
 
 # --- Objects and license -----------------------------------------------------------------------
-# After the database: objects are written before the rows that point at them commit, and are
-# content-addressed (never rewritten), so every object the dump refers to is already on disk.
+# After the database: objects are written before the rows that point at them commit, so a new
+# object the dump refers to is on disk now; one deleted since the snapshot is in the pins. One
+# pass reads, hashes and archives each file (temporary files left out), so the checksums
+# describe exactly the archived bytes, and a file deleted meanwhile is skipped, not fatal.
 step=$(date +%s)
 OBJECT_FILES=0
 if [[ -d $OBJECTS_DIR ]]; then
-  say "Object storage ($OBJECTS_DIR)"
-  tool hash-tree "$OBJECTS_DIR" >"$TARGET/objects.sha256"
-  cut -c 67- "$TARGET/objects.sha256" >"$TMP/objects.list"
-  OBJECT_FILES=$(($(wc -l <"$TMP/objects.list")))
-  if [[ $OBJECT_FILES -gt 0 ]]; then
-    COPYFILE_DISABLE=1 tar -C "$OBJECTS_DIR" -czf "$TARGET/objects.tar.gz" -T "$TMP/objects.list"
+  say "Object storage ($OBJECTS_DIR$([[ -n $PINNED ]] && echo ", pinned before the snapshot"))"
+  SOURCE=$OBJECTS_DIR
+  if [[ -n $PINNED ]] && tool pin-tree "$OBJECTS_DIR" "$PIN" 2>>"$TMP/pin.log"; then
+    SOURCE=$PIN
+  elif [[ -n $PINNED ]]; then
+    warn "could not pin the objects added during the backup; archiving the live tree"
   fi
+  OBJECT_FILES=$(tool archive-tree "$SOURCE" "$TARGET/objects.tar.gz" "$TARGET/objects.sha256")
+  [[ $OBJECT_FILES -gt 0 ]] || rm -f "$TARGET/objects.tar.gz"
   info "$OBJECT_FILES files"
 else
   warn "no object storage at $OBJECTS_DIR"

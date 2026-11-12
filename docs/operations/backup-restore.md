@@ -68,6 +68,16 @@ libpq variables `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD` and the tools run in 
 `postgres:18.6` container over TCP instead. `--no-compose` additionally keeps the script away
 from `docker compose` entirely (online backups only).
 
+`PGUSER` must be a **superuser or a role with `BYPASSRLS`**. Every WorkMind table has `FORCE
+ROW LEVEL SECURITY`, and `pg_dump` reads with row security off, which Postgres allows only to
+such roles: the table owner (`workmind_owner`), and an admin that is a member of it (as
+[Kubernetes](../deploy/kubernetes.md) suggests for creating the roles), get `query would be
+affected by row-level security policy` and the dump fails; under RLS the manifest's row counts
+would also read 0. The script checks the role first and refuses with that explanation. A
+restore needs the same: Postgres refuses `COPY FROM` into a table with row-level security for a
+role that does not bypass it (not tried here). If your managed service lets you create no such
+role, use its own snapshots for Postgres.
+
 ### Consistency
 
 A backup reads three stores that change independently, so the script does three things:
@@ -80,10 +90,23 @@ A backup reads three stores that change independently, so the script does three 
    tables ([ARCHITECTURE §7.5](../ARCHITECTURE.md#75-source-of-truth-and-synchronization)), so
    the restore recomputes it from PostgreSQL (`wm authz sync`) and any difference between the
    two dumps disappears.
-2. **Objects after the database.** An upload writes its object before the row that points at it
-   commits, and objects are content-addressed (never rewritten in place), so every object the
-   dump refers to is already on disk when the tree is archived. Objects that arrive later are
-   harmless extras.
+2. **Objects pinned before the database, archived after it.** The API keeps deleting objects
+   during a `--pause` or `--online` backup (a deleted document or meeting, the previous version
+   of a replaced analytics dataset). So before the snapshot the script hard-links every object
+   into `.data/objects/.backup-pin-<backup>/` (objects are never rewritten in place: a link
+   keeps a deleted file's content), links the new ones again after the dump (an upload writes
+   its object before the row that points at it commits), and archives the pins in one pass that
+   reads, hashes and stores each file. Every object the dump refers to is in the archive;
+   deleted or newer ones are harmless extras. Temporary files (`*.tmp` uploads,
+   `.<version>.building.duckdb` datasets) are left out. The pins are removed at the end.
+
+   Where hard links are not possible (the backup user may not link the files, e.g. on Linux
+   when it is neither root nor uid 10001, or the tree spans filesystems) the script says so and
+   archives the live tree: an object deleted between the snapshot and the archive is then
+   missing from the backup, and the restored row that refers to it has no file (its download
+   fails, `wm reindex` counts it as failed). Use `--offline`, or run the backup as root, when
+   that matters. Either way a file deleted while it is archived is skipped instead of failing
+   the backup (before this was fixed, `tar` exited 1 or 2 and the backup died).
 3. **Background writers paused.** By default (`--pause`) the script stops `worker` and `beat`
    (up to `STOP_TIMEOUT`, 120 s, for running jobs to finish; Celery acknowledges a job only
    when it is done, so an interrupted one runs again) and starts them again at the end, also on
@@ -93,8 +116,7 @@ A backup reads three stores that change independently, so the script does three 
 What remains possible in `--pause` mode: a change made through the API between the database
 dump and the Qdrant snapshot (a document deleted, a collection's sharing changed) is in the
 snapshot but not in the dump. Search still checks every passage against OpenFGA, rebuilt from
-the dump, so this can hide a passage, never show one to someone who may not see it. Analytics
-datasets (DuckDB files) rebuilt during the backup may be archived half-written. When that
+the dump, so this can hide a passage, never show one to someone who may not see it. When that
 matters, use `--offline`: it also stops `api` and `web`, so nothing changes (in the drill below
 they were stopped for 18 seconds, and the API then needs about 10 seconds to start). `--online`
 stops nothing.
@@ -102,6 +124,9 @@ stops nothing.
 ### Schedule and retention
 
 - **Daily** at a quiet hour, with `--pause`: `0 2 * * * cd /srv/workmind && scripts/backup.sh --keep 7 >>/var/log/workmind-backup.log 2>&1`.
+  A failed run removes its unfinished directory (it may already hold full database dumps,
+  which `--keep` would never expire: it rotates only complete backups) and exits non-zero:
+  alert on that. `--keep` takes a plain number.
   Your RPO is then up to 24 hours. At the drill's size a backup takes 8 to 10 seconds, so
   hourly is practical too.
 - **Off the host**, encrypted (below): keep, for example, 7 daily, 4 weekly and 12 monthly
@@ -292,7 +317,8 @@ cluster install needs ([Kubernetes](../deploy/kubernetes.md#backups)). Pointers:
 
 - **Postgres:** a managed database's snapshots and point-in-time recovery, or an operator such
   as CloudNativePG with WAL archiving, give a much better RPO than nightly `pg_dump`. The
-  scripts' `PGHOST` mode dumps any Postgres they can reach, which still gives a portable copy.
+  scripts' `PGHOST` mode dumps any Postgres they can reach with a superuser or `BYPASSRLS`
+  role (above), which still gives a portable copy.
   Restore all three databases from the same moment, then run `wm authz sync`.
 - **Qdrant:** the snapshot API is the same in a cluster; Qdrant can also be configured to write
   snapshots to S3-compatible storage (see Qdrant's snapshot documentation). One snapshot per

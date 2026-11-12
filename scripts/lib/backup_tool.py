@@ -7,6 +7,8 @@ with python3 and never depends on the version of WorkMind that is deployed.
     backup_tool.py qdrant-restore --url URL --backup DIR
     backup_tool.py qdrant-counts  --url URL [--include RE] [--exclude RE]
     backup_tool.py hash-tree DIR                  per-file SHA-256 list (to stdout)
+    backup_tool.py pin-tree DIR PIN               hard-link every file of DIR into PIN
+    backup_tool.py archive-tree DIR OUT LIST      DIR as OUT (.tar.gz) and its SHA-256 LIST
     backup_tool.py verify-tree DIR LIST           compare a tree against such a list
     backup_tool.py rows-json [--strings]          `key|value` lines (stdin) to JSON
     backup_tool.py kv-json key=text key:=json ... a JSON object (to stdout)
@@ -28,6 +30,7 @@ import json
 import os
 import re
 import sys
+import tarfile
 import time
 import urllib.error
 import urllib.parse
@@ -41,6 +44,11 @@ DEFAULT_INCLUDE = r"^chunks_"
 # Integration tests create chunks_test_* collections in a shared development Qdrant.
 DEFAULT_EXCLUDE = r"^chunks_test_"
 MANIFEST = "manifest.json"
+# Files still being written: an upload's "<sha>.tmp" and an analytics dataset's
+# ".<version>.building.duckdb" (and its .wal) are renamed when complete. Never archived.
+TEMPORARY = re.compile(r"(\.tmp|\.building\.duckdb(\.wal)?)$")
+# backup.sh's hard links to the tree (pin-tree); never part of the tree itself.
+PIN_PREFIX = ".backup-pin-"
 SUMS = "SHA256SUMS"
 
 
@@ -232,12 +240,87 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def files(root: Path) -> list[str]:
+    """The tree's files (relative, sorted), without temporary files and backup pins."""
+    found: list[str] = []
+    for directory, subdirs, names in os.walk(root):
+        subdirs[:] = [d for d in subdirs if not d.startswith(PIN_PREFIX)]
+        for name in names:
+            path = Path(directory, name)
+            if not TEMPORARY.search(name) and path.is_file() and not path.is_symlink():
+                found.append(path.relative_to(root).as_posix())
+    return sorted(found)
+
+
 def tree(root: Path) -> list[tuple[str, int, str]]:
-    return [
-        (p.relative_to(root).as_posix(), p.stat().st_size, sha256_file(p))
-        for p in sorted(root.rglob("*"))
-        if p.is_file() and not p.is_symlink()
-    ]
+    listed: list[tuple[str, int, str]] = []
+    for relative in files(root):
+        path = root / relative
+        listed.append((relative, path.stat().st_size, sha256_file(path)))
+    return listed
+
+
+def pin_tree(args: argparse.Namespace) -> None:
+    """Hard-links every file of DIR not yet in PIN into PIN (same filesystem). Objects are
+    never rewritten in place, so a link keeps a file's content even after the API deletes
+    it: run before the database snapshot and again after it, PIN holds every object the dump
+    can refer to. Exits 3 when links are not possible here (another filesystem, or files this
+    user may not link)."""
+    root, pin = Path(args.dir), Path(args.pin)
+    linked = 0
+    for relative in files(root):
+        target = pin / relative
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(root / relative, target)
+        except FileNotFoundError:
+            continue  # deleted while we walked: not in this listing
+        except OSError as exc:
+            log(f"cannot hard-link {relative} into {pin}: {exc}")
+            raise SystemExit(3) from exc
+        linked += 1
+    log(f"objects pinned: {linked} new")
+
+
+class _Hashing:
+    """A file object that hashes what tarfile reads from it."""
+
+    def __init__(self, source: Any) -> None:
+        self.source = source
+        self.digest = hashlib.sha256()
+
+    def read(self, size: int = -1) -> bytes:
+        block = self.source.read(size)
+        self.digest.update(block)
+        return block
+
+
+def archive_tree(args: argparse.Namespace) -> None:
+    """DIR as a .tar.gz, and the SHA-256 of exactly the bytes archived, in one pass. A file
+    deleted after the listing is left out instead of failing the backup (tar would exit 1 or
+    2 and stop it)."""
+    root, out, listing = Path(args.dir), Path(args.out), Path(args.list)
+    count, vanished = 0, 0
+    with tarfile.open(out, "w:gz", format=tarfile.PAX_FORMAT) as archive, listing.open("w") as sums:
+        for relative in files(root):
+            try:
+                source = (root / relative).open("rb")
+            except FileNotFoundError:
+                vanished += 1
+                continue
+            with source:
+                info = archive.gettarinfo(fileobj=source, arcname=relative)
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                hashing = _Hashing(source)
+                archive.addfile(info, hashing)
+                sums.write(f"{hashing.digest.hexdigest()}  {relative}\n")
+                count += 1
+    if vanished:
+        log(f"objects: {vanished} deleted while the backup ran (not archived)")
+    print(count)
 
 
 def hash_tree(args: argparse.Namespace) -> None:
@@ -473,6 +556,15 @@ def main() -> None:
     sub = commands.add_parser("hash-tree")
     sub.add_argument("dir")
     sub.set_defaults(handler=hash_tree)
+    sub = commands.add_parser("pin-tree")
+    sub.add_argument("dir")
+    sub.add_argument("pin")
+    sub.set_defaults(handler=pin_tree)
+    sub = commands.add_parser("archive-tree")
+    sub.add_argument("dir")
+    sub.add_argument("out")
+    sub.add_argument("list")
+    sub.set_defaults(handler=archive_tree)
     sub = commands.add_parser("verify-tree")
     sub.add_argument("dir")
     sub.add_argument("list")
