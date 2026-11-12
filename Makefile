@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -91,6 +91,11 @@ EMBED_SOURCE = $(if $(EMBED_GGUF),-m "$(EMBED_GGUF)",-hf ggml-org/embeddinggemma
 embeddings: ## Run the local embedding model on :8091 (needs llama.cpp: brew install llama.cpp)
 	llama-server $(EMBED_SOURCE) --embeddings --host 127.0.0.1 --port 8091 \
 		-c 8192 --parallel 4 -ub 2048 -b 2048
+
+# Enterprise edition, development only (docs/enterprise.md). Writes .workmind/ (git-ignored);
+# then: docker compose restart api worker beat.  Options: FEATURES="a b" DAYS=30
+ee-dev-license: ## Write a development Enterprise license to .workmind/ (APP_ENV=dev only)
+	cd apps/api && uv run --extra ee wm license dev $(if $(FEATURES),--features $(FEATURES)) $(if $(DAYS),--days $(DAYS))
 
 seed: ## Create the Acme Robotics demo company and its logins (safe to re-run)
 	$(COMPOSE) --profile tools run --rm --build seed
