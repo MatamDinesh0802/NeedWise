@@ -1,4 +1,5 @@
-"""The small slice of the Keycloak Admin REST API that seeding needs. Every call is idempotent."""
+"""The small slice of the Keycloak Admin REST API that seeding and the tenant lifecycle need
+(`wm seed`, `wm tenant create|delete`). Every call is idempotent."""
 
 from typing import Any
 
@@ -82,6 +83,43 @@ class KeycloakAdmin:
         response = await self._request("POST", f"/organizations/{org_id}/members", json=user_id)
         if response.status_code != 409:  # 409: already a member
             self._raise_for(response, f"add {user_id} to organization")
+
+    async def find_organization(self, alias: str) -> str | None:
+        response = await self._request("GET", "/organizations", params={"search": alias})
+        self._raise_for(response, f"find organization {alias}")
+        for org in response.json():
+            if org.get("alias") == alias:
+                return str(org["id"])
+        return None
+
+    async def organization_members(self, org_id: str) -> list[str]:
+        members: list[str] = []
+        while True:
+            response = await self._request(
+                "GET",
+                f"/organizations/{org_id}/members",
+                params={"first": len(members), "max": 100},
+            )
+            self._raise_for(response, "list organization members")
+            page = [str(m["id"]) for m in response.json()]
+            members += page
+            if len(page) < 100:
+                return members
+
+    async def user_organizations(self, user_id: str) -> list[str]:
+        response = await self._request("GET", f"/organizations/members/{user_id}/organizations")
+        self._raise_for(response, f"organizations of {user_id}")
+        return [str(o["id"]) for o in response.json()]
+
+    async def delete_user(self, user_id: str) -> None:
+        response = await self._request("DELETE", f"/users/{user_id}")
+        if response.status_code != 404:
+            self._raise_for(response, f"delete user {user_id}")
+
+    async def delete_organization(self, org_id: str) -> None:
+        response = await self._request("DELETE", f"/organizations/{org_id}")
+        if response.status_code != 404:
+            self._raise_for(response, f"delete organization {org_id}")
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         if self._token is None:

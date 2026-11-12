@@ -5,6 +5,9 @@ wm seed [options]         seed a demo company (see `wm seed --help`)
 wm license dev [options]  write a development Enterprise license (see `wm license dev --help`)
 wm reindex <tenant>       re-index a tenant's documents
 wm secrets rotate         re-encrypt stored model provider keys with SECRETS_ENCRYPTION_KEY
+wm tenant list|create|delete|verify-empty
+                          create a tenant, or delete one from every store and verify that
+                          nothing remains (see `wm tenant --help`, docs/multi-tenancy.md)
 wm usage backfill [<tenant>]
                           import usage stored before usage events existed (all active tenants
                           by default); safe to run again (docs/usage.md)
@@ -28,6 +31,10 @@ def main(argv: list[str] | None = None) -> int:
         from workmind.core.dev_license import main as run_license
 
         return run_license(rest)
+    if command == "tenant":
+        from workmind.modules.identity.tenant_cli import main as run_tenant
+
+        return run_tenant(rest)
     if command == "reindex" and len(rest) == 1:
         import asyncio
 

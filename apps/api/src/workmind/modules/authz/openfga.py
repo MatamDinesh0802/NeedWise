@@ -54,6 +54,31 @@ class OpenFgaClient:
         response = await self._http.delete(f"{self._base}/stores/{store_id}", headers=self._headers)
         self._raise_for(response)
 
+    async def store_exists(self, store_id: str) -> bool:
+        """False for a deleted store too (OpenFGA answers 404 for both)."""
+        response = await self._http.get(f"{self._base}/stores/{store_id}", headers=self._headers)
+        if response.status_code == 404:
+            return False
+        self._raise_for(response)
+        return True
+
+    async def stores_named(self, name: str) -> list[str]:
+        """Ids of the live stores with this name (one per tenant: "tenant-<slug>")."""
+        ids: list[str] = []
+        token = ""
+        while True:
+            response = await self._http.get(
+                f"{self._base}/stores",
+                params={"name": name, "page_size": 100, "continuation_token": token},
+                headers=self._headers,
+            )
+            self._raise_for(response)
+            body = response.json()
+            ids += [str(s["id"]) for s in body.get("stores", []) if s.get("name") == name]
+            token = body.get("continuation_token", "")
+            if not token:
+                return ids
+
     async def write_model(self, store_id: str, model: dict[str, Any]) -> str:
         body = await self._post(f"/stores/{store_id}/authorization-models", model)
         return str(body["authorization_model_id"])
