@@ -114,6 +114,13 @@ async def create_tenant(
         raise TenantError("slug: lower-case letters, digits and single hyphens (at most 63)")
     if not name.strip():
         raise TenantError("name: required")
+    if stores.keycloak is not None and await stores.keycloak.find_organization(slug):
+        # Left by an earlier tenant (deleted without --keycloak, or by hand): its members would
+        # sign in to the new tenant, since the organization alias is how a sign-in finds it.
+        raise TenantError(
+            f"Keycloak already has an organization with alias {slug!r}; its members would sign "
+            "in to the new tenant. Delete that organization in Keycloak or choose another slug"
+        )
     async with global_transaction(stores.owner) as session:
         if await session.scalar(select(Tenant.id).where(Tenant.slug == slug)) is not None:
             raise TenantError(f"a tenant with slug {slug!r} already exists")

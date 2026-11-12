@@ -59,7 +59,10 @@ between tenants at sign-in is not built.
    This creates the tenant row (with `restricted_data: local_only`), its OpenFGA store with the
    current model, the first owner (invited: linked at their first sign-in with that verified
    email), an audit event `tenant.created` and, with `--keycloak`, the Keycloak organization.
-   Without `--keycloak`, create the organization yourself with alias = slug.
+   Without `--keycloak`, create the organization yourself with alias = slug. With
+   `--keycloak`, the command refuses a slug whose organization still exists in Keycloak (for
+   example one left by a deletion without `--keycloak`): its members would sign in to the new
+   tenant. Delete that organization in Keycloak first, or choose another slug.
 2. In Keycloak, add people to the organization or link the company's identity provider to it.
 3. The owner signs in and sets up departments, groups, collections and models in Admin.
 
@@ -207,7 +210,9 @@ variables set. On the development machine the cross-tenant module took between 1
 per run (the slow runs shared the infrastructure with other test runs).
 
 Not covered by these tests: the web app (it only calls these routes), Keycloak itself (a
-scripted Keycloak API tests the deletion logic), and load (two tenants, one process).
+scripted Keycloak API tests the deletion logic; like Keycloak 26, its `search` parameter matches
+organization names and domains, never aliases, so the lookup by alias pages through every
+organization), and load (two tenants, one process).
 
 ## What a hosted multi-tenant WorkMind Cloud would still need
 

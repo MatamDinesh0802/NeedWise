@@ -5,6 +5,8 @@ from typing import Any
 
 import httpx
 
+_PAGE = 100
+
 
 class KeycloakAdminError(RuntimeError):
     pass
@@ -35,9 +37,8 @@ class KeycloakAdmin:
         return response.status_code == 200
 
     async def ensure_organization(self, *, alias: str, name: str, domain: str) -> str:
-        for org in (await self._request("GET", "/organizations?first=0&max=1000")).json():
-            if org.get("alias") == alias:
-                return str(org["id"])
+        if (found := await self.find_organization(alias)) is not None:
+            return found
         response = await self._request(
             "POST",
             "/organizations",
@@ -85,12 +86,25 @@ class KeycloakAdmin:
             self._raise_for(response, f"add {user_id} to organization")
 
     async def find_organization(self, alias: str) -> str | None:
-        response = await self._request("GET", "/organizations", params={"search": alias})
-        self._raise_for(response, f"find organization {alias}")
-        for org in response.json():
-            if org.get("alias") == alias:
-                return str(org["id"])
-        return None
+        """The organization whose alias is exactly `alias`. Keycloak's `search` parameter
+        matches names and domains, not aliases, so this pages through every organization:
+        a missed lookup would leave a deleted tenant's organization, and its people, for the
+        next tenant with the same slug."""
+        first = 0
+        while True:
+            response = await self._request(
+                "GET",
+                "/organizations",
+                params={"first": first, "max": _PAGE},
+            )
+            self._raise_for(response, f"find organization {alias}")
+            page: list[dict[str, Any]] = response.json()
+            for org in page:
+                if org.get("alias") == alias:
+                    return str(org["id"])
+            if len(page) < _PAGE:
+                return None
+            first += len(page)
 
     async def organization_members(self, org_id: str) -> list[str]:
         members: list[str] = []
