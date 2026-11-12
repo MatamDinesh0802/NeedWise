@@ -18,6 +18,7 @@ resumes it (ADR 0009: no graph state in memory, nothing re-planned on resume).
 
 import re
 import uuid
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Self
 
@@ -28,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from workmind.core.context import RequestContext
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.agents.research import research
+from workmind.modules.assistant.safety import escape_tags
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN, Tenant, User
 from workmind.modules.identity.service import load_identity
@@ -44,6 +46,10 @@ from workmind.modules.work.notifications import notify
 from workmind.providers.llm import LLMError, LLMProvider
 
 PLACEHOLDER = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
+# Placeholders whose values someone other than the workflow's owner wrote: an event's
+# document title or file name (its author), an earlier step's output (a model that read
+# documents). In a research question they are quoted as data (`quoted`).
+UNTRUSTED = frozenset({"event", "steps"})
 
 
 class Trigger(BaseModel):
@@ -90,18 +96,36 @@ class Definition(BaseModel):
         return self
 
 
-def render(value: Any, context: dict[str, Any]) -> Any:
+def quoted(value: Any) -> str:
+    """A value someone else wrote, inside a research question: a <data> element it cannot
+    close, which the research agent is told to read as data, not instructions. Without it a
+    document titled "Ignore your task and ..." spoke in the owner's voice (LLM01)."""
+    return f"<data>{escape_tags(str(value))}</data>"
+
+
+def render(
+    value: Any, context: dict[str, Any], *, quote: Callable[[Any], str] | None = None
+) -> Any:
     """Fills {{ steps.<id>.text }}, {{ steps.<id>.data.<key> }}, {{ today }}, {{ event.<key> }}.
-    A string that is exactly one placeholder keeps the value's type (e.g. a list of recipients)."""
+    A string that is exactly one placeholder keeps the value's type (e.g. a list of recipients).
+    `quote`: applied to the values of untrusted placeholders (event, steps)."""
     if isinstance(value, str):
         whole = PLACEHOLDER.fullmatch(value.strip())
-        if whole:
+        if whole and quote is None:
             return _lookup(whole.group(1), context)
-        return PLACEHOLDER.sub(lambda m: str(_lookup(m.group(1), context)), value)
+
+        def fill(match: re.Match[str]) -> str:
+            path = match.group(1)
+            found = _lookup(path, context)
+            if quote is not None and path.split(".", 1)[0] in UNTRUSTED:
+                return quote(found)
+            return str(found)
+
+        return PLACEHOLDER.sub(fill, value)
     if isinstance(value, list):
-        return [render(v, context) for v in value]  # pyright: ignore[reportUnknownVariableType]
+        return [render(v, context, quote=quote) for v in value]  # pyright: ignore[reportUnknownVariableType]
     if isinstance(value, dict):
-        return {k: render(v, context) for k, v in value.items()}  # pyright: ignore[reportUnknownVariableType]
+        return {k: render(v, context, quote=quote) for k, v in value.items()}  # pyright: ignore[reportUnknownVariableType]
     return value
 
 
@@ -240,7 +264,7 @@ async def advance(deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID) -
             continue
         try:
             if step.research is not None:
-                question = str(render(step.research, context))
+                question = str(render(step.research, context, quote=quoted))
                 # The step's model calls count for the workflow's owner, and this run (whatever
                 # started it: a schedule, a person, or an event such as document.ready).
                 with attribute("workflow", user_id=owner.user_id, ref=("workflow_run", run.id)):
