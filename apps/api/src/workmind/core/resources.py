@@ -21,6 +21,7 @@ from workmind.modules.analytics.service import Analytics
 from workmind.modules.analytics.tools import describe_data_tool, query_data_tool
 from workmind.modules.authz.openfga import OpenFgaClient
 from workmind.modules.conversations.events import RunEvents
+from workmind.modules.conversations.inflight import InFlight
 from workmind.modules.conversations.registry import RunRegistry
 from workmind.modules.identity.oidc import OidcClient
 from workmind.modules.identity.sessions import SessionStore
@@ -200,7 +201,7 @@ class Resources:
             else CeleryDispatcher(),
             collection_name=settings.qdrant_collection,
             retriever=retriever,
-            runs=RunRegistry(RunEvents(valkey)),
+            runs=RunRegistry(RunEvents(valkey), InFlight(valkey, settings.max_inflight_per_user)),
             agent_router=FastRouter(
                 embeddings,
                 min_score=settings.agent_fast_path_min_score,

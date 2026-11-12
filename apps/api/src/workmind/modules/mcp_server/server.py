@@ -24,6 +24,7 @@ from mcp.types import ListToolsResult
 from pydantic import Field
 
 from workmind.core.context import RequestContext
+from workmind.core.errors import ApiError
 from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.analytics.compiler import OrderBy, QueryFilter
@@ -167,21 +168,24 @@ def build_mcp_server(resources_of_app: Callable[[], Resources], version: str) ->
             tenant = await session.get(Tenant, rc.tenant_id)
         llm = await resources.models.for_tenant(rc.tenant_id)
         try:
-            with attribute("chat", user_id=rc.user_id):
-                # A used-up budget refuses the question before any work, like POST /ask, and
-                # again before each model call (docs/usage.md).
-                await resources.usage.check(rc)
-                result = await answer(
-                    llm,
-                    resources.retriever,
-                    rc,
-                    question,
-                    organization=tenant.name if tenant else "the company",
-                    policy=llm.max_external_sensitivity,
-                    local_llm=llm.local,
-                )
+            async with resources.runs.inflight.hold(rc):  # like POST /ask: 4 at once
+                with attribute("chat", user_id=rc.user_id):
+                    # A used-up budget refuses the question before any work, like POST
+                    # /ask, and again before each model call (docs/usage.md).
+                    await resources.usage.check(rc)
+                    result = await answer(
+                        llm,
+                        resources.retriever,
+                        rc,
+                        question,
+                        organization=tenant.name if tenant else "the company",
+                        policy=llm.max_external_sensitivity,
+                        local_llm=llm.local,
+                    )
         except BudgetExceededError as exc:
             raise McpToolError(exc.detail) from exc
+        except ApiError as exc:  # too many answers in progress
+            raise McpToolError(exc.detail or exc.title) from exc
         sources = [
             f"[{c.marker}] {c.title}"
             + (f" > {c.section}" if c.section else "")

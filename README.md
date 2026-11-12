@@ -147,6 +147,8 @@ Celery workers (from Phase 2) ──► ingestion, connectors, long agent runs, 
 - [Decision records](docs/adr/): why things are the way they are.
 - Operations: [backup and restore](docs/operations/backup-restore.md) (`make backup`,
   `make restore`) and [upgrades](docs/operations/upgrade.md) (tested from v0.1.0).
+- [Security](docs/security/threat-model.md): the threat model and the
+  [OWASP Top 10 for LLM Applications review](docs/security/owasp-llm-top10.md).
 
 ## Repository layout
 

@@ -1,4 +1,11 @@
-"""Tools that change things: they never run without an approval (side effects: write/external)."""
+"""Tools that change things: they never run without an approval (side effects: write/external).
+
+Guests (external contractors) cannot use them: the company's mail server and its people's task
+lists are for members. A guest's research run is never offered them, and a call that reaches
+a handler anyway (an approval stored before someone became a guest) is refused. Without this a
+guest could mail anyone from the company's address after approving their own request, and probe
+the directory that /me/people refuses them ("No colleague with the address ...").
+"""
 
 from datetime import UTC, date, datetime, time
 from typing import Annotated, Any
@@ -37,9 +44,20 @@ class CreateTask(BaseModel):
     due: date | None = None
 
 
+async def members_only(ctx: RequestContext) -> bool:
+    """Tool.available for the tools in this module: not for guests."""
+    return ctx.org_role != "guest"
+
+
+def _refuse_guests(ctx: RequestContext, what: str) -> None:
+    if ctx.org_role == "guest":
+        raise ToolError("forbidden", f"Guests cannot {what}.")
+
+
 def send_email_tool(mailer: SmtpMailer | None, sessions: async_sessionmaker[AsyncSession]) -> Tool:
     async def run(ctx: RequestContext, args: Any) -> ToolResult:
         assert isinstance(args, SendEmail)  # noqa: S101
+        _refuse_guests(ctx, "send email through WorkMind")
         if mailer is None:
             raise ToolError("not_configured", "Email is not configured (SMTP_HOST)")
         try:
@@ -72,12 +90,14 @@ def send_email_tool(mailer: SmtpMailer | None, sessions: async_sessionmaker[Asyn
         scope="assistant:ask",
         handler=run,
         summarize=summarize,
+        available=members_only,
     )
 
 
 def create_task_tool(sessions: async_sessionmaker[AsyncSession]) -> Tool:
     async def run(ctx: RequestContext, args: Any) -> ToolResult:
         assert isinstance(args, CreateTask)  # noqa: S101
+        _refuse_guests(ctx, "create tasks through WorkMind")
         async with tenant_transaction(sessions, ctx.tenant_id) as session:
             assignee = (
                 await session.scalar(select(User).where(User.email == str(args.assignee).lower()))
@@ -143,4 +163,5 @@ def create_task_tool(sessions: async_sessionmaker[AsyncSession]) -> Tool:
         scope="assistant:ask",
         handler=run,
         summarize=summarize,
+        available=members_only,
     )

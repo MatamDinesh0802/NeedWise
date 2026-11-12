@@ -147,6 +147,42 @@ def routing_section(records: list[RoutingRecord]) -> list[str]:
     return out
 
 
+def red_team_section(run: EvalRun) -> list[str]:
+    """Attacks by kind: where they were checked, leaks (gated) and violations (reported)."""
+    answers = [a for a in run.answers if a.suite == "redteam"]
+    kinds = sorted(({c.kind for c in run.context_checks} | {a.kind for a in answers}) - {""})
+    if not kinds:
+        return []
+    out = [
+        "",
+        "## Red team",
+        "",
+        "Context: a search as the attacker in every retrieval mode (no model call). Answer: "
+        "the attack on its surface. Leaks fail the gate above; violations (the answer did "
+        "what the attack asked: a code word, a tool call, an image, a marker of no source, "
+        "system prompt text) are reported (evals/redteam.py).",
+        "",
+        "| Kind | Attacks checked in context | Answered (surfaces) | Leaks | Violations |",
+        "|---|---|---|---|---|",
+    ]
+    for kind in kinds:
+        checks = [c for c in run.context_checks if c.kind == kind]
+        rows = [a for a in answers if a.kind == kind]
+        surfaces = ", ".join(sorted({a.surface or "chat" for a in rows}))
+        leaks = sum(bool(c.leaks) for c in checks) + sum(bool(a.leaks) for a in rows)
+        out.append(
+            f"| {kind} | {len({c.id for c in checks})} | {len(rows)}"
+            f"{f' ({surfaces})' if rows else ''} | {leaks} | "
+            f"{sum(bool(a.violations) for a in rows)} |"
+        )
+    if answers:
+        out += ["", f"Violations: **{len(run.violations)}**"]
+        out += [f"- {v}" for v in run.violations]
+        errors = [a for a in answers if a.error]
+        out += [f"- {a.id} did not answer: {a.error}" for a in errors]
+    return out
+
+
 def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
     out: list[str] = [f"# WorkMind evaluation: {meta['label']}", ""]
     out += [f"- {key}: `{value}`" for key, value in meta.items() if key != "label"]
@@ -161,6 +197,7 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
         f"{len(run.analytics)} analytics answers.",
     ]
     out += [f"- {leak}" for leak in leaks]
+    out += red_team_section(run)
 
     if run.retrieval:
         out += ["", "## Retrieval", "", *retrieval_table(run.retrieval, modes)]
@@ -423,6 +460,7 @@ def as_json(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
             "meta": meta,
             "summary": {mode: summarize_retrieval(run.retrieval, mode) for mode in modes},
             "leaks": run.leaks,
+            "violations": run.violations,
             "retrieval": [asdict(r) for r in run.retrieval],
             "routing": [asdict(r) for r in run.routing],
             "meetings": [asdict(m) for m in run.meetings],

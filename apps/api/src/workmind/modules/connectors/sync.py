@@ -36,6 +36,11 @@ from workmind.modules.retrieval.qdrant import QdrantClient
 
 log = structlog.get_logger("workmind.sync")
 STALE_LOCK = timedelta(hours=1)  # a "syncing" status older than this belongs to a dead worker
+# Chat is discussion, never policy (ARCHITECTURE 7.3), whatever the collection's default
+# trust: anyone in a synced channel (Slack Connect guests included) writes it, and an
+# official-by-default collection would otherwise rank their messages above real policy
+# and let them win conflicts (data poisoning, docs/security/owasp-llm-top10.md LLM04).
+FIXED_TRUST: dict[str, str] = {"slack": "discussion"}
 
 ConnectorFactory = Callable[[Source, Mapping[str, Any]], Connector]
 
@@ -167,6 +172,7 @@ async def _apply(
                     filename=item.filename,
                     declared_mime=None,
                     data=data,
+                    trust=FIXED_TRUST.get(source.kind),
                     source=source.kind,
                     synced=service.SyncedItem(source.id, item.external_id, item.title, item.url),
                 )

@@ -34,6 +34,8 @@ documents:
   title: On-call Runbook
 - file: engineering-docs/engineering-roadmap-h2-2026.pptx
   title: Engineering Roadmap H2 2026
+- file: engineering-docs/lidarcore-5-2-vendor-release-notes.md
+  title: LidarCore 5.2 SDK Release Notes (vendor)
 - file: finance-reports/q3-2026-financial-summary.xlsx
   title: Q3 2026 Financial Summary
 - file: finance-reports/budget-2027-draft.docx
@@ -59,6 +61,9 @@ documents:
   title: Customer Support SLA
 - file: support-knowledge/ticket-export-q3-2026.xlsx
   title: Support Ticket Export Q3 2026
+  trust: discussion
+- file: support-knowledge/meeting-support-weekly-sync-2026-10-28.md
+  title: 'Meeting: Support weekly sync (2026-10-28)'
   trust: discussion
 - file: operations-sops/warehouse-safety-sop.pdf
   title: Warehouse Safety SOP
@@ -92,5 +97,7 @@ documents:
   sensitivity: restricted
 - file: slack-general/slack-general-export.json
   title: 'Slack: #general'
+- file: slack-general/slack-it-helpdesk-export.json
+  title: 'Slack: #it-helpdesk'
 - file: contractor-onboarding/contractor-guide.md
   title: Contractor Guide

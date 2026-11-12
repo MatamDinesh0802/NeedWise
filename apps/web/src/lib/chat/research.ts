@@ -32,6 +32,8 @@ const ERRORS: Record<string, string> = {
   not_configured: "not set up",
   upstream_unavailable: "service unavailable",
   timeout: "took too long",
+  // A research run executes at most 12 tool calls (MAX_TOOL_CALLS); later ones are not run.
+  limit_reached: "skipped: the run's tool-call limit was reached",
 };
 
 function readable(tool: string): string {

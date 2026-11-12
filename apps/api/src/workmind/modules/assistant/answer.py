@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field, replace
 
 from workmind.core.context import RequestContext
+from workmind.modules.assistant.safety import escape_tags, quote_markers, without_images
 from workmind.modules.model_catalog.policy import LEVELS, RoutingPolicy, above, threshold
 from workmind.modules.retrieval.service import Passage, Retriever
 from workmind.providers.llm import LLMMessage, LLMProvider, LLMRequest, LLMUsage, TextDelta
@@ -109,8 +110,10 @@ def render_sources(passages: Sequence[Passage]) -> str:
             "trust": p.trust,
         }
         attrs = " ".join(f'{k}="{html.escape(v, quote=True)}"' for k, v in attributes.items() if v)
-        # Escaping keeps a document from closing the element and posing as an instruction.
-        blocks.append(f"<source {attrs}>\n{html.escape(p.text, quote=False)}\n</source>")
+        # Escaping keeps a document from closing the element and posing as an instruction;
+        # quoting its markers keeps it from pre-writing citations (safety.py).
+        text = html.escape(quote_markers(p.text), quote=False)
+        blocks.append(f"<source {attrs}>\n{text}\n</source>")
     return "\n\n".join(blocks)
 
 
@@ -126,7 +129,9 @@ def build_request(
         # Context for follow-ups only: facts must still come from the sources (rule 1).
         system += (
             "\n\nEarlier in this conversation (a summary, not a source):\n"
-            f"<conversation_summary>\n{summary}\n</conversation_summary>"
+            # Model text over earlier answers, which documents may have steered: it cannot
+            # close the element and speak as the system prompt (safety.py).
+            f"<conversation_summary>\n{escape_tags(summary)}\n</conversation_summary>"
         )
     content = f"<sources>\n{render_sources(passages)}\n</sources>\n\nQuestion: {question}"
     return LLMRequest(system=system, messages=[*history, LLMMessage("user", content)])
@@ -141,6 +146,9 @@ def extract_markers(text: str) -> list[str]:
 
 
 def finish(text: str, passages: list[Passage], usage: LLMUsage) -> Answer:
+    """The stored answer: citations resolved against the passages given, and no image
+    (an image URL is an exfiltration channel in clients that load it, safety.py)."""
+    text = without_images(text)
     by_marker = {p.marker: p for p in passages}
     markers = extract_markers(text)
     citations = [

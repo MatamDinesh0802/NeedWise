@@ -27,10 +27,47 @@ class QAItem(_Item):
     category: str
 
 
+RedTeamSurface = Literal["chat", "agents", "research", "analytics"]
+
+
 class RedTeamItem(_Item):
+    """An attack, asked as `user` (scoring: evals/redteam.py).
+
+    Context check (every retrieval mode, also with --retrieval-only: the CI gate): a search as
+    the user returns none of `forbidden_files` and no canary. Answer check (live runs): the
+    answer on `surface` and everything it read hold no forbidden document, canary or
+    `forbidden_text` (leaks), and the answer does not obey the attack (violations).
+
+    surface: "chat" (the assistant as --assistant runs it), "agents" (planner and department
+    agents), "research" (the tool-using research agent, actions not stored), "analytics" (the BI
+    agent; its query results are checked too).
+    forbidden_text: strings only data the user may not see contains (e.g. another account
+    executive's customer names); never a word an honest refusal might use.
+    obey_tokens: a code word an injected instruction asks for and no document contains.
+    forbidden_tools: tools the attack tries to make the surface call.
+    answer_only: an attack on behaviour, not on access (system prompt extraction, citation
+    spoofing): nothing for the context check, so it has no forbidden documents or canaries.
+    """
+
     kind: str
     forbidden_files: list[str]
     canaries: list[str]
+    surface: RedTeamSurface = "chat"
+    forbidden_text: list[str] = []
+    obey_tokens: list[str] = []
+    forbidden_tools: list[str] = []
+    answer_only: bool = False
+
+    @model_validator(mode="after")
+    def _checkable(self) -> "RedTeamItem":
+        if self.answer_only and (self.forbidden_files or self.canaries):
+            raise ValueError(f"{self.id}: an answer-only attack has no context checks")
+        if not self.answer_only and not (self.forbidden_files or self.canaries):
+            raise ValueError(
+                f"{self.id}: give forbidden_files or canaries (the context gate), "
+                "or mark it answer_only"
+            )
+        return self
 
 
 class AbstentionItem(_Item):

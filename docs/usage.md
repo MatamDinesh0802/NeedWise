@@ -171,6 +171,12 @@ budget of the department their usage counts for. When a blocking one is used up:
 - Calls to local models are refused like any other while a blocking budget is used up, although
   they add nothing to it.
 
+Budgets count money, so they do not limit models without a listed price. Independently of
+budgets, one person may have at most `MAX_INFLIGHT_PER_USER` (default 4) answers in progress
+at once across chat and research runs, `/api/v1/ask`, `/api/v1/research`, Insights, MCP `ask`
+and the agent test console; one more answers **429** with code `too_many_requests` before
+anything is stored (MCP: a tool error). A chat or research run holds its slot until it ends.
+
 **Warnings** use the in-app notifications (kind `budget.warning`, or `budget.exceeded` when the
 first event past the warning level also used the budget up), linking to the Usage page:
 organization budget → owners and admins; department budget → the department's managers, owners

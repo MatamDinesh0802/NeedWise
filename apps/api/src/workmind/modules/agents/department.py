@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from workmind.core.context import RequestContext
 from workmind.modules.agents.planning import Agent
 from workmind.modules.assistant.answer import RestrictedPolicy, render_sources, route
+from workmind.modules.assistant.safety import quote_markers
 from workmind.modules.retrieval.service import Passage, Retriever
 from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import Tool, ToolError, ToolRegistry
@@ -122,7 +123,7 @@ async def offered_tools(registry: ToolRegistry, ctx: RequestContext, agent: Agen
 def render_tool_outputs(outputs: Sequence[ToolOutput]) -> str:
     return "\n".join(
         f'<tool_result marker="{o.marker}" tool="{html.escape(o.tool)}">\n'
-        f"{html.escape(o.content)}\n</tool_result>"
+        f"{html.escape(quote_markers(o.content))}\n</tool_result>"
         for o in outputs
     )
 

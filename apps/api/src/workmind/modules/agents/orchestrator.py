@@ -40,6 +40,7 @@ from workmind.modules.assistant.answer import (
     route,
     withheld_notice,
 )
+from workmind.modules.assistant.safety import escape_tags
 from workmind.modules.retrieval.service import Passage, Retriever
 from workmind.modules.tools.registry import ToolRegistry
 from workmind.modules.usage.budgets import BudgetExceededError
@@ -160,7 +161,7 @@ def compose_request(
     if summary:
         system += (
             "\n\nEarlier in this conversation (a summary, not a source):\n"
-            f"<conversation_summary>\n{summary}\n</conversation_summary>"
+            f"<conversation_summary>\n{escape_tags(summary)}\n</conversation_summary>"
         )
     blocks: list[str] = []
     for agent, findings in agg.findings.items():

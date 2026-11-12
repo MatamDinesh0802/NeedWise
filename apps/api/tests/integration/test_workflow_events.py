@@ -184,10 +184,15 @@ async def test_a_ready_document_runs_the_workflows_listening_for_it_once_per_ver
     assert await runs_of(app_sessions, acme, "sops-only") == []  # another collection
     assert await runs_of(app_sessions, acme, "switched-off") == []  # disabled
 
-    # The event fills the templates, and the run searched as Erin.
+    # The event fills the templates, quoted as data (the title is the author's), and the run
+    # searched as Erin.
     questions = [str(request.messages[0].content) for _, request in llm.requests]
-    assert sum("Summarize Remote Work Policy from company-handbook" in q for q in questions) == 2
-    assert all(f"version 1, /knowledge/documents/{document_id}" in q for q in questions)
+    summary = "Summarize <data>Remote Work Policy</data> from <data>company-handbook</data>"
+    assert sum(summary in q for q in questions) == 2
+    assert all(
+        f"version <data>1</data>, <data>/knowledge/documents/{document_id}</data>" in q
+        for q in questions
+    )
 
     # Identical bytes change nothing; the same version again (a re-index, a re-delivered task)
     # finds its run taken.

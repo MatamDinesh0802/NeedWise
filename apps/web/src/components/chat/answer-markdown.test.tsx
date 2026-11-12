@@ -63,4 +63,16 @@ describe("AnswerMarkdown", () => {
     expect(html).toContain('href="https://intranet.example/leave"');
     expect(html).toContain('rel="noopener noreferrer nofollow"');
   });
+
+  it("shows the host an absolute link goes to, so a disguised exfiltration link is visible", () => {
+    const html = render("Read [the leave policy](https://attacker.example/c?d=CANARY-SALARY-4F9) [S1].");
+    expect(html).toContain(">the leave policy</a>");
+    expect(html).toContain("(attacker.example)");
+    expect(chips(html)).toEqual(["1"]);
+  });
+
+  it("does not repeat a host the link text already shows, nor add one to relative links", () => {
+    expect(render("<https://intranet.example/leave>")).not.toContain("(intranet.example)");
+    expect(render("[the document](/knowledge/documents/42)")).not.toMatch(/\([^)]*\)<\/span>/);
+  });
 });

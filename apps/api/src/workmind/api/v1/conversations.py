@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from workmind.api.deps import enforce_limit, require_scope, resources_of
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
+from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.conversations.events import RunMeta
 from workmind.modules.conversations.models import Conversation, Message
@@ -223,27 +224,16 @@ async def send_message(
     await resources.usage.check(ctx)
     run_id = uuid.uuid4()
     meta = RunMeta(run_id, ctx.tenant_id, ctx.user_id, conversation_id)
-    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
-        conversation = await _owned(session, ctx, conversation_id)
-        if not await resources.runs.events.create(meta):
-            raise ApiError(409, "run_in_progress", "This conversation is still answering")
-        question = body.content.strip()
-        if not conversation.title:
-            conversation.title = question[:TITLE_LENGTH] + (
-                "…" if len(question) > TITLE_LENGTH else ""
-            )
-        message = Message(
-            tenant_id=ctx.tenant_id,
-            conversation_id=conversation_id,
-            role="user",
-            content=question,
-            run_id=run_id,
-        )
-        session.add(message)
-        await session.flush()
-        user_message = _message_out(message)
-        tenant = await session.get(Tenant, ctx.tenant_id)
-    llm = await resources.models.for_tenant(ctx.tenant_id)
+    # One slot per run in progress, freed when the run ends (429 too_many_requests).
+    inflight, slot = resources.runs.inflight, (ctx, str(run_id))
+    if not await inflight.acquire(*slot):
+        raise inflight.refusal()
+    try:
+        user_message, tenant = await _store_question(resources, ctx, meta, body)
+        llm = await resources.models.for_tenant(ctx.tenant_id)
+    except BaseException:
+        await inflight.release(*slot)
+        raise
     deps = RunDeps(
         sessions=resources.db,
         events=resources.runs.events,
@@ -264,6 +254,7 @@ async def send_message(
         if resources.assistant_mode in ("agents", "auto")
         else "chat"
     )
+    question, organization = user_message.content, tenant.name if tenant else "the company"
     with attribute(feature, user_id=ctx.user_id, ref=("message", answer_id)):
         if body.mode == "research":
             resources.runs.start(
@@ -272,10 +263,11 @@ async def send_message(
                     ctx,
                     meta,
                     question=question,
-                    user_message_id=message.id,
-                    organization=tenant.name if tenant else "the company",
+                    user_message_id=user_message.id,
+                    organization=organization,
                     answer_id=answer_id,
-                )
+                ),
+                slot=slot,
             )
             return RunStarted(run_id=run_id, user_message=user_message)
         resources.runs.start(
@@ -284,13 +276,40 @@ async def send_message(
                 ctx,
                 meta,
                 question=question,
-                user_message_id=message.id,
-                organization=tenant.name if tenant else "the company",
+                user_message_id=user_message.id,
+                organization=organization,
                 policy=llm.max_external_sensitivity,
                 answer_id=answer_id,
-            )
+            ),
+            slot=slot,
         )
     return RunStarted(run_id=run_id, user_message=user_message)
+
+
+async def _store_question(
+    resources: Resources, ctx: RequestContext, meta: RunMeta, body: MessageCreate
+) -> tuple[MessageOut, Tenant | None]:
+    """Registers the run (409 if the conversation is still answering) and stores the
+    question."""
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        conversation = await _owned(session, ctx, meta.conversation_id)
+        if not await resources.runs.events.create(meta):
+            raise ApiError(409, "run_in_progress", "This conversation is still answering")
+        question = body.content.strip()
+        if not conversation.title:
+            conversation.title = question[:TITLE_LENGTH] + (
+                "…" if len(question) > TITLE_LENGTH else ""
+            )
+        message = Message(
+            tenant_id=ctx.tenant_id,
+            conversation_id=meta.conversation_id,
+            role="user",
+            content=question,
+            run_id=meta.run_id,
+        )
+        session.add(message)
+        await session.flush()
+        return _message_out(message), await session.get(Tenant, ctx.tenant_id)
 
 
 async def _run_for(request: Request, ctx: RequestContext, run_id: uuid.UUID) -> RunMeta:

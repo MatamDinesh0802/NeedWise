@@ -6,6 +6,7 @@ and outputs are untrusted, and its own `readOnlyHint` is not believed. Every rem
 "external" (approval-gated) unless the operator lists it as read-only in the configuration.
 """
 
+import html
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,6 +19,7 @@ from mcp.server import MCPServer
 from pydantic import BaseModel, Field
 
 from workmind.core.context import RequestContext
+from workmind.modules.assistant.safety import quote_markers
 from workmind.modules.tools.registry import Tool, ToolError, ToolRegistry, ToolResult
 
 log = structlog.get_logger("workmind.mcp_client")
@@ -69,7 +71,10 @@ def _remote_tool(server: RemoteServer, name: str, description: str, schema: dict
         text = _text(list(result.content))
         if result.is_error:
             raise ToolError("tool_failed", f"{config.key}.{name}: {text[:300]}")
-        return ToolResult(f'<external source="{config.key}">\n{text}\n</external>')
+        # A remote server is a third party: its text cannot close the element (or pre-write
+        # citation markers) and pose as instructions.
+        quoted = html.escape(quote_markers(text), quote=False)
+        return ToolResult(f'<external source="{config.key}">\n{quoted}\n</external>')
 
     return Tool(
         name=f"{config.key}__{name}",
