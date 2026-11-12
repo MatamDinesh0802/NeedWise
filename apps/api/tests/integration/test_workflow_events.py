@@ -226,6 +226,46 @@ async def test_a_ready_document_runs_the_workflows_listening_for_it_once_per_ver
     assert [r["status"] for r in runs] == ["succeeded", "succeeded"]
 
 
+async def test_an_event_run_uses_the_tenants_models(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    """document.ready runs resolve the tenant's catalog (Admin > Models), like every request."""
+    system = use_model(api, FakeLLM(tool_turns=[], tool_text="From the deployment's model."))
+    tenant_model = FakeLLM(tool_turns=[], tool_text="From the organization's model.")
+    app: Any = api.app
+    app.state.resources.models.build = lambda provider, model, key: tenant_model
+    admin = acme.as_("erin", write=True)
+    provider = api.post(
+        "/api/v1/admin/models/providers",
+        json={"name": "Team", "kind": "openai_compatible", "base_url": "https://llm.example/v1"},
+        headers=admin,
+    )
+    assert provider.status_code == 201, provider.text
+    model = api.post(
+        "/api/v1/admin/models/catalog",
+        json={"provider_id": provider.json()["id"], "name": "team-model"},
+        headers=admin,
+    )
+    assert model.status_code == 201, model.text
+    roles = api.put("/api/v1/admin/models/roles", json={"agent": model.json()["id"]}, headers=admin)
+    assert roles.status_code == 200, roles.text
+    assert (
+        save_workflow(api, acme, "erin", "any-document", {"event": "document.ready"}).status_code
+        == 200
+    )
+
+    handbook = await collection_id(app_sessions, acme, "company-handbook")
+    upload(api, acme, "alice", handbook, "remote-work.md", HANDBOOK)
+
+    (run,) = finished_runs(api, acme, "erin", "any-document", 1)
+    assert (run["status"], run["steps"]["read"]["text"]) == (
+        "succeeded",
+        "From the organization's model.",
+    )
+    assert tenant_model.roles() == ["agent"]
+    assert "agent" not in system.roles()
+
+
 async def test_no_run_for_a_document_the_owner_cannot_view(
     api: TestClient, acme: Acme, app_sessions: SessionFactory
 ) -> None:
