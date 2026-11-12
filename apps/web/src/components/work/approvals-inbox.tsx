@@ -14,6 +14,7 @@ import { formatDateTime, formatRelative } from "@/lib/format";
 import { canSeeAdministration, type Me } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { workApi, workKeys, type Approval } from "@/lib/work/api";
+import { workflowRunHref } from "@/lib/admin/workflows";
 import { displayStatus, OFFICIAL_KIND, originLabel, toolTitle } from "@/lib/work/approvals";
 
 const TOOL_ICONS: Record<string, LucideIcon> = { send_email: Mail, create_task: ListTodo, [OFFICIAL_KIND]: BadgeCheck };
@@ -164,8 +165,10 @@ function OriginLinks({ approval, me }: { approval: Approval; me: Me }) {
     );
   }
   if (approval.origin.via === "workflow" && canSeeAdministration(me.org_role) && me.org_role !== "auditor") {
+    const key = approval.origin.workflow;
+    const href = typeof key === "string" && key ? workflowRunHref(key, approval.origin.workflow_run_id) : "/admin/workflows";
     return (
-      <Link href="/admin/workflows" className={link}>
+      <Link href={href} className={link}>
         <ExternalLink data-icon="inline-start" />
         Open workflow runs
       </Link>

@@ -14,8 +14,8 @@ const keys = (role: OrgRole | null | undefined) => visibleAdminSections(role).ma
 
 describe("admin sections by role", () => {
   it.each([
-    ["owner", ["people", "departments", "groups", "collections", "sources", "agents", "workflows", "analytics", "audit"]],
-    ["admin", ["people", "departments", "groups", "collections", "sources", "agents", "workflows", "analytics", "audit"]],
+    ["owner", ["people", "departments", "groups", "collections", "sources", "agents", "workflows", "analytics", "models", "budgets", "audit"]],
+    ["admin", ["people", "departments", "groups", "collections", "sources", "agents", "workflows", "analytics", "models", "budgets", "audit"]],
     ["auditor", ["audit"]],
     ["member", []],
     ["guest", []],
@@ -55,6 +55,8 @@ describe("adminSectionForPath", () => {
     ["/admin/collections", "collections"],
     ["/admin/agents", "agents"],
     ["/admin/analytics", "analytics"],
+    ["/admin/models", "models"],
+    ["/admin/budgets", "budgets"],
   ])("%s → %s", (path, key) => {
     expect(adminSectionForPath(path)?.key).toBe(key);
   });

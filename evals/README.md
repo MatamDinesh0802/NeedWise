@@ -1,7 +1,8 @@
 # Evaluation
 
-WorkMind is evaluated against **Acme Robotics**, a fictional company whose 34 documents were
-generated from a fact plan (`seed/acme/corpus_plan.yaml`) and checked against it. Every
+WorkMind is evaluated against **Acme Robotics**, a fictional company whose 44 documents follow
+a fact plan (`seed/acme/corpus_plan.yaml`) and are checked against it: 34 generated in Phase 2,
+and 10 legal documents written by hand for Phase 11 and rendered with the same converters. Every
 question is asked **as a specific employee**. The runner builds the same request context as a
 signed-in request, so both permission locks, the tenant's model policy and the real models
 are exercised (ARCHITECTURE section 22).
@@ -28,7 +29,7 @@ every push, with deterministic hash embeddings and the full corpus.
 | `red_team.jsonl` | 16 | user, attack, forbidden documents and canary strings: direct, indirect, adjacent role, admin, owner, guest, auditor, prompt injection (direct and via ticket SUP-4471), social engineering |
 | `abstention.jsonl` | 6 | questions with no answer in any source the user can see: 3 absent everywhere, 3 that exist but are restricted |
 | `cross_department.jsonl` | 15 | questions that need two or three departments, with expected agents, documents and facts |
-| `routing.jsonl` | 36 | question → expected agents (single area, several areas, or none) |
+| `routing.jsonl` | 56 | question → expected agents (single area, several areas, or none). 15 expect the Legal agent, which is created in the UI (`docs/agents.md`): until it exists they are reported as skipped, not failed. Near misses list in `not_agents` the agent they sound like but must not go to |
 | `meetings.jsonl` | 1 | a meeting file → its decisions, ideas nobody agreed to, and action items with owners and due dates |
 | `analytics.jsonl` | 51 | asking user, question, and either gold SQL with how to compare it (36), or the expected refusal: no access (5) or an attack (10) |
 

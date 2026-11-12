@@ -12,18 +12,13 @@ from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.agents.research import research
-from workmind.modules.assistant.answer import RestrictedPolicy, answer
+from workmind.modules.assistant.answer import answer
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import Tenant
 from workmind.modules.retrieval.service import Mode, Passage
 from workmind.providers.llm import LLMError
 
 router = APIRouter(tags=["assistant"])
-
-
-def restricted_policy(settings: dict[str, object]) -> RestrictedPolicy:
-    """Tenants without an explicit choice get the safe default."""
-    return "allow" if settings.get("restricted_data") == "allow" else "local_only"
 
 
 class SearchRequest(BaseModel):
@@ -124,16 +119,16 @@ async def ask(
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         tenant = await session.get(Tenant, ctx.tenant_id)
     organization = tenant.name if tenant else "the company"
-    policy = restricted_policy(tenant.settings if tenant else {})
+    llm = await resources.models.for_tenant(ctx.tenant_id)
     try:
         result = await answer(
-            resources.llm,
+            llm,
             resources.retriever,
             ctx,
             body.question,
             organization=organization,
-            policy=policy,
-            local_llm=resources.local_llm,
+            policy=llm.max_external_sensitivity,
+            local_llm=llm.local,
         )
     except LLMError as exc:
         raise ApiError(
@@ -213,7 +208,7 @@ async def research_question(
         tenant = await session.get(Tenant, ctx.tenant_id)
     try:
         result = await research(
-            resources.llm,
+            await resources.models.for_tenant(ctx.tenant_id),
             resources.tools,
             resources.db,
             ctx,

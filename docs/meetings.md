@@ -41,7 +41,8 @@ upload (recording or transcript) ──► transcribe ──► extract ──�
 
 A meeting belongs to a collection. **Viewers** of that collection see the meeting and find its
 transcript in search, under the same two permission locks as any document. **Editors** (and the
-uploader) can upload, map speakers and turn action items into tasks. Others get a 404. For a
+uploader) can upload, map speakers, turn action items into tasks and delete the meeting. Others
+get a 404. For a
 meeting only some people should see, upload it to a collection shared with just them, such as
 `leadership-strategy`. The design in ARCHITECTURE section 15 has per-participant visibility.
 Permissions follow the collection instead, so meetings never need a second permission model.
@@ -58,9 +59,15 @@ Permissions follow the collection instead, so meetings never need a second permi
 | `PATCH /meetings/{id}/actions/{index}` | Correct an action item: `text`, `owner_user_id`, `due` (before it becomes a task) |
 | `POST /meetings/{id}/actions/{index}/task` | Turn an action item into a task for its owner (who is notified). Once per item |
 | `GET /me/commitments` | Action items assigned to you, with their task's status |
+| `DELETE /meetings/{id}` | The uploader or the collection's editors (viewers get 403, others 404). Removes the meeting, its recording or transcript file (unless another meeting or document uses the same bytes), and its transcript document with its versions, chunks and search points. Tasks made from its action items stay with their assignees: their origin keeps the meeting's title (`meeting_title`, `meeting_deleted: true`) instead of a link, and the "notes ready" notification is removed. Audited as `meeting.deleted` and `knowledge.document.deleted`. 204 |
 
 Status: `pending` → `transcribing` → `extracting` → `ready`, or `failed` with the reason, such as
 transcription being off for a recording. The uploader is notified when the notes are ready.
+
+A meeting can be deleted while it is still being processed. Processing stops at its next step,
+and the transcript document is recorded on the meeting in the same locked transaction that
+creates it, so the deletion either happens first (no document is made) or finds the document and
+deletes it too.
 
 ## In the app
 
@@ -75,11 +82,13 @@ transcription being off for a recording. The uploader is notified when the notes
   transcript to that segment and moves focus there. Items without a valid segment have no
   timestamp, and a note says why. Editors (the uploader and the collection's editors) can map
   speakers to colleagues, correct an action item's text, owner or date, and make a task from it.
-  After that, the item links to its task.
+  After that, the item links to its task. They also see **Delete**, which asks first, naming the
+  meeting and the tasks that will stay.
 - **My commitments** is a section of `/tasks`: action items that name you as the owner, with the
   due date, the task's status and a link that opens the meeting at that moment (`?t=271.4`).
 - **`/tasks/{id}`** shows one task (`GET /tasks/{id}`). A task made from a meeting links back to
-  that meeting.
+  that meeting; once the meeting is deleted it reads "From “title” (deleted meeting)", without a
+  link.
 
 How it was checked: unit tests for the logic (timestamps, jump targets, the correction payload,
 sorting commitments) and for the rendered detail view, plus one end-to-end run in headless

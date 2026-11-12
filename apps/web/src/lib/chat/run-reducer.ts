@@ -12,6 +12,8 @@
  */
 
 import type { Citation, Source, Usage } from "@/lib/chat/api";
+import type { BudgetStatus } from "@/lib/usage/api";
+import { isBudgetStatus } from "@/lib/usage/budget-error";
 
 export type RunPhase = "connecting" | "searching" | "streaming" | "completed" | "failed" | "cancelled";
 
@@ -46,6 +48,16 @@ export interface ToolStep {
   error: string | null;
 }
 
+/**
+ * Why a run failed. `budget` is set when the code is "budget_exceeded" and the event carried
+ * the budget's status (which budget, what was spent, when it resets).
+ */
+export interface RunError {
+  code: string;
+  message: string;
+  budget?: BudgetStatus | null;
+}
+
 /** A proposed action waiting for a person (`approval.required`). */
 export interface ApprovalRef {
   id: string;
@@ -67,7 +79,7 @@ export interface RunState {
   messageId: string | null;
   usage: Usage | null;
   abstained: boolean;
-  error: { code: string; message: string } | null;
+  error: RunError | null;
   plan: RunPlan | null;
   /** One per agent, in plan order (agents seen before the plan are appended). */
   agents: AgentStep[];
@@ -285,7 +297,11 @@ export function reduceRunEvent(state: RunState, event: RunEvent): RunState {
         endedAtMs: at,
         phase: "failed",
         messageId: str(data.message_id),
-        error: { code: str(data.code) ?? "internal", message: str(data.message) ?? "Something went wrong while answering." },
+        error: {
+          code: str(data.code) ?? "internal",
+          message: str(data.message) ?? str(data.detail) ?? "Something went wrong while answering.",
+          ...(isBudgetStatus(data.budget) ? { budget: data.budget } : {}),
+        },
       };
     default:
       return next; // unknown event types are ignored (forward compatible)

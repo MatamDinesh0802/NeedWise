@@ -9,9 +9,9 @@ import html
 import re
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Literal
 
 from workmind.core.context import RequestContext
+from workmind.modules.model_catalog.policy import LEVELS, RoutingPolicy, above, threshold
 from workmind.modules.retrieval.service import Passage, Retriever
 from workmind.providers.llm import LLMMessage, LLMProvider, LLMRequest, LLMUsage, TextDelta
 
@@ -20,8 +20,14 @@ WITHHELD = (
     "{count} restricted source(s) matched your question but were not used: your organization "
     "keeps restricted data away from external AI models."
 )
+WITHHELD_ABOVE = (
+    "{count} source(s) matched your question but were not used: your organization keeps "
+    "{levels} data away from external AI models."
+)
 
-RestrictedPolicy = Literal["allow", "local_only"]
+# "allow" / "local_only" (the tenant setting `restricted_data`), or the highest sensitivity that
+# external models may receive (the tenant's data policy in Admin > Models).
+RestrictedPolicy = RoutingPolicy
 
 SYSTEM = """You are WorkMind, the AI assistant of {organization}. You answer employees' questions \
 from company documents they are allowed to see.
@@ -170,6 +176,15 @@ class Route:
     withheld: int
 
 
+def withheld_notice(count: int, policy: RestrictedPolicy) -> str:
+    """What the person is told when sources were left out for the data policy."""
+    limit = LEVELS.index(threshold(policy))
+    if limit >= LEVELS.index("confidential"):
+        return WITHHELD.format(count=count)
+    levels = [level for level in LEVELS[limit + 1 :]]
+    return WITHHELD_ABOVE.format(count=count, levels=", ".join(levels[:-1]) + " and " + levels[-1])
+
+
 def route(
     passages: Sequence[Passage],
     *,
@@ -177,16 +192,17 @@ def route(
     llm: LLMProvider,
     local_llm: LLMProvider | None,
 ) -> Route:
-    """Model routing by sensitivity (ARCHITECTURE 11.6). Under `local_only`, restricted sources
-    go only to a local model; with none configured they are left out and the user is told."""
-    restricted = sum(p.sensitivity == "restricted" for p in passages)
-    if not restricted or policy == "allow" or not llm.external:
+    """Model routing by sensitivity (ARCHITECTURE 11.6). Sources above the policy's threshold
+    (restricted ones under `local_only`) go only to a local model; with none configured they
+    are left out and the user is told."""
+    sensitive = sum(above(p.sensitivity, policy) for p in passages)
+    if not sensitive or not llm.external:
         return Route(llm, list(passages), 0)
     if local_llm is not None and not local_llm.external:
         return Route(local_llm, list(passages), 0)
-    kept = [p for p in passages if p.sensitivity != "restricted"]
+    kept = [p for p in passages if not above(p.sensitivity, policy)]
     renumbered = [replace(p, marker=f"S{i}") for i, p in enumerate(kept, start=1)]
-    return Route(llm, renumbered, restricted)
+    return Route(llm, renumbered, sensitive)
 
 
 async def answer_stream(
@@ -208,7 +224,7 @@ async def answer_stream(
     if not chosen.passages:  # nothing usable matches: no model call, no guessing
         text = ABSTAIN
         if chosen.withheld:
-            text += " " + WITHHELD.format(count=chosen.withheld)
+            text += " " + withheld_notice(chosen.withheld, policy)
         yield TokenEvent(text)
         yield AnswerEvent(Answer(text=text, passages=[], abstained=True, withheld=chosen.withheld))
         return

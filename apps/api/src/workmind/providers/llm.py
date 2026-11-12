@@ -12,7 +12,7 @@ a model, so one deployment can mix providers' models without touching business c
 
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
 
 import anthropic
@@ -50,6 +50,9 @@ class LLMRequest:
     messages: list[LLMMessage]
     max_tokens: int = 16000
     effort: Effort | None = None  # None: the role's configured effort
+    # None: the role's configured model. Set by PinnedModel (an agent configured with its own
+    # model, docs/agents.md): the same provider, a different model for this one request.
+    model: str | None = None
 
 
 @dataclass
@@ -59,6 +62,10 @@ class LLMUsage:
     output_tokens: int = 0
     cache_read_tokens: int = 0
     stop_reason: str = ""
+    # Set by the tenant resolver (modules/model_catalog/resolver.py): the catalog model that
+    # served the call, and the tenant's price for it (USD per million input, output tokens).
+    catalog_model: str = ""
+    price_per_mtok: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -135,23 +142,32 @@ class AnthropicLLM:
     external = True  # requests leave your infrastructure (ARCHITECTURE 11.6)
 
     def __init__(
-        self, roles: Mapping[Role, RoleConfig], *, api_key: str | None, fallbacks: bool = True
+        self,
+        roles: Mapping[Role, RoleConfig],
+        *,
+        api_key: str | None,
+        fallbacks: bool = True,
+        client: anthropic.AsyncAnthropic | None = None,
     ) -> None:
         # api_key=None lets the SDK resolve ANTHROPIC_API_KEY / `ant auth login` profiles itself.
-        self._client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=3, timeout=300)
+        # A tenant's provider passes its own client (tenant_client): its key, its base URL.
+        self._client = client or anthropic.AsyncAnthropic(
+            api_key=api_key, max_retries=3, timeout=300
+        )
         self._roles = roles
         self._fallbacks = fallbacks
 
     def _params(self, role: Role, request: LLMRequest) -> dict[str, Any]:
         config = self._roles[role]
+        model = request.model or config.model
         params: dict[str, Any] = {
-            "model": config.model,
+            "model": model,
             "max_tokens": request.max_tokens,
             "system": request.system,
             "messages": [{"role": m.role, "content": m.content} for m in request.messages],
             "output_config": {"effort": request.effort or config.effort},
         }
-        if self._fallbacks and config.model in FALLBACK_MODELS:
+        if self._fallbacks and model in FALLBACK_MODELS:
             params["betas"] = [FALLBACK_BETA]
             params["fallbacks"] = "default"  # re-run a declined request on Anthropic's pick
         return params
@@ -263,6 +279,21 @@ class AnthropicLLM:
         return result
 
 
+def tenant_client(
+    *, api_key: str, base_url: str | None, timeout: float = 300, max_retries: int = 3
+) -> anthropic.AsyncAnthropic:
+    """A client for a tenant's own Anthropic key. Explicit credentials and URL, so the SDK never
+    falls back to the deployment's environment (ANTHROPIC_API_KEY, profiles, ANTHROPIC_BASE_URL);
+    no redirects, so the key goes to `base_url` and nowhere else."""
+    return anthropic.AsyncAnthropic(
+        api_key=api_key,
+        base_url=base_url or "https://api.anthropic.com",
+        max_retries=max_retries,
+        timeout=timeout,
+        http_client=anthropic.DefaultAsyncHttpxClient(follow_redirects=False),
+    )
+
+
 class OpenAICompatibleLLM:
     """For local or self-hosted models. Effort has no equivalent here and is ignored."""
 
@@ -274,16 +305,18 @@ class OpenAICompatibleLLM:
         base_url: str,
         api_key: str | None = None,
         external: bool = False,
+        timeout: float = 300,
     ) -> None:
         self.external = external
         self._http = http
         self._url = base_url.rstrip("/") + "/chat/completions"
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._roles = roles
+        self._timeout = timeout
 
     def _body(self, role: Role, request: LLMRequest, **extra: Any) -> dict[str, Any]:
         return {
-            "model": self._roles[role].model,
+            "model": request.model or self._roles[role].model,
             "max_tokens": request.max_tokens,
             "messages": [{"role": "system", "content": request.system}]
             + [{"role": m.role, "content": m.content} for m in request.messages],
@@ -293,7 +326,11 @@ class OpenAICompatibleLLM:
     async def _post(self, body: dict[str, Any]) -> dict[str, Any]:
         try:
             response = await self._http.post(
-                self._url, json=body, headers=self._headers, timeout=300
+                self._url,
+                json=body,
+                headers=self._headers,
+                timeout=self._timeout,
+                follow_redirects=False,  # the key goes to this URL only
             )
         except httpx.HTTPError as exc:
             raise LLMError(f"model server unreachable at {self._url}: {exc!r}") from exc
@@ -370,11 +407,16 @@ class OpenAICompatibleLLM:
         return body["choices"][0]["message"]["content"] or "", self._usage(body)
 
     async def stream(self, role: Role, request: LLMRequest) -> AsyncIterator[StreamEvent]:
-        usage = LLMUsage(model=self._roles[role].model)
+        usage = LLMUsage(model=request.model or self._roles[role].model)
         body = self._body(role, request, stream=True, stream_options={"include_usage": True})
         try:
             async with self._http.stream(
-                "POST", self._url, json=body, headers=self._headers, timeout=300
+                "POST",
+                self._url,
+                json=body,
+                headers=self._headers,
+                timeout=self._timeout,
+                follow_redirects=False,
             ) as response:
                 if response.is_error:
                     raise LLMError(f"model server HTTP {response.status_code}")
@@ -410,6 +452,47 @@ class OpenAICompatibleLLM:
         )
         return schema.model_validate_json(body["choices"][0]["message"]["content"]), self._usage(
             body
+        )
+
+
+class PinnedModel:
+    """Sends every request to one model of the wrapped provider, whatever the role says.
+
+    An agent configured with its own model (docs/agents.md) runs through this. Everything else
+    (effort per role, the provider, whether requests leave your infrastructure) stays the
+    wrapped provider's, so sensitivity routing still sees the right `external` flag."""
+
+    def __init__(self, inner: LLMProvider, model: str) -> None:
+        self.inner = inner
+        self.model = model
+        self.external = inner.external
+
+    def _pin(self, request: LLMRequest) -> LLMRequest:
+        return replace(request, model=self.model)
+
+    async def complete(self, role: Role, request: LLMRequest) -> tuple[str, LLMUsage]:
+        return await self.inner.complete(role, self._pin(request))
+
+    async def stream(self, role: Role, request: LLMRequest) -> AsyncIterator[StreamEvent]:
+        async for event in self.inner.stream(role, self._pin(request)):
+            yield event
+
+    async def structured[T: BaseModel](
+        self, role: Role, request: LLMRequest, schema: type[T]
+    ) -> tuple[T, LLMUsage]:
+        return await self.inner.structured(role, self._pin(request), schema)
+
+    async def run_tools(
+        self,
+        role: Role,
+        request: LLMRequest,
+        tools: Sequence[ToolSpec],
+        execute: ToolExecutor,
+        *,
+        max_steps: int = 6,
+    ) -> ToolLoopResult:
+        return await self.inner.run_tools(
+            role, self._pin(request), tools, execute, max_steps=max_steps
         )
 
 

@@ -151,6 +151,16 @@ collections:
     review_interval_days: 365
     last_reviewed: 2025-12-01
     description: Standard operating procedures for warehouses, shipping and on-call.
+  - key: legal-contracts
+    name: Legal & Contracts
+    scope: enterprise
+    trust: official
+    editors: [department-manager:management]
+    owner: priya.raman@acme.test
+    description: >-
+      Contract signature authority, NDAs, supplier and customer contract terms, data processing
+      agreements (GDPR), export control, records retention and legal holds, IP assignment,
+      anti-bribery and gifts.
   - key: leadership-strategy
     name: Leadership Strategy
     scope: restricted
@@ -173,6 +183,8 @@ collections:
 
 # Department agents (ARCHITECTURE 12.2): configuration, not code. An agent only narrows what the
 # asking person may see; it never adds access. Descriptions are written for the planner.
+# The Legal agent is deliberately not here: an administrator creates it in Admin > Agents
+# (docs/agents.md walks through it), and the routing eval skips its questions until then.
 agents:
   - key: hr
     name: HR agent

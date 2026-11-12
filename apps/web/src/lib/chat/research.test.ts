@@ -102,11 +102,20 @@ describe("tool activity labels", () => {
     [{ tool: "search_knowledge", ok: true, error: null }, "Searched company documents"],
     [{ tool: "send_email", ok: true, error: null }, "Prepared an email for your approval"],
     [{ tool: "create_task", ok: true, error: null }, "Prepared a task for your approval"],
+    // What the API actually sends for a proposal: not run, waiting for approval.
+    [{ tool: "send_email", ok: false, error: "approval_required" }, "Prepared an email for your approval"],
+    [{ tool: "erp.send_report", ok: false, error: "approval_required" }, "Prepared erp send report for your approval"],
     [{ tool: "web_search", ok: false, error: "upstream_unavailable" }, "Couldn't search the web (service unavailable)"],
     [{ tool: "erp.stock_level", ok: true, error: null }, "Used erp stock level"],
     [{ tool: "erp.stock_level", ok: false, error: "rate_limited" }, "Erp stock level failed (rate limited)"],
   ])("%j → %s", (step, label) => {
     expect(toolStepLabel(step)).toBe(label);
+  });
+
+  it("shows a proposal as done, not failed", () => {
+    expect(toolActivity([{ tool: "send_email", ok: false, error: "approval_required" }])).toEqual([
+      { key: "0-send_email", label: "Prepared an email for your approval", ok: true, count: 1 },
+    ]);
   });
 
   it("folds repeats into one line with a count", () => {

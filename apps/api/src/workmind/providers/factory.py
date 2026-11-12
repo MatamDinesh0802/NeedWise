@@ -49,14 +49,23 @@ def role_configs(settings: Settings) -> dict[Role, RoleConfig]:
     }
 
 
+def single_model_roles(model: str) -> dict[Role, RoleConfig]:
+    """Every role on one model, each with its own effort (a catalog model, an override)."""
+    return {role: RoleConfig(model=model, effort=ROLE_EFFORT[role]) for role in ROLE_EFFORT}
+
+
 def secret(value: object) -> str | None:
     """The secret's value, or None when unset or empty (compose passes unset variables as "")."""
     getter = getattr(value, "get_secret_value", None)
     return (getter() or None) if getter else None
 
 
-def create_llm(settings: Settings, http: httpx.AsyncClient) -> LLMProvider:
-    roles = role_configs(settings)
+def create_llm(
+    settings: Settings, http: httpx.AsyncClient, *, model: str | None = None
+) -> LLMProvider:
+    """The deployment's provider; with `model`, that model for every role (a tenant may map a
+    role to another model of the deployment's provider)."""
+    roles = role_configs(settings) if model is None else single_model_roles(model)
     if settings.llm_provider == "anthropic":
         return AnthropicLLM(
             roles, api_key=secret(settings.anthropic_api_key), fallbacks=settings.llm_fallbacks
@@ -74,10 +83,9 @@ def create_local_llm(settings: Settings, http: httpx.AsyncClient) -> LLMProvider
     """The model restricted sources may be sent to under a `local_only` policy, if configured."""
     if not (settings.local_llm_base_url and settings.local_llm_model):
         return None
-    model = settings.local_llm_model
     return OpenAICompatibleLLM(
         http,
-        {role: RoleConfig(model=model, effort=ROLE_EFFORT[role]) for role in ROLE_EFFORT},
+        single_model_roles(settings.local_llm_model),
         base_url=settings.local_llm_base_url,
         api_key=secret(settings.local_llm_api_key),
     )

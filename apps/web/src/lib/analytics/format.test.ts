@@ -75,6 +75,14 @@ describe("formatNumber and formatPercent", () => {
     expect(axisLabels([0, 2000, 4000, 6000], "eur")).toEqual(["€0", "€2,000", "€4,000", "€6,000"]);
     expect(axisLabels([0, 20, 40], "percent")).toEqual(["0%", "20%", "40%"]);
   });
+
+  it("formats model costs in US dollars (usage analytics)", () => {
+    expect(formatValue(18.75, "usd")).toBe("$18.75");
+    expect(formatValue(152_000, "usd", "compact")).toBe("$152K");
+    expect(axisLabels([0, 0.5, 1, 1.5], "usd")).toEqual(["$0", "$0.50", "$1", "$1.50"]);
+    expect(axisLabels([0, 10_000, 20_000], "usd")).toEqual(["$0", "$10K", "$20K"]);
+    expect(axisLabels([0, 0.002, 0.004], "usd")).toEqual(["$0", "$0.002", "$0.004"]);
+  });
 });
 
 describe("toNumber", () => {

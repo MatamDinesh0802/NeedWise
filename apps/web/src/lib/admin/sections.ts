@@ -15,6 +15,8 @@ export type AdminSectionKey =
   | "agents"
   | "workflows"
   | "analytics"
+  | "models"
+  | "budgets"
   | "audit";
 
 export interface AdminSection {
@@ -82,6 +84,20 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     title: "Analytics",
     href: "/admin/analytics",
     description: "The data people can ask about in Insights: uploaded tables, and the data model that defines metrics and who sees which rows.",
+    roles: MANAGERS,
+  },
+  {
+    key: "models",
+    title: "Models",
+    href: "/admin/models",
+    description: "Your own API keys and model servers, the model catalog with prices, which model does what, and what may leave your infrastructure.",
+    roles: MANAGERS,
+  },
+  {
+    key: "budgets",
+    title: "Budgets",
+    href: "/admin/budgets",
+    description: "Spending limits on model usage: for the organization, a default cap per person, caps for some people and, with Enterprise, per department.",
     roles: MANAGERS,
   },
   {

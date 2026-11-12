@@ -10,18 +10,20 @@ import { Composer } from "@/components/chat/composer";
 import { RunApprovals } from "@/components/chat/research-activity";
 import { SourcesPanel, type PanelSources } from "@/components/chat/sources-panel";
 import { EmptyState, ErrorAlert } from "@/components/data/states";
+import { BudgetExceededAlert } from "@/components/usage/budget-exceeded-alert";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { useSession } from "@/hooks/use-session";
 import { useStore } from "@/hooks/use-store";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { answerFromMessage, answerFromRun, type AnswerView } from "@/lib/chat/answer";
+import { answerFromMessage, answerFromRun, approvalsByRunId, type AnswerView } from "@/lib/chat/answer";
 import { MODE_HINTS } from "@/lib/chat/research";
 import { createThreadController } from "@/lib/chat/thread-controller";
 import { questionForRun, threadItems } from "@/lib/chat/thread";
 import { errorMessage } from "@/lib/error-messages";
 import { toast } from "@/lib/stores/toasts";
+import { budgetBlockFromError, type BudgetBlock } from "@/lib/usage/budget-error";
 import { cn } from "@/lib/utils";
 import { workApi, workKeys, type Approval } from "@/lib/work/api";
 import { getNotificationsStore } from "@/lib/work/notifications";
@@ -61,20 +63,21 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
   const { state: session } = useSession();
   const meId = session.kind === "signed_in" ? session.me.id : null;
 
-  // Approvals proposed in this conversation (after a reload the run's events are gone).
-  const approvals = useApiQuery(conversationId ? workKeys.approvalList("all") : null, () => workApi.listApprovals("all"));
-  const approvalsByRun = useMemo(() => {
-    const byRun = new Map<string, Approval[]>();
-    if (approvals.state.status !== "success") return byRun;
-    for (const approval of approvals.state.data) {
-      const runId = approval.origin.run_id;
-      if (approval.origin.conversation_id !== conversationId || typeof runId !== "string") continue;
-      byRun.set(runId, [...(byRun.get(runId) ?? []), approval]);
-    }
-    return byRun;
-  }, [approvals.state, conversationId]);
+  // Approvals proposed in this conversation, from the API (after a reload the run's events are
+  // gone): the cards come back under the answer that proposed them, pending or decided.
+  const approvals = useApiQuery(conversationId ? workKeys.conversationApprovals(conversationId) : null, () =>
+    workApi.listApprovals("all", { conversationId: conversationId ?? undefined }),
+  );
+  const approvalsByRun = useMemo(
+    () =>
+      approvals.state.status === "success" && conversationId
+        ? approvalsByRunId(approvals.state.data, conversationId)
+        : new Map<string, Approval[]>(),
+    [approvals.state, conversationId],
+  );
 
   const [panel, setPanel] = useState<{ answerKey: string; runId: string | null; marker: string | null } | null>(null);
+  const [blocked, setBlocked] = useState<BudgetBlock | null>(null);
   const isMobile = useIsMobile();
   const bottom = useRef<HTMLDivElement>(null);
 
@@ -106,9 +109,14 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
   async function send(text: string): Promise<boolean> {
     try {
       await controller.send(text, mode);
+      setBlocked(null);
       return true;
     } catch (error) {
-      toast({ title: errorMessage(error).title, description: errorMessage(error).description, tone: "error" });
+      // A used-up budget stays on screen above the composer (which keeps the question), naming
+      // the budget and when it resets; a toast would vanish before it can be read.
+      const block = budgetBlockFromError(error);
+      if (block) setBlocked(block);
+      else toast({ title: errorMessage(error).title, description: errorMessage(error).description, tone: "error" });
       return false;
     }
   }
@@ -180,6 +188,7 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
         </div>
         <div className="border-t bg-background/80 px-4 py-3 backdrop-blur md:px-8">
           <div className="mx-auto w-full max-w-3xl space-y-1.5">
+            {blocked ? <BudgetExceededAlert block={blocked} onDismiss={() => setBlocked(null)} className="mb-2" /> : null}
             <Composer
               running={running}
               sending={state.sending}

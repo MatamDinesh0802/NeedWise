@@ -121,6 +121,8 @@ export const meetingsApi = {
     apiJson<Meeting>(`/api/v1/meetings/${id(meetingId)}/speakers`, { method: "PUT", json: { speakers } }),
   editAction: (meetingId: string, index: number, body: ActionEdit) =>
     apiJson<Meeting>(`/api/v1/meetings/${id(meetingId)}/actions/${index}`, { method: "PATCH", json: body }),
+  /** The uploader or the collection's editors: the meeting, its file and its indexed transcript. */
+  remove: (meetingId: string) => apiJson<void>(`/api/v1/meetings/${id(meetingId)}`, { method: "DELETE" }),
   makeTask: (meetingId: string, index: number) =>
     apiJson<Meeting>(`/api/v1/meetings/${id(meetingId)}/actions/${index}/task`, { method: "POST" }),
   commitments: () => apiJson<Commitment[]>("/api/v1/me/commitments"),

@@ -1,7 +1,7 @@
 """Knowledge governance (owners, review cycles), superseded approvals, retention policies, with RLS
 
-Revision ID: 0016
-Revises: 0012
+Revision ID: 0018
+Revises: 0016
 Create Date: 2026-11-12 16:00:00.000000
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0016"
-down_revision: str | None = "0012"
+revision: str = "0018"
+down_revision: str | None = "0016"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

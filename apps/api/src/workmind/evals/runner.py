@@ -39,7 +39,7 @@ from workmind.modules.agents.orchestrator import (
     PlanEvent,
     orchestrate,
 )
-from workmind.modules.agents.planning import Plan, load_agents, plan_question
+from workmind.modules.agents.planning import Agent, FastRouter, Plan, load_agents, plan_question
 from workmind.modules.assistant.answer import (
     Answer,
     AnswerEvent,
@@ -53,8 +53,9 @@ from workmind.modules.identity.service import load_identity
 from workmind.modules.meetings.extract import extract as extract_meeting
 from workmind.modules.meetings.pipeline import Directory, load_directory
 from workmind.modules.meetings.transcripts import parse as parse_transcript
+from workmind.modules.model_catalog.resolver import LLMResolver, TenantLLM
 from workmind.modules.retrieval.service import Mode, Passage, RetrievalResult
-from workmind.providers.llm import LLMMessage, LLMRequest, LLMUsage
+from workmind.providers.llm import LLMMessage, LLMProvider, LLMRequest, LLMUsage
 from workmind.providers.pricing import cost_usd
 
 K_VALUES = (1, 3, 5, 8)
@@ -81,6 +82,7 @@ class Askers:
         self._slug = tenant_slug
         self._contexts: dict[str, RequestContext] = {}
         self.tenant: Tenant | None = None
+        self.models: TenantLLM | None = None  # the tenant's models (docs/models.md)
 
     async def load_tenant(self) -> Tenant:
         async with global_transaction(self._resources.db) as session:
@@ -88,10 +90,24 @@ class Askers:
         if tenant is None:
             raise SystemExit(f"tenant {self._slug!r} not found: run `make seed` first")
         self.tenant = tenant
+        # The evaluation uses the models the tenant would get. A partial Resources (some
+        # tests) has no resolver: then the deployment's model as given.
+        resolver: LLMResolver | None = getattr(self._resources, "models", None)
+        self.models = await resolver.for_tenant(tenant.id) if resolver is not None else None
         return tenant
 
     @property
+    def llm(self) -> LLMProvider:
+        return self.models if self.models is not None else self._resources.llm
+
+    @property
+    def local_llm(self) -> LLMProvider | None:
+        return self.models.local if self.models is not None else self._resources.local_llm
+
+    @property
     def policy(self) -> RestrictedPolicy:
+        if self.models is not None:
+            return self.models.max_external_sensitivity
         settings = self.tenant.settings if self.tenant else {}
         return "allow" if settings.get("restricted_data") == "allow" else "local_only"
 
@@ -189,11 +205,15 @@ class RoutingRecord:
     routed_by: str
     latency_ms: float
     error: str | None = None
+    # Set instead of running when an expected agent does not exist in the tenant, e.g.
+    # "agent missing: legal": the suite runs before every agent it covers is configured.
+    skipped: str | None = None
+    not_agents: list[str] = field(default_factory=list[str])  # near misses: must not get it
 
     @property
     def correct(self) -> bool:
         """The planned agents are exactly the expected ones (none, for a direct answer)."""
-        return self.agents == self.expected_agents
+        return self.skipped is None and self.agents == self.expected_agents
 
 
 @dataclass
@@ -297,12 +317,12 @@ class Judgement(BaseModel):
     followed_instructions_in_sources: bool
 
 
-async def judge(resources: Resources, result: Answer) -> Judgement:
+async def judge(llm: LLMProvider, result: Answer) -> Judgement:
     content = (
         f"<sources>\n{render_sources(result.passages)}\n</sources>\n\n"
         f"<answer>\n{result.text}\n</answer>"
     )
-    judgement, _ = await resources.llm.structured(
+    judgement, _ = await llm.structured(
         "judge", LLMRequest(system=JUDGE_SYSTEM, messages=[LLMMessage("user", content)]), Judgement
     )
     return judgement
@@ -319,6 +339,73 @@ async def bounded[T](limit: int, jobs: Sequence[Callable[[], Awaitable[T]]]) -> 
             return await job()
 
     return await asyncio.gather(*(run(job) for job in jobs))
+
+
+async def route_items(
+    llm: LLMProvider,
+    router: FastRouter | None,
+    agents: Sequence[Agent],
+    items: Sequence[RoutingItem],
+    *,
+    concurrency: int = 4,
+) -> list[RoutingRecord]:
+    """Plans each question over the tenant's enabled agents. An item expecting an agent the
+    tenant does not have (yet) is skipped, not failed: the suite can cover an agent before an
+    administrator creates it (docs/agents.md, the Legal agent)."""
+    known = {a.key for a in agents}
+
+    async def one(item: RoutingItem) -> RoutingRecord:
+        expected = sorted(item.agents)
+        if missing := [key for key in expected if key not in known]:
+            return RoutingRecord(
+                item.id,
+                item.mode,
+                expected,
+                "skipped",
+                [],
+                "",
+                0,
+                skipped=f"agent missing: {', '.join(missing)}",
+                not_agents=list(item.not_agents),
+            )
+        started = time.perf_counter()
+        try:
+            plan = await plan_question(llm, router, item.question, agents)
+        except Exception as exc:
+            return RoutingRecord(
+                item.id, item.mode, expected, "error", [], "", 0, str(exc)[:300],
+                not_agents=list(item.not_agents),
+            )  # fmt: skip
+        return RoutingRecord(
+            item.id,
+            item.mode,
+            expected,
+            plan.mode,
+            sorted(plan.agents),
+            plan.routed_by,
+            (time.perf_counter() - started) * 1000,
+            not_agents=list(item.not_agents),
+        )
+
+    return await bounded(concurrency, [lambda i=i: one(i) for i in items])
+
+
+def routing_by_agent(records: Sequence[RoutingRecord]) -> dict[str, dict[str, int]]:
+    """Per agent, over the questions that ran: how many expected it, how many of those got
+    exactly the expected agents, how many picked it (recall), and how many picked it although
+    it was not expected (false positives, near misses included)."""
+    ran = [r for r in records if r.skipped is None]
+    keys = sorted({key for r in ran for key in (*r.expected_agents, *r.agents)})
+    out: dict[str, dict[str, int]] = {}
+    for key in keys:
+        expected = [r for r in ran if key in r.expected_agents]
+        out[key] = {
+            "expected": len(expected),
+            "exact": sum(r.correct for r in expected),
+            "picked": sum(key in r.agents for r in expected),
+            "false_positives": sum(key in r.agents and key not in r.expected_agents for r in ran),
+        }
+    return out
 
 
 class Evaluator:
@@ -339,26 +426,13 @@ class Evaluator:
         """Planner only (no searching, no answers): cheap enough to run often."""
         tenant = self.askers.tenant or await self.askers.load_tenant()
         agents = await load_agents(self.resources.db, tenant.id)
-
-        async def one(item: RoutingItem) -> RoutingRecord:
-            started = time.perf_counter()
-            try:
-                plan = await plan_question(
-                    self.resources.llm, self.resources.agent_router, item.question, agents
-                )
-            except Exception as exc:
-                return RoutingRecord(item.id, item.mode, item.agents, "error", [], "", 0, str(exc))
-            return RoutingRecord(
-                item.id,
-                item.mode,
-                sorted(item.agents),
-                plan.mode,
-                sorted(plan.agents),
-                plan.routed_by,
-                (time.perf_counter() - started) * 1000,
-            )
-
-        return await bounded(self.concurrency, [lambda i=i: one(i) for i in items])
+        return await route_items(
+            self.askers.llm,
+            self.resources.agent_router,
+            agents,
+            items,
+            concurrency=self.concurrency,
+        )
 
     async def meetings(
         self, items: Sequence[MeetingItem], folder: Path, *, audio: bool
@@ -405,7 +479,7 @@ class Evaluator:
             ]
             started = time.perf_counter()
             outcome, _ = await extract_meeting(
-                self.resources.llm,
+                self.askers.llm,
                 segments,
                 organization=organization,
                 day=date.fromisoformat(item.date),
@@ -489,7 +563,7 @@ class Evaluator:
         """The BI agent, as each item's user, on the tenant's analytics data (text-to-SQL)."""
         tenant = self.askers.tenant or await self.askers.load_tenant()
         return await evaluate(
-            self.resources.llm,
+            self.askers.llm,
             self.resources.analytics,
             self.askers.context,
             items,
@@ -574,10 +648,11 @@ class Evaluator:
         if self.assistant in ("agents", "auto"):
             deps = OrchestratorDeps(
                 self.resources.db,
-                self.resources.llm,
-                self.resources.local_llm,
+                self.askers.llm,
+                self.askers.local_llm,
                 self.resources.retriever,
                 self.resources.agent_router,
+                tools=self.resources.tools,
             )
             return orchestrate(
                 deps,
@@ -588,13 +663,13 @@ class Evaluator:
                 agents_only_for_fan_out=self.assistant == "auto",
             )
         return answer_stream(
-            self.resources.llm,
+            self.askers.llm,
             self.resources.retriever,
             ctx,
             question,
             organization=organization,
             policy=self.askers.policy,
-            local_llm=self.resources.local_llm,
+            local_llm=self.askers.local_llm,
         )
 
     async def _answer(self, suite: str, handle: str, question: str) -> tuple[AnswerRecord, Answer]:
@@ -674,7 +749,7 @@ class Evaluator:
 
     async def _judge(self, record: AnswerRecord, result: Answer) -> None:
         try:
-            judgement = await judge(self.resources, result)
+            judgement = await judge(self.askers.llm, result)
         except Exception as exc:
             record.error = f"judge failed: {exc}"[:300]
             return

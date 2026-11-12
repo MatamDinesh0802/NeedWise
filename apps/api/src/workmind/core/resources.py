@@ -1,5 +1,7 @@
 """Long-lived clients shared by the whole process, created at startup and closed at shutdown."""
 
+import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Self
 
@@ -24,12 +26,15 @@ from workmind.modules.identity.sessions import SessionStore
 from workmind.modules.knowledge.dispatch import CeleryDispatcher, Dispatcher, InlineDispatcher
 from workmind.modules.knowledge.pipeline import IngestionDeps
 from workmind.modules.knowledge.storage import LocalObjectStorage, ObjectStorage
+from workmind.modules.model_catalog.resolver import LLMResolver
+from workmind.modules.model_catalog.secrets import KeyRing
 from workmind.modules.retrieval.qdrant import QdrantClient
 from workmind.modules.retrieval.service import Retriever
 from workmind.modules.tools.builtin import draft_email_tool, search_knowledge_tool, web_search_tool
 from workmind.modules.tools.mcp_client import RemoteServer, RemoteServerConfig, import_tools
 from workmind.modules.tools.registry import ToolRegistry
 from workmind.modules.work.tools import create_task_tool, send_email_tool
+from workmind.modules.work.workflows import WorkflowDeps, start_queued
 from workmind.providers.email import SmtpMailer
 from workmind.providers.embeddings import EmbeddingProvider
 from workmind.providers.factory import (
@@ -57,8 +62,8 @@ class Resources:
     storage: ObjectStorage
     qdrant: QdrantClient
     embeddings: EmbeddingProvider
-    llm: LLMProvider
-    local_llm: LLMProvider | None
+    # Every model call resolves through here, per tenant (docs/models.md).
+    models: LLMResolver
     ingestion: Dispatcher
     collection_name: str
     retriever: Retriever
@@ -72,6 +77,26 @@ class Resources:
     # Community or Enterprise (ADR 0011); `edition.has(feature)` gates Enterprise features.
     edition: Edition
     extensions: ExtensionRegistry
+
+    @property
+    def llm(self) -> LLMProvider:
+        """The deployment's own provider. Call sites resolve per tenant instead
+        (`await resources.models.for_tenant(tenant_id)`), which uses this unless the tenant
+        chose otherwise. Assignable: tests put a scripted model here."""
+        return self.models.system
+
+    @llm.setter
+    def llm(self, value: LLMProvider) -> None:
+        self.models.system = value
+
+    @property
+    def local_llm(self) -> LLMProvider | None:
+        """The deployment's local model (LOCAL_LLM_*), if any."""
+        return self.models.system_local
+
+    @local_llm.setter
+    def local_llm(self, value: LLMProvider | None) -> None:
+        self.models.system_local = value
 
     @classmethod
     def create(cls, settings: Settings, *, extensions: ExtensionRegistry | None = None) -> Self:
@@ -132,7 +157,7 @@ class Resources:
         tools.register(create_task_tool(db))
         if settings.searxng_url:
             tools.register(web_search_tool(http, settings.searxng_url))
-        return cls(
+        resources = cls(
             engine=engine,
             db=db,
             valkey=valkey,
@@ -153,8 +178,14 @@ class Resources:
             storage=storage,
             qdrant=qdrant,
             embeddings=embeddings,
-            llm=create_llm(settings, http),
-            local_llm=create_local_llm(settings, http),
+            models=LLMResolver(
+                db,
+                settings,
+                http,
+                KeyRing.from_settings(settings),
+                system=create_llm(settings, http),
+                system_local=create_local_llm(settings, http),
+            ),
             ingestion=InlineDispatcher(deps)
             if settings.ingestion_mode == "inline"
             else CeleryDispatcher(),
@@ -178,6 +209,22 @@ class Resources:
             edition=extensions.edition,
             extensions=extensions,
         )
+        if isinstance(resources.ingestion, InlineDispatcher):
+            resources.ingestion.start_runs = resources.start_workflow_runs
+        return resources
+
+    async def start_workflow_runs(self, tenant_id: uuid.UUID, run_ids: Sequence[uuid.UUID]) -> None:
+        """Starts runs an event queued, in the background (with the model and tools of now)."""
+        deps = WorkflowDeps(self.db, self.llm, self.tools)
+
+        async def start() -> None:
+            for run_id in run_ids:
+                try:
+                    await start_queued(deps, tenant_id, run_id)
+                except Exception:  # one broken run must not keep the others from starting
+                    log.exception("workflow_run_failed", run_id=str(run_id))
+
+        self.runs.start(start())
 
     async def load_remote_tools(self) -> None:
         """Imports every configured MCP server's tools. A server that is down is skipped (and

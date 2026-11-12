@@ -33,6 +33,7 @@ from workmind.modules.identity.service import load_identity
 from workmind.modules.knowledge.acl import acl_principals
 from workmind.modules.knowledge.models import Collection, CollectionGrant, Document
 from workmind.modules.work.approvals import ApprovalKind, propose
+from workmind.modules.work.links import document_link
 from workmind.modules.work.models import Approval, Task
 from workmind.modules.work.notifications import notify
 
@@ -56,10 +57,6 @@ def utcnow() -> datetime:
 
 def is_org_admin(ctx: RequestContext) -> bool:
     return ctx.has_role(*ADMIN_ROLES)
-
-
-def document_link(document_id: uuid.UUID) -> str:
-    return f"/knowledge/documents/{document_id}"
 
 
 def next_review(after: datetime, interval_days: int | None) -> datetime | None:

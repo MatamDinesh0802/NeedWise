@@ -2,6 +2,7 @@
 searchable chunks.
 
     stored file -> parse -> chunk -> sensitivity scan -> embed (dense + BM25) -> Qdrant + Postgres
+    -> "document.ready": workflows listening for it get a queued run (in the same transaction)
 
 New points are written before the previous version's points are removed, so a document is never
 missing from search while it is re-indexed. Every chunk carries the collection's ACL (lock 1).
@@ -33,6 +34,7 @@ from workmind.modules.knowledge.sensitivity import scan, suggest
 from workmind.modules.knowledge.storage import ObjectStorage
 from workmind.modules.retrieval.qdrant import QdrantClient, match
 from workmind.modules.retrieval.sparse import encode_document
+from workmind.modules.work.events import DocumentReady, document_ready
 from workmind.providers.embeddings import EmbeddingProvider, EmbeddingRejectedError
 
 log = structlog.get_logger("workmind.ingestion")
@@ -56,6 +58,8 @@ class IngestionResult:
     document_id: uuid.UUID
     chunks: int
     sensitivity: str
+    # Runs of workflows triggered by this version (queued: the caller starts them).
+    workflow_runs: tuple[uuid.UUID, ...] = ()
 
 
 async def ingest(
@@ -188,6 +192,20 @@ async def _ingest(
                 "signals": sorted(findings),
             },
         )
+        workflow_runs = await document_ready(
+            session,
+            tenant_id,
+            DocumentReady(
+                document_id=document_id,
+                version_id=version_id,
+                version=version.version_no,
+                collection_id=document.collection_id,
+                title=title,
+                filename=filename,
+                source=document.source,
+                url=document.url,
+            ),
+        )
 
     # Only now remove every older point of this document, from earlier versions or from an
     # earlier run of this same version (re-index): search never sees a gap or a duplicate.
@@ -204,7 +222,12 @@ async def _ingest(
         chunks=len(drafts),
         sensitivity=sensitivity,
     )
-    return IngestionResult(document_id=document_id, chunks=len(drafts), sensitivity=sensitivity)
+    return IngestionResult(
+        document_id=document_id,
+        chunks=len(drafts),
+        sensitivity=sensitivity,
+        workflow_runs=tuple(workflow_runs),
+    )
 
 
 async def _mark_failed(

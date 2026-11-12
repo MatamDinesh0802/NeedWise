@@ -17,8 +17,9 @@ export interface ApprovalOrigin {
   /** Chat (research mode). */
   conversation_id?: string;
   run_id?: string;
-  /** Workflow runs. */
+  /** Workflow runs (`workflow`: its key, recorded since the links fix). */
   via?: string;
+  workflow?: string;
   workflow_run_id?: string;
   step?: string;
   /** Knowledge governance (via "governance"): an official-status request for a document. */
@@ -107,8 +108,21 @@ export interface AgentSummary {
 
 const id = (value: string) => encodeURIComponent(value);
 
+/** Narrows the list to one conversation's or one workflow run's approvals (still only mine). */
+export interface ApprovalFilters {
+  conversationId?: string;
+  workflowRunId?: string;
+}
+
+export function approvalsPath(status: "pending" | "all", filters: ApprovalFilters = {}): string {
+  const params = new URLSearchParams({ status });
+  if (filters.conversationId) params.set("conversation_id", filters.conversationId);
+  if (filters.workflowRunId) params.set("workflow_run_id", filters.workflowRunId);
+  return `/api/v1/approvals?${params.toString()}`;
+}
+
 export const workApi = {
-  listApprovals: (status: "pending" | "all") => apiJson<Approval[]>(`/api/v1/approvals?status=${status}`),
+  listApprovals: (status: "pending" | "all", filters?: ApprovalFilters) => apiJson<Approval[]>(approvalsPath(status, filters)),
   getApproval: (approvalId: string) => apiJson<Approval>(`/api/v1/approvals/${id(approvalId)}`),
   decide: (approvalId: string, body: DecisionBody) =>
     apiJson<Approval>(`/api/v1/approvals/${id(approvalId)}/decision`, { method: "POST", json: body }),
@@ -132,6 +146,8 @@ export const workApi = {
 export const workKeys = {
   approvals: "work/approvals",
   approvalList: (status: "pending" | "all") => `work/approvals/list/${status}`,
+  /** Every approval proposed in one conversation (pending and decided). */
+  conversationApprovals: (conversationId: string) => `work/approvals/conversation/${conversationId}`,
   approval: (approvalId: string) => `work/approvals/one/${approvalId}`,
   tasks: "work/tasks",
   taskList: (scope: TaskScope) => `work/tasks/${scope}`,

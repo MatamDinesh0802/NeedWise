@@ -12,6 +12,7 @@ from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import Department, User
 from workmind.modules.tools.registry import Tool, ToolError, ToolResult
+from workmind.modules.work.links import task_link
 from workmind.modules.work.models import Task
 from workmind.modules.work.notifications import notify
 from workmind.providers.email import EmailError, SmtpMailer
@@ -113,7 +114,7 @@ def create_task_tool(sessions: async_sessionmaker[AsyncSession]) -> Tool:
                     assignee.id,
                     kind="task.assigned",
                     title=f"New task: {args.title}",
-                    link=f"/tasks/{task.id}",
+                    link=task_link(task.id),
                 )
             await record_event(
                 session,

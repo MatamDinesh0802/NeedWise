@@ -35,7 +35,14 @@ from workmind.modules.knowledge.storage import LocalObjectStorage
 from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
 from workmind.modules.retrieval.qdrant import QdrantClient, QdrantError
 from workmind.modules.work.approvals import expire_due
-from workmind.modules.work.workflows import WorkflowDeps, due_workflows, resume_after, start_run
+from workmind.modules.work.workflows import (
+    WorkflowDeps,
+    due_workflows,
+    queued_runs,
+    resume_after,
+    start_queued,
+    start_run,
+)
 from workmind.providers.embeddings import EmbeddingUnavailableError
 from workmind.providers.factory import create_embeddings, secret
 from workmind.workers.enterprise import register_scheduled_tasks
@@ -46,6 +53,7 @@ SCHEDULE_TASK = "workmind.sync_due_sources"
 WORKFLOWS_TASK = "workmind.run_due_workflows"
 EXPIRE_TASK = "workmind.expire_approvals"
 MEETING_TASK = "workmind.process_meeting"
+WORKFLOW_RUN_TASK = "workmind.start_workflow_run"
 REVIEWS_TASK = "workmind.send_review_reminders"
 
 settings = get_settings()
@@ -93,6 +101,8 @@ async def _run_ingest(tenant_id: str, document_id: str, version_id: str) -> dict
             )
         finally:
             await engine.dispose()
+    for run_id in result.workflow_runs:  # "document.ready": each triggered run is its own task
+        app.send_task(WORKFLOW_RUN_TASK, args=[tenant_id, str(run_id)])
     return {"document_id": document_id, "chunks": result.chunks}
 
 
@@ -170,9 +180,12 @@ async def _run_due_workflows() -> int:
     await resources.load_remote_tools()
     started = 0
     try:
-        deps = WorkflowDeps(resources.db, resources.llm, resources.tools)
+        deps = WorkflowDeps(resources.db, resources.llm, resources.tools, resources.models)
         now = datetime.now(UTC)
         for tenant_id in await _active_tenants(resources):
+            # Event runs nobody started (e.g. the worker stopped right after queueing them).
+            for run_id in await queued_runs(resources.db, tenant_id, now):
+                app.send_task(WORKFLOW_RUN_TASK, args=[str(tenant_id), str(run_id)])
             for workflow_id in await due_workflows(resources.db, tenant_id, now):
                 await start_run(deps, tenant_id, workflow_id, trigger="schedule")
                 started += 1
@@ -186,11 +199,28 @@ def run_due_workflows() -> int:
     return asyncio.run(_run_due_workflows())
 
 
+async def _start_workflow_run(tenant_id: str, run_id: str) -> str | None:
+    resources = Resources.create(settings)
+    await resources.load_remote_tools()
+    try:
+        deps = WorkflowDeps(resources.db, resources.llm, resources.tools)
+        run = await start_queued(deps, uuid.UUID(tenant_id), uuid.UUID(run_id))
+    finally:
+        await resources.aclose()
+    return run.status if run else None
+
+
+@app.task(name=WORKFLOW_RUN_TASK)
+def start_workflow_run(tenant_id: str, run_id: str) -> str | None:
+    """A queued (event) run. Already started elsewhere: nothing happens."""
+    return asyncio.run(_start_workflow_run(tenant_id, run_id))
+
+
 async def _expire_approvals() -> int:
     resources = Resources.create(settings, extensions=extensions)
     count = 0
     try:
-        deps = WorkflowDeps(resources.db, resources.llm, resources.tools)
+        deps = WorkflowDeps(resources.db, resources.llm, resources.tools, resources.models)
         for tenant_id in await _active_tenants(resources):
             for approval in await expire_due(resources.db, tenant_id):
                 await resume_after(deps, approval)  # cancels a workflow waiting on it
@@ -229,7 +259,7 @@ async def _process_meeting(tenant_id: str, meeting_id: str) -> None:
         deps = MeetingDeps(
             resources.db,
             resources.storage,
-            resources.llm,
+            await resources.models.for_tenant(uuid.UUID(tenant_id)),
             resources.transcriber,
             CeleryDispatcher(),
         )

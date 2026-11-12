@@ -22,7 +22,6 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from workmind.api.deps import require_scope, resources_of
-from workmind.api.v1.assistant import restricted_policy
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
@@ -53,6 +52,8 @@ class MessageOut(BaseModel):
     search_query: str | None
     citations: list[dict[str, Any]]
     sources: list[dict[str, Any]]
+    # Research answers: each tool call, and the approval it proposed (if any), in order.
+    tool_steps: list[dict[str, Any]] = []
     usage: dict[str, Any]
     abstained: bool
     withheld: int
@@ -111,6 +112,7 @@ def _message_out(m: Message) -> MessageOut:
         search_query=m.search_query,
         citations=m.citations,
         sources=m.sources,
+        tool_steps=m.tool_steps,
         usage=m.usage,
         abstained=m.abstained,
         withheld=m.withheld,
@@ -236,11 +238,12 @@ async def send_message(
         await session.flush()
         user_message = _message_out(message)
         tenant = await session.get(Tenant, ctx.tenant_id)
+    llm = await resources.models.for_tenant(ctx.tenant_id)
     deps = RunDeps(
         sessions=resources.db,
         events=resources.runs.events,
-        llm=resources.llm,
-        local_llm=resources.local_llm,
+        llm=llm,
+        local_llm=llm.local,
         retriever=resources.retriever,
         router=resources.agent_router,
         mode=resources.assistant_mode,
@@ -266,7 +269,7 @@ async def send_message(
             question=question,
             user_message_id=message.id,
             organization=tenant.name if tenant else "the company",
-            policy=restricted_policy(tenant.settings if tenant else {}),
+            policy=llm.max_external_sensitivity,
         )
     )
     return RunStarted(run_id=run_id, user_message=user_message)

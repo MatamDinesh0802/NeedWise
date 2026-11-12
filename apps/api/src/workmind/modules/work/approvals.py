@@ -30,6 +30,7 @@ from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.service import load_identity
 from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError, ToolRegistry
+from workmind.modules.work.links import approval_link
 from workmind.modules.work.models import Approval
 from workmind.modules.work.notifications import notify
 
@@ -77,7 +78,7 @@ async def propose(
         approval.approver_id,
         kind="approval.requested",
         title=f"Approval needed: {summary[:120]}",
-        link=f"/approvals/{approval.id}",
+        link=approval_link(approval.id),
     )
     await record_event(
         session,
@@ -238,7 +239,7 @@ async def _close(sessions: async_sessionmaker[AsyncSession], approval: Approval)
                 kind=f"approval.{approval.status}",
                 title=f"{approval.status.capitalize()}: {approval.summary[:120]}",
                 body=approval.decision_note or "",
-                link=f"/approvals/{approval.id}",
+                link=approval_link(approval.id),
             )
 
 
@@ -271,7 +272,7 @@ async def expire_due(
                 approval.requested_by,
                 kind="approval.expired",
                 title=f"Expired without a decision: {approval.summary[:120]}",
-                link=f"/approvals/{approval.id}",
+                link=approval_link(approval.id),
             )
     return expired
 
