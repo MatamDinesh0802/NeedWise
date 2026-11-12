@@ -57,6 +57,9 @@ jobs:
           persist-credentials: false
       - name: Fixable CRITICAL/HIGH vulnerabilities, misconfigurations and secrets fail
         run: scripts/security-scan.sh fs
+      - name: The Helm chart, rendered (CRITICAL/HIGH misconfigurations fail)
+        if: ${{ !cancelled() }}
+        run: scripts/security-scan.sh chart
 
   lint:
     name: Dockerfiles and workflows · hadolint, actionlint, zizmor

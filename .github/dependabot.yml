@@ -1,11 +1,13 @@
 # Weekly, grouped update PRs (one per ecosystem). New versions wait 7 days before they are
 # proposed (cooldown), so a release that is pulled soon after publishing never reaches a PR;
 # security updates are not delayed. Not covered here: the scanner images pinned in
-# scripts/security-scan.sh (docs/security/supply-chain.md, "Updating the scanners").
+# scripts/security-scan.sh (docs/security/supply-chain.md, "Updating the scanners"), and the
+# docs site's docs/requirements.txt, which `make docs-lock` re-pins by date.
 version: 2
 updates:
+  # The API, and the load-test harness (its own uv project).
   - package-ecosystem: uv
-    directory: /apps/api
+    directories: [/apps/api, /loadtests]
     schedule: { interval: weekly, day: monday }
     cooldown: { default-days: 7 }
     groups:
@@ -16,8 +18,9 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
 
+  # The web app, and the browser end-to-end suite (its own pnpm-lock.yaml).
   - package-ecosystem: npm # pnpm-lock.yaml
-    directory: /apps/web
+    directories: [/apps/web, /e2e/browser]
     schedule: { interval: weekly, day: monday }
     cooldown: { default-days: 7 }
     groups:

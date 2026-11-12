@@ -11,3 +11,15 @@ secrets:
       an example JSON object whose "type" field is the string service_account, which this rule
       matches; there is no key material. Found 2026-11-12 with anthropic 2.4.0.
     expired_at: 2027-05-12
+
+misconfigurations:
+  - id: KSV-0014
+    paths:
+      - "*/workmind/templates/keycloak/deployment.yaml"
+    statement: >-
+      Helm chart (scripts/security-scan.sh chart): the bundled Keycloak's root filesystem is
+      writable, because the stock image builds itself on `start` and writes to /opt/keycloak/lib;
+      it fails on a read-only root (checked in Docker, docs/deploy/kubernetes.md). Every other
+      container in the chart has a read-only root. Remove this when the chart runs a pre-built
+      Keycloak image. Found 2026-11-12.
+    expired_at: 2027-05-12

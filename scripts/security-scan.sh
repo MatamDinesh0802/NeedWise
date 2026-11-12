@@ -3,20 +3,24 @@
 # a laptop (`make scan`). Every scanner runs from a container image pinned by digest, so nothing
 # is installed. Policy and current exceptions: docs/security/supply-chain.md.
 #
-#   scripts/security-scan.sh deps                      known vulnerabilities in uv.lock and
-#                                                      pnpm-lock.yaml (osv-scanner; any finding
-#                                                      fails unless osv-scanner.toml excepts it)
+#   scripts/security-scan.sh deps                      known vulnerabilities in the uv.lock,
+#                                                      pnpm-lock.yaml and requirements.txt files
+#                                                      (osv-scanner; any finding fails unless
+#                                                      osv-scanner.toml excepts it)
 #   scripts/security-scan.sh fs                        the repository: vulnerabilities,
 #                                                      misconfigurations, secrets (Trivy)
+#   scripts/security-scan.sh chart                     the Helm chart, rendered with its default,
+#                                                      external-services and production values
+#                                                      (Trivy misconfigurations, CRITICAL/HIGH)
 #   scripts/security-scan.sh dockerfiles               hadolint
 #   scripts/security-scan.sh workflows                 actionlint (with shellcheck), zizmor,
-#                                                      and scripts/*.sh through shellcheck
+#                                                      and the shell scripts through shellcheck
 #   scripts/security-scan.sh image REF [REPORT.json]   a local image (Trivy); REPORT gets every
 #                                                      finding, the gate only fixable CRITICAL/HIGH
 #   scripts/security-scan.sh remote REF PLATFORM       an image in a registry, one platform; set
 #                                                      TRIVY_USERNAME/TRIVY_PASSWORD if private
 #   scripts/security-scan.sh sbom REF|. OUT.spdx.json  SPDX SBOM of a local image or the repository
-#   scripts/security-scan.sh all                       deps, fs, dockerfiles, workflows
+#   scripts/security-scan.sh all                       deps, fs, chart, dockerfiles, workflows
 set -euo pipefail
 
 # Scanner images, tag for people and digest for the pull. Dependabot does not see these: bump
@@ -27,6 +31,7 @@ SYFT="anchore/syft:v1.57.0@sha256:3c70e6d5979364cefdc22b51617a78fd264574d3bd6b4f
 HADOLINT="hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d"
 ACTIONLINT="rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667"
 ZIZMOR="ghcr.io/zizmorcore/zizmor:1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d"
+HELM="alpine/helm:3.19.0@sha256:aef9b56f64e866207d9591d0abd8f6d767b36aadd12edf68f8a719716d9d29c9"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Trivy's vulnerability database (~130 MB) is kept between runs.
@@ -59,17 +64,37 @@ shift
 
 case "$cmd" in
   deps)
-    echo "== osv-scanner: apps/api/uv.lock, apps/web/pnpm-lock.yaml" >&2
+    echo "== osv-scanner: the app, load-test, browser-test and docs lockfiles" >&2
     docker run --rm -v "$ROOT:/src:ro" "$OSV_SCANNER" scan source \
       --config /src/osv-scanner.toml \
-      --lockfile /src/apps/api/uv.lock --lockfile /src/apps/web/pnpm-lock.yaml
+      --lockfile /src/apps/api/uv.lock --lockfile /src/apps/web/pnpm-lock.yaml \
+      --lockfile /src/loadtests/uv.lock --lockfile /src/e2e/browser/pnpm-lock.yaml \
+      --lockfile requirements.txt:/src/docs/requirements.txt
     ;;
   fs)
     echo "== Trivy: repository (vulnerabilities incl. dev dependencies, misconfigurations, secrets)" >&2
-    # Local installs and build output are not part of the repository.
+    # Local installs, build output, data and agent worktrees are not part of the repository.
     trivy "$TRIVY" fs --quiet --scanners vuln,misconfig,secret --include-dev-deps "${GATE[@]}" \
       --skip-dirs /src/apps/api/.venv --skip-dirs /src/apps/web/node_modules \
-      --skip-dirs /src/apps/web/.next /src
+      --skip-dirs /src/apps/web/.next --skip-dirs /src/loadtests/.venv \
+      --skip-dirs /src/e2e/browser/node_modules --skip-dirs /src/site --skip-dirs /src/.data \
+      --skip-dirs /src/.workmind --skip-dirs /src/backups --skip-dirs /src/.claude /src
+    ;;
+  chart)
+    # Trivy's own Helm renderer skips this chart (it fails on the chart's .Files.Get of the
+    # Keycloak realm), so `fs` never sees it. Render with Helm, one file per template, and scan
+    # the manifests as Kubernetes YAML; exceptions are scoped to template paths.
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    for values in default external-services production; do
+      args=(template workmind /chart --kube-version 1.33.0 --output-dir "/out/$values")
+      if [ "$values" != default ]; then args+=(-f "/chart/examples/$values.yaml"); fi
+      docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT/deploy/helm/workmind:/chart:ro" \
+        -v "$tmp:/out" "$HELM" "${args[@]}" >/dev/null
+    done
+    echo "== Trivy: Helm chart rendered with default, external-services, production values" >&2
+    trivy -v "$tmp:/rendered:ro" "$TRIVY" config --quiet --severity CRITICAL,HIGH --exit-code 1 \
+      --ignorefile /src/.trivyignore.yaml /rendered
     ;;
   dockerfiles)
     status=0
@@ -91,9 +116,9 @@ case "$cmd" in
     if [ -n "${GH_TOKEN:-}" ]; then mode=--no-progress; fi
     docker run --rm -v "$ROOT:/repo:ro" -w /repo -e GH_TOKEN "$ZIZMOR" \
       --config .github/zizmor.yml --min-severity medium "$mode" .github/workflows || status=1
-    echo "== shellcheck: scripts/*.sh" >&2
+    echo "== shellcheck: scripts/*.sh, scripts/lib/*.sh, deploy/helm/validate.sh" >&2
     docker run --rm -v "$ROOT:/repo:ro" -w /repo --entrypoint sh "$ACTIONLINT" \
-      -c 'shellcheck scripts/*.sh' || status=1
+      -c 'shellcheck -x -P SCRIPTDIR scripts/*.sh scripts/lib/*.sh deploy/helm/validate.sh' || status=1
     exit "$status"
     ;;
   image)
@@ -124,7 +149,9 @@ case "$cmd" in
       docker run --rm -v "$ROOT:/src:ro" "$SYFT" scan dir:/src -o spdx-json \
         --source-name workmind --source-version "$(git -C "$ROOT" rev-parse --short HEAD)" \
         --exclude './apps/api/.venv' --exclude './apps/web/node_modules' \
-        --exclude './apps/web/.next' >"$out"
+        --exclude './apps/web/.next' --exclude './loadtests/.venv' \
+        --exclude './e2e/browser/node_modules' --exclude './site' --exclude './.data' \
+        --exclude './.claude' >"$out"
     else
       echo "== syft: $target -> $out" >&2
       tmp="$(mktemp -d)"
@@ -136,7 +163,7 @@ case "$cmd" in
     ;;
   all)
     status=0
-    for c in deps fs dockerfiles workflows; do
+    for c in deps fs chart dockerfiles workflows; do
       "${BASH_SOURCE[0]}" "$c" || status=1
     done
     exit "$status"

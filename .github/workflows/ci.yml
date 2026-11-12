@@ -176,7 +176,7 @@ jobs:
         run: uv run pytest tests/e2e -v
       # Browser suite (e2e/browser): Community edition, hash embeddings, no model key, so the
       # @model tests are left out (they run with E2E_MODEL=1).
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           package_json_file: e2e/browser/package.json
       - uses: actions/setup-node@v7

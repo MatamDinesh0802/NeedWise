@@ -10,7 +10,7 @@ Every scanner runs from a container image pinned by digest, through one script,
 commands, and nothing gets installed:
 
 ```bash
-make scan          # lockfiles, repository, Dockerfiles, workflows (needs only Docker)
+make scan          # lockfiles, repository, Helm chart, Dockerfiles, workflows (needs only Docker)
 make scan-images   # builds workmind-api:scan and workmind-web:scan, scans them, removes them
 scripts/security-scan.sh image workmind-api:dev report.json   # any local image, full JSON report
 scripts/security-scan.sh sbom workmind-web:dev web.spdx.json  # SPDX SBOM of a local image
@@ -23,16 +23,17 @@ Trivy keeps its vulnerability database (about 1.6 GB unpacked) in `~/.cache/work
 
 | Check | Tool (pinned) | Where | Fails the build when |
 |---|---|---|---|
-| Known vulnerabilities in `apps/api/uv.lock` and `apps/web/pnpm-lock.yaml`, dev dependencies included | osv-scanner 2.7.0 | Security workflow, `make scan` | any known vulnerability that [`osv-scanner.toml`](../../osv-scanner.toml) does not except |
-| The repository: vulnerabilities in the lockfiles (dev included), misconfigurations (Dockerfiles; Kubernetes and Helm files once they exist), secrets | Trivy 0.76.2 | Security workflow, `make scan` | a fixable CRITICAL or HIGH vulnerability, a CRITICAL or HIGH misconfiguration, a CRITICAL or HIGH secret |
+| Known vulnerabilities in `apps/api/uv.lock` and `apps/web/pnpm-lock.yaml`, dev dependencies included; also `loadtests/uv.lock`, `e2e/browser/pnpm-lock.yaml` and `docs/requirements.txt` | osv-scanner 2.7.0 | Security workflow, `make scan` | any known vulnerability that [`osv-scanner.toml`](../../osv-scanner.toml) does not except |
+| The repository: vulnerabilities in the lockfiles (dev included), misconfigurations (Dockerfiles), secrets | Trivy 0.76.2 | Security workflow, `make scan` | a fixable CRITICAL or HIGH vulnerability, a CRITICAL or HIGH misconfiguration, a CRITICAL or HIGH secret |
+| The Helm chart in `deploy/helm/workmind`, rendered by Helm 3.19.0 with its default, external-services and production values. Trivy's own Helm renderer skips this chart (it fails on the chart's `.Files.Get` of the Keycloak realm), so `fs` alone would not check it | Trivy 0.76.2, alpine/helm 3.19.0 | Security workflow, `make scan` | a CRITICAL or HIGH misconfiguration |
 | The api and web images, built from the commit (linux/amd64) | Trivy 0.76.2 | Security workflow, `make scan-images` | a fixable CRITICAL or HIGH vulnerability, a CRITICAL or HIGH secret |
 | The release images, both platforms, as pushed | Trivy 0.76.2 | [`release.yml`](../../.github/workflows/release.yml) | the same; a failed scan leaves the images untagged |
 | SBOMs (SPDX 2.3 JSON) | syft 1.57.0; BuildKit for releases | Security workflow artifacts (source tree and each image, kept 90 days); release assets and image attestations | never (inventory) |
 | Dockerfile lint | hadolint 2.15.1 | Security workflow, `make scan` | any finding, info level included |
-| Workflow lint and audit | actionlint 1.7.12 (with shellcheck), zizmor 1.32.0, shellcheck on `scripts/` | Security workflow, `make scan` | any actionlint or shellcheck error; a zizmor finding of medium severity or above |
+| Workflow lint and audit | actionlint 1.7.12 (with shellcheck), zizmor 1.32.0, shellcheck on `scripts/`, `scripts/lib/` and `deploy/helm/validate.sh` | Security workflow, `make scan` | any actionlint or shellcheck error; a zizmor finding of medium severity or above |
 | Static analysis | CodeQL, `security-extended` (python, javascript-typescript, actions) | [`codeql.yml`](../../.github/workflows/codeql.yml) | results go to Security > Code scanning; they block a merge only if branch protection requires the check |
 | Secrets in git history | gitleaks 8.30.1 | `ci.yml`, pre-commit | any leak |
-| Updates | Dependabot | weekly, grouped: uv, npm, Dockerfile bases, compose images, actions | (opens PRs) |
+| Updates | Dependabot | weekly, grouped: uv (api, loadtests), npm (web, e2e/browser), Dockerfile bases, compose images, actions | (opens PRs) |
 
 The Security workflow ([`security.yml`](../../.github/workflows/security.yml)) runs on pushes to
 `main`, on pull requests, weekly (Monday 05:17 UTC, so new advisories against unchanged code are
@@ -159,6 +160,7 @@ infrastructure upgrade belongs in its own PR where the CI stack job tests it. De
 | GHSA-g3hv-75wg-m249 (CVE-2026-118764), minimatch 10.2.6, moderate | `osv-scanner.toml` | Pattern amplification when an attacker controls the glob pattern. Development only: typescript-eslint and shadcn's ts-morph use it with patterns from our own config; not in the web image. The fix is minimatch 11, which `@typescript-eslint/typescript-estree` 8.72 does not accept (`^10.2.2`) | 2027-02-12 |
 | GHSA-gcqx-w48m-w2h4 (CVE-2026-93753), deepmerge 4.3.1, low | `osv-scanner.toml` | Prototype poisoning of merged objects. Development only: the shadcn CLI merges its own registry metadata; not in the web image. No fixed version exists | 2027-02-12 |
 | `gcp-service-account` secret rule, scoped to `/app/.venv/lib/python*/site-packages/anthropic/**` | `.trivyignore.yaml` | False positive in SDK docstrings (above) | 2027-05-12 |
+| KSV-0014 (HIGH, read-only root filesystem), scoped to the chart's `templates/keycloak/deployment.yaml` | `.trivyignore.yaml` | The stock Keycloak image builds itself on `start` and writes to `/opt/keycloak/lib`, so it fails on a read-only root (checked in Docker); every other container in the chart has one. Found when the chart was merged, 2026-11-12 | 2027-05-12 |
 
 To add one: put it in the file with a reason and an expiry, add a row here, and say in the PR why
 fixing it is not possible now.
