@@ -5,6 +5,7 @@ target local development, where the API runs on the host and the infrastructure 
 Docker (`make infra`). Inside docker compose, `compose.yaml` overrides the hostnames.
 """
 
+import base64
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, Self
@@ -20,6 +21,10 @@ DEV_OIDC_CLIENT_SECRET = "dev-only-oidc-client-secret"  # noqa: S105  (refused i
 DEV_OPENFGA_API_KEY = "dev-only-openfga-key"  # (refused in production)
 # 32 zero bytes, base64: obviously not a secret, and refused in production.
 DEV_SECRETS_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+# DEVELOPMENT ONLY. The base64 of "workmind-dev-only-NOT-A-SECRET!!" (32 bytes): encrypts model
+# provider keys when SECRETS_ENCRYPTION_KEY is unset in dev and test. Refused everywhere else.
+DEV_SECRETS_ENCRYPTION_KEY = "d29ya21pbmQtZGV2LW9ubHktTk9ULUEtU0VDUkVUISE="
+DEVELOPMENT_ENVIRONMENTS = frozenset({"dev", "test"})
 
 
 class Settings(BaseSettings):
@@ -50,6 +55,12 @@ class Settings(BaseSettings):
     # Encrypts connector credentials at rest (AES-256-GCM): 32 random bytes, base64.
     # Generate one: python -c "import base64,os; print(base64.b64encode(os.urandom(32)).decode())"
     secrets_key: SecretStr = SecretStr(DEV_SECRETS_KEY)
+    # Encrypts tenants' model provider API keys at rest (AES-256-GCM, docs/models.md): 32 random
+    # bytes, base64. Required outside dev and test. To rotate it, move the old key to
+    # SECRETS_ENCRYPTION_PREVIOUS_KEYS (comma-separated; they only decrypt), restart, and run
+    # `wm secrets rotate`.
+    secrets_encryption_key: SecretStr | None = None
+    secrets_encryption_previous_keys: SecretStr | None = None
     # Background sync of the authorization outbox (disabled in unit tests).
     authz_outbox_worker: bool = True
     keycloak_url: str = "http://localhost:8480/auth"
@@ -170,6 +181,39 @@ class Settings(BaseSettings):
             raise ValueError("SECRETS_KEY must be set in production")
         return self
 
+    @model_validator(mode="after")
+    def _secrets_encryption_key(self) -> Self:
+        """Outside development the key must be set, and never to the development fallback.
+        Its format is checked at startup, not at the first encryption."""
+        key = self.secrets_encryption_key.get_secret_value() if self.secrets_encryption_key else ""
+        if self.app_env not in DEVELOPMENT_ENVIRONMENTS and key in ("", DEV_SECRETS_ENCRYPTION_KEY):
+            raise ValueError(f"SECRETS_ENCRYPTION_KEY must be set (APP_ENV={self.app_env})")
+        previous = (
+            self.secrets_encryption_previous_keys.get_secret_value()
+            if self.secrets_encryption_previous_keys
+            else ""
+        )
+        for value in [key, *previous.split(",")]:
+            if value.strip() and not _is_aes_key(value.strip()):
+                raise ValueError(
+                    "SECRETS_ENCRYPTION_KEY and SECRETS_ENCRYPTION_PREVIOUS_KEYS must be "
+                    "base64 encodings of 32 bytes"
+                )
+        return self
+
+    @property
+    def encryption_keys(self) -> tuple[str, list[str]]:
+        """(the active key, older keys that still decrypt), all base64."""
+        active = (
+            self.secrets_encryption_key.get_secret_value() if self.secrets_encryption_key else ""
+        ).strip() or DEV_SECRETS_ENCRYPTION_KEY  # dev and test only (see the validator)
+        previous = (
+            self.secrets_encryption_previous_keys.get_secret_value()
+            if self.secrets_encryption_previous_keys
+            else ""
+        )
+        return active, [k.strip() for k in previous.split(",") if k.strip()]
+
     @property
     def version(self) -> str:
         return __version__
@@ -209,6 +253,13 @@ class Settings(BaseSettings):
     @property
     def oidc_discovery_url(self) -> str:
         return f"{self.keycloak_url}/realms/{self.keycloak_realm}/.well-known/openid-configuration"
+
+
+def _is_aes_key(value: str) -> bool:
+    try:
+        return len(base64.b64decode(value, validate=True)) == 32
+    except ValueError:
+        return False
 
 
 @lru_cache

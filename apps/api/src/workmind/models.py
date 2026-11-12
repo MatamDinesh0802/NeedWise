@@ -9,6 +9,7 @@ from workmind.modules.governance import models as governance_models
 from workmind.modules.identity import models as identity_models
 from workmind.modules.knowledge import models as knowledge_models
 from workmind.modules.meetings import models as meeting_models
+from workmind.modules.model_catalog import models as model_catalog_models
 from workmind.modules.work import models as work_models
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "identity_models",
     "knowledge_models",
     "meeting_models",
+    "model_catalog_models",
     "work_models",
 ]
