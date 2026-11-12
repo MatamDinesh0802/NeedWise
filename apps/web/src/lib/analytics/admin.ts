@@ -46,6 +46,9 @@ export function modelProblems(error: unknown): string[] {
   }
   const detail = (error.detail ?? "").trim();
   if (!detail) return ["The data model isn't valid."];
+  // A YAML syntax error is one problem over several lines (the reason, where, the line and a
+  // caret under the column): kept whole, with its indentation, for a preformatted block.
+  if (detail.startsWith("not valid YAML:")) return [detail.replace(/in "<unicode string>", /g, "").replace(/\r\n/g, "\n")];
   if (/^\d+ validation errors? for /.test(detail)) {
     return parseValidationDetail(detail).map((e) => (e.path ? `${describePath(e.path)}: ${e.message}` : e.message));
   }

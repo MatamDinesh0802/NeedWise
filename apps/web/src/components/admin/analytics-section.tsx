@@ -315,7 +315,7 @@ export function ModelEditor({ yaml, tables }: { yaml: string | null; tables: rea
   }
 
   return (
-    <section aria-labelledby="model-heading" className="flex flex-col gap-3">
+    <section aria-labelledby="model-heading" className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 id="model-heading" className="flex items-center gap-2 font-medium">
           Data model
@@ -365,7 +365,7 @@ export function ModelEditor({ yaml, tables }: { yaml: string | null; tables: rea
           <AlertDescription>
             <ul className="list-disc pl-4">
               {problems.map((problem, i) => (
-                <li key={i} className="font-mono text-xs">
+                <li key={i} className="font-mono text-xs whitespace-pre-wrap">
                   {problem}
                 </li>
               ))}
@@ -395,7 +395,9 @@ export function ModelEditor({ yaml, tables }: { yaml: string | null; tables: rea
             autoCapitalize="none"
             autoCorrect="off"
             wrap="off"
-            className="max-h-[36rem] min-h-80 overflow-auto font-mono text-xs leading-relaxed"
+            // Fixed sizing: with wrap="off", sizing to the content made the page as wide as
+            // the longest YAML line (a sideways scroll under the sidebar below ~1350px).
+            className="max-h-[36rem] min-h-80 min-w-0 overflow-auto font-mono text-xs leading-relaxed field-sizing-fixed"
             value={text}
             placeholder={tables.length > 0 ? "Empty. Start from the uploaded tables, or paste a model." : "Upload tables first, then describe them here."}
             onChange={(e) => setText(e.target.value)}

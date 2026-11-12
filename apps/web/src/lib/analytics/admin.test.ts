@@ -46,6 +46,11 @@ describe("modelProblems", () => {
     expect(modelProblems(invalid("1. not valid YAML: line 3\n2) tables: required"))).toEqual(["not valid YAML: line 3", "tables: required"]);
   });
 
+  it("keeps a YAML syntax error as one problem, caret and all", () => {
+    const detail = 'not valid YAML: mapping values are not allowed here\n  in "<unicode string>", line 2, column 6:\n      bad: : :\n         ^';
+    expect(modelProblems(invalid(detail))).toEqual(["not valid YAML: mapping values are not allowed here\n  line 2, column 6:\n      bad: : :\n         ^"]);
+  });
+
   it("splits a one-line list on semicolons", () => {
     expect(modelProblems(invalid("join: unknown column x.y; metric m: unknown table t"))).toEqual(["join: unknown column x.y", "metric m: unknown table t"]);
   });
