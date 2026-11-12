@@ -15,6 +15,7 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from workmind import __version__
+from workmind.core.ratelimit import merge_limits
 
 Environment = Literal["dev", "test", "demo", "production"]
 DEV_OIDC_CLIENT_SECRET = "dev-only-oidc-client-secret"  # noqa: S105  (refused in production)
@@ -170,6 +171,11 @@ class Settings(BaseSettings):
     analytics_worker_memory_mb: int = Field(default=1024, ge=256, le=65_536)
     analytics_queries_per_user: int = Field(default=1, ge=1, le=32)
 
+    # Request rate limits per person, tenant and client address (core/ratelimit.py,
+    # docs/multi-tenancy.md). Overrides as JSON, e.g. {"chat": {"per_user": 10}}; 0 = no limit.
+    rate_limits_enabled: bool = True
+    rate_limits: dict[str, dict[str, int]] = {}
+
     # Sessions (ARCHITECTURE section 6.3): sliding idle timeout, hard absolute lifetime.
     session_idle_timeout_s: int = Field(default=1800, gt=0)
     session_absolute_timeout_s: int = Field(default=43200, gt=0)
@@ -196,6 +202,11 @@ class Settings(BaseSettings):
             raise ValueError("OPENFGA_API_KEY must be set in production")
         if self.secrets_key.get_secret_value() == DEV_SECRETS_KEY:
             raise ValueError("SECRETS_KEY must be set in production")
+        return self
+
+    @model_validator(mode="after")
+    def _known_rate_limits(self) -> Self:
+        merge_limits(self.rate_limits)  # raises on an unknown limit or field
         return self
 
     @model_validator(mode="after")

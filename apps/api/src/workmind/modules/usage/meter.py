@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.context import RequestContext
 from workmind.core.extensions import ExtensionRegistry
-from workmind.core.tenancy import tenant_transaction
+from workmind.core.tenancy import tenant_key, tenant_transaction
 from workmind.modules.identity.models import User
 from workmind.modules.usage.budgets import (
     Binding,
@@ -171,7 +171,9 @@ class UsageMeter:
     @staticmethod
     def _key(tenant_id: uuid.UUID, key: SpentKey, start: datetime) -> str:
         scope, subject, period = key
-        return f"wm:usage:spent:{tenant_id}:{scope}:{subject or '-'}:{period}:{start:%Y%m%d}"
+        return tenant_key(
+            tenant_id, "usage", "spent", scope, subject or "-", period, f"{start:%Y%m%d}"
+        )
 
     async def spent(
         self, tenant_id: uuid.UUID, keys: Iterable[SpentKey], now: datetime
@@ -407,7 +409,9 @@ class UsageMeter:
     async def _alert(self, tenant_id: uuid.UUID, binding: Binding, now: datetime) -> None:
         start, end = period_window(binding.rule.period, now)
         subject = binding.subject_id or tenant_id
-        flag = f"wm:usage:alerted:{binding.rule.id}:{subject}:{start:%Y%m%d}"
+        flag = tenant_key(
+            tenant_id, "usage", "alerted", binding.rule.id, subject, f"{start:%Y%m%d}"
+        )
         try:
             first = await self.valkey.set(flag, "1", nx=True, exat=int(end.timestamp()) + 3600)  # pyright: ignore[reportUnknownMemberType]
         except Exception:

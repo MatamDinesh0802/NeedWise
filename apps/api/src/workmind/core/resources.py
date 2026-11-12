@@ -14,6 +14,7 @@ from workmind.core.config import Settings
 from workmind.core.db import create_engine, create_session_factory
 from workmind.core.edition import Edition
 from workmind.core.extensions import ExtensionRegistry, load_extensions
+from workmind.core.ratelimit import RateLimiter, merge_limits
 from workmind.modules.agents.planning import FastRouter
 from workmind.modules.analytics.engine import QueryPool
 from workmind.modules.analytics.service import Analytics
@@ -80,6 +81,8 @@ class Resources:
     extensions: ExtensionRegistry
     # Usage events and budgets for every model call (docs/usage.md); also on `models.meter`.
     usage: UsageMeter
+    # Request rate limits per person, tenant and address (core/ratelimit.py).
+    limits: RateLimiter
 
     @property
     def llm(self) -> LLMProvider:
@@ -215,6 +218,9 @@ class Resources:
             edition=extensions.edition,
             extensions=extensions,
             usage=usage,
+            limits=RateLimiter(
+                valkey, merge_limits(settings.rate_limits), enabled=settings.rate_limits_enabled
+            ),
         )
         if isinstance(resources.ingestion, InlineDispatcher):
             resources.ingestion.start_runs = resources.start_workflow_runs

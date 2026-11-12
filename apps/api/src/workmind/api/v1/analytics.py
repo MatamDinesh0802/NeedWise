@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, JsonValue, ValidationError
 
-from workmind.api.deps import require_scope, resources_of, settings_of
+from workmind.api.deps import rate_limit, require_scope, resources_of, settings_of
 from workmind.api.v1.admin import AdminContext
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
@@ -160,7 +160,7 @@ async def get_model(ctx: AskContext, request: Request) -> ModelOut | ModelUnavai
     return _model_out(await analytics.describe(ctx))
 
 
-@router.post("/ask")
+@router.post("/ask", dependencies=[rate_limit("analytics")])
 async def ask(ctx: AskContext, request: Request, body: AskIn) -> AnalyticsAnswer:
     """Answer a question with queries run as the caller. Always 200 with an answer: its status
     says whether it was answered, refused (no_access) or failed. The answer is stored."""
@@ -213,7 +213,7 @@ async def get_run(ctx: AskContext, request: Request, run_id: uuid.UUID) -> Analy
         )
 
 
-@router.post("/query")
+@router.post("/query", dependencies=[rate_limit("analytics")])
 async def run_query(ctx: AskContext, request: Request, body: QueryIn) -> QueryOut:
     """Re-run SQL (an answer's query, or one the caller wrote) through the same guard and the
     caller's own row policies: refreshed data, never more than they may see."""
@@ -295,7 +295,7 @@ async def put_model(ctx: AdminContext, request: Request, body: ModelIn) -> Admin
     return await _admin_out(resources, ctx)
 
 
-@admin_router.post("/tables")
+@admin_router.post("/tables", dependencies=[rate_limit("ingest")])
 async def put_table(
     ctx: AdminContext,
     request: Request,

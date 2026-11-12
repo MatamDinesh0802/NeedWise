@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from workmind.api.deps import require_scope, resources_of
+from workmind.api.deps import rate_limit, require_scope, resources_of
 from workmind.api.v1.admin import AdminContext
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
@@ -603,7 +603,7 @@ async def delete_workflow(ctx: AdminContext, request: Request, key: str) -> Resp
     return Response(status_code=204)
 
 
-@admin_router.post("/{key}/run", status_code=202)
+@admin_router.post("/{key}/run", status_code=202, dependencies=[rate_limit("agent_test")])
 async def run_workflow(ctx: AdminContext, request: Request, key: str) -> RunOut:
     resources = resources_of(request)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:

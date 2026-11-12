@@ -19,6 +19,7 @@ class ApiError(Exception):
         detail: str | None = None,
         *,
         extra: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(title)
         self.status = status
@@ -27,6 +28,8 @@ class ApiError(Exception):
         self.detail = detail
         # More members of the problem document (e.g. "budget" for budget_exceeded).
         self.extra: dict[str, Any] = dict(extra or {})
+        # Response headers (e.g. Retry-After for rate_limited).
+        self.headers: dict[str, str] = dict(headers or {})
 
 
 def problem_response(error: ApiError) -> JSONResponse:
@@ -41,7 +44,10 @@ def problem_response(error: ApiError) -> JSONResponse:
     for key, value in error.extra.items():
         content.setdefault(key, value)
     return JSONResponse(
-        status_code=error.status, content=content, media_type="application/problem+json"
+        status_code=error.status,
+        content=content,
+        media_type="application/problem+json",
+        headers=error.headers or None,
     )
 
 

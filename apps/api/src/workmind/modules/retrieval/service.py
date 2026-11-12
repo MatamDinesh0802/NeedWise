@@ -160,7 +160,9 @@ class Retriever:
         flt = self.acl_filter(
             ctx, exclude_restricted=exclude_restricted, collection_ids=collection_ids
         )
-        hits, result.best_similarity = await self._query(query, flt, limit=limit * 4, mode=mode)
+        hits, result.best_similarity = await self._query(
+            ctx.tenant_id, query, flt, limit=limit * 4, mode=mode
+        )
         result.candidates = len(hits)
         if result.best_similarity is not None and result.best_similarity < self.min_similarity:
             # Nothing permitted is about this: answer "not found" without sending noise to a
@@ -210,26 +212,31 @@ class Retriever:
         return [replace(p, review_overdue=p.document_id in overdue) for p in passages]
 
     async def _query(
-        self, query: str, flt: dict[str, Any], *, limit: int, mode: Mode
+        self, tenant_id: uuid.UUID, query: str, flt: dict[str, Any], *, limit: int, mode: Mode
     ) -> tuple[list[dict[str, Any]], float | None]:
         """Hits, plus the best dense similarity (for the relevance floor)."""
         sparse = encode_query(query).as_qdrant()
+        name = self._collection
         if mode == "sparse":
             hits = await self._qdrant.query(
-                self._collection, query=sparse, using="bm25", flt=flt, limit=limit
+                name, tenant_id=tenant_id, query=sparse, using="bm25", flt=flt, limit=limit
             )
             return hits, None
         dense = await self._embeddings.embed_query(query)
         if mode == "dense":
             hits = await self._qdrant.query(
-                self._collection, query=dense, using="dense", flt=flt, limit=limit
+                name, tenant_id=tenant_id, query=dense, using="dense", flt=flt, limit=limit
             )
             return hits, (float(hits[0]["score"]) if hits else None)
         depth = max(PREFETCH, limit)
         # The ACL filter applies to both lists, so fusion only ever sees permitted chunks.
         dense_hits, sparse_hits = await asyncio.gather(
-            self._qdrant.query(self._collection, query=dense, using="dense", flt=flt, limit=depth),
-            self._qdrant.query(self._collection, query=sparse, using="bm25", flt=flt, limit=depth),
+            self._qdrant.query(
+                name, tenant_id=tenant_id, query=dense, using="dense", flt=flt, limit=depth
+            ),
+            self._qdrant.query(
+                name, tenant_id=tenant_id, query=sparse, using="bm25", flt=flt, limit=depth
+            ),
         )
         fused = fuse(dense_hits, sparse_hits, sparse_weight=self.sparse_weight, k=self.rrf_k)
         return fused[:limit], (float(dense_hits[0]["score"]) if dense_hits else None)

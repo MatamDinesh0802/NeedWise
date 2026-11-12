@@ -2,7 +2,8 @@
 
 The browser holds only a random session ID. Valkey stores data under the ID's SHA-256, so a
 dump of Valkey yields no usable cookies. Sessions are indexed by Keycloak session and subject,
-so Keycloak's back-channel logout can end them.
+so Keycloak's back-channel logout can end them, and by tenant (under the tenant's key prefix),
+so suspending or deleting a tenant ends every session in it.
 """
 
 import hashlib
@@ -14,6 +15,8 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 
 from redis.asyncio import Redis
+
+from workmind.core.tenancy import tenant_key
 
 _MAX_SESSION_ID_LENGTH = 128
 
@@ -56,6 +59,10 @@ def _by_sub(sub: str) -> str:
     return f"session-index:sub:{sub}"
 
 
+def _by_tenant(tenant_id: uuid.UUID) -> str:
+    return tenant_key(tenant_id, "sessions")
+
+
 class SessionStore:
     def __init__(
         self,
@@ -94,7 +101,8 @@ class SessionStore:
             expires_at=now + self._absolute,
         )
         key = _key(session_id)
-        indexes = [_by_sub(keycloak_sub)] + ([_by_sid(keycloak_sid)] if keycloak_sid else [])
+        indexes = [_by_tenant(tenant_id), _by_sub(keycloak_sub)]
+        indexes += [_by_sid(keycloak_sid)] if keycloak_sid else []
         async with self._valkey.pipeline(transaction=True) as pipe:
             pipe.set(key, data.to_json(), ex=self._idle)
             for index in indexes:
@@ -129,6 +137,10 @@ class SessionStore:
 
     async def delete_by_keycloak_subject(self, sub: str) -> int:
         return await self._delete_index(_by_sub(sub))
+
+    async def delete_by_tenant(self, tenant_id: uuid.UUID) -> int:
+        """Ends every session of a tenant (suspension, deletion)."""
+        return await self._delete_index(_by_tenant(tenant_id))
 
     async def _delete_index(self, index: str) -> int:
         keys: set[bytes | str] = await self._valkey.smembers(index)  # pyright: ignore[reportUnknownMemberType, reportGeneralTypeIssues]

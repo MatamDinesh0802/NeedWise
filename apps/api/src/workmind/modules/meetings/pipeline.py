@@ -17,7 +17,7 @@ from workmind.modules.identity.models import Tenant, User
 from workmind.modules.knowledge import service
 from workmind.modules.knowledge.dispatch import Dispatcher
 from workmind.modules.knowledge.models import Collection
-from workmind.modules.knowledge.storage import ObjectStorage
+from workmind.modules.knowledge.storage import ObjectStorage, owned_key
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.extract import clock, extract, speaker_name
 from workmind.modules.meetings.models import Meeting, held_on
@@ -127,7 +127,7 @@ async def _process(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUI
         # 1. Words with times
         await _status(deps, meeting, "transcribing")
         started = time.perf_counter()
-        data = await deps.storage.get(meeting.media_key)
+        data = await deps.storage.get(owned_key(tenant_id, meeting.media_key))
         if transcripts.kind(meeting.filename) == "audio":
             transcript = await deps.transcriber.transcribe(
                 data, meeting.filename, vocabulary=directory.names

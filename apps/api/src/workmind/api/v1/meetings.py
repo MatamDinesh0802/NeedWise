@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from workmind.api.deps import require_scope, resources_of, settings_of
+from workmind.api.deps import rate_limit, require_scope, resources_of, settings_of
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
@@ -23,7 +23,7 @@ from workmind.modules.identity.models import User
 from workmind.modules.knowledge.models import Collection
 from workmind.modules.knowledge.pipeline import delete_document_points
 from workmind.modules.knowledge.service import collection_access, visible_collections
-from workmind.modules.knowledge.storage import object_key
+from workmind.modules.knowledge.storage import object_key, owned_key
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.deletion import delete_meeting
 from workmind.modules.meetings.models import Meeting, held_on
@@ -192,7 +192,7 @@ async def _meeting(
     return meeting, access.can_edit or meeting.owner_id == ctx.user_id
 
 
-@router.post("/meetings", status_code=202)
+@router.post("/meetings", status_code=202, dependencies=[rate_limit("ingest")])
 async def upload_meeting(
     ctx: AskContext,
     request: Request,
@@ -301,7 +301,7 @@ async def remove_meeting(ctx: AskContext, request: Request, meeting_id: uuid.UUI
             resources.qdrant, resources.collection_name, ctx.tenant_id, deleted.document_id
         )
     for key in deleted.storage_keys:
-        await resources.storage.delete(key)
+        await resources.storage.delete(owned_key(ctx.tenant_id, key))
     return Response(status_code=204)
 
 
@@ -322,7 +322,7 @@ async def meeting_media(ctx: AskContext, request: Request, meeting_id: uuid.UUID
             "The recording was deleted",
             "The retention policy deleted it; the transcript and notes are kept.",
         )
-    data = await resources.storage.get(meeting.media_key)
+    data = await resources.storage.get(owned_key(ctx.tenant_id, meeting.media_key))
     headers = {"Content-Security-Policy": "sandbox", "Accept-Ranges": "bytes"}
     try:
         span = byte_range(request.headers.get("range"), len(data))

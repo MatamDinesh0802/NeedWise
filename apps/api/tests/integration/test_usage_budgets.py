@@ -407,7 +407,7 @@ async def test_budgets_reset_at_the_utc_period_boundary(
 
     await spend(app_sessions, acme, "bob", 1.5, when=datetime(2026, 11, 15, tzinfo=UTC))
     # Written straight to the table, so it shows once the cached sums are refreshed.
-    cached = [k async for k in meter.valkey.scan_iter(f"wm:usage:spent:{acme.tenant_id}:*")]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+    cached = [k async for k in meter.valkey.scan_iter(f"t:{acme.tenant_id}:usage:spent:*")]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
     await meter.valkey.delete(*cached)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
     meter.clock = lambda: datetime(2026, 11, 29, 12, tzinfo=UTC)
     with pytest.raises(BudgetExceededError) as month:  # $3.50 in November, $0 that day

@@ -22,6 +22,8 @@ describe("errorMessage", () => {
     [403, "self_change", "You can't change your own account here"],
     [403, "forbidden", "You don't have access"],
     [403, "csrf_header", "Request blocked"],
+    [422, "unknown_principal", "Unknown person, group or department"],
+    [422, "unknown_department", "Unknown department"],
     [401, "unauthenticated", "You're signed out"],
     [404, "not_found", "Not found"],
     [0, "network_error", "Can't reach the server"],
@@ -55,6 +57,15 @@ describe("errorMessage", () => {
       title: "Something conflicted",
       description: "Details here.",
       code: "brand_new_code",
+    });
+  });
+
+  it("shows rate limits in the API's words, with the wait", () => {
+    const detail = "At most 30 questions per minute per person. Try again in 41 s.";
+    expect(errorMessage(api(429, "rate_limited", "Too many requests", { detail }))).toEqual({
+      title: "Too many requests",
+      description: detail,
+      code: "rate_limited",
     });
   });
 

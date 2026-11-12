@@ -17,11 +17,11 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from workmind.api.deps import resources_of, settings_of
+from workmind.api.deps import rate_limit, resources_of, settings_of
 from workmind.api.v1.admin import AdminContext
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
-from workmind.core.tenancy import tenant_transaction
+from workmind.core.tenancy import tenant_key, tenant_transaction
 from workmind.modules.connectors.models import Source
 from workmind.modules.connectors.registry import CREDENTIALS, build_connector, validate_config
 from workmind.modules.connectors.secrets import SecretBox
@@ -31,6 +31,7 @@ from workmind.modules.identity.models import SLUG_PATTERN
 from workmind.modules.knowledge import service
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import delete_document_points
+from workmind.modules.knowledge.storage import owned_key
 from workmind.providers.factory import secret
 
 router = APIRouter(prefix="/admin/sources", tags=["admin"])
@@ -226,7 +227,7 @@ async def delete_source(ctx: AdminContext, request: Request, key: str) -> Respon
             resources.qdrant, resources.collection_name, ctx.tenant_id, document_id
         )
     for storage_key in set(orphaned):
-        await resources.storage.delete(storage_key)
+        await resources.storage.delete(owned_key(ctx.tenant_id, storage_key))
     return Response(status_code=204)
 
 
@@ -249,7 +250,7 @@ def sync_deps(request: Request) -> SyncDeps:
     )
 
 
-@router.post("/{key}/sync", status_code=202)
+@router.post("/{key}/sync", status_code=202, dependencies=[rate_limit("sync")])
 async def sync_now(ctx: AdminContext, request: Request, key: str) -> Response:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         source = await _source(session, key)
@@ -273,6 +274,10 @@ async def _sync_in_process(deps: SyncDeps, tenant_id: uuid.UUID, source_id: uuid
 # --- Google Drive OAuth (authorization code + PKCE) ------------------------------------------
 
 
+def _oauth_key(ctx: RequestContext, state: str) -> str:
+    return tenant_key(ctx.tenant_id, "oauth", "google", state)
+
+
 @router.get("/{key}/oauth/google/start")
 async def google_start(ctx: AdminContext, request: Request, key: str) -> RedirectResponse:
     settings, resources = settings_of(request), resources_of(request)
@@ -294,7 +299,8 @@ async def google_start(ctx: AdminContext, request: Request, key: str) -> Redirec
         "source": key,
         "verifier": verifier,
     }
-    await resources.valkey.set(f"oauth:google:{state}", json.dumps(flow), ex=OAUTH_TTL_S)
+    # Under the tenant's prefix: a callback in another tenant's session never even finds it.
+    await resources.valkey.set(_oauth_key(ctx, state), json.dumps(flow), ex=OAUTH_TTL_S)
     query = urlencode(
         {
             "client_id": settings.google_client_id,
@@ -316,7 +322,7 @@ async def google_callback(
     ctx: AdminContext, request: Request, code: str = "", state: str = "", error: str = ""
 ) -> RedirectResponse:
     settings, resources = settings_of(request), resources_of(request)
-    raw = await resources.valkey.getdel(f"oauth:google:{state}") if state else None
+    raw = await resources.valkey.getdel(_oauth_key(ctx, state)) if state else None
     if error or not code or raw is None:
         return RedirectResponse("/admin/sources?oauth=failed", status_code=303)
     flow = json.loads(raw)

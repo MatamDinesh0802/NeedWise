@@ -13,7 +13,7 @@ Conversations are private: anyone else, including admins, gets 404.
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from workmind.api.deps import require_scope, resources_of
+from workmind.api.deps import enforce_limit, require_scope, resources_of
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
@@ -186,13 +186,11 @@ async def get_conversation(
                 .order_by(Message.created_at, Message.id)
             )
         ).all()
-    active = cast(
-        bytes | None, await resources.valkey.get(f"wm:conversation:{conversation_id}:run")
-    )
+    active = await resources.runs.events.active_run(ctx.tenant_id, conversation_id)
     return ConversationDetail(
         **_conversation_out(conversation).model_dump(),
         messages=[_message_out(m) for m in messages],
-        active_run_id=uuid.UUID(active.decode()) if active else None,
+        active_run_id=active,
     )
 
 
@@ -220,6 +218,7 @@ async def send_message(
     ctx: AskContext, request: Request, conversation_id: uuid.UUID, body: MessageCreate
 ) -> RunStarted:
     resources = resources_of(request)
+    await enforce_limit(request, ctx, "research" if body.mode == "research" else "chat")
     # A used-up budget refuses the question (429 budget_exceeded) before it is stored.
     await resources.usage.check(ctx)
     run_id = uuid.uuid4()
@@ -295,7 +294,7 @@ async def send_message(
 
 
 async def _run_for(request: Request, ctx: RequestContext, run_id: uuid.UUID) -> RunMeta:
-    meta = await resources_of(request).runs.events.meta(run_id)
+    meta = await resources_of(request).runs.events.meta(ctx.tenant_id, run_id)
     if meta is None or meta.tenant_id != ctx.tenant_id or meta.user_id != ctx.user_id:
         raise ApiError(404, "not_found", "Run not found or expired")
     return meta
@@ -308,12 +307,12 @@ async def run_events(
     run_id: uuid.UUID,
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
-    await _run_for(request, ctx, run_id)
+    meta = await _run_for(request, ctx, run_id)
     events = resources_of(request).runs.events
 
     async def stream() -> AsyncIterator[str]:
         yield "retry: 2000\n\n"
-        async for event in events.read(run_id, after=last_event_id or "0"):
+        async for event in events.read(meta, after=last_event_id or "0"):
             if await request.is_disconnected():
                 return
             yield ": keep-alive\n\n" if event is None else event.sse()
@@ -327,8 +326,8 @@ async def run_events(
 
 @router.post("/runs/{run_id}/cancel", status_code=202)
 async def cancel_run(ctx: AskContext, request: Request, run_id: uuid.UUID) -> Response:
-    await _run_for(request, ctx, run_id)
-    await resources_of(request).runs.events.cancel(run_id)
+    meta = await _run_for(request, ctx, run_id)
+    await resources_of(request).runs.events.cancel(meta)
     return Response(status_code=202)
 
 

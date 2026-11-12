@@ -25,7 +25,7 @@ from workmind.modules.knowledge.dispatch import InlineDispatcher
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import IngestionDeps
 from workmind.modules.knowledge.storage import LocalObjectStorage
-from workmind.modules.retrieval.qdrant import QdrantClient, match
+from workmind.modules.retrieval.qdrant import QdrantClient
 from workmind.providers.embeddings import HashEmbeddings
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
@@ -157,7 +157,7 @@ async def test_sync_adds_skips_versions_and_deletes(
         "v2",
     )
     assert leave.status == "ready"
-    remaining = await qdrant.count(name, {"must": [match("tenant_id", str(source.tenant_id))]})
+    remaining = await qdrant.count(name, tenant_id=source.tenant_id)
     assert remaining == leave_chunks(leave)  # the deleted document's points are gone too
     async with tenant_transaction(deps.sessions, source.tenant_id) as session:
         stored = await session.get(Source, source.id)

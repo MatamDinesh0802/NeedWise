@@ -41,7 +41,7 @@ from workmind.modules.governance.models import (
 )
 from workmind.modules.identity.models import Tenant, User
 from workmind.modules.knowledge.models import DocumentVersion
-from workmind.modules.knowledge.storage import ObjectStorage
+from workmind.modules.knowledge.storage import ObjectStorage, owned_key
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.models import Meeting
 from workmind.modules.work.models import Notification
@@ -269,7 +269,7 @@ async def apply_policy(
     deleted_files = 0
     for key in deletion.media_keys:  # after the commit: the rows no longer point at them
         try:
-            await storage.delete(key)
+            await storage.delete(owned_key(tenant_id, key))
             deleted_files += 1
         except OSError as exc:
             log.warning("retention_file_not_deleted", key=key, error=type(exc).__name__)
