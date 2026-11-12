@@ -24,7 +24,7 @@ from workmind.modules.knowledge.models import Collection
 from workmind.modules.knowledge.service import collection_access, visible_collections
 from workmind.modules.knowledge.storage import object_key
 from workmind.modules.meetings import transcripts
-from workmind.modules.meetings.models import Meeting
+from workmind.modules.meetings.models import Meeting, held_on
 from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
 from workmind.modules.work.models import Task
 from workmind.modules.work.notifications import notify
@@ -55,6 +55,7 @@ class MeetingSummary(BaseModel):
     duration_s: float | None
     decisions: int
     action_items: int
+    held_on: date  # the day of the meeting (from the file name), else of the upload
     created_at: datetime
 
 
@@ -77,6 +78,7 @@ class MeetingOut(BaseModel):
     document_id: uuid.UUID | None
     timings: dict[str, Any]
     can_edit: bool
+    held_on: date
     created_at: datetime
 
 
@@ -139,6 +141,7 @@ def _summary(m: Meeting) -> MeetingSummary:
         duration_s=m.duration_s,
         decisions=len(m.decisions),
         action_items=len(m.action_items),
+        held_on=held_on(m),
         created_at=m.created_at,
     )
 
@@ -163,6 +166,7 @@ def _out(m: Meeting, can_edit: bool) -> MeetingOut:
         document_id=m.document_id,
         timings=m.timings,
         can_edit=can_edit,
+        held_on=held_on(m),
         created_at=m.created_at,
     )
 
@@ -314,6 +318,7 @@ async def map_speakers(
                 "Only the meeting's owner or the collection's editors can change it",
             )
         speakers = dict(meeting.speakers)
+        previous = {label: str(v.get("name") or "") for label, v in speakers.items()}
         for label, user_id in body.speakers.items():
             if label not in speakers:
                 raise ApiError(422, "unknown_speaker", f"No speaker {label!r} in this meeting")
@@ -327,11 +332,12 @@ async def map_speakers(
         items: list[dict[str, Any]] = []
         for item in meeting.action_items:
             for label, mapped in speakers.items():
-                if item.get("owner", "").strip().lower() in (
-                    label.lower(),
-                    str(mapped["name"]).lower(),
-                ):
-                    item = {**item, "owner_user_id": mapped["user_id"]}
+                # The owner as extracted (the label), as the label's colleague is now called,
+                # or as it was called before this change (an item an earlier mapping renamed).
+                names = {label, str(mapped["name"]), previous.get(label, "")}
+                if item.get("owner", "").strip().lower() in {n.lower() for n in names if n}:
+                    # Like a correction, the item names its owner: shown, and in notifications.
+                    item = {**item, "owner_user_id": mapped["user_id"], "owner": mapped["name"]}
             items.append(item)
         meeting.speakers, meeting.action_items = speakers, items
         return _out(meeting, can_edit)
@@ -471,7 +477,7 @@ async def my_commitments(ctx: AskContext, request: Request) -> list[Commitment]:
         Commitment(
             meeting_id=m.id,
             meeting_title=m.title,
-            meeting_date=m.created_at.date(),
+            meeting_date=held_on(m),
             index=i,
             text=item["text"],
             due=item.get("due"),

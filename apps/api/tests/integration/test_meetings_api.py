@@ -239,7 +239,24 @@ async def test_speaker_mapping_relinks_owners(api: TestClient, acme: Acme) -> No
 
     assert mapped.status_code == 200, mapped.text
     assert mapped.json()["speakers"]["SPEAKER_1"]["name"] == "Wei Zhang"
-    assert mapped.json()["action_items"][0]["owner_user_id"] == str(acme.users["wei.zhang"])
+    item = mapped.json()["action_items"][0]
+    # The item names its new owner, not the label it was extracted with.
+    assert (item["owner"], item["owner_user_id"]) == ("Wei Zhang", str(acme.users["wei.zhang"]))
+    remapped = api.put(
+        f"/api/v1/meetings/{meeting['id']}/speakers",
+        json={"speakers": {"SPEAKER_1": str(acme.users["noah.fischer"])}},
+        headers=acme.as_("olivia.grant", write=True),
+    ).json()["action_items"][0]
+    assert (remapped["owner"], remapped["owner_user_id"]) == (
+        "Noah Fischer",
+        str(acme.users["noah.fischer"]),
+    )
+    unmapped = api.put(
+        f"/api/v1/meetings/{meeting['id']}/speakers",
+        json={"speakers": {"SPEAKER_1": None}},
+        headers=acme.as_("olivia.grant", write=True),
+    ).json()["action_items"][0]
+    assert (unmapped["owner"], unmapped["owner_user_id"]) == ("SPEAKER_1", None)
     fixed = api.patch(
         f"/api/v1/meetings/{meeting['id']}/actions/0",
         json={"owner_user_id": str(acme.users["olivia.grant"]), "due": "2026-11-06"},
