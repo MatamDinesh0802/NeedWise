@@ -39,10 +39,10 @@ describe("navigation config", () => {
     }
   });
 
-  it("has working sections up to Phase 9 (Meetings); later phases are placeholders", () => {
+  it("has working sections up to Phase 10 (Insights); later phases are placeholders", () => {
     const placeholder = (href: string) => readFileSync(`${appDir}${href}/page.tsx`, "utf8").includes("<PagePlaceholder");
     for (const item of navItems.filter((i) => i.href !== "/")) {
-      expect(placeholder(item.href), item.href).toBe(item.phase > 9);
+      expect(placeholder(item.href), item.href).toBe(item.phase > 10);
     }
   });
 
