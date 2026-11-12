@@ -402,3 +402,66 @@ async def test_a_refusal_is_billed_and_reported_before_it_raises() -> None:
         await llm.complete("answer", request)
 
     assert [(u.input_tokens, u.output_tokens) for u in probe.seen] == [(10, 5)]
+
+
+class ScriptedStream:
+    """The SDK's message stream: events, a snapshot of the message so far, the final message."""
+
+    def __init__(self, steps: list[tuple[Any, Message]], final: Message) -> None:
+        self.steps = steps
+        self.final = final
+        self.current_message_snapshot = steps[0][1]
+
+    async def __aenter__(self) -> "ScriptedStream":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def _events(self) -> AsyncIterator[Any]:
+        for event, snapshot in self.steps:
+            self.current_message_snapshot = snapshot
+            yield event
+
+    def __aiter__(self) -> AsyncIterator[Any]:
+        return self._events()
+
+    async def get_final_message(self) -> Message:
+        return self.final
+
+
+async def test_a_stopped_claude_stream_reports_what_it_had_used() -> None:
+    from types import SimpleNamespace
+
+    from tests.test_llm_adapters import Usage
+
+    def snapshot(output_tokens: int) -> Message:
+        return Message([], "", usage=Usage(input_tokens=1200, output_tokens=output_tokens))
+
+    text = SimpleNamespace(
+        type="content_block_delta", delta=SimpleNamespace(type="text_delta", text="Hi")
+    )
+    steps = [
+        (SimpleNamespace(type="message_start"), snapshot(1)),
+        (text, snapshot(1)),
+        (SimpleNamespace(type="message_delta"), snapshot(37)),
+        (text, snapshot(37)),
+    ]
+    llm, _ = anthropic_with([])
+    llm._client.beta.messages.stream = lambda **params: ScriptedStream(  # type: ignore[attr-defined]
+        steps, snapshot(40)
+    )
+    probe = UsageProbe()
+    request = LLMRequest(system="s", messages=[LLMMessage("user", "q")], probe=probe)
+
+    stream = llm.stream("answer", request)
+    seen = 0
+    async for event in stream:
+        seen += isinstance(event, TextDelta)
+        if seen == 2:
+            break  # stopped after the second piece of text
+    await stream.aclose()  # type: ignore[attr-defined]
+
+    assert probe.responses == []
+    assert probe.partial is not None
+    assert (probe.partial.input_tokens, probe.partial.output_tokens) == (1200, 37)
