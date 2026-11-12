@@ -9,6 +9,7 @@ dependencies = [
     "anthropic>=2.4.0",
     "asyncpg>=0.32.0",
     "celery>=5.6.3",
+    "cryptography>=46.0.0",  # Ed25519 license signatures (ADR 0011)
     "duckdb>=2.0.0",
     "fastapi>=0.162.0",
     "httpx>=0.28.1",
@@ -41,6 +42,12 @@ meetings = [
     # faster-whisper 1.2.1 passes `metadata_errors` to av.open, which PyAV 19 removed.
     "av>=17.1,<19",
 ]
+# The Enterprise Edition (ee/, commercial license). Installed or not, it runs only with a valid
+# license key; without one the core never imports it (docs/enterprise.md).
+ee = ["workmind-ee"]
+
+[tool.uv.sources]
+workmind-ee = { path = "../../ee/python", editable = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -73,15 +80,15 @@ ignore = ["S104"] # binding to 0.0.0.0 is intentional inside containers
 "migrations/**" = ["N999"]
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src", "tests", "../../ee/python/src", "../../ee/python/tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
-strict = ["src"]   # tests run in standard mode: TestClient is untyped upstream
+strict = ["src", "../../ee/python/src"]   # tests run in standard mode: TestClient is untyped upstream
 venvPath = "."
 venv = ".venv"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "../../ee/python/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-ra --strict-markers"

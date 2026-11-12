@@ -9,6 +9,7 @@ from workmind.api.v1 import (
     analytics,
     assistant,
     conversations,
+    edition,
     knowledge,
     me,
     meetings,
@@ -19,6 +20,7 @@ from workmind.api.v1 import (
 
 router = APIRouter()
 router.include_router(system)
+router.include_router(edition.router)
 router.include_router(tokens.router)  # before /me so /me/tokens matches here
 router.include_router(me.router)
 router.include_router(admin.router)

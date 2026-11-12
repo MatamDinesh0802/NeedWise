@@ -1,7 +1,8 @@
 """`wm`: the WorkMind command line.
 
-wm eval [options]    run the evaluation suites (see `wm eval --help`)
-wm seed [options]    seed a demo company (see `wm seed --help`)
+wm eval [options]         run the evaluation suites (see `wm eval --help`)
+wm seed [options]         seed a demo company (see `wm seed --help`)
+wm license dev [options]  write a development Enterprise license (see `wm license dev --help`)
 """
 
 import sys
@@ -18,6 +19,10 @@ def main(argv: list[str] | None = None) -> int:
         from workmind.seed.__main__ import main as run_seed
 
         return run_seed(rest)
+    if command == "license":
+        from workmind.core.dev_license import main as run_license
+
+        return run_license(rest)
     if command == "reindex" and len(rest) == 1:
         import asyncio
 

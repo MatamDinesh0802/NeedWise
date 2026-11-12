@@ -31,6 +31,9 @@ graphify-out/
 # Data produced at runtime
 /data/
 /.data/
+
+# Development license and signing key (`make ee-dev-license`)
+/.workmind/
 evals/results/*.tmp
 
 # Evaluation runs: the Markdown reports are committed, the per-item JSON stays local

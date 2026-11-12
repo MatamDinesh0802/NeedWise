@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from workmind.core.config import Settings
 from workmind.core.db import create_engine, create_session_factory
+from workmind.core.edition import Edition
+from workmind.core.extensions import ExtensionRegistry, load_extensions
 from workmind.modules.agents.planning import FastRouter
 from workmind.modules.analytics.engine import QueryPool
 from workmind.modules.analytics.service import Analytics
@@ -70,9 +72,15 @@ class Resources:
     remote_servers: list[RemoteServer]
     assistant_mode: str
     analytics: Analytics
+    # Community or Enterprise (ADR 0011); `edition.has(feature)` gates Enterprise features.
+    edition: Edition
+    extensions: ExtensionRegistry
 
     @classmethod
-    def create(cls, settings: Settings) -> Self:
+    def create(cls, settings: Settings, *, extensions: ExtensionRegistry | None = None) -> Self:
+        """`extensions`: what the process loaded at startup; loaded here when not given."""
+        if extensions is None:
+            extensions = load_extensions(settings)
         # Every client connects lazily, so startup never blocks on infrastructure.
         engine = create_engine(settings.database_url)
         valkey = Redis.from_url(settings.valkey_url)  # pyright: ignore[reportUnknownMemberType] (untyped **kwargs upstream)
@@ -170,6 +178,8 @@ class Resources:
                 RemoteServer(RemoteServerConfig.model_validate(c)) for c in settings.mcp_servers
             ],
             analytics=analytics,
+            edition=extensions.edition,
+            extensions=extensions,
         )
         if isinstance(resources.ingestion, InlineDispatcher):
             resources.ingestion.start_runs = resources.start_workflow_runs

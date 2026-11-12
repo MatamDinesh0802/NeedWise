@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -13,14 +13,14 @@ quickstart: ## First run on any OS: embeddings in Docker, the full stack, the Ac
 	@test -f .env || cp .env.example .env
 	@grep -q '^EMBEDDING_BASE_URL=' .env || echo 'EMBEDDING_BASE_URL=http://embeddings:8080/v1' >> .env
 	@grep -q '^COMPOSE_PROFILES=' .env || echo 'COMPOSE_PROFILES=embeddings' >> .env
-	@mkdir -p .data/objects
+	@mkdir -p .data/objects .workmind
 	$(COMPOSE) up -d --build --wait
 	$(MAKE) seed
 	@grep -qE '^(ANTHROPIC_API_KEY|LLM_PROVIDER)=' .env || \
 		echo "\nSearch works now. For answers, add ANTHROPIC_API_KEY=... (or a local model) to .env, then: make up"
 
 up: ## Build and start the full stack, wait until every service is healthy
-	@mkdir -p .data/objects
+	@mkdir -p .data/objects .workmind
 	$(COMPOSE) up -d --build --wait
 	@echo ""
 	@echo "  WorkMind is running at http://localhost:$(HTTP_PORT)"
@@ -53,15 +53,15 @@ web-dev: ## Run the web app on the host with hot reload (after `make infra`)
 	cd apps/web && pnpm dev
 
 install: ## Install backend and frontend dependencies
-	cd apps/api && uv sync
+	cd apps/api && uv sync --extra ee
 	cd apps/web && pnpm install
 
 lint: ## Lint and type-check everything
-	cd apps/api && uv run ruff check . && uv run ruff format --check . && uv run pyright
+	cd apps/api && uv run ruff check . ../../ee/python && uv run ruff format --check . ../../ee/python && uv run pyright
 	cd apps/web && pnpm lint && pnpm typecheck
 
 fmt: ## Auto-format backend code
-	cd apps/api && uv run ruff format . && uv run ruff check --fix .
+	cd apps/api && uv run ruff format . ../../ee/python && uv run ruff check --fix . ../../ee/python
 
 TEST_DATABASE_ADMIN_URL ?= postgresql://postgres:postgres@localhost:5432/postgres
 TEST_VALKEY_URL ?= redis://localhost:6379/15
@@ -91,6 +91,11 @@ EMBED_SOURCE = $(if $(EMBED_GGUF),-m "$(EMBED_GGUF)",-hf ggml-org/embeddinggemma
 embeddings: ## Run the local embedding model on :8091 (needs llama.cpp: brew install llama.cpp)
 	llama-server $(EMBED_SOURCE) --embeddings --host 127.0.0.1 --port 8091 \
 		-c 8192 --parallel 4 -ub 2048 -b 2048
+
+# Enterprise edition, development only (docs/enterprise.md). Writes .workmind/ (git-ignored);
+# then: docker compose restart api worker beat.  Options: FEATURES="a b" DAYS=30
+ee-dev-license: ## Write a development Enterprise license to .workmind/ (APP_ENV=dev only)
+	cd apps/api && uv run --extra ee wm license dev $(if $(FEATURES),--features $(FEATURES)) $(if $(DAYS),--days $(DAYS))
 
 seed: ## Create the Acme Robotics demo company and its logins (safe to re-run)
 	$(COMPOSE) --profile tools run --rm --build seed

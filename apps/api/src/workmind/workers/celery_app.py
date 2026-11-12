@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from workmind.core.config import get_settings
 from workmind.core.db import create_engine, create_session_factory
+from workmind.core.extensions import load_extensions
 from workmind.core.resources import Resources
 from workmind.core.tenancy import global_transaction
 from workmind.modules.connectors.registry import build_connector
@@ -43,6 +44,7 @@ from workmind.modules.work.workflows import (
 )
 from workmind.providers.embeddings import EmbeddingUnavailableError
 from workmind.providers.factory import create_embeddings, secret
+from workmind.workers.enterprise import register_scheduled_tasks
 
 INGEST_TASK = "workmind.ingest_document"
 SYNC_TASK = "workmind.sync_source"
@@ -74,6 +76,9 @@ app.conf.update(
     broker_connection_retry_on_startup=True,
     task_ignore_result=True,
 )
+# Community, or Enterprise with what workmind_ee registered (ADR 0011). Built when the worker
+# or beat imports this module, so beat schedules the enterprise tasks and workers know them.
+extensions = load_extensions(settings)
 
 
 async def _run_ingest(tenant_id: str, document_id: str, version_id: str) -> dict[str, Any]:
@@ -167,7 +172,7 @@ async def _active_tenants(resources: Resources) -> list[uuid.UUID]:
 
 
 async def _run_due_workflows() -> int:
-    resources = Resources.create(settings)
+    resources = Resources.create(settings, extensions=extensions)
     await resources.load_remote_tools()
     started = 0
     try:
@@ -208,7 +213,7 @@ def start_workflow_run(tenant_id: str, run_id: str) -> str | None:
 
 
 async def _expire_approvals() -> int:
-    resources = Resources.create(settings)
+    resources = Resources.create(settings, extensions=extensions)
     count = 0
     try:
         deps = WorkflowDeps(resources.db, resources.llm, resources.tools)
@@ -227,7 +232,7 @@ def expire_approvals() -> int:
 
 
 async def _process_meeting(tenant_id: str, meeting_id: str) -> None:
-    resources = Resources.create(settings)
+    resources = Resources.create(settings, extensions=extensions)
     try:
         deps = MeetingDeps(
             resources.db,
@@ -245,3 +250,7 @@ async def _process_meeting(tenant_id: str, meeting_id: str) -> None:
 def process_meeting_task(tenant_id: str, meeting_id: str) -> None:
     """Failures are recorded on the meeting (status "failed" with the reason)."""
     asyncio.run(_process_meeting(tenant_id, meeting_id))
+
+
+# Enterprise scheduled tasks (none in Community): known to workers, queued by beat.
+register_scheduled_tasks(app, settings, extensions)

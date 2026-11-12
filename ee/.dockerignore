@@ -1,0 +1,8 @@
+# The API image copies ee/python/pyproject.toml, LICENSE and src/ only.
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+python/tests
+.workmind

@@ -15,3 +15,4 @@ A decision is never edited after acceptance; a new ADR supersedes it.
 | [0008](0008-retrieval-fusion-and-sensitivity-routing.md) | Tuned rank fusion, collection-level recheck, routing by sensitivity | Accepted |
 | [0009](0009-orchestration-without-a-graph-framework.md) | Multi-agent orchestration in plain asyncio; single pipeline stays the default | Accepted |
 | [0010](0010-analytics-semantic-layer-duckdb-sqlglot.md) | Analytics: a semantic layer, SQL checked and rewritten with sqlglot, run in sandboxed DuckDB | Accepted |
+| [0011](0011-open-core-boundary-and-license-keys.md) | The open-core boundary: Ed25519 license keys and an extension registry | Accepted |

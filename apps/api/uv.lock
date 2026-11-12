@@ -2887,6 +2887,7 @@ dependencies = [
     { name = "anthropic" },
     { name = "asyncpg" },
     { name = "celery" },
+    { name = "cryptography" },
     { name = "duckdb" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -2911,6 +2912,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+ee = [
+    { name = "workmind-ee" },
+]
 meetings = [
     { name = "av" },
     { name = "faster-whisper" },
@@ -2933,6 +2937,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.32.0" },
     { name = "av", marker = "extra == 'meetings'", specifier = ">=17.1,<19" },
     { name = "celery", specifier = ">=5.6.3" },
+    { name = "cryptography", specifier = ">=46.0.0" },
     { name = "duckdb", specifier = ">=2.0.0" },
     { name = "fastapi", specifier = ">=0.162.0" },
     { name = "faster-whisper", marker = "extra == 'meetings'", specifier = ">=1.2.1" },
@@ -2955,8 +2960,9 @@ requires-dist = [
     { name = "sqlglot", specifier = ">=30.29.0" },
     { name = "structlog", specifier = ">=26.1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
+    { name = "workmind-ee", marker = "extra == 'ee'", editable = "../../ee/python" },
 ]
-provides-extras = ["meetings"]
+provides-extras = ["meetings", "ee"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2967,6 +2973,11 @@ dev = [
     { name = "ruff", specifier = ">=0.17.3" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20261103" },
 ]
+
+[[package]]
+name = "workmind-ee"
+version = "0.0.1"
+source = { editable = "../../ee/python" }
 
 [[package]]
 name = "wrapt"

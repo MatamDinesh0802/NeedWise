@@ -137,7 +137,7 @@ apps/web      Next.js frontend (TypeScript, pnpm)
 deploy/       Postgres init, Caddy, later Keycloak realm and OpenFGA model
 seed/         Acme Robotics: the fictional demo company and test corpus
 evals/        Evaluation datasets, runners and published results
-ee/           Enterprise Edition (separate license; currently empty)
+ee/           Enterprise Edition (separate license): the package and its hooks, no features yet
 docs/         Architecture, roadmap, ADRs
 ```
 
@@ -145,6 +145,13 @@ docs/         Architecture, roadmap, ADRs
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Commits need a DCO sign-off
 (`git commit -s`). Report security issues privately: see [SECURITY.md](SECURITY.md).
+
+## Editions
+
+Community (everything outside `ee/`) is complete and Apache-2.0, security basics included.
+Enterprise adds features for large organizations from `ee/` and runs only with a license key.
+None of those features is built yet; the boundary, license checks and development licenses
+(`make ee-dev-license`) are. See [docs/enterprise.md](docs/enterprise.md).
 
 ## License
 

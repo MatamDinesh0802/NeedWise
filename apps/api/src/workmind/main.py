@@ -17,9 +17,11 @@ from opentelemetry.sdk.trace import TracerProvider
 from starlette.routing import Route
 
 from workmind.api import auth, v1
+from workmind.api.deps import require_feature
 from workmind.api.ops import probes
 from workmind.core.config import Settings, get_settings
 from workmind.core.errors import ApiError, api_error_handler, validation_error_handler
+from workmind.core.extensions import ExtensionRegistry, load_extensions
 from workmind.core.health import build_health_checks
 from workmind.core.logging import configure_logging
 from workmind.core.middleware import RequestContextMiddleware
@@ -35,7 +37,7 @@ log = structlog.get_logger("workmind")
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings: Settings = app.state.settings
-    resources = Resources.create(settings)
+    resources = Resources.create(settings, extensions=app.state.extensions)
     app.state.resources = resources
     await resources.load_remote_tools()
     # Tests inject fake checks before startup; keep them if present.
@@ -53,6 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         product=settings.product_name,
         version=settings.version,
         environment=settings.app_env,
+        edition=resources.edition.name,
     )
     mcp_sessions = (
         app.state.mcp.session_manager.run()
@@ -74,9 +77,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log.info("shutdown")
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, *, extensions: ExtensionRegistry | None = None
+) -> FastAPI:
+    """`extensions`: tests pass their own; otherwise the license decides (ADR 0011)."""
     settings = settings or get_settings()
     configure_logging(settings)
+    if extensions is None:
+        extensions = load_extensions(settings)
 
     app = FastAPI(
         title=f"{settings.product_name} API",
@@ -87,12 +95,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/api/openapi.json" if settings.docs_enabled else None,
     )
     app.state.settings = settings
+    app.state.extensions = extensions
     app.add_middleware(RequestContextMiddleware)
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(probes)
     app.include_router(auth.router)
     app.include_router(v1.router, prefix="/api/v1")
+    # After the core routes, so an enterprise route can never shadow one.
+    for extension in extensions.routers:
+        app.include_router(
+            extension.router, prefix="/api/v1", dependencies=[require_feature(extension.feature)]
+        )
     _add_mcp(app, settings)
     app.state.tracer_provider = configure_telemetry(app, settings)
     return app

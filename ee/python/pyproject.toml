@@ -1,0 +1,29 @@
+# WorkMind AI Enterprise Edition. NOT Apache-2.0: see ../LICENSE (ee/LICENSE).
+# Installed as the "ee" extra of apps/api (`uv sync --extra ee`). It runs inside the workmind
+# package's environment and imports from it; the core never imports from here.
+[project]
+name = "workmind-ee"
+version = "0.0.1"
+description = "WorkMind AI Enterprise Edition: features loaded only with a valid license"
+requires-python = ">=3.12"
+license = "LicenseRef-WorkMind-Enterprise"
+license-files = ["LICENSE"]
+dependencies = []
+
+# The core finds the Enterprise Edition through this entry point (workmind.core.extensions).
+[project.entry-points."workmind.ee"]
+workmind_ee = "workmind_ee:setup"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/workmind_ee"]
+
+[tool.ruff]
+extend = "../../apps/api/pyproject.toml"
+src = ["src", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]

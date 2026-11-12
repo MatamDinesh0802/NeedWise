@@ -77,6 +77,7 @@ Each row becomes a full Architecture Decision Record (ADR) in `docs/adr/` when i
 | Frontend | Next.js (App Router) + TypeScript + Tailwind + shadcn/ui | Production-grade UI, large ecosystem | SvelteKit |
 | Observability | OpenTelemetry → Langfuse (LLM traces) + Prometheus/Grafana (metrics) | Open standards, self-hostable | LangSmith, Datadog (available as paid adapters) |
 | Reverse proxy | Caddy | Automatic HTTPS, simple config | Traefik, nginx |
+| Open-core boundary | Ed25519-signed license keys checked offline; Enterprise code (`ee/python`) found through the `workmind.ee` entry point only with a valid license, plugged in through an extension registry ([ADR 0011](adr/0011-open-core-boundary-and-license-keys.md), [docs/enterprise.md](enterprise.md)) | The core never imports Enterprise code and runs complete without it; one image for both editions; works air-gapped | JWT licenses, online activation, a separate Enterprise image |
 
 ---
 
@@ -1248,6 +1249,7 @@ workmind/
 ├── seed/                             # Acme Robotics synthetic company generator + corpus
 ├── evals/                            # datasets, runners, results, reports
 ├── ee/                               # Enterprise features (separate license, see ROADMAP §4)
+│   └── python/                       # workmind-ee package: setup(registry, edition) (ADR 0011)
 └── docs/                             # architecture, ADRs, guides, devlog
 ```
 

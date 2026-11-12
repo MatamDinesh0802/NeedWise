@@ -397,7 +397,7 @@ Earlier drafts proposed a CLA. With Apache-2.0 it isn't needed: the license alre
 **Rules:**
 - The license is fixed **before the first public commit** (D1, done).
 - CI checks a **DCO sign-off** on every commit in a pull request. `ee/` accepts no external contributions.
-- The `ee/` boundary exists in code from day one: enterprise features are loaded only when a valid license key is present. Community code must never import from `ee/`.
+- The `ee/` boundary exists in code from day one: enterprise features are loaded only when a valid license key is present. Community code must never import from `ee/`. Built in Phase 11: [ADR 0011](adr/0011-open-core-boundary-and-license-keys.md), [docs/enterprise.md](enterprise.md).
 
 ---
 

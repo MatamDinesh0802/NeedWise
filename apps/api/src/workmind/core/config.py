@@ -20,6 +20,11 @@ DEV_OIDC_CLIENT_SECRET = "dev-only-oidc-client-secret"  # noqa: S105  (refused i
 DEV_OPENFGA_API_KEY = "dev-only-openfga-key"  # (refused in production)
 # 32 zero bytes, base64: obviously not a secret, and refused in production.
 DEV_SECRETS_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+# Where license files are looked for when none is configured: compose mounts <repo>/.workmind
+# here (read-only), and `wm license dev` writes <repo>/.workmind for a host-run API.
+LICENSE_DIRS = (Path("/run/workmind"), Path(__file__).resolve().parents[5] / ".workmind")
+LICENSE_FILE_NAME = "license.key"
+DEV_PUBLIC_KEY_FILE_NAME = "dev-public.key"
 
 
 class Settings(BaseSettings):
@@ -158,6 +163,18 @@ class Settings(BaseSettings):
     session_idle_timeout_s: int = Field(default=1800, gt=0)
     session_absolute_timeout_s: int = Field(default=43200, gt=0)
 
+    # --- Editions (docs/enterprise.md, ADR 0011). Without a valid license: Community. ---
+    # The license token itself (LICENSE_KEY), or a file that holds it (LICENSE_FILE). Unset:
+    # license.key in the first of LICENSE_DIRS that has one.
+    license_key: SecretStr | None = None
+    license_file: Path | None = None
+    # Public key of the development license signer (`wm license dev`): raw Ed25519, base64url.
+    # Trusted only when APP_ENV=dev. Unset: dev-public.key in the first of LICENSE_DIRS.
+    license_dev_public_key: str | None = None
+    license_dev_public_key_file: Path | None = None
+    # A license issued for one deployment is valid only where DEPLOYMENT_ID matches it.
+    deployment_id: str | None = None
+
     @model_validator(mode="after")
     def _no_dev_secrets_in_production(self) -> Self:
         if self.app_env != "production":
@@ -168,6 +185,14 @@ class Settings(BaseSettings):
             raise ValueError("OPENFGA_API_KEY must be set in production")
         if self.secrets_key.get_secret_value() == DEV_SECRETS_KEY:
             raise ValueError("SECRETS_KEY must be set in production")
+        return self
+
+    @model_validator(mode="after")
+    def _default_license_files(self) -> Self:
+        if self.license_key is None and self.license_file is None:
+            self.license_file = _first_existing(LICENSE_FILE_NAME)
+        if self.license_dev_public_key is None and self.license_dev_public_key_file is None:
+            self.license_dev_public_key_file = _first_existing(DEV_PUBLIC_KEY_FILE_NAME)
         return self
 
     @property
@@ -209,6 +234,13 @@ class Settings(BaseSettings):
     @property
     def oidc_discovery_url(self) -> str:
         return f"{self.keycloak_url}/realms/{self.keycloak_realm}/.well-known/openid-configuration"
+
+
+def _first_existing(name: str) -> Path | None:
+    for directory in LICENSE_DIRS:
+        if (directory / name).is_file():
+            return directory / name
+    return None
 
 
 @lru_cache
