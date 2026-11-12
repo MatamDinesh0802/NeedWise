@@ -13,6 +13,8 @@ global:
   # Storage class for every PersistentVolumeClaim that doesn't set its own. Empty: the default class.
   storageClass: ""
 
+# Resource names start with <fullname>: "<release>-workmind", or the release name alone when it
+# contains "workmind" (release "workmind": workmind-api, workmind-credentials...).
 nameOverride: ""
 fullnameOverride: ""
 # Added to every resource.
@@ -107,7 +109,7 @@ config:
 # ---------------------------------------------------------------------------------------------
 # Credentials. Each one comes from, in this order:
 #   1. its own `existingSecret` (a Secret you manage) and `key`,
-#   2. its `value` (stored in the chart's Secret <release>-workmind-credentials),
+#   2. its `value` (stored in the chart's Secret <fullname>-credentials),
 #   3. `credentials.existingSecret`, the one Secret you manage for all of them (same keys),
 #   4. a random value the chart generates once and then reuses (only for the ones marked
 #      "generated", and only for what the bundled services need).
@@ -246,7 +248,7 @@ database:
 # Shared by every pod of the chart.
 serviceAccount:
   create: true
-  # Empty: <release>-workmind. With create false, an existing ServiceAccount (or "default").
+  # Empty: <fullname>. With create false, an existing ServiceAccount (or "default").
   name: ""
   annotations: {}
 
@@ -554,7 +556,7 @@ ingress:
   host: ""
   tls:
     enabled: false
-    # Empty: <release>-workmind-tls (e.g. issued by cert-manager through an annotation).
+    # Empty: <fullname>-tls (e.g. issued by cert-manager through an annotation).
     secretName: ""
 
 # Gateway API alternative to the Ingress (same routes). Needs the Gateway API CRDs and a Gateway.

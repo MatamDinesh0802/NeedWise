@@ -1,0 +1,433 @@
+# Kubernetes (Helm)
+
+WorkMind ships a Helm chart at [`deploy/helm/workmind`](../../deploy/helm/workmind). It installs
+the same processes as `compose.yaml`: the API, the Celery worker, Celery beat and the web app,
+the database migrations as a Helm hook, and optionally Postgres, Valkey, Qdrant, OpenFGA,
+Keycloak and an embedding server. This page covers what you need, how to install and upgrade,
+the settings that matter, secrets, external services, backups and what the chart does not do.
+
+**What has been checked, and how.** `deploy/helm/validate.sh` (CI: `.github/workflows/helm.yml`,
+with Helm 3.19 and 4.0) runs `helm lint --strict`, renders the chart with the default values,
+both examples and a CI values file (145 resources), validates them with `kubeconform -strict`
+against the Kubernetes 1.33 schemas, checks every pod spec against the chart's security rules,
+and checks that eight kinds of invalid values are refused. Separately, every image was run in
+Docker with the user, group, read-only root filesystem and dropped capabilities the chart
+gives it: Postgres ran its init script, OpenFGA migrated, Keycloak imported the realm in
+production mode (`start`), the API answered `/readyz` with every dependency "ok" in
+`APP_ENV=production`, and the worker, beat, web and embedding server started. **The chart
+itself has not been installed on a cluster yet**; that is the next step of Phase 12.
+
+## Contents
+
+- [What it installs](#what-it-installs)
+- [Prerequisites](#prerequisites)
+- [Install](#install)
+- [Important values](#important-values)
+- [Routing: Ingress or Gateway API](#routing-ingress-or-gateway-api)
+- [Secrets](#secrets)
+- [External services](#external-services)
+- [Upgrades and the migrate hook](#upgrades-and-the-migrate-hook)
+- [Backups](#backups)
+- [Security settings](#security-settings)
+- [What is not covered](#what-is-not-covered)
+
+## What it installs
+
+| Component | Kubernetes objects | Replicas | Compose equivalent |
+|---|---|---|---|
+| `api` | Deployment, Service, PodDisruptionBudget, optional HPA | 1 (`api.replicas`) | `api` |
+| `worker` | Deployment, PodDisruptionBudget, optional HPA | 1 | `worker` |
+| `beat` | Deployment (Recreate), PVC for the schedule | always 1 | `beat` and its `beat_schedule` volume |
+| `web` | Deployment, Service, PodDisruptionBudget, optional HPA | 1 | `web` |
+| `migrate` | Job as a Helm hook | | `migrate` |
+| `seed` | Job as a Helm hook, off by default | | `seed` (profile `tools`) |
+| object storage | PersistentVolumeClaim at `/data/objects` | | `./.data/objects` |
+| `postgresql` | StatefulSet, Services, ConfigMap with the init script | 1 | `postgres` |
+| `valkey` | StatefulSet, Services | 1 | `valkey` |
+| `qdrant` | StatefulSet, Services | 1 | `qdrant` |
+| `openfga` | Deployment, Service, migrate Job | 1 (`openfga.replicas`) | `openfga`, `openfga-migrate` |
+| `keycloak` | Deployment, Service, ConfigMap with the realm | 1 | `keycloak` |
+| `embeddings` | Deployment, Service, optional PVC | 1 | `embeddings` (profile `embeddings`) |
+| routing | Ingress, or a Gateway API HTTPRoute | | `caddy` |
+| | NetworkPolicies, optional | | |
+
+Mailpit is not included (it is a development mail catcher). The Ingress or HTTPRoute replaces
+Caddy. The bundled services use the same images and versions as `compose.yaml`. OpenFGA and
+Keycloak are Deployments, not StatefulSets: their state is in Postgres.
+
+Resource names below start with `<fullname>`: the release name followed by `-workmind`, or the
+release name alone when it already contains "workmind". Installed as `workmind`, the names are
+`workmind-api`, `workmind-credentials`, `workmind-migrate` and so on.
+
+## Prerequisites
+
+- **Kubernetes 1.29 or later** (the chart is validated against the 1.33 schemas and uses
+  gRPC probes, stable since 1.27) and **Helm 3.19 or later, or Helm 4**.
+- **Images.** No WorkMind images are published yet. Build both and push them to a registry
+  your cluster can pull from:
+
+  ```bash
+  docker build --build-context ee=ee -t registry.example.com/workmind/workmind-api:0.0.1 apps/api
+  docker build -t registry.example.com/workmind/workmind-web:0.0.1 apps/web
+  docker push registry.example.com/workmind/workmind-api:0.0.1
+  docker push registry.example.com/workmind/workmind-web:0.0.1
+  ```
+
+  The API image contains the Enterprise package, which stays inactive without a license
+  ([enterprise.md](../enterprise.md)). For several architectures, use `docker buildx build
+  --platform linux/amd64,linux/arm64 --push`.
+- **Storage.** A default StorageClass for the PersistentVolumeClaims. The object storage
+  volume is ReadWriteOnce by default: see [Object storage](#object-storage) before running
+  more than one node.
+- **Routing.** An ingress controller, or a Gateway API implementation with a Gateway. A DNS
+  name for `config.publicUrl` and, outside a test, a TLS certificate (cert-manager works
+  through an Ingress annotation).
+- **Outbound network access** from the pods: the model provider's API, Hugging Face (the
+  embedding model on first start, about 330 MB, and the speech-to-text model on the first
+  recording), and the sources your connectors read.
+- **Capacity.** With the default values, the resource requests add up to 2.3 CPU and about
+  5.3 GiB of memory, and the memory limits to about 20 GiB (sums of `values.yaml`, not
+  measurements). The volumes request 20 GiB (Postgres) + 20 GiB (Qdrant) + 20 GiB (objects)
+  + 2 GiB (Valkey) + 128 MiB (beat).
+
+## Install
+
+Everything bundled, with an Ingress:
+
+```bash
+helm install workmind deploy/helm/workmind --namespace workmind --create-namespace \
+  --set config.publicUrl=https://workmind.example.com \
+  --set images.api.repository=registry.example.com/workmind/workmind-api \
+  --set images.web.repository=registry.example.com/workmind/workmind-web \
+  --set ingress.className=<your ingress class> \
+  --set ingress.tls.enabled=true \
+  --set credentials.anthropicApiKey.existingSecret=model-keys \
+  --set credentials.anthropicApiKey.key=anthropic \
+  --wait --timeout 20m
+
+helm test workmind --namespace workmind
+```
+
+What happens, in order:
+
+1. Helm creates the Secret with generated credentials, the ConfigMap, the volumes, the bundled
+   services and the WorkMind Deployments. OpenFGA's migrate Job runs next to OpenFGA, which
+   reports "not serving" until its schema exists.
+2. With `--wait`, Helm waits until everything is ready. Keycloak's first start (it builds
+   itself for Postgres, then imports the realm) and the embedding server's model download
+   take the longest; the startup probes allow 10 and 15 minutes.
+3. The `migrate` hook Job runs `alembic upgrade head`. With the bundled Postgres this is a
+   post-install hook: a pre-install hook would run before the database exists. Until it
+   finishes, the API and the workers log database errors (the API's `/healthz` stays up).
+4. If `seed.enabled`, the seed Job loads the demo company (below).
+
+`helm test` runs a pod that calls the API's `/readyz` (Postgres, Valkey, Qdrant, OpenFGA and
+Keycloak) and the web app's home page.
+
+Without a model key, search works and answers fail until a key is set; organizations can also
+add their own provider keys in Admin > Models ([models.md](../models.md)).
+
+### Demo data
+
+`seed.enabled: true` runs `python -m workmind.seed` after install and after every upgrade (it is
+safe to re-run): the Acme Robotics company, its logins (password `credentials.demoPassword`,
+default `workmind-demo`), 34 documents through the ingestion pipeline, analytics data and the
+authorization tuples. It refuses `config.appEnv: production`; use `demo`. The repository's
+`seed/` directory (about 9 MB) is not in the API image, so the Job fetches it in an init
+container, from `seed.data.source`:
+
+- `image`: an image that contains it, e.g. built from the repository root with
+  `printf 'FROM busybox:1.37\nCOPY seed /seed\n' | docker build -t <registry>/workmind-seed:0.0.1 -f - .`
+- `archive`: a `.tar.gz` of the repository at `seed.data.archiveUrl` (its top directory is
+  stripped);
+- `existingClaim`: a PersistentVolumeClaim with the directory's contents at its root.
+
+Seeding with documents takes several minutes: give `helm install` a `--timeout` of 20 minutes
+or more. `seed.args: [--skip-corpus]` skips the documents.
+
+## Important values
+
+Every key is in [`values.yaml`](../../deploy/helm/workmind/values.yaml), with comments, and
+[`values.schema.json`](../../deploy/helm/workmind/values.schema.json) rejects unknown keys and
+wrong types. The ones you will most likely set:
+
+| Key | Default | What it does |
+|---|---|---|
+| `config.publicUrl` | `http://workmind.localhost` | The URL people use, without a path. Login redirects, Keycloak's hostname, the cookie (`Secure` and `__Host-` with https) and the Ingress host come from it |
+| `config.appEnv` | `production` | `production` refuses development secrets and hides the API docs. `demo` for a demo with seed data |
+| `config.llm.*` | Anthropic, `claude-sonnet-5-5` | Provider, model, per-role models, an OpenAI-compatible `baseUrl` ([models.md](../models.md)) |
+| `config.embedding.*` | the bundled server | `baseUrl` of any OpenAI-compatible embedding server; `model` and `dimensions` must match it |
+| `config.env` | `{}` | Any other setting of `apps/api/src/workmind/core/config.py`, as environment variables |
+| `images.api`, `images.web` | `workmind-api`, `workmind-web`, tag = appVersion | Where your images are. A `digest` wins over the tag |
+| `credentials.*` | generated or empty | See [Secrets](#secrets) |
+| `postgresql.enabled`, `valkey.enabled`, `qdrant.enabled`, `openfga.enabled`, `keycloak.enabled`, `embeddings.enabled` | `true` | Bundle the service, or use yours ([External services](#external-services)) |
+| `database.*` | `workmind`, `workmind_app`, `workmind_owner` | The WorkMind database: host (external), names, `urlParams` such as `ssl=require` |
+| `objectStorage.*` | 20 GiB, ReadWriteOnce, `colocatePods: true` | The shared files volume ([Object storage](#object-storage)) |
+| `api.replicas`, `web.replicas`, `worker.replicas` | 1 | Fixed replica counts; `*.autoscaling.enabled` adds an HPA on CPU (and memory if set) |
+| `worker.queues`, `worker.concurrency` | `[ingest, default]`, 2 | The Celery command line |
+| `*.resources` | see values.yaml | Requests and limits of every container. The API runs the analytics query workers: raise its memory with `ANALYTICS_WORKERS` and `ANALYTICS_WORKER_MEMORY_MB` |
+| `*.startupProbe`, `*.livenessProbe`, `*.readinessProbe` | the compose healthchecks | Any probe object; `{}` removes one |
+| `ingress.*`, `httpRoute.*` | Ingress on | [Routing](#routing-ingress-or-gateway-api) |
+| `networkPolicy.enabled`, `networkPolicy.publicFrom` | off, any source | [Security settings](#security-settings) |
+| `seed.*` | off | [Demo data](#demo-data) |
+| `global.imageRegistry`, `global.imagePullSecrets`, `global.storageClass` | | A registry mirror, pull secrets and a storage class for everything |
+
+**Probes.** As in compose, the API's probes use `/healthz` (the process is up) and the web
+app's use `/`. The API also has `/readyz`, which checks Postgres, Valkey, Qdrant, OpenFGA and
+Keycloak; it is not the default readiness path because one slow dependency would then take
+every API pod out of the Service at once. The worker and beat have no probes, as in compose;
+`values.yaml` shows a working worker liveness probe (`celery inspect ping`, about 2 s per call,
+measured in Docker) and `examples/production.yaml` turns it on.
+
+### Object storage
+
+Uploaded files, meeting recordings and analytics datasets live on one volume mounted at
+`/data/objects` in the API, the worker and the seed Job. The default access mode is
+ReadWriteOnce, which every storage class supports but which a volume can only be attached to
+on one node. With `objectStorage.colocatePods: true` (the default) the chart adds a required pod
+affinity so that every pod mounting the volume lands on the same node; the first one may go
+anywhere. That works for one node's worth of API and worker pods. To spread them over several
+nodes, use a ReadWriteMany storage class (NFS, CephFS, Amazon EFS, Azure Files...), set
+`objectStorage.accessModes: [ReadWriteMany]` and `colocatePods: false`. The analytics datasets
+are DuckDB files on this volume; prefer a filesystem with working file locks. The claim is kept
+when the release is uninstalled (`objectStorage.keepOnUninstall`).
+
+## Routing: Ingress or Gateway API
+
+Both have the routes of `deploy/caddy/Caddyfile`:
+
+| Path | Goes to |
+|---|---|
+| `/api/auth/backchannel-logout` (exact) | the web app, which answers 404. Keycloak calls this endpoint on the cluster network; Caddy answers 404 to the outside, and so does this route |
+| `/api`, `/mcp` (prefix) | the API |
+| `/auth` (prefix) | the bundled Keycloak (not routed with an external Keycloak) |
+| everything else | the web app |
+
+`ingress.host` defaults to the host of `config.publicUrl`; `ingress.tls.enabled` adds a TLS
+section with `ingress.tls.secretName` (default `<fullname>-tls`). Set your controller's
+options through `ingress.annotations`. Two matter:
+
+- **Request body size.** Meeting recordings are up to 500 MB (`MAX_MEETING_BYTES`) and
+  documents up to 50 MB. Many controllers limit bodies to 1 MB by default.
+- **Streaming.** Answers stream over Server-Sent Events. The API sends
+  `X-Accel-Buffering: no`, which NGINX-based controllers honor; other proxies may need
+  buffering turned off and a read timeout of a few minutes for long agent runs.
+
+Caddy also adds `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+strict-origin-when-cross-origin` and `X-Frame-Options: SAMEORIGIN`, and removes `Server`. With
+an Ingress, set those in your controller (the web app sends its own Content-Security-Policy).
+The HTTPRoute (`httpRoute.enabled: true`, `ingress.enabled: false`, `httpRoute.parentRefs` set
+to your Gateway) adds them with a `ResponseHeaderModifier` filter, which is "extended" support
+in the Gateway API: check that your implementation has it, or set `httpRoute.securityHeaders:
+false`.
+
+## Secrets
+
+Every credential has an entry under `credentials` with `value`, `existingSecret` and `key`.
+For each one the chart uses, in this order:
+
+1. its own `existingSecret` (a Secret you manage) and `key`;
+2. its `value`, stored in the chart's Secret `<fullname>-credentials`;
+3. `credentials.existingSecret`, one Secret you manage for all of them, under each entry's `key`;
+4. a value it generates on the first install and reuses afterwards (only where the table says so).
+
+| Entry | Key | Environment variable | Generated |
+|---|---|---|---|
+| `databaseAppPassword` | `database-app-password` | in `DATABASE_URL` (runtime role, no BYPASSRLS) | yes |
+| `databaseOwnerPassword` | `database-owner-password` | in `MIGRATIONS_DATABASE_URL` (migrate and seed Jobs only) | yes |
+| `postgresPassword` | `postgres-password` | `POSTGRES_PASSWORD` of the bundled Postgres | with `postgresql.enabled` |
+| `keycloakDbPassword` | `keycloak-db-password` | `KC_DB_PASSWORD` | with `keycloak.enabled` |
+| `openfgaDbPassword` | `openfga-db-password` | `OPENFGA_DATASTORE_PASSWORD` | with `openfga.enabled` |
+| `valkeyPassword` | `valkey-password` | in `VALKEY_URL` and `CELERY_BROKER_URL` | with `valkey.enabled` and `valkey.auth.enabled` |
+| `openfgaApiKey` | `openfga-api-key` | `OPENFGA_API_KEY` (and OpenFGA's pre-shared key) | with `openfga.enabled` |
+| `oidcClientSecret` | `oidc-client-secret` | `OIDC_CLIENT_SECRET` (and the imported realm's client) | with `keycloak.enabled` |
+| `secretsKey` | `secrets-key` | `SECRETS_KEY` (connector credentials) | yes |
+| `secretsEncryptionKey` | `secrets-encryption-key` | `SECRETS_ENCRYPTION_KEY` (tenants' provider keys) | yes |
+| `secretsEncryptionPreviousKeys` | `secrets-encryption-previous-keys` | `SECRETS_ENCRYPTION_PREVIOUS_KEYS` | no |
+| `keycloakAdminPassword` | `keycloak-admin-password` | Keycloak's bootstrap admin; `KEYCLOAK_ADMIN_PASSWORD` for the seed | with `keycloak.enabled` |
+| `demoPassword` | `demo-password` | `DEMO_PASSWORD` (seed) | no |
+| `anthropicApiKey`, `llmApiKey`, `localLlmApiKey`, `embeddingApiKey`, `transcriptionApiKey` | `anthropic-api-key`, ... | `ANTHROPIC_API_KEY`, `LLM_API_KEY`, ... | no |
+| `smtpPassword`, `googleClientSecret` | `smtp-password`, `google-client-secret` | `SMTP_PASSWORD`, `GOOGLE_CLIENT_SECRET` | no |
+| `licenseKey` | `license-key` | `LICENSE_KEY` (Enterprise) | no |
+| `mcpServers` | `mcp-servers` | `MCP_SERVERS` (JSON with the servers' tokens) | no |
+
+The chart refuses to render when a credential it needs has no source, e.g. `oidcClientSecret`
+with an external Keycloak.
+
+Things to know:
+
+- **Keep the chart's Secret.** It is annotated `helm.sh/resource-policy: keep`, so `helm
+  uninstall` leaves it. Losing `SECRETS_ENCRYPTION_KEY` or `SECRETS_KEY` makes the stored
+  provider keys and connector credentials unreadable, and the bundled Postgres keeps the
+  passwords it was initialized with. Back the Secret up. A reinstall with the same release
+  name and namespace adopts and reuses it.
+- **Generated values need a cluster lookup.** `helm install` and `helm upgrade` read the
+  existing Secret (Helm's `lookup`). Tools that only run `helm template`, such as Argo CD,
+  would generate new values on every sync: give every credential a value or an existing
+  Secret there.
+- **Passwords go into URLs.** The database and Valkey passwords are inserted into connection
+  URLs as they are, and the Valkey password into a config line in quotes. Use letters and
+  digits (the generated ones are 32 of them), or percent-encode for the database.
+- **Changing a database password in the values does not change the role.** The bundled
+  Postgres runs its init script only on an empty volume. Run `ALTER ROLE ... PASSWORD` first,
+  then update the Secret.
+- **Rotating `SECRETS_ENCRYPTION_KEY`:** put the old key into
+  `secretsEncryptionPreviousKeys`, the new one into `secretsEncryptionKey`, upgrade, then run
+  `wm secrets rotate` in an API pod ([models.md](../models.md)).
+- **Enterprise.** `credentials.licenseKey` sets `LICENSE_KEY`. No production signing key is
+  published yet, so only development licenses exist, and those are trusted only with
+  `config.appEnv: dev` and `config.licenseDevPublicKey` ([enterprise.md](../enterprise.md)).
+
+## External services
+
+Set `<service>.enabled: false` and point the chart at your service.
+[`examples/external-services.yaml`](../../deploy/helm/workmind/examples/external-services.yaml)
+does it for all of them.
+
+**Postgres.** Compose and CI use 18.6; older versions are not tested. Set `database.host`,
+`database.port` and, for TLS, `database.urlParams: ssl=require`. Create the roles and the
+database the way `deploy/postgres/init/01-databases.sh` does, as a user that is a member of
+`workmind_owner` (on a managed service, `GRANT workmind_owner TO <admin user>` first: Postgres
+requires the membership to create a database owned by that role and to set its default
+privileges):
+
+```sql
+CREATE ROLE workmind_owner LOGIN PASSWORD '...';
+CREATE ROLE workmind_app LOGIN PASSWORD '...' NOBYPASSRLS;
+CREATE DATABASE workmind OWNER workmind_owner;
+-- connected to the workmind database:
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO workmind_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE workmind_owner IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO workmind_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE workmind_owner IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO workmind_app;
+```
+
+The runtime role must not have `BYPASSRLS` and must not own the tables: tenant isolation rests
+on forced row-level security ([ARCHITECTURE 8](../ARCHITECTURE.md#8-multi-tenancy-and-data-isolation),
+[ADR 0005](../adr/0005-postgres-roles-and-rls.md)). With the bundled Keycloak or OpenFGA and an
+external Postgres, also create their roles and databases (`keycloak`, `openfga`, as in the
+script); they connect to `database.host` unless `keycloak.database.host` or
+`openfga.database.host` is set.
+
+**Valkey** (or Redis). `valkey.external.host`, `port`, `tls` (`rediss://`). WorkMind uses
+database 0 (`VALKEY_URL`: login sessions and short-lived application data such as answer
+event streams) and database 1 (`CELERY_BROKER_URL`: the task queue). With
+`valkey.auth.enabled` (the default) the chart requires `credentials.valkeyPassword`; set
+`valkey.auth.enabled: false` for a server without a password.
+
+**Qdrant.** `qdrant.external.url`. The API has no setting for a Qdrant API key, so protect the
+server on the network.
+
+**OpenFGA.** `openfga.external.url` (the HTTP API) and `credentials.openfgaApiKey`, one of the
+server's pre-shared keys. WorkMind creates one store per tenant and writes the model itself.
+
+**Keycloak.** `keycloak.external.url` is the base URL the API calls, including Keycloak's
+relative path if it has one (the bundled one uses `/auth`). Import
+[`deploy/keycloak/realm-workmind.json`](../../deploy/keycloak/realm-workmind.json) with
+`WORKMIND_OIDC_CLIENT_SECRET` and `WORKMIND_PUBLIC_URL` set (Keycloak replaces those
+placeholders), and change the client's back-channel logout URL from `http://api:8000/...` to
+`http://<fullname>-api.<namespace>.svc:8000/api/auth/backchannel-logout`. Put the same
+client secret into `credentials.oidcClientSecret`. The `/auth` route is not created; the login
+pages are served by your Keycloak's own host.
+
+**Embeddings.** `embeddings.enabled: false` and `config.embedding.baseUrl` set to any
+OpenAI-compatible `/v1/embeddings` server, with `model` and `dimensions` matching it. Changing
+the embedding model means re-indexing ([ARCHITECTURE 8](../ARCHITECTURE.md#8-multi-tenancy-and-data-isolation)).
+`config.embedding.provider: hash` needs no server, for tests only.
+
+## Upgrades and the migrate hook
+
+```bash
+helm upgrade workmind deploy/helm/workmind -n workmind -f my-values.yaml --wait --timeout 20m
+```
+
+- **Migrations run before the new pods.** The `migrate` Job is a `pre-upgrade` hook (and
+  `pre-install` with an external database): `alembic upgrade head` with the owner role, after
+  an init container has waited for Postgres. Only when it succeeds does Helm roll the
+  Deployments. While they roll, pods of the old version run against the new schema;
+  migrations only go forward ([ROADMAP §6](../ROADMAP.md#6-release-process)) and breaking
+  changes are called out in the release notes.
+- **When it fails**, the upgrade stops and the release is marked failed; the running pods are
+  not touched. Its logs: `kubectl logs -n workmind job/workmind-migrate` (the Job stays until
+  the next run).
+- **Hook resources.** On a first install with an external database, the release's Secret and
+  ServiceAccount do not exist yet when pre-install hooks run, so the Job brings its own hook
+  ServiceAccount and, when the chart holds the owner password, a hook Secret with only that
+  password. Both are deleted once the hooks succeed.
+- **`helm rollback` does not downgrade the schema.**
+- **OpenFGA** migrates in a Job named after the release revision, so every install and upgrade
+  runs it once; OpenFGA reports "not serving" until it is done.
+- **Keycloak imports the realm only once**, when it does not exist. Later changes, such as a new
+  `config.publicUrl`, go through Keycloak's admin console (the client's redirect URIs and
+  post-logout URIs).
+- **Bundled Postgres major versions** are not upgraded by the chart: a new major version needs
+  `pg_upgrade` or a dump and restore.
+
+## Backups
+
+The procedure for backing up and restoring WorkMind is a separate Phase 12 item
+([ROADMAP](../ROADMAP.md)). A backup of a Kubernetes install needs all of these, taken
+together:
+
+- **Postgres:** the `workmind`, `keycloak` and `openfga` databases (`pg_dump`, or your managed
+  service's snapshots). With the bundled server: `kubectl exec` into
+  `<fullname>-postgresql-0` and run `pg_dump`, or snapshot its volume.
+- **The object storage volume** (`<fullname>-objects`): uploaded files, recordings and
+  analytics datasets. Postgres refers to these files.
+- **Qdrant:** its snapshots API writes to `/qdrant/snapshots` (an emptyDir in the bundled pod:
+  copy the files out). The index can also be rebuilt from the documents by re-indexing.
+- **The credentials Secret** (`<fullname>-credentials`) or your own Secret: without
+  `SECRETS_ENCRYPTION_KEY` and `SECRETS_KEY`, a restored database has unreadable provider keys
+  and connector credentials.
+- Valkey holds sessions, queued tasks and caches. Losing it signs people out and drops queued
+  tasks; it is usually not backed up.
+
+## Security settings
+
+- Every pod: `runAsNonRoot` with a fixed user (WorkMind 10001, web 1001, Postgres 999, Valkey
+  999, Qdrant 1000, Keycloak 1000, OpenFGA and the embedding server 65532), the
+  `RuntimeDefault` seccomp profile, no service account token
+  (`automountServiceAccountToken: false`).
+- Every container: `allowPrivilegeEscalation: false`, all capabilities dropped, CPU and memory
+  requests and limits, and a read-only root filesystem with emptyDir volumes where the
+  process writes (`/tmp`, Next.js's cache, Postgres's socket directory, Qdrant's marker
+  file). The exception is Keycloak: the stock image builds itself on `start` and writes into
+  `/opt/keycloak/lib`, which fails on a read-only filesystem (tried in Docker).
+- These are the rules of the "restricted" Pod Security Standard; `check-manifests.py` checks
+  them on every rendered pod in CI. No cluster with `enforce: restricted` has admitted the
+  chart yet.
+- Credentials are only in Secrets and reach containers as `secretKeyRef` variables; the
+  ConfigMap holds no credential (checked in CI). Valkey reads its password from a file on a
+  memory volume, not from its command line.
+- `networkPolicy.enabled: true` adds ingress NetworkPolicies: the web app, the API and
+  Keycloak accept `networkPolicy.publicFrom` (set it to your ingress controller's or
+  gateway's namespace; empty means any source) plus the WorkMind pods that call them; each
+  bundled service accepts only the WorkMind pods that use it; the worker and beat accept
+  nothing. Egress is not restricted.
+- The API trusts `X-Forwarded-*` headers from any address (`api.forwardedAllowIps: "*"`, as
+  in compose). Only the Service reaches the pod; with NetworkPolicies, only the listed sources.
+- Permission checks, tenant isolation and the database roles are the application's, and do
+  not change with the deployment: the runtime role has no `BYPASSRLS`, the owner role is used
+  only by the migrate and seed Jobs.
+
+## What is not covered
+
+- **No cluster install in CI yet.** The chart is linted, rendered and schema-validated; it has
+  not been installed and exercised on a cluster by this repository's CI.
+- **No published images or chart.** Build and push the images yourself; the chart is not in a
+  Helm repository or OCI registry, and its version is not bumped by release-please yet.
+- **The bundled services are single instances** without high availability, automated
+  backups, monitoring or major-version upgrades. For production, prefer managed services or
+  operators (e.g. CloudNativePG for Postgres, the Keycloak Operator) through the external
+  settings. Keycloak runs one replica with a local cache.
+- **No separate ingestion workers.** ARCHITECTURE 5.1 plans a `worker-ingest` process; the
+  chart runs one worker Deployment for the `ingest` and `default` queues. Autoscaling is on
+  CPU only: no queue-length autoscaling (KEDA).
+- **No metrics scraping** (ServiceMonitor), dashboards or alerts. Tracing works through
+  `config.env.OTEL_EXPORTER_OTLP_ENDPOINT`.
+- **No egress NetworkPolicies**, and no Qdrant authentication (the API has no setting for it).
+- **Object storage is a volume**, not S3-compatible storage.
+- **Not included:** Mailpit, Caddy (replaced by the Ingress or HTTPRoute), an Ollama or vLLM
+  server for local models (point `config.llm.baseUrl` or `config.localLlm.baseUrl` at yours).
