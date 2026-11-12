@@ -4,20 +4,23 @@ Owners and admins manage the organization; auditors may only read the audit log.
 roles come from PostgreSQL on every request, so a revoked admin loses access immediately.
 """
 
+import csv
+import io
+import json
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Final, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from pydantic import BaseModel, Field
-from sqlalchemy import select
+from pydantic import AwareDatetime, BaseModel, Field
+from sqlalchemy import ColumnElement, Text, cast, or_, select
 
 from workmind.api.deps import CurrentContext, resources_of
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
-from workmind.modules.governance.audit import verify_chain
+from workmind.modules.governance.audit import Actor, record_event, verify_chain
 from workmind.modules.governance.models import AuditEvent
 from workmind.modules.identity import admin
 from workmind.modules.identity.models import (
@@ -166,6 +169,8 @@ class AuditEventOut(BaseModel):
 class AuditPageOut(BaseModel):
     items: list[AuditEventOut]
     next_before_seq: int | None
+    # Opaque: pass it back as `cursor` for the next (older) page. None: no more events.
+    next_cursor: str | None
 
 
 class ChainOut(BaseModel):
@@ -478,50 +483,213 @@ async def remove_group_child(
 
 # --- Audit log ----------------------------------------------------------------------------
 
+# The CSV export holds at most this many events (the newest that match); narrow the filters, or
+# use the Enterprise JSONL export (docs/enterprise.md) for the whole chain.
+AUDIT_EXPORT_LIMIT: Final = 10_000
+CSV_COLUMNS: Final = (
+    "seq",
+    "occurred_at",
+    "actor_type",
+    "actor_id",
+    "actor_name",
+    "action",
+    "resource_type",
+    "resource_id",
+    "ip",
+    "details",
+)
+
+
+class AuditFilters(BaseModel):
+    """The audit explorer's filters; every one narrows the result."""
+
+    action: str | None = Field(default=None, max_length=100, description="prefix, e.g. 'auth.'")
+    actor_id: uuid.UUID | None = None
+    resource_type: str | None = Field(default=None, max_length=100)
+    resource_id: str | None = Field(default=None, max_length=200)
+    since: AwareDatetime | None = Field(default=None, alias="from")
+    until: AwareDatetime | None = Field(default=None, alias="to")
+    q: str | None = Field(
+        default=None, max_length=200, description="text in the action, resource or details"
+    )
+
+    def conditions(self) -> list[ColumnElement[bool]]:
+        conditions: list[ColumnElement[bool]] = []
+        if self.action:
+            conditions.append(AuditEvent.action.startswith(self.action, autoescape=True))
+        if self.actor_id:
+            conditions.append(AuditEvent.actor_id == self.actor_id)
+        if self.resource_type:
+            conditions.append(AuditEvent.resource_type == self.resource_type)
+        if self.resource_id:
+            conditions.append(AuditEvent.resource_id == self.resource_id)
+        if self.since:
+            conditions.append(AuditEvent.occurred_at >= self.since)
+        if self.until:
+            conditions.append(AuditEvent.occurred_at < self.until)
+        if self.q and self.q.strip():
+            text = self.q.strip()
+            conditions.append(
+                or_(
+                    AuditEvent.action.icontains(text, autoescape=True),
+                    AuditEvent.resource_type.icontains(text, autoescape=True),
+                    AuditEvent.resource_id.icontains(text, autoescape=True),
+                    cast(AuditEvent.details, Text).icontains(text, autoescape=True),
+                )
+            )
+        return conditions
+
+    def described(self) -> dict[str, str]:
+        """For the audit record of an export: which view was exported."""
+        return {k: str(v) for k, v in self.model_dump(by_alias=True).items() if v not in (None, "")}
+
+
+def audit_filters(
+    action: Annotated[str | None, Query(max_length=100, description="Prefix, e.g. 'auth.'")] = None,
+    actor_id: uuid.UUID | None = None,
+    resource_type: Annotated[str | None, Query(max_length=100)] = None,
+    resource_id: Annotated[str | None, Query(max_length=200)] = None,
+    since: Annotated[AwareDatetime | None, Query(alias="from")] = None,
+    until: Annotated[AwareDatetime | None, Query(alias="to")] = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+) -> AuditFilters:
+    return AuditFilters.model_validate(
+        {
+            "action": action,
+            "actor_id": actor_id,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "from": since,
+            "to": until,
+            "q": q,
+        }
+    )
+
+
+Filters = Annotated[AuditFilters, Depends(audit_filters)]
+
+
+def _event_out(event: AuditEvent, name: str | None) -> AuditEventOut:
+    return AuditEventOut(
+        seq=event.seq,
+        occurred_at=event.occurred_at,
+        actor_type=event.actor_type,
+        actor=PersonRef(id=event.actor_id, display_name=name) if event.actor_id and name else None,
+        action=event.action,
+        resource_type=event.resource_type,
+        resource_id=event.resource_id,
+        details=event.details,
+        ip=str(event.ip) if event.ip else None,
+    )
+
+
+def _cursor_seq(cursor: str | None, before_seq: int | None) -> int | None:
+    if cursor is None:
+        return before_seq
+    if not cursor.isdigit() or int(cursor) < 1:
+        raise ApiError(422, "invalid_cursor", "This cursor is not valid")
+    return int(cursor)
+
 
 @router.get("/audit-events")
 async def list_audit_events(
     ctx: AuditContext,
     request: Request,
-    action: Annotated[str | None, Query(max_length=100, description="Prefix, e.g. 'auth.'")] = None,
-    actor_id: uuid.UUID | None = None,
-    before_seq: Annotated[int | None, Query(ge=1)] = None,
+    filters: Filters,
+    cursor: Annotated[str | None, Query(max_length=40)] = None,
+    before_seq: Annotated[int | None, Query(ge=1, description="older than; see cursor")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> AuditPageOut:
+    """Newest first. Page with `cursor` (the previous page's next_cursor)."""
+    older_than = _cursor_seq(cursor, before_seq)
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         statement = (
             select(AuditEvent, User.display_name)
             .outerjoin(User, User.id == AuditEvent.actor_id)
+            .where(*filters.conditions())
             .order_by(AuditEvent.seq.desc())
             .limit(limit + 1)
         )
-        if action:
-            statement = statement.where(AuditEvent.action.startswith(action, autoescape=True))
-        if actor_id:
-            statement = statement.where(AuditEvent.actor_id == actor_id)
-        if before_seq:
-            statement = statement.where(AuditEvent.seq < before_seq)
+        if older_than:
+            statement = statement.where(AuditEvent.seq < older_than)
         rows = (await session.execute(statement)).all()
     more = len(rows) > limit
     rows = rows[:limit]
+    last = rows[-1][0].seq if more else None
     return AuditPageOut(
-        items=[
-            AuditEventOut(
-                seq=event.seq,
-                occurred_at=event.occurred_at,
-                actor_type=event.actor_type,
-                actor=PersonRef(id=event.actor_id, display_name=name)
-                if event.actor_id and name
-                else None,
-                action=event.action,
-                resource_type=event.resource_type,
-                resource_id=event.resource_id,
-                details=event.details,
-                ip=str(event.ip) if event.ip else None,
+        items=[_event_out(event, name) for event, name in rows],
+        next_before_seq=last,
+        next_cursor=str(last) if last else None,
+    )
+
+
+def _csv_cell(value: object) -> str:
+    """Spreadsheet-safe: a cell that starts like a formula is prefixed with a quote, so opening
+    the export in a spreadsheet never runs anything (OWASP CSV injection)."""
+    text = "" if value is None else str(value)
+    return f"'{text}" if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
+@router.get("/audit-events/export.csv")
+async def export_audit_events(ctx: AuditContext, request: Request, filters: Filters) -> Response:
+    """The filtered view as CSV, newest first, at most AUDIT_EXPORT_LIMIT events. The export
+    itself is audited ("audit.export"), with the filters and the number of events."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        rows = (
+            await session.execute(
+                select(AuditEvent, User.display_name)
+                .outerjoin(User, User.id == AuditEvent.actor_id)
+                .where(*filters.conditions())
+                .order_by(AuditEvent.seq.desc())
+                .limit(AUDIT_EXPORT_LIMIT + 1)
             )
-            for event, name in rows
-        ],
-        next_before_seq=rows[-1][0].seq if more else None,
+        ).all()
+        truncated = len(rows) > AUDIT_EXPORT_LIMIT
+        rows = rows[:AUDIT_EXPORT_LIMIT]
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="audit.export",
+            resource_type="audit_log",
+            details={
+                "format": "csv",
+                "filters": filters.described(),
+                "events": len(rows),
+                "truncated": truncated,
+            },
+        )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(CSV_COLUMNS)
+    for event, name in rows:
+        writer.writerow(
+            [
+                _csv_cell(v)
+                for v in (
+                    event.seq,
+                    event.occurred_at.isoformat(),
+                    event.actor_type,
+                    event.actor_id,
+                    name,
+                    event.action,
+                    event.resource_type,
+                    event.resource_id,
+                    event.ip,
+                    json.dumps(event.details, sort_keys=True, ensure_ascii=False),
+                )
+            ]
+        )
+    stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="audit-log-{stamp}.csv"',
+            "X-Export-Truncated": "true" if truncated else "false",
+            "X-Export-Limit": str(AUDIT_EXPORT_LIMIT),
+            "Cache-Control": "no-store",
+        },
     )
 
 

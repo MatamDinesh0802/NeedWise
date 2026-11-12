@@ -39,9 +39,11 @@ class ChainVerification:
     first_broken_seq: int | None = None
 
 
-def _canonical(event: AuditEvent) -> bytes:
+def canonical_fields(event: AuditEvent) -> dict[str, Any]:
+    """The fields the hash covers, as JSON values. Exports carry them so an outside system
+    can recompute every hash: sha256(prev_hash + canonical JSON of these fields)."""
     ip = str(ipaddress.ip_address(event.ip)) if event.ip is not None else None
-    payload: dict[str, Any] = {
+    return {
         "seq": event.seq,
         "tenant_id": str(event.tenant_id),
         "occurred_at": event.occurred_at.astimezone(UTC).isoformat(),
@@ -54,6 +56,10 @@ def _canonical(event: AuditEvent) -> bytes:
         "ip": ip,
         "user_agent": event.user_agent,
     }
+
+
+def _canonical(event: AuditEvent) -> bytes:
+    payload = canonical_fields(event)
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
 
 
