@@ -94,3 +94,46 @@ async def test_back_channel_logout_ends_every_session_of_that_keycloak_session(
     assert await store.get(laptop) is None
     assert await store.get(phone) is None
     assert await store.get(other) is not None
+
+
+async def test_the_tenant_index_keeps_only_one_lifetime_of_sign_ins(valkey: Redis) -> None:
+    # Regression: the index was a set with one member per sign-in, never removed, so in a
+    # tenant with a sign-in every few hours it only grew (and ending its sessions read it all).
+    clock = Clock()
+    store = _store(valkey, clock)
+    tenant = uuid.uuid4()
+
+    async def sign_in() -> str:
+        return await store.create(
+            user_id=uuid.uuid4(),
+            tenant_id=tenant,
+            keycloak_sub="kc-user",
+            keycloak_sid=None,
+            id_token="t",
+        )
+
+    for _ in range(5):
+        await sign_in()
+        clock.now += 3600 + 1  # past the absolute lifetime
+    live = await sign_in()
+
+    index = f"t:{tenant}:sessions:by-expiry"
+    assert await valkey.zcard(index) == 1  # pyright: ignore[reportUnknownMemberType]
+    assert await store.delete_by_tenant(tenant) == 1
+    assert await store.get(live) is None
+
+
+async def test_ending_a_tenants_sessions_also_reads_the_older_index(valkey: Redis) -> None:
+    store = _store(valkey, Clock())
+    tenant = uuid.uuid4()
+    session_id = await store.create(
+        user_id=uuid.uuid4(), tenant_id=tenant, keycloak_sub="s", keycloak_sid=None, id_token="t"
+    )
+    # A session recorded by the previous version: only in the plain set.
+    keys = [k async for k in valkey.scan_iter("session:*")]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+    await valkey.delete(f"t:{tenant}:sessions:by-expiry")
+    await valkey.sadd(f"t:{tenant}:sessions", *keys)  # pyright: ignore[reportUnknownMemberType, reportGeneralTypeIssues, reportUnknownArgumentType]
+
+    assert await store.delete_by_tenant(tenant) == 1
+    assert await store.get(session_id) is None
+    assert not await valkey.exists(f"t:{tenant}:sessions")

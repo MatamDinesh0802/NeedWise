@@ -13,6 +13,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
+from typing import Any
 
 from redis.asyncio import Redis
 
@@ -60,6 +61,15 @@ def _by_sub(sub: str) -> str:
 
 
 def _by_tenant(tenant_id: uuid.UUID) -> str:
+    """The tenant's session keys in a sorted set scored by their absolute expiry, pruned at every
+    sign-in: it holds at most one absolute lifetime of sign-ins, however long the tenant lives."""
+    return tenant_key(tenant_id, "sessions", "by-expiry")
+
+
+def _legacy_by_tenant(tenant_id: uuid.UUID) -> str:
+    """The plain set used before, which only grew (one member per sign-in, never removed). Still
+    read when a tenant's sessions end; it expires on its own one absolute lifetime after the
+    last sign-in that wrote it."""
     return tenant_key(tenant_id, "sessions")
 
 
@@ -101,13 +111,17 @@ class SessionStore:
             expires_at=now + self._absolute,
         )
         key = _key(session_id)
-        indexes = [_by_tenant(tenant_id), _by_sub(keycloak_sub)]
+        indexes = [_by_sub(keycloak_sub)]
         indexes += [_by_sid(keycloak_sid)] if keycloak_sid else []
+        by_tenant = _by_tenant(tenant_id)
         async with self._valkey.pipeline(transaction=True) as pipe:
             pipe.set(key, data.to_json(), ex=self._idle)
             for index in indexes:
                 pipe.sadd(index, key)
                 pipe.expire(index, self._absolute)
+            pipe.zadd(by_tenant, {key: data.expires_at})
+            pipe.zremrangebyscore(by_tenant, "-inf", now)  # past their absolute lifetime
+            pipe.expire(by_tenant, self._absolute)
             await pipe.execute()
         return session_id
 
@@ -140,7 +154,12 @@ class SessionStore:
 
     async def delete_by_tenant(self, tenant_id: uuid.UUID) -> int:
         """Ends every session of a tenant (suspension, deletion)."""
-        return await self._delete_index(_by_tenant(tenant_id))
+        index = _by_tenant(tenant_id)
+        members: Any = await self._valkey.zrange(index, 0, -1)  # pyright: ignore[reportUnknownMemberType]
+        keys: list[bytes | str] = list(members)
+        removed = int(await self._valkey.delete(*keys)) if keys else 0
+        await self._valkey.delete(index)
+        return removed + await self._delete_index(_legacy_by_tenant(tenant_id))
 
     async def _delete_index(self, index: str) -> int:
         keys: set[bytes | str] = await self._valkey.smembers(index)  # pyright: ignore[reportUnknownMemberType, reportGeneralTypeIssues]

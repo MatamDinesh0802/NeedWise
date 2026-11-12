@@ -1558,7 +1558,7 @@ def test_every_valkey_key_written_is_under_a_tenant_prefix(world: World) -> None
     assert crossed == [], "B's keys naming A's records"
     assert f"t:{a_tenant}:run:{v['run_id']}" in a_keys
     assert f"t:{a_tenant}:run:{v['run_id']}:events" in a_keys
-    assert f"t:{a_tenant}:sessions" in a_keys
+    assert f"t:{a_tenant}:sessions:by-expiry" in a_keys
     # B's callback with A's state neither found nor consumed A's OAuth flow.
     assert f"t:{a_tenant}:oauth:google:{v['oauth_state']}" in a_keys
     assert any(k.startswith(f"t:{a_tenant}:usage:spent:") for k in a_keys)
