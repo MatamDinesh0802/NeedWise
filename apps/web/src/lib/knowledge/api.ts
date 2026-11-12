@@ -3,7 +3,7 @@
  * apps/api/src/workmind/api/v1/knowledge.py.
  */
 
-import { apiJson, ApiError, CSRF_HEADER, parseProblem } from "@/lib/api";
+import { apiJson, uploadRaw, type UploadOptions } from "@/lib/api";
 
 export type CollectionScope = "department" | "enterprise" | "restricted" | "personal";
 export type Trust = "official" | "reference" | "discussion";
@@ -172,70 +172,8 @@ export function mimeTypeFor(file: { name: string; type?: string }): string | nul
 /** For the file input's `accept` attribute. */
 export const ACCEPT = Object.keys(SUPPORTED_TYPES).join(",");
 
-interface XhrLike {
-  open(method: string, url: string): void;
-  setRequestHeader(name: string, value: string): void;
-  send(body: Blob): void;
-  abort(): void;
-  status: number;
-  responseText: string;
-  getResponseHeader(name: string): string | null;
-  upload: { onprogress: ((event: { loaded: number; total: number; lengthComputable: boolean }) => void) | null };
-  onload: (() => void) | null;
-  onerror: (() => void) | null;
-  onabort: (() => void) | null;
-}
-
-/**
- * Uploads raw file bytes (not multipart) with upload progress. fetch() can't report
- * upload progress, so this uses XMLHttpRequest. Errors become ApiError like apiFetch's.
- */
-export function uploadDocument(
-  collectionId: string,
-  file: File,
-  {
-    onProgress,
-    signal,
-    createXhr = () => new XMLHttpRequest() as unknown as XhrLike,
-  }: { onProgress?: (fraction: number) => void; signal?: AbortSignal; createXhr?: () => XhrLike } = {},
-): Promise<UploadResult> {
-  return new Promise((resolve, reject) => {
-    const xhr = createXhr();
-    const url = `/api/v1/collections/${id(collectionId)}/documents?filename=${encodeURIComponent(file.name)}`;
-    xhr.open("POST", url);
-    xhr.setRequestHeader(CSRF_HEADER, "1");
-    xhr.setRequestHeader("Accept", "application/json");
-    xhr.setRequestHeader("Content-Type", mimeTypeFor(file) ?? (file.type || "application/octet-stream"));
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && event.total > 0) onProgress?.(Math.min(1, event.loaded / event.total));
-    };
-    xhr.onload = () => {
-      let body: unknown = null;
-      try {
-        body = xhr.responseText ? JSON.parse(xhr.responseText) : null;
-      } catch {
-        body = null;
-      }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(body as UploadResult);
-        return;
-      }
-      const problem = parseProblem(body, xhr.status);
-      reject(
-        new ApiError({
-          status: xhr.status,
-          title: problem?.title ?? `HTTP ${xhr.status}`,
-          code: problem?.code ?? null,
-          detail: problem?.detail ?? null,
-          problem,
-          requestId: xhr.getResponseHeader("X-Request-Id"),
-        }),
-      );
-    };
-    xhr.onerror = () =>
-      reject(new ApiError({ status: 0, title: "Network error", code: "network_error", detail: "The upload was interrupted." }));
-    xhr.onabort = () => reject(new DOMException("Upload cancelled", "AbortError"));
-    signal?.addEventListener("abort", () => xhr.abort(), { once: true });
-    xhr.send(file);
-  });
+/** Uploads raw file bytes (not multipart) with upload progress (see `uploadRaw`). */
+export function uploadDocument(collectionId: string, file: File, options: UploadOptions = {}): Promise<UploadResult> {
+  const url = `/api/v1/collections/${id(collectionId)}/documents?filename=${encodeURIComponent(file.name)}`;
+  return uploadRaw<UploadResult>(url, file, mimeTypeFor(file) ?? (file.type || "application/octet-stream"), options);
 }

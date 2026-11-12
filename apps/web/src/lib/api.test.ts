@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { apiFetch, ApiError, apiJson, buildRequestInit, CSRF_HEADER, parseProblem } from "./api";
+import { apiFetch, ApiError, apiJson, buildRequestInit, CSRF_HEADER, parseProblem, uploadRaw, type XhrLike } from "./api";
 
 function problemResponse(status: number, body: unknown, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -150,5 +150,47 @@ describe("apiFetch", () => {
     await expect(apiFetch("https://evil.example/api/v1/me")).rejects.toThrow(/same-origin/);
     await expect(apiFetch("/healthz")).rejects.toThrow(/same-origin/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("uploadRaw", () => {
+  const xhr = (): XhrLike & { sent: boolean } => ({
+    sent: false,
+    open: vi.fn(),
+    setRequestHeader: vi.fn(),
+    send() {
+      this.sent = true;
+    },
+    abort: vi.fn(),
+    status: 0,
+    responseText: "",
+    getResponseHeader: () => null,
+    upload: { onprogress: null },
+    onload: null,
+    onerror: null,
+    onabort: null,
+  });
+
+  it("only calls same-origin API paths", () => {
+    expect(() => uploadRaw("https://evil.example/api/v1/meetings", new Blob(["x"]), "application/octet-stream", { createXhr: xhr })).toThrow(
+      /same-origin/,
+    );
+  });
+
+  it("doesn't send when it was cancelled before it started", async () => {
+    const request = xhr();
+    const controller = new AbortController();
+    controller.abort();
+    const upload = uploadRaw("/api/v1/meetings", new Blob(["x"]), "application/octet-stream", { signal: controller.signal, createXhr: () => request });
+    await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+    expect(request.sent).toBe(false);
+  });
+
+  it("resolves an empty 2xx body as null", async () => {
+    const request = xhr();
+    const upload = uploadRaw<null>("/api/v1/meetings", new Blob(["x"]), "application/octet-stream", { createXhr: () => request });
+    request.status = 202;
+    request.onload?.();
+    await expect(upload).resolves.toBeNull();
   });
 });

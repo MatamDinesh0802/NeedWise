@@ -1,24 +1,37 @@
 /**
  * Meetings, framework-free: which files can be uploaded, where processing is, timestamps and
- * where a click on one should jump, and the corrections payload. Tested on its own.
+ * where a click on one should jump, the corrections payload and "My commitments". Tested on its
+ * own; components/meetings/* only render it.
  */
 
-import type { ActionEdit, ActionItem, Decision, Meeting, MeetingStatus, Segment, Speaker } from "@/lib/meetings/api";
+import { ApiError } from "@/lib/api";
+import { errorMessage, type ErrorMessage } from "@/lib/error-messages";
+import type { ActionEdit, ActionItem, Commitment, Decision, Meeting, MeetingStatus, Segment, Speaker } from "@/lib/meetings/api";
+import { dueText } from "@/lib/work/tasks";
 
 // --- Upload -----------------------------------------------------------------------------------
 
-/** Same lists as the API (modules/meetings/transcripts.py, MEDIA_TYPES in api/v1/meetings.py). */
+/** Same lists as the API (AUDIO and TEXT in modules/meetings/transcripts.py). */
 export const AUDIO_EXTENSIONS = ["mp3", "m4a", "wav", "mp4", "webm", "ogg", "flac", "aiff", "aif", "mov"] as const;
 export const TRANSCRIPT_EXTENSIONS = ["vtt", "srt", "txt", "md"] as const;
 export const ACCEPT = [...AUDIO_EXTENSIONS, ...TRANSCRIPT_EXTENSIONS].map((e) => `.${e}`).join(",");
 /** MAX_MEETING_BYTES default (500 MB). */
 export const MAX_MEETING_BYTES = 500 * 1024 * 1024;
+export const TITLE_MAX = 200;
+
+export const CONSENT_NOTICE = "Everyone in the recording should know it is being processed.";
 
 export type FileKind = "audio" | "transcript";
 
+/** Like Python's PurePath.suffix: ".mp3" alone or "notes." have none. */
+function extension(filename: string): string {
+  const name = filename.split(/[\\/]/).pop() ?? "";
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 ? "" : name.slice(dot + 1).toLowerCase();
+}
+
 export function fileKind(filename: string): FileKind | null {
-  const ext = filename.toLowerCase().split(".").pop() ?? "";
-  if (!filename.includes(".")) return null;
+  const ext = extension(filename);
   if ((AUDIO_EXTENSIONS as readonly string[]).includes(ext)) return "audio";
   if ((TRANSCRIPT_EXTENSIONS as readonly string[]).includes(ext)) return "transcript";
   return null;
@@ -29,6 +42,16 @@ export function titleFromFilename(filename: string): string {
   const stem = filename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
   const restored = stem.replace(/(\d{4}) (\d{2}) (\d{2})/g, "$1-$2-$3");
   return restored ? restored.charAt(0).toUpperCase() + restored.slice(1) : "";
+}
+
+/**
+ * The title after picking `next`: follows the file name until someone types their own title
+ * (it is then theirs, whatever file they pick).
+ */
+export function titleAfterPick(current: string, previous: string | null, next: string | null): string {
+  const untouched = current.trim() === "" || (previous !== null && current === titleFromFilename(previous));
+  if (!untouched) return current;
+  return next ? titleFromFilename(next) : "";
 }
 
 export interface UploadCheck {
@@ -56,12 +79,47 @@ export function validateUpload({
   return errors;
 }
 
+const MESSAGES: Record<string, Omit<ErrorMessage, "code">> = {
+  too_large: { title: "The file is too large", description: "Recordings and transcripts can be up to 500 MB." },
+  unsupported_type: {
+    title: "File type not supported",
+    description: "Use a recording (mp3, m4a, wav, mp4, webm, ogg, flac, aiff, mov) or a transcript (vtt, srt, txt, md).",
+  },
+  empty_file: { title: "The file is empty", description: "Choose the recording or transcript again." },
+  already_a_task: {
+    title: "This is a task now",
+    description: "Once an action item is a task, change the task instead. The page now shows its link.",
+  },
+  unknown_user: { title: "Unknown colleague", description: "That person isn't an active member any more. Choose someone else." },
+  unknown_speaker: { title: "Unknown speaker", description: "The transcript has no speaker by that name. Reload the page." },
+  forbidden: {
+    title: "You can't change this meeting",
+    description: "Only the person who uploaded it and editors of its collection can map speakers, correct items and make tasks.",
+  },
+};
+
+/** Meeting API errors in words (falls back to the app-wide messages). */
+export function meetingErrorMessage(error: unknown): ErrorMessage {
+  if (error instanceof ApiError) {
+    const code = error.code ?? (error.status === 413 ? "too_large" : error.status === 415 ? "unsupported_type" : null);
+    if (code && Object.hasOwn(MESSAGES, code)) return { ...MESSAGES[code], code };
+  }
+  return errorMessage(error);
+}
+
+/** What happens next, for the toast after an upload. */
+export function uploadedText(kind: FileKind | null): string {
+  return kind === "audio"
+    ? "Transcribing the recording now. The list updates as it goes, and you'll get a notification when the notes are ready."
+    : "Reading the transcript now. You'll get a notification when the notes are ready.";
+}
+
 // --- Status -----------------------------------------------------------------------------------
 
 export const STATUS_LABELS: Record<MeetingStatus, string> = {
   pending: "Queued",
-  transcribing: "Transcribing…",
-  extracting: "Finding decisions and action items…",
+  transcribing: "Transcribing",
+  extracting: "Extracting",
   ready: "Ready",
   failed: "Failed",
 };
@@ -72,14 +130,30 @@ export function isProcessing(status: MeetingStatus): boolean {
   return status === "pending" || status === "transcribing" || status === "extracting";
 }
 
-/** Steps for a progress line: each is done, current or still to come. */
+/** One line per pipeline step, worded for a recording or a transcript. */
+export function stepLabel(status: MeetingStatus, hasMedia: boolean): string {
+  switch (status) {
+    case "pending":
+      return "Queued";
+    case "transcribing":
+      return hasMedia ? "Transcribing the recording" : "Reading the transcript";
+    case "extracting":
+      return "Finding the summary, decisions and action items";
+    case "ready":
+      return "Notes ready";
+    case "failed":
+      return "Failed";
+  }
+}
+
+/** Steps for a progress list: each is done, current or still to come. */
 export function pipelineSteps(status: MeetingStatus): { status: MeetingStatus; state: "done" | "current" | "todo" }[] {
   if (status === "failed") return PIPELINE.map((s) => ({ status: s, state: "todo" as const }));
   const at = PIPELINE.indexOf(status);
   return PIPELINE.map((s, i) => ({ status: s, state: i < at || status === "ready" ? "done" : i === at ? "current" : "todo" }));
 }
 
-// --- Timestamps -------------------------------------------------------------------------------
+// --- Dates and timestamps ---------------------------------------------------------------------
 
 /** 271.4 → "4:31", 3723 → "1:02:03". */
 export function formatTimestamp(seconds: number): string {
@@ -100,6 +174,23 @@ export function formatDuration(seconds: number | null): string | null {
   return rest ? `${h} h ${rest} min` : `${h} h`;
 }
 
+const DAY = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" });
+
+/**
+ * A calendar day ("2026-11-04") as the viewer reads dates. Formatted in UTC: `new Date("2026-11-04")`
+ * is midnight UTC, which local formatting west of UTC shows as the 3rd.
+ */
+export function formatDay(day: string | null): string {
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return "—";
+  const time = Date.parse(`${day}T00:00:00Z`);
+  return Number.isNaN(time) ? "—" : DAY.format(time);
+}
+
+/** "Due tomorrow" for an action item's YYYY-MM-DD (tasks fall due at 17:00 UTC, like the API's). */
+export function dueOf(day: string | null, now?: Date): { text: string; overdue: boolean } | null {
+  return day ? dueText(`${day}T17:00:00Z`, now) : null;
+}
+
 export type JumpTarget = { kind: "media"; seconds: number; segment: string | null } | { kind: "segment"; segment: string };
 
 /**
@@ -110,6 +201,11 @@ export type JumpTarget = { kind: "media"; seconds: number; segment: string | nul
 export function jumpTarget(item: Pick<Decision, "segment" | "start">, hasMedia: boolean): JumpTarget | null {
   if (item.segment == null || item.start == null) return null;
   return hasMedia ? { kind: "media", seconds: item.start, segment: item.segment } : { kind: "segment", segment: item.segment };
+}
+
+/** How many decisions and action items have no timestamp (shown as a note, not a guess). */
+export function untimedCount(meeting: Pick<Meeting, "decisions" | "action_items">): number {
+  return [...meeting.decisions, ...meeting.action_items].filter((item) => item.segment == null || item.start == null).length;
 }
 
 /** The segment playing at `time` (segments are in order; gaps keep the previous one). */
@@ -129,15 +225,37 @@ export function activeSegment(segments: readonly Segment[], time: number): strin
   return found;
 }
 
-/** "?t=271" from a commitment link → 271; anything else → null. */
+/**
+ * Where to scroll the transcript panel (its own scrollTop) to show a segment, without moving the
+ * page: "center" for a jump, "nearest" to follow playback (null: it is already in view).
+ * Positions are relative to the panel's top edge, as getBoundingClientRect gives them.
+ */
+export function panelScrollTop(
+  { top, height }: { top: number; height: number },
+  panel: { scrollTop: number; clientHeight: number },
+  block: "center" | "nearest",
+): number | null {
+  const offset = top + panel.scrollTop;
+  if (block === "center") return Math.max(0, Math.round(offset - (panel.clientHeight - height) / 2));
+  if (top < 0) return Math.max(0, Math.round(offset));
+  if (top + height > panel.clientHeight) return Math.max(0, Math.round(offset - panel.clientHeight + height));
+  return null;
+}
+
+/** "?t=271.4" from a commitment link → 271.4; anything else → null. */
 export function parseStartParam(value: string | null): number | null {
   if (!value || !/^\d+(\.\d+)?$/.test(value)) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * A link to the meeting at a moment. Keeps the start as the API stores it (two decimals): rounding
+ * 271.4 down to 271 would land in the segment before it.
+ */
 export function meetingLink(meetingId: string, start: number | null): `/meetings/${string}` {
-  return start != null ? `/meetings/${meetingId}?t=${Math.floor(start)}` : `/meetings/${meetingId}`;
+  const id = encodeURIComponent(meetingId);
+  return start != null && Number.isFinite(start) && start >= 0 ? `/meetings/${id}?t=${Math.round(start * 100) / 100}` : `/meetings/${id}`;
 }
 
 // --- Speakers and owners ----------------------------------------------------------------------
@@ -153,14 +271,35 @@ export interface PersonOption {
 }
 
 /**
- * People to choose from when someone can't use the admin directory: the speakers and owners this
- * meeting already linked to colleagues, plus the viewer. Unique by id, sorted by name.
+ * People this meeting already linked (speakers and owners) plus the viewer: what an editor can
+ * pick when the colleague directory isn't available. Unique by id, sorted by name.
  */
 export function meetingPeople(meeting: Pick<Meeting, "speakers" | "action_items">, me: PersonOption): PersonOption[] {
   const people = new Map<string, string>([[me.id, me.name]]);
   for (const speaker of Object.values(meeting.speakers)) if (speaker.user_id) people.set(speaker.user_id, speaker.name);
   for (const item of meeting.action_items) if (item.owner_user_id && !people.has(item.owner_user_id)) people.set(item.owner_user_id, item.owner);
   return [...people].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** `base` plus the directory, unique by id (the directory's name wins), sorted by name. */
+export function mergePeople(base: readonly PersonOption[], directory: readonly { id: string; display_name: string }[]): PersonOption[] {
+  const all = new Map(base.map((p) => [p.id, p.name]));
+  for (const person of directory) all.set(person.id, person.display_name);
+  return [...all].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Options for choosing a colleague: "nobody" first, then people; the current choice is kept even
+ * when it isn't in the list (a select must never lose its own value).
+ */
+export function personOptions(
+  people: readonly PersonOption[],
+  current: PersonOption | null,
+  noneLabel: string,
+): { value: string; label: string }[] {
+  const options = [{ value: "", label: noneLabel }, ...people.map((p) => ({ value: p.id, label: p.name }))];
+  if (current?.id && !people.some((p) => p.id === current.id)) options.push({ value: current.id, label: current.name || "Current choice" });
+  return options;
 }
 
 /** The speaker mapping as the API takes it: only labels whose colleague changed. */
@@ -207,9 +346,29 @@ export function actionEditPayload(item: ActionItem, form: ActionForm): { ok: tru
   return { ok: true, body: Object.keys(body).length > 0 ? body : null };
 }
 
+// --- My commitments ---------------------------------------------------------------------------
+
 export const TASK_STATUS_TEXT: Record<string, string> = {
   open: "Open task",
   in_progress: "In progress",
   done: "Done",
   cancelled: "Cancelled",
 };
+
+/** The badge for a commitment: its task's status, or that it isn't a task yet. */
+export function commitmentStatus(c: Pick<Commitment, "task_id" | "task_status">): string {
+  if (!c.task_id) return "Not a task yet";
+  return TASK_STATUS_TEXT[c.task_status ?? ""] ?? "Task";
+}
+
+export function isCommitmentClosed(c: Pick<Commitment, "task_status">): boolean {
+  return c.task_status === "done" || c.task_status === "cancelled";
+}
+
+/** Open commitments first (soonest due first, no deadline last), finished ones at the end. */
+export function sortCommitments(items: readonly Commitment[]): Commitment[] {
+  const closed = (c: Commitment) => (isCommitmentClosed(c) ? 1 : 0);
+  const due = (c: Commitment) => (c.due ? Date.parse(`${c.due}T17:00:00Z`) : Number.POSITIVE_INFINITY);
+  const order = (a: Commitment, b: Commitment) => closed(a) - closed(b) || due(a) - due(b);
+  return [...items].sort((a, b) => order(a, b) || b.meeting_date.localeCompare(a.meeting_date) || a.index - b.index);
+}

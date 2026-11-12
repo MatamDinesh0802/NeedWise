@@ -3,7 +3,7 @@
  * modules/meetings (segments from pipeline.py, decisions and action items from extract.py).
  */
 
-import { apiJson } from "@/lib/api";
+import { apiJson, uploadRaw, type UploadOptions } from "@/lib/api";
 
 export type MeetingStatus = "pending" | "transcribing" | "extracting" | "ready" | "failed";
 
@@ -106,13 +106,12 @@ export function uploadPath({ collection, filename, title }: { collection: string
 export const meetingsApi = {
   list: () => apiJson<MeetingSummary[]>("/api/v1/meetings"),
   get: (meetingId: string) => apiJson<Meeting>(`/api/v1/meetings/${id(meetingId)}`),
-  /** The raw file as the body (not multipart). Processing continues in the background. */
-  upload: (params: { collection: string; filename: string; title?: string }, file: Blob) =>
-    apiJson<MeetingSummary>(uploadPath(params), {
-      method: "POST",
-      body: file,
-      headers: { "Content-Type": "application/octet-stream" },
-    }),
+  /**
+   * The raw file as the body (not multipart), with upload progress: recordings go up to 500 MB.
+   * 202: processing continues in the background.
+   */
+  upload: (params: { collection: string; filename: string; title?: string }, file: Blob, options?: UploadOptions) =>
+    uploadRaw<MeetingSummary>(uploadPath(params), file, "application/octet-stream", options),
   mediaUrl: (meetingId: string) => `/api/v1/meetings/${id(meetingId)}/media`,
   setSpeakers: (meetingId: string, speakers: Record<string, string | null>) =>
     apiJson<Meeting>(`/api/v1/meetings/${id(meetingId)}/speakers`, { method: "PUT", json: { speakers } }),

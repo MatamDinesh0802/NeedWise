@@ -1,9 +1,22 @@
 "use client";
 
-import { ArrowLeft, CalendarClock, CircleAlert, CircleCheck, CircleDashed, ListTodo, LoaderCircle, PencilLine, Play, ScrollText, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarClock,
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  Info,
+  ListTodo,
+  LoaderCircle,
+  PencilLine,
+  Play,
+  ScrollText,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SignedInGate } from "@/components/auth/signed-in-gate";
 import { Field, SimpleSelect } from "@/components/data/form";
@@ -16,24 +29,29 @@ import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { usePeople } from "@/hooks/use-people";
 import { usePolling } from "@/hooks/use-polling";
 import { ApiError } from "@/lib/api";
-import { errorMessage } from "@/lib/error-messages";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { meetingsApi, meetingsKeys, type ActionItem, type Decision, type Meeting } from "@/lib/meetings/api";
 import {
   actionEditPayload,
   actionForm,
   activeSegment,
+  dueOf,
   formatDuration,
   formatTimestamp,
   isProcessing,
   jumpTarget,
+  meetingErrorMessage,
   meetingPeople,
+  mergePeople,
   ownerText,
+  panelScrollTop,
   parseStartParam,
+  personOptions,
   pipelineSteps,
   speakerChanges,
   speakerName,
-  STATUS_LABELS,
+  stepLabel,
+  untimedCount,
   type ActionForm,
   type JumpTarget,
   type PersonOption,
@@ -44,7 +62,6 @@ import { getQueryCache } from "@/lib/stores/query-cache";
 import { toast } from "@/lib/stores/toasts";
 import { cn } from "@/lib/utils";
 import { workKeys } from "@/lib/work/api";
-import { dueText } from "@/lib/work/tasks";
 
 /** /meetings/[id]: the id and the optional ?t= start are runtime data (behind Suspense). */
 export function MeetingRoute() {
@@ -68,7 +85,18 @@ function MeetingDetail({ id, me, startAt }: { id: string; me: Me; startAt: numbe
   usePolling(key, meeting !== null && isProcessing(meeting.status), 3000);
 
   if (state.status === "loading") return <TableSkeleton rows={4} />;
-  if (state.status === "error") return <ErrorAlert error={state.error} onRetry={() => void refetch()} />;
+  if (state.status === "error") {
+    if (state.error instanceof ApiError && state.error.status === 404) {
+      return (
+        <EmptyState
+          icon={CalendarClock}
+          title="Meeting not found"
+          description="It doesn't exist, or it is in a collection you can't view. Meetings follow their collection's access."
+        />
+      );
+    }
+    return <ErrorAlert error={state.error} onRetry={() => void refetch()} />;
+  }
   const m = state.data;
 
   return (
@@ -79,7 +107,7 @@ function MeetingDetail({ id, me, startAt }: { id: string; me: Me; startAt: numbe
           <p className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
             <span title={formatDateTime(m.created_at)}>{formatDate(m.created_at)}</span>
             {formatDuration(m.duration_s) ? <span>{formatDuration(m.duration_s)}</span> : null}
-            <span className="font-mono text-xs leading-5">{m.filename}</span>
+            <span className="font-mono text-xs leading-5 break-all">{m.filename}</span>
           </p>
         </div>
         <MeetingStatusBadge status={m.status} />
@@ -90,7 +118,16 @@ function MeetingDetail({ id, me, startAt }: { id: string; me: Me; startAt: numbe
         <Alert variant="destructive">
           <CircleAlert aria-hidden="true" />
           <AlertTitle>This meeting couldn&apos;t be processed</AlertTitle>
-          <AlertDescription>{m.error ?? "Something went wrong."} Upload it again once the problem is fixed.</AlertDescription>
+          <AlertDescription>
+            <p>{m.error || "Something went wrong while processing it."}</p>
+            <p>
+              Fix the cause, then{" "}
+              <Link href="/meetings" className="underline underline-offset-2">
+                upload it again
+              </Link>
+              .
+            </p>
+          </AlertDescription>
         </Alert>
       ) : (
         <Processing meeting={m} />
@@ -101,70 +138,110 @@ function MeetingDetail({ id, me, startAt }: { id: string; me: Me; startAt: numbe
 
 function Processing({ meeting }: { meeting: Meeting }) {
   return (
-    <ol className="flex flex-col gap-2 rounded-xl border p-4" aria-label="Processing">
-      {pipelineSteps(meeting.status).map((step) => (
-        <li key={step.status} className={cn("flex items-center gap-2 text-sm", step.state === "todo" && "text-muted-foreground")}>
-          {step.state === "done" ? (
-            <CircleCheck className="size-4 text-emerald-600 dark:text-emerald-400" aria-label="done" />
-          ) : step.state === "current" ? (
-            <LoaderCircle className="size-4 animate-spin" aria-label="in progress" />
-          ) : (
-            <CircleDashed className="size-4" aria-label="to do" />
-          )}
-          {STATUS_LABELS[step.status]}
-        </li>
-      ))}
-    </ol>
+    <section className="flex flex-col gap-2 rounded-xl border p-4" aria-labelledby="processing-heading">
+      <h3 id="processing-heading" className="text-sm font-medium">
+        Processing
+      </h3>
+      <ol className="flex flex-col gap-2" aria-live="polite">
+        {pipelineSteps(meeting.status).map((step) => (
+          <li key={step.status} className={cn("flex items-center gap-2 text-sm", step.state === "todo" && "text-muted-foreground")}>
+            {step.state === "done" ? (
+              <CircleCheck className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+            ) : step.state === "current" ? (
+              <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <CircleDashed className="size-4" aria-hidden="true" />
+            )}
+            <span>
+              {stepLabel(step.status, meeting.has_media)}
+              <span className="sr-only">{step.state === "done" ? " (done)" : step.state === "current" ? " (in progress)" : " (to do)"}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className="text-xs text-muted-foreground">This page updates by itself. You&apos;ll also get a notification when the notes are ready.</p>
+    </section>
   );
 }
 
-function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: Me; startAt: number | null }) {
+const reducedMotion = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: Me; startAt: number | null }) {
   const audio = useRef<HTMLAudioElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const transcript = useRef<HTMLOListElement>(null);
-  const [time, setTime] = useState<number | null>(null);
-  const [flash, setFlash] = useState<string | null>(null);
-  // Editors pick owners and speakers from the colleague directory (plus anyone this meeting
-  // already linked, so a name never disappears from its own select).
-  const directory = usePeople(meeting.can_edit && canUseDirectory(me.org_role));
-  const people: PersonOption[] = useMemo(() => {
-    const all = new Map(meetingPeople(meeting, { id: me.id, name: me.display_name }).map((p) => [p.id, p.name]));
-    for (const person of directory.people) all.set(person.id, person.display_name);
-    return [...all].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [meeting, me.id, me.display_name, directory.people]);
+  // Only the playing segment is state (not the time), so playback doesn't re-render every segment.
+  const [current, setCurrent] = useState<string | null>(null);
+  // A commitment link (?t=271.4) opens the meeting at that moment, its segment highlighted.
+  const [startSegment] = useState(() => (startAt !== null ? activeSegment(meeting.segments, startAt) : null));
+  const [flash, setFlash] = useState<string | null>(startSegment);
+  const flashTimer = useRef<number | undefined>(undefined);
 
-  const current = time !== null ? activeSegment(meeting.segments, time) : null;
+  // Editors pick owners and speakers from the colleague directory, plus anyone this meeting already
+  // linked (guests can't use the directory; a linked name never disappears from its own select).
+  const directoryEnabled = meeting.can_edit && canUseDirectory(me.org_role);
+  const directory = usePeople(directoryEnabled);
+  const people: PersonOption[] = useMemo(
+    () => mergePeople(meetingPeople(meeting, { id: me.id, name: me.display_name }), directory.people),
+    [meeting, me.id, me.display_name, directory.people],
+  );
 
-  function showSegment(segment: string) {
-    const el = transcript.current?.querySelector<HTMLElement>(`[data-segment="${CSS.escape(segment)}"]`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  const segmentEl = (segment: string) => transcript.current?.querySelector<HTMLElement>(`[data-segment="${CSS.escape(segment)}"]`) ?? null;
+
+  /** Scrolls the transcript panel (not the page) to a segment. */
+  const scrollToSegment = useCallback((segment: string, block: "center" | "nearest", smooth: boolean) => {
+    const list = transcript.current;
+    const el = list?.querySelector<HTMLElement>(`[data-segment="${CSS.escape(segment)}"]`);
+    if (!list || !el) return;
+    const box = el.getBoundingClientRect();
+    const top = panelScrollTop({ top: box.top - list.getBoundingClientRect().top, height: box.height }, list, block);
+    if (top !== null) list.scrollTo({ top, behavior: smooth && !reducedMotion() ? "smooth" : "auto" });
+  }, []);
+
+  const highlight = useCallback((segment: string) => {
     setFlash(segment);
-    window.setTimeout(() => setFlash((f) => (f === segment ? null : f)), 2000);
-  }
+    window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlash(null), 2500);
+  }, []);
+  useEffect(() => () => window.clearTimeout(flashTimer.current), []);
 
   function jump(target: JumpTarget) {
-    if (target.kind === "media" && audio.current) {
-      audio.current.currentTime = target.seconds;
-      void audio.current.play().catch(() => undefined); // autoplay rules may refuse; the seek still happened
-      if (target.segment) showSegment(target.segment);
-    } else if (target.kind === "segment") {
-      showSegment(target.segment);
+    if (target.kind === "media") {
+      const player = audio.current;
+      if (player) {
+        player.currentTime = target.seconds;
+        void player.play().catch(() => undefined); // the browser may refuse to autoplay; the seek still happened
+      }
+      if (target.segment) {
+        scrollToSegment(target.segment, "center", true);
+        highlight(target.segment);
+      }
+      return;
     }
+    // A transcript upload: bring the transcript into view and move focus to the segment.
+    panel.current?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
+    scrollToSegment(target.segment, "center", true);
+    highlight(target.segment);
+    segmentEl(target.segment)?.focus({ preventScroll: true });
   }
 
-  // A commitment link (?t=271) opens the meeting at that moment.
-  const started = useRef(false);
+  const opened = useRef(false);
   useEffect(() => {
-    if (started.current || startAt === null) return;
-    started.current = true;
-    const segment = activeSegment(meeting.segments, startAt);
-    if (meeting.has_media && audio.current) {
-      audio.current.currentTime = startAt;
+    if (opened.current || startAt === null) return;
+    opened.current = true;
+    if (meeting.has_media && audio.current) audio.current.currentTime = startAt; // applied once metadata loads
+    if (startSegment) {
+      scrollToSegment(startSegment, "center", false);
+      flashTimer.current = window.setTimeout(() => setFlash(null), 2500);
     }
-    if (segment) {
-      const el = transcript.current?.querySelector<HTMLElement>(`[data-segment="${CSS.escape(segment)}"]`);
-      el?.scrollIntoView({ block: "center" });
-    }
-  }, [startAt, meeting.has_media, meeting.segments]);
+  }, [startAt, startSegment, meeting.has_media, scrollToSegment]);
+
+  // Follow playback: keep the playing segment visible in the panel.
+  useEffect(() => {
+    if (current && audio.current && !audio.current.paused) scrollToSegment(current, "nearest", true);
+  }, [current, scrollToSegment]);
+
+  const untimed = untimedCount(meeting);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
@@ -173,7 +250,7 @@ function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: Me; star
           <h3 id="summary-heading" className="font-medium">
             Summary
           </h3>
-          <p className="text-sm leading-relaxed whitespace-pre-line">{meeting.summary || "No summary."}</p>
+          <p className="text-sm leading-relaxed whitespace-pre-line">{meeting.summary || "No summary was extracted."}</p>
         </section>
 
         <section aria-labelledby="decisions-heading" className="flex flex-col gap-2">
@@ -181,7 +258,7 @@ function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: Me; star
             Decisions <span className="text-sm font-normal text-muted-foreground">({meeting.decisions.length})</span>
           </h3>
           {meeting.decisions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No decisions were made.</p>
+            <p className="text-sm text-muted-foreground">No decisions were found in this meeting.</p>
           ) : (
             <ol className="flex flex-col gap-2">
               {meeting.decisions.map((decision, index) => (
@@ -200,7 +277,7 @@ function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: Me; star
             Action items <span className="text-sm font-normal text-muted-foreground">({meeting.action_items.length})</span>
           </h3>
           {meeting.action_items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nobody committed to anything.</p>
+            <p className="text-sm text-muted-foreground">No one committed to anything in this meeting.</p>
           ) : (
             <ol className="flex flex-col gap-2">
               {meeting.action_items.map((item, index) => (
@@ -208,12 +285,26 @@ function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: Me; star
               ))}
             </ol>
           )}
+          {untimed > 0 ? (
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              {untimed === 1 ? "One item has" : `${untimed} items have`} no timestamp: the extraction pointed at a part of the transcript
+              that doesn&apos;t exist, so no time is shown rather than a guessed one.
+            </p>
+          ) : null}
         </section>
 
-        {meeting.can_edit && Object.keys(meeting.speakers).length > 0 ? <SpeakerMapping meeting={meeting} people={people} /> : null}
+        {meeting.can_edit && Object.keys(meeting.speakers).length > 0 ? (
+          <SpeakerMapping
+            key={JSON.stringify(meeting.speakers)}
+            meeting={meeting}
+            people={people}
+            directoryError={directoryEnabled ? directory.error : null}
+          />
+        ) : null}
       </div>
 
-      <div className="flex min-w-0 flex-col gap-3 lg:sticky lg:top-18 lg:max-h-[calc(100vh-6rem)]">
+      <div className="flex min-w-0 flex-col gap-3 lg:sticky lg:top-18 lg:max-h-[calc(100vh-6rem)] lg:self-start">
         {meeting.has_media ? (
           <audio
             ref={audio}
@@ -221,11 +312,13 @@ function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: Me; star
             preload="metadata"
             src={meetingsApi.mediaUrl(meeting.id)}
             className="w-full"
-            onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+            onTimeUpdate={(e) => setCurrent(activeSegment(meeting.segments, e.currentTarget.currentTime))}
             aria-label={`Recording of ${meeting.title}`}
-          />
+          >
+            Your browser can&apos;t play this recording.
+          </audio>
         ) : null}
-        <section aria-labelledby="transcript-heading" className="flex min-h-0 flex-col rounded-xl border">
+        <section ref={panel} aria-labelledby="transcript-heading" className="flex min-h-0 flex-col rounded-xl border">
           <h3 id="transcript-heading" className="flex items-center gap-2 border-b px-3 py-2 text-sm font-medium">
             <ScrollText className="size-4 text-muted-foreground" aria-hidden="true" />
             Transcript
@@ -241,9 +334,10 @@ function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: Me; star
                 <li
                   key={segment.id}
                   data-segment={segment.id}
+                  tabIndex={-1}
                   aria-current={current === segment.id ? "true" : undefined}
                   className={cn(
-                    "flex gap-2 rounded-md px-2 py-1.5 transition-colors",
+                    "flex gap-2 rounded-md px-2 py-1.5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                     current === segment.id && "bg-sky-500/10",
                     flash === segment.id && "bg-amber-500/20",
                   )}
@@ -284,7 +378,7 @@ function Timestamp({ item, hasMedia, onJump }: { item: Pick<Decision, "segment" 
       variant="outline"
       size="xs"
       className="shrink-0 font-mono tabular-nums"
-      aria-label={hasMedia ? `Play from ${label}` : `Show ${label} in the transcript`}
+      aria-label={hasMedia ? `Play the recording from ${label}` : `Show ${label} in the transcript`}
       title={hasMedia ? "Play from here" : "Show in the transcript"}
       onClick={() => onJump(target)}
     >
@@ -320,8 +414,23 @@ function ActionRow({
   const [errors, setErrors] = useState<Partial<Record<keyof ActionForm, string>>>({});
   const [pending, setPending] = useState<"save" | "task" | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const due = item.due ? dueText(`${item.due}T17:00:00Z`) : null;
+  const correctButton = useRef<HTMLButtonElement>(null);
+  const due = dueOf(item.due);
   const isTask = Boolean(item.task_id);
+
+  function open() {
+    setForm(actionForm(item)); // the item may have changed since (speaker mapping re-links owners)
+    setErrors({});
+    setError(null);
+    setEditing(true);
+  }
+
+  function close() {
+    setEditing(false);
+    setErrors({});
+    setError(null);
+    window.requestAnimationFrame(() => correctButton.current?.focus());
+  }
 
   async function save() {
     const payload = actionEditPayload(item, form);
@@ -331,14 +440,14 @@ function ActionRow({
     }
     setErrors({});
     if (!payload.body) {
-      setEditing(false);
+      close();
       return;
     }
     setPending("save");
     setError(null);
     try {
       storeMeeting(await meetingsApi.editAction(meeting.id, index, payload.body));
-      setEditing(false);
+      close();
       toast({ title: "Action item corrected" });
     } catch (err) {
       setError(err);
@@ -354,7 +463,14 @@ function ActionRow({
     try {
       storeMeeting(await meetingsApi.makeTask(meeting.id, index));
       await invalidateQueries(workKeys.tasks);
-      toast({ title: "Task created", description: item.owner_user_id ? "Its owner was notified." : "Nobody owns it yet: assign it on the task." });
+      toast({
+        title: "Task created",
+        description: item.owner_user_id
+          ? item.owner_user_id === meId
+            ? "It's in your tasks."
+            : `${item.owner || "Its owner"} was notified.`
+          : "Nobody owns it yet: it is in your “Created by me” tasks.",
+      });
     } catch (err) {
       setError(err);
       if (err instanceof ApiError && err.code === "already_a_task") void invalidateQueries(meetingsKeys.meeting(meeting.id));
@@ -363,8 +479,7 @@ function ActionRow({
     }
   }
 
-  const ownerOptions = [{ value: "", label: "Nobody" }, ...people.map((p) => ({ value: p.id, label: p.name }))];
-  if (item.owner_user_id && !people.some((p) => p.id === item.owner_user_id)) ownerOptions.push({ value: item.owner_user_id, label: item.owner || "Current owner" });
+  const owner = item.owner_user_id ? { id: item.owner_user_id, name: item.owner || "Current owner" } : null;
 
   return (
     <li className="flex flex-col gap-2 rounded-lg border px-3 py-2 text-sm">
@@ -372,43 +487,68 @@ function ActionRow({
         <form
           className="flex flex-col gap-3"
           noValidate
+          aria-label={`Correct action item ${index + 1}`}
           onSubmit={(e) => {
             e.preventDefault();
             void save();
           }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && pending === null) {
+              e.stopPropagation();
+              close();
+            }
+          }}
         >
           <Field label="What needs to happen" error={errors.text ?? null}>
             {({ id, describedBy, invalid }) => (
-              <Input id={id} maxLength={500} value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} aria-describedby={describedBy} aria-invalid={invalid || undefined} />
+              <Input
+                id={id}
+                autoFocus
+                maxLength={500}
+                value={form.text}
+                disabled={pending !== null}
+                onChange={(e) => setForm({ ...form, text: e.target.value })}
+                aria-describedby={describedBy}
+                aria-invalid={invalid || undefined}
+              />
             )}
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Owner" hint={`Said in the meeting: “${item.owner || "nobody"}”`}>
-              {({ id }) => <SimpleSelect id={id} value={form.ownerUserId} onChange={(ownerUserId) => setForm({ ...form, ownerUserId })} options={ownerOptions} />}
+            <Field
+              label="Owner"
+              hint={item.owner && !item.owner_user_id ? `Said in the meeting: “${item.owner}” (not linked to anyone).` : undefined}
+            >
+              {({ id }) => (
+                <SimpleSelect
+                  id={id}
+                  value={form.ownerUserId}
+                  disabled={pending !== null}
+                  onChange={(ownerUserId) => setForm({ ...form, ownerUserId })}
+                  options={personOptions(people, owner, "Nobody")}
+                />
+              )}
             </Field>
             <Field label="Due" error={errors.due ?? null}>
               {({ id, describedBy, invalid }) => (
-                <Input id={id} type="date" value={form.due} onChange={(e) => setForm({ ...form, due: e.target.value })} aria-describedby={describedBy} aria-invalid={invalid || undefined} />
+                <Input
+                  id={id}
+                  type="date"
+                  value={form.due}
+                  disabled={pending !== null}
+                  onChange={(e) => setForm({ ...form, due: e.target.value })}
+                  aria-describedby={describedBy}
+                  aria-invalid={invalid || undefined}
+                />
               )}
             </Field>
           </div>
-          {error ? <ErrorAlert error={error} /> : null}
+          {error ? <ErrorAlert error={error} message={meetingErrorMessage(error)} /> : null}
           <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={pending !== null}
-              onClick={() => {
-                setEditing(false);
-                setForm(actionForm(item));
-                setErrors({});
-                setError(null);
-              }}
-            >
+            <Button type="button" variant="ghost" size="sm" disabled={pending !== null} onClick={close}>
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={pending !== null}>
+              {pending === "save" ? <LoaderCircle className="animate-spin" data-icon="inline-start" aria-hidden="true" /> : null}
               {pending === "save" ? "Saving…" : "Save"}
             </Button>
           </div>
@@ -422,11 +562,12 @@ function ActionRow({
               <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Users className="size-3" aria-hidden="true" />
+                  <span className="sr-only">Owner: </span>
                   {ownerText(item, meId)}
-                  {item.owner && !item.owner_user_id ? <span title="Not linked to a colleague">(not linked)</span> : null}
+                  {item.owner && !item.owner_user_id ? <span>(not linked to a colleague)</span> : null}
                 </span>
                 {due ? (
-                  <span className={cn("flex items-center gap-1", due.overdue && "text-destructive")}>
+                  <span className={cn("flex items-center gap-1", due.overdue && !isTask && "text-destructive")}>
                     <CalendarClock className="size-3" aria-hidden="true" />
                     {due.text}
                   </span>
@@ -445,26 +586,30 @@ function ActionRow({
               </Link>
             ) : meeting.can_edit ? (
               <>
-                <Button type="button" variant="ghost" size="xs" disabled={pending !== null} onClick={() => setEditing(true)}>
-                  <PencilLine data-icon="inline-start" />
+                <Button ref={correctButton} type="button" variant="ghost" size="xs" disabled={pending !== null} onClick={open}>
+                  <PencilLine data-icon="inline-start" aria-hidden="true" />
                   Correct
                 </Button>
                 <Button type="button" variant="outline" size="xs" disabled={pending !== null} onClick={() => void makeTask()}>
-                  {pending === "task" ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <ListTodo data-icon="inline-start" />}
-                  Make task
+                  {pending === "task" ? (
+                    <LoaderCircle className="animate-spin" data-icon="inline-start" aria-hidden="true" />
+                  ) : (
+                    <ListTodo data-icon="inline-start" aria-hidden="true" />
+                  )}
+                  {pending === "task" ? "Creating…" : "Make task"}
                 </Button>
               </>
             ) : null}
           </div>
-          {error && !editing ? <ErrorAlert error={error} /> : null}
+          {error ? <ErrorAlert error={error} message={meetingErrorMessage(error)} /> : null}
         </>
       )}
     </li>
   );
 }
 
-function SpeakerMapping({ meeting, people }: { meeting: Meeting; people: PersonOption[] }) {
-  const labels = Object.keys(meeting.speakers).sort();
+function SpeakerMapping({ meeting, people, directoryError }: { meeting: Meeting; people: PersonOption[]; directoryError: unknown }) {
+  const labels = Object.keys(meeting.speakers).sort((a, b) => a.localeCompare(b));
   const [chosen, setChosen] = useState<Record<string, string | null>>(() =>
     Object.fromEntries(labels.map((label) => [label, meeting.speakers[label].user_id ?? null])),
   );
@@ -478,7 +623,7 @@ function SpeakerMapping({ meeting, people }: { meeting: Meeting; people: PersonO
     setError(null);
     try {
       storeMeeting(await meetingsApi.setSpeakers(meeting.id, changes));
-      toast({ title: "Speakers saved", description: "Action items said by them are linked to those people." });
+      toast({ title: "Speakers saved", description: "Action items owned by those speakers are now linked to them." });
     } catch (err) {
       setError(err);
     } finally {
@@ -486,40 +631,45 @@ function SpeakerMapping({ meeting, people }: { meeting: Meeting; people: PersonO
     }
   }
 
-  const options = (label: string) => {
-    const current = meeting.speakers[label];
-    const list = [{ value: "", label: "Not a colleague" }, ...people.map((p) => ({ value: p.id, label: p.name }))];
-    if (current.user_id && !people.some((p) => p.id === current.user_id)) list.push({ value: current.user_id, label: current.name });
-    return list;
-  };
-
   return (
     <section aria-labelledby="speakers-heading" className="flex flex-col gap-3 rounded-xl border p-4">
       <div>
         <h3 id="speakers-heading" className="font-medium">
           Who is who
         </h3>
-        <p className="text-xs text-muted-foreground">Link each speaker to a colleague so their action items reach them.</p>
+        <p className="text-xs text-muted-foreground">
+          Link each speaker in the transcript to a colleague. Their action items are linked to that person, so a task made from one
+          reaches them.
+        </p>
       </div>
-      <ul className="grid gap-2 sm:grid-cols-2">
-        {labels.map((label) => (
-          <li key={label} className="flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-sm" title={label}>
-              {label}
-            </span>
-            <SimpleSelect
-              size="sm"
-              ariaLabel={`Colleague for ${label}`}
-              value={chosen[label] ?? ""}
-              disabled={pending}
-              onChange={(value) => setChosen({ ...chosen, [label]: value || null })}
-              options={options(label)}
-            />
-          </li>
-        ))}
+      {directoryError ? (
+        <p className="text-xs text-muted-foreground">
+          The colleague directory didn&apos;t load, so only people this meeting already knows are listed.
+        </p>
+      ) : null}
+      <ul className="flex flex-col gap-2">
+        {labels.map((label) => {
+          const speaker = meeting.speakers[label];
+          return (
+            <li key={label} className="flex flex-wrap items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-sm" title={label}>
+                {label}
+              </span>
+              <SimpleSelect
+                size="sm"
+                ariaLabel={`Colleague for ${label}`}
+                value={chosen[label] ?? ""}
+                disabled={pending}
+                onChange={(value) => setChosen({ ...chosen, [label]: value || null })}
+                options={personOptions(people, speaker.user_id ? { id: speaker.user_id, name: speaker.name } : null, "Not a colleague")}
+              />
+            </li>
+          );
+        })}
       </ul>
-      {error ? <p className="text-xs text-destructive">{errorMessage(error).title}: {errorMessage(error).description}</p> : null}
+      {error ? <ErrorAlert error={error} message={meetingErrorMessage(error)} /> : null}
       <Button type="button" size="sm" className="w-fit self-end" disabled={!dirty || pending} onClick={() => void save()}>
+        {pending ? <LoaderCircle className="animate-spin" data-icon="inline-start" aria-hidden="true" /> : null}
         {pending ? "Saving…" : "Save speakers"}
       </Button>
     </section>
