@@ -247,7 +247,7 @@ async def upload_meeting(
         deps = MeetingDeps(
             resources.db,
             resources.storage,
-            resources.llm,
+            await resources.models.for_tenant(ctx.tenant_id),
             resources.transcriber,
             resources.ingestion,
         )

@@ -167,7 +167,7 @@ async def ask(ctx: AskContext, request: Request, body: AskIn) -> AnalyticsAnswer
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         tenant = await session.get(Tenant, ctx.tenant_id)
     return await agent.answer(
-        resources.llm,
+        await resources.models.for_tenant(ctx.tenant_id),
         resources.analytics,
         ctx,
         body.question,

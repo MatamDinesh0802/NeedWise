@@ -124,7 +124,7 @@ export const navItems: readonly NavItem[] = [
     title: "Admin",
     href: "/admin",
     icon: ShieldCheck,
-    description: "Organization, users, departments, groups, connectors, policies and audit log.",
+    description: "Organization, users, departments, groups, connectors, models, policies and audit log.",
     phase: 1,
     group: "administration",
     visibleTo: ADMIN_VIEW_ROLES,

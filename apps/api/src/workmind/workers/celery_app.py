@@ -176,7 +176,7 @@ async def _run_due_workflows() -> int:
     await resources.load_remote_tools()
     started = 0
     try:
-        deps = WorkflowDeps(resources.db, resources.llm, resources.tools)
+        deps = WorkflowDeps(resources.db, resources.llm, resources.tools, resources.models)
         now = datetime.now(UTC)
         for tenant_id in await _active_tenants(resources):
             # Event runs nobody started (e.g. the worker stopped right after queueing them).
@@ -216,7 +216,7 @@ async def _expire_approvals() -> int:
     resources = Resources.create(settings, extensions=extensions)
     count = 0
     try:
-        deps = WorkflowDeps(resources.db, resources.llm, resources.tools)
+        deps = WorkflowDeps(resources.db, resources.llm, resources.tools, resources.models)
         for tenant_id in await _active_tenants(resources):
             for approval in await expire_due(resources.db, tenant_id):
                 await resume_after(deps, approval)  # cancels a workflow waiting on it
@@ -237,7 +237,7 @@ async def _process_meeting(tenant_id: str, meeting_id: str) -> None:
         deps = MeetingDeps(
             resources.db,
             resources.storage,
-            resources.llm,
+            await resources.models.for_tenant(uuid.UUID(tenant_id)),
             resources.transcriber,
             CeleryDispatcher(),
         )

@@ -3,6 +3,8 @@
 wm eval [options]         run the evaluation suites (see `wm eval --help`)
 wm seed [options]         seed a demo company (see `wm seed --help`)
 wm license dev [options]  write a development Enterprise license (see `wm license dev --help`)
+wm reindex <tenant>       re-index a tenant's documents
+wm secrets rotate         re-encrypt stored model provider keys with SECRETS_ENCRYPTION_KEY
 """
 
 import sys
@@ -27,6 +29,10 @@ def main(argv: list[str] | None = None) -> int:
         import asyncio
 
         return asyncio.run(_reindex(rest[0]))
+    if command == "secrets" and rest == ["rotate"]:
+        import asyncio
+
+        return asyncio.run(_rotate_secrets())
     print(__doc__, file=sys.stderr)
     return 0 if command in ("-h", "--help") else 1
 
@@ -68,6 +74,27 @@ async def _reindex(tenant_slug: str) -> int:
         file=sys.stderr,
     )
     return 1 if result.failed else 0
+
+
+async def _rotate_secrets() -> int:
+    from workmind.core.config import Settings
+    from workmind.core.db import create_engine, create_session_factory
+    from workmind.modules.model_catalog.rotation import rotate_keys
+    from workmind.modules.model_catalog.secrets import KeyRing
+
+    settings = Settings()
+    keyring = KeyRing.from_settings(settings)
+    engine = create_engine(settings.database_url)
+    try:
+        report = await rotate_keys(create_session_factory(engine), keyring)
+    finally:
+        await engine.dispose()
+    print(
+        f"model provider keys: {report.rotated} re-encrypted with key {keyring.active_key_id}, "
+        f"{report.current} already on it, {report.failed} could not be decrypted",
+        file=sys.stderr,
+    )
+    return 1 if report.failed else 0
 
 
 if __name__ == "__main__":

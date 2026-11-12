@@ -28,7 +28,6 @@ from workmind.modules.agents.planning import Agent, FastRouter, Plan, load_agent
 from workmind.modules.assistant.answer import (
     ABSTAIN,
     SYSTEM,
-    WITHHELD,
     Answer,
     AnswerEvent,
     RestrictedPolicy,
@@ -39,6 +38,7 @@ from workmind.modules.assistant.answer import (
     finish,
     render_sources,
     route,
+    withheld_notice,
 )
 from workmind.modules.retrieval.service import Passage, Retriever
 from workmind.modules.tools.registry import ToolRegistry
@@ -278,7 +278,7 @@ async def compose_answer(
     withheld = max(agg.withheld, chosen.withheld)
     yield SourcesEvent(agg.passages, withheld)
     if not agg.passages and not agg.tool_outputs:
-        text = ABSTAIN + (" " + WITHHELD.format(count=withheld) if withheld else "")
+        text = ABSTAIN + (" " + withheld_notice(withheld, policy) if withheld else "")
         yield TokenEvent(text)
         yield AnswerEvent(Answer(text=text, passages=[], abstained=True, withheld=withheld))
         return

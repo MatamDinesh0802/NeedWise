@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from workmind.api.deps import require_scope, resources_of
 from workmind.api.v1.admin import AdminContext
-from workmind.api.v1.assistant import restricted_policy
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
@@ -433,10 +432,11 @@ async def test_agent(ctx: AdminContext, request: Request, body: TestRequest) -> 
             tested = agent_from_definition(draft, ids)
         elif body.key is not None:
             tested = agent_from_definition(await _agent(session, body.key), ids)
+    llm = await resources.models.for_tenant(ctx.tenant_id)
     deps = OrchestratorDeps(
         resources.db,
-        resources.llm,
-        resources.local_llm,
+        llm,
+        llm.local,
         resources.retriever,
         resources.agent_router,
         tools=resources.tools,
@@ -448,7 +448,7 @@ async def test_agent(ctx: AdminContext, request: Request, body: TestRequest) -> 
             body.question,
             tested,
             organization=tenant.name if tenant else "the company",
-            policy=restricted_policy(tenant.settings if tenant else {}),
+            policy=llm.max_external_sensitivity,
         )
     except LLMError as exc:
         raise ApiError(
