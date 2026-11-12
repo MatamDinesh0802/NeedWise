@@ -68,8 +68,15 @@ async def load_directory(session: AsyncSession) -> Directory:
     return Directory([u.display_name for u in users if u.display_name], people)
 
 
+def document_title(meeting: Meeting) -> str:
+    """The title of the meeting's knowledge document. It is also the transcript's heading,
+    which indexing reads as the title: the two must agree, or indexing renames the document."""
+    day = f" ({meeting.created_at:%Y-%m-%d})" if meeting.created_at else ""
+    return f"Meeting: {meeting.title}{day}"
+
+
 def transcript_markdown(meeting: Meeting) -> str:
-    lines = [f"# {meeting.title}", ""]
+    lines = [f"# {document_title(meeting)}", ""]
     current = -1
     for s in meeting.segments:
         section = int(float(s["start"]) // SECTION_SECONDS)
@@ -212,7 +219,7 @@ async def _index(deps: MeetingDeps, meeting: Meeting) -> uuid.UUID:
             trust="discussion",
         )
         result.document.url = f"/meetings/{meeting.id}"
-        result.document.title = f"Meeting: {meeting.title} ({meeting.created_at:%Y-%m-%d})"
+        result.document.title = document_title(meeting)
     if not result.unchanged:
         await deps.ingestion.dispatch(meeting.tenant_id, result.document.id, result.version.id)
     return result.document.id

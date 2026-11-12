@@ -1,6 +1,6 @@
 """Meetings without a database: transcript formats and the checks on what the model extracts."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
@@ -10,7 +10,7 @@ from workmind.api.v1.meetings import UnsatisfiableRangeError, byte_range
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.extract import ActionItem, Decision, Extraction, clock, extract
 from workmind.modules.meetings.models import Meeting
-from workmind.modules.meetings.pipeline import transcript_markdown
+from workmind.modules.meetings.pipeline import document_title, transcript_markdown
 from workmind.providers.transcription import hint
 
 VTT = b"""WEBVTT
@@ -148,11 +148,21 @@ def test_the_indexed_transcript_is_split_into_five_minute_sections() -> None:
 
     markdown = transcript_markdown(meeting)
 
-    assert markdown.startswith("# Weekly sync\n")
+    assert markdown.startswith("# Meeting: Weekly sync\n")
     assert "## 00:00 to 05:00" in markdown
     assert "## 05:00 to 10:00" in markdown
     assert "[06:10] Olivia Grant: Thanks, everyone." in markdown
     assert clock(3723.5) == "1:02:03"
+
+
+def test_the_transcript_heading_is_the_document_title() -> None:
+    # Indexing reads the first heading as the title; it must not rename the document.
+    meeting = Meeting(
+        title="Weekly sync", segments=[], speakers={}, created_at=datetime(2026, 11, 2, tzinfo=UTC)
+    )
+
+    assert document_title(meeting) == "Meeting: Weekly sync (2026-11-02)"
+    assert transcript_markdown(meeting).startswith("# Meeting: Weekly sync (2026-11-02)\n")
 
 
 def test_the_spelling_hint_dedupes_and_fits_the_prompt_budget() -> None:
