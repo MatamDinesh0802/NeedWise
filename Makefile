@@ -99,3 +99,17 @@ ee-dev-license: ## Write a development Enterprise license to .workmind/ (APP_ENV
 
 seed: ## Create the Acme Robotics demo company and its logins (safe to re-run)
 	$(COMPOSE) --profile tools run --rm --build seed
+
+# Supply-chain checks, the same as the Security workflow (docs/security/supply-chain.md). Each
+# scanner runs from a container image pinned by digest. scan-images builds under separate tags
+# (workmind-api:scan, workmind-web:scan), so the images `make up` runs are left alone.
+.PHONY: scan scan-images
+scan: ## Scan lockfiles, repository, Dockerfiles and workflows (Docker only, nothing installed)
+	scripts/security-scan.sh all
+
+scan-images: ## Build the api and web images under :scan tags, scan them, remove them
+	docker build -t workmind-api:scan --build-context ee=ee apps/api
+	docker build -t workmind-web:scan apps/web
+	scripts/security-scan.sh image workmind-api:scan
+	scripts/security-scan.sh image workmind-web:scan
+	docker image rm workmind-api:scan workmind-web:scan

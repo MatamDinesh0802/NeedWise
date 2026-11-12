@@ -1,13 +1,13 @@
-# Trivy exceptions (trivy --ignorefile .trivyignore.yaml). Each entry needs a statement saying
-# why it is safe, and should expire so it gets looked at again. docs/security/supply-chain.md
-# lists the current ones.
+# Trivy exceptions (trivy --ignorefile .trivyignore.yaml, see scripts/security-scan.sh). Each
+# entry needs a statement saying why it is safe, and expires so it gets looked at again.
+# docs/security/supply-chain.md lists the current ones.
 
 secrets:
   - id: gcp-service-account
     paths:
       - "/app/.venv/lib/python*/site-packages/anthropic/**"
     statement: >-
-      False positive in the Anthropic SDK (api image). Its docstrings for the managed agents beta
-      contain the literal JSON {"type": "service_account"}, which this rule matches; there is no
-      key material. Found 2026-11-12 with anthropic 2.4.0.
+      False positive in the Anthropic SDK (api image). Docstrings of its managed agents beta show
+      an example JSON object whose "type" field is the string service_account, which this rule
+      matches; there is no key material. Found 2026-11-12 with anthropic 2.4.0.
     expired_at: 2027-05-12
