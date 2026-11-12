@@ -4,6 +4,7 @@ import {
   categoryLabels,
   formatCell,
   formatCost,
+  formatDay,
   formatElapsed,
   formatEur,
   formatNumber,
@@ -125,6 +126,14 @@ describe("niceTicks", () => {
     expect(ticks).toContain(0);
     expect(niceTicks(0, 0)).toEqual([0, 1]);
     expect(niceTicks(5, 5)[0]).toBe(0);
+  });
+});
+
+describe("formatDay", () => {
+  it("reads a date as a calendar day in any time zone", () => {
+    expect(formatDay("2026-09-30")).toBe("Sep 30, 2026");
+    expect(formatDay(null)).toBe("—");
+    expect(formatDay("soon")).toBe("—");
   });
 });
 

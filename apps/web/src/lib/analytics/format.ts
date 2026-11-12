@@ -109,6 +109,12 @@ export function parseIsoDate(value: Cell): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+/** "2026-09-30" → "Sep 30, 2026", read as a calendar day (UTC), so no time zone shifts it a day. */
+export function formatDay(value: string | null): string {
+  const date = parseIsoDate(value);
+  return date ? DAY.format(date) : "—";
+}
+
 /**
  * Labels for chart categories. Dates follow the grain the column name or the values imply:
  * "quarter" → "Q3 2026", "year" → "2026", first-of-month → "Mar 2026", otherwise "Mar 5, 2026".
