@@ -5,8 +5,9 @@ from collections.abc import Mapping
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
+from workmind.core.urls import check_url
 from workmind.modules.connectors.base import Connector, ConnectorError
 from workmind.modules.connectors.gdrive import GoogleDriveConnector
 from workmind.modules.connectors.github import GitHubConnector
@@ -19,6 +20,14 @@ class WebConfig(BaseModel):
     start_urls: list[HttpUrl] = Field(min_length=1, max_length=20)
     max_pages: int = Field(default=100, ge=1, le=5000)
     path_prefix: str | None = None
+
+    @field_validator("start_urls")
+    @classmethod
+    def _fetchable(cls, urls: list[HttpUrl]) -> list[HttpUrl]:
+        """The outbound URL policy (core/urls.py); the crawler checks resolved addresses too."""
+        for url in urls:
+            check_url(str(url))  # UnsafeUrlError is a ValueError: a 422 with the reason
+        return urls
 
 
 class GitHubConfig(BaseModel):
