@@ -140,6 +140,15 @@ export function humanize(name: string): string {
   return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : name;
 }
 
+/**
+ * A measure column as a series name: "revenue_eur" → "Revenue". The unit suffix goes, because
+ * the axis and every value already show it (€, %). A bare unit ("eur") stays as it is.
+ */
+export function measureLabel(name: string): string {
+  const stripped = name.replace(/_(eur|usd|pct|percent)$/i, "");
+  return humanize(stripped || name);
+}
+
 /** Clean axis ticks (steps of 1, 2 or 5 × 10^n) covering [min, max], including 0 when in range. */
 export function niceTicks(min: number, max: number, target = 5): number[] {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return [0];

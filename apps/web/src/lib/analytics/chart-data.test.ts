@@ -39,7 +39,7 @@ describe("shapeChart", () => {
     const data = chart(shapeChart(spec({ type: "bar", x: "name", y: ["growth_eur"], series: null, query: "Q2" }), topDrivers));
     expect(data.categories.map((c) => c.label)).toEqual(["Bluefin Freight", "Polaris Parcel", "Nordlicht \"Logistik\", GmbH"]);
     expect(data.series).toHaveLength(1);
-    expect(data.series[0]).toMatchObject({ label: "Growth eur", values: [1650000, 1320000, 410000.5], slot: 1 });
+    expect(data.series[0]).toMatchObject({ label: "Growth", values: [1650000, 1320000, 410000.5], slot: 1 });
   });
 
   it("adds up repeated x/series rows and leaves gaps as null", () => {

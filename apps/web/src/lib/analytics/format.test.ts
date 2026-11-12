@@ -11,6 +11,7 @@ import {
   formatPercent,
   formatValue,
   humanize,
+  measureLabel,
   niceTicks,
   percentScale,
   toNumber,
@@ -141,6 +142,13 @@ describe("small formatters", () => {
   it("humanizes column names", () => {
     expect(humanize("revenue_eur")).toBe("Revenue eur");
     expect(humanize("month")).toBe("Month");
+  });
+
+  it("drops the unit from measure names, since the axis shows it", () => {
+    expect(measureLabel("revenue_eur")).toBe("Revenue");
+    expect(measureLabel("win_rate_pct")).toBe("Win rate");
+    expect(measureLabel("deals")).toBe("Deals");
+    expect(measureLabel("eur")).toBe("Eur");
   });
 
   it("formats elapsed time and cost", () => {

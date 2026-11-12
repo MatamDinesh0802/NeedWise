@@ -106,7 +106,8 @@ function readout(data: ChartData, index: number): Readout {
   const present = rows.map((r) => r.value).filter((v): v is number => v !== null);
   return {
     label: data.categories[index]?.label ?? "",
-    rows,
+    // A stack reads top to bottom, so its tooltip does too.
+    rows: data.type === "stacked_bar" ? rows.reverse() : rows,
     total: data.type === "stacked_bar" && rows.length > 1 && present.length > 0 ? present.reduce((a, b) => a + b, 0) : null,
   };
 }

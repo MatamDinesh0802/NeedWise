@@ -10,7 +10,7 @@
  */
 
 import type { Cell, ChartSpec, ResultColumn, ValueFormat } from "@/lib/analytics/api";
-import { categoryLabels, humanize, parseIsoDate, percentScale, toNumber, type PercentScale } from "@/lib/analytics/format";
+import { categoryLabels, humanize, measureLabel, parseIsoDate, percentScale, toNumber, type PercentScale } from "@/lib/analytics/format";
 
 export const MAX_SERIES = 8;
 /** Bars past this many categories can't be read; the table shows them instead. */
@@ -117,7 +117,7 @@ export function shapeChart(spec: ChartSpec, result: Rows): ShapedChart {
     series = spec.y.map((name, i) => {
       const values = blank();
       for (const row of result.rows) add(values, categoryIndex.get(keyOf(row[xi] ?? null))!, numeric(row[yis[i]], name));
-      return { key: name, label: humanize(name), values };
+      return { key: name, label: measureLabel(name), values };
     });
   }
   if (problem.column) return { kind: "unavailable", reason: `“${problem.column}” isn't numeric, so it can't be plotted.` };

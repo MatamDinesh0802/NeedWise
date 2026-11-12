@@ -117,6 +117,8 @@ function Workspace({ model }: { model: AnalyticsModelAvailable }) {
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         toast({ title: "Stopped waiting", description: "If the answer finishes anyway, it appears in your answers." });
+        // The server keeps going; look again once it has likely finished.
+        window.setTimeout(() => void invalidateQueries(analyticsKeys.runs), 30_000);
       } else {
         setAskError(error);
       }

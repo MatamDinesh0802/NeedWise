@@ -357,6 +357,25 @@ export function ModelEditor({ yaml, tables }: { yaml: string | null; tables: rea
         <p className="text-sm text-muted-foreground">No data model yet: Insights stays off for everyone until you save one.</p>
       ) : null}
 
+      {/* Above the editor, so a long model never pushes the problems out of sight. */}
+      {problems.length > 0 ? (
+        <Alert variant="destructive" id={problemsId}>
+          <CircleAlert aria-hidden="true" />
+          <AlertTitle>The data model wasn&apos;t saved: {problems.length === 1 ? "1 problem" : `${problems.length} problems`}</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc pl-4">
+              {problems.map((problem, i) => (
+                <li key={i} className="font-mono text-xs">
+                  {problem}
+                </li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : error ? (
+        <ErrorAlert error={error} />
+      ) : null}
+
       <Field
         label="Semantic model (YAML)"
         hint={
@@ -376,7 +395,7 @@ export function ModelEditor({ yaml, tables }: { yaml: string | null; tables: rea
             autoCapitalize="none"
             autoCorrect="off"
             wrap="off"
-            className="min-h-80 font-mono text-xs leading-relaxed"
+            className="max-h-[36rem] min-h-80 overflow-auto font-mono text-xs leading-relaxed"
             value={text}
             placeholder={tables.length > 0 ? "Empty. Start from the uploaded tables, or paste a model." : "Upload tables first, then describe them here."}
             onChange={(e) => setText(e.target.value)}
@@ -386,24 +405,6 @@ export function ModelEditor({ yaml, tables }: { yaml: string | null; tables: rea
           />
         )}
       </Field>
-
-      {problems.length > 0 ? (
-        <Alert variant="destructive" id={problemsId}>
-          <CircleAlert aria-hidden="true" />
-          <AlertTitle>The data model wasn&apos;t saved: {problems.length === 1 ? "1 problem" : `${problems.length} problems`}</AlertTitle>
-          <AlertDescription>
-            <ul className="list-disc pl-4">
-              {problems.map((problem, i) => (
-                <li key={i} className="font-mono text-xs">
-                  {problem}
-                </li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      ) : error ? (
-        <ErrorAlert error={error} />
-      ) : null}
     </section>
   );
 }
