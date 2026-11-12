@@ -480,12 +480,13 @@ fixes were checked on its cluster; the later runs used `deploy/helm/kind-test.sh
 fixed chart. These are local clusters, not a cloud: read
 the results as "the chart and the app work on Kubernetes", not as a production qualification.
 
-| | Run 1 | Run 2 | Runs 3 and 4 |
-|---|---|---|---|
-| Kubernetes | 1.37.0 (`kindest/node:v1.37.0`) | 1.34.11 (`kindest/node:v1.34.11`) | 1.37.0 |
-| Helm, kubectl | 3.19.0, 1.37.2 | 4.0.0, 1.34.13 | 3.19.0, 1.37.2 |
-| How | step by step, by hand | `deploy/helm/kind-test.sh` | `make helm-kind-test`; run 4 with the `authz-sync` hook |
-| `RETRIEVAL_MIN_SIMILARITY` | `0`, as CI's compose stack | the default (0.25) | the default |
+| Run | Kubernetes (`kindest/node`) | Helm, kubectl | How | Chart | `RETRIEVAL_MIN_SIMILARITY` |
+|---|---|---|---|---|---|
+| 1 | 1.37.0 | 3.19.0, 1.37.2 | step by step, by hand | 0.1.0, then each fix (to 0.1.3) | `0`, as CI's compose stack |
+| 2 | 1.34.11 | 4.0.0, 1.34.13 | `deploy/helm/kind-test.sh` | 0.1.3 | the default (0.25) |
+| 3 | 1.37.0 | 3.19.0, 1.37.2 | `make helm-kind-test` | 0.1.3 | the default |
+| 4 | 1.37.0 | 3.19.0, 1.37.2 | `make helm-kind-test` | 0.1.4, with the `authz-sync` hook | the default |
+| 5 | 1.34.11 | 4.0.0, 1.34.13 | `deploy/helm/kind-test.sh` | 0.1.4 | the default |
 
 All: kind v0.33.0, one control-plane node and two workers (containerd 2.3.4, kindnet, the
 local-path storage class), ingress-nginx controller v1.15.1 on the control plane, published
@@ -507,12 +508,12 @@ Standard.
 
 | Step | Result |
 |---|---|
-| `helm install --wait` | Every pod admitted and ready, Keycloak included (46 s after the start in run 1, about 80 s in run 2). Then the `migrate` hook: 19 migrations (to `0019`) in about 6 s; in run 4 the `authz-sync` hook (no tenant yet: nothing to do); then the `seed` hook: 47 documents (364 chunks), 4 analytics tables (527 rows), 164 authorization tuples, 9 logins, in under 10 s. The install returned after 61 to 100 s, with the images already on the nodes. Run 1: the hook ServiceAccount and Secret were deleted once the hooks had succeeded |
+| `helm install --wait` | Every pod admitted and ready, Keycloak included (46 s after the start in run 1, about 80 s in run 2). Then the `migrate` hook: 19 migrations (to `0019`) in about 6 s; in runs 4 and 5 the `authz-sync` hook (no tenant yet: nothing to do); then the `seed` hook: 47 documents (364 chunks), 4 analytics tables (527 rows), 164 authorization tuples, 9 logins, in under 10 s. The install returned after 61 to 103 s, with the images already on the nodes. Run 1: the hook ServiceAccount and Secret were deleted once the hooks had succeeded |
 | `helm test` | `/readyz`: Postgres, Valkey, Qdrant, OpenFGA and Keycloak "ok"; the web app answered 200 |
 | NetworkPolicies (run 1) | Enforced: from a pod in another namespace, and from an unlabelled pod in `workmind`, all seven Services refused connections; a pod labelled as the web component reached the API and nothing else |
-| API end-to-end tests, through the Ingress and Keycloak | Runs 2 to 4: 14 passed (2 model tests skipped). Run 1: 13 passed, 1 failed: with `RETRIEVAL_MIN_SIMILARITY=0` the guest's one collection always matches, so her question goes to the model, which fails without a key, where the test expects "not found". With the default floor on the same install: 14 passed. The test assumes the real floor; it is not a chart problem |
+| API end-to-end tests, through the Ingress and Keycloak | Runs 2 to 5: 14 passed (2 model tests skipped). Run 1: 13 passed, 1 failed: with `RETRIEVAL_MIN_SIMILARITY=0` the guest's one collection always matches, so her question goes to the model, which fails without a key, where the test expects "not found". With the default floor on the same install: 14 passed. The test assumes the real floor; it is not a chart problem |
 | Browser suite (`make e2e-browser`) | 159 of 159 in each run (the 3 `@model` tests left out), in about a minute; run 1 also with two API replicas |
-| `helm upgrade` to `api.replicas=2` | The `migrate` Job ran again before any Deployment changed (pre-upgrade), the `seed` Job after (0 documents changed), OpenFGA's migrate Job once more; in run 4 the `authz-sync` Job too, which synced the seeded tenant (0 tuples written, 0 removed). Run 1: the generated credentials were kept (the Secret's data unchanged), and both API pods ran on the node of the object storage volume. A poller called `/api/v1/system/status`, `/` and `/auth/realms/workmind` every 0.25 s through the Ingress during the upgrade: run 1, 705 requests, all answered 200, but 3 status pages reported a dependency down (the second problem below); runs 2, 3 and 4, 237, 228 and 282 requests, all 200 with every dependency "ok" |
+| `helm upgrade` to `api.replicas=2` | The `migrate` Job ran again before any Deployment changed (pre-upgrade), the `seed` Job after (0 documents changed), OpenFGA's migrate Job once more; in runs 4 and 5 the `authz-sync` Job too, which synced the seeded tenant (0 tuples written, 0 removed). Run 1: the generated credentials were kept (the Secret's data unchanged), and both API pods ran on the node of the object storage volume. A poller called `/api/v1/system/status`, `/` and `/auth/realms/workmind` every 0.25 s through the Ingress during the upgrade: run 1, 705 requests, all answered 200, but 3 status pages reported a dependency down (the second problem below); runs 2 to 5, 237, 228, 282 and 285 requests, all 200 with every dependency "ok" |
 | `helm uninstall` | The Secret, the object storage claim, the three StatefulSet claims and the last hook Jobs were left, as listed in [Uninstall](#uninstall) |
 | Install again (run 1) | Adopted the kept Secret and claims; data intact, `helm test` and the API tests as before |
 
@@ -533,7 +534,7 @@ Standard.
   upgrade, and there was no easy way to run it: only the hook Jobs have the owner role's
   password. Found while comparing the chart's upgrade with the Compose procedure; the
   authorization model has not changed since v0.1.0, so no upgrade has needed it yet. The
-  `authz-sync` hook Job now runs it after every install and upgrade (from run 4 on).
+  `authz-sync` hook Job now runs it after every install and upgrade (runs 4 and 5).
 
 **Not tested on a cluster:** TLS (cert-manager, an `https` public URL and the `Secure`,
 `__Host-` cookie), cloud load balancers and cloud ingress controllers, the Gateway API route
