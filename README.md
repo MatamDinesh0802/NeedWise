@@ -6,9 +6,9 @@ Employees ask questions in plain language and get answers grounded in company kn
 citations, drawn only from sources they are allowed to see. Specialized agents (HR, Finance,
 Engineering…) handle department work. Actions that leave the system need human approval.
 
-> **Status: pre-alpha, built in public.** Phases 0–3 are complete and the chat assistant
-> (Phase 4) is landing. Nothing here is ready for real company data yet. Follow along in the
-> [roadmap](docs/ROADMAP.md).
+> **Status: pre-1.0, built in public.** Phases 0–11 are built. Phase 12, production hardening
+> for v1.0, is in progress: what exists is under [Running it in production](#running-it-in-production).
+> Nothing here is ready for real company data yet. Follow along in the [roadmap](docs/ROADMAP.md).
 
 ## What works today
 
@@ -132,6 +132,37 @@ processes on your machine, so login, cookies and redirects behave exactly as in 
 Stop the full stack (`make down`) before `make infra` so ports don't clash. Keycloak's
 back-channel logout cannot reach a host process, so remote logout is only tested with `make up`.
 
+## Running it in production
+
+Not yet: v1.0 is not released. What exists for it so far, and what has been checked:
+
+- **Kubernetes.** A Helm chart in [`deploy/helm/workmind`](deploy/helm/workmind), with optional
+  bundled Postgres, Valkey, Qdrant, OpenFGA, Keycloak and embedding server. It passes
+  `helm lint`, renders for Kubernetes 1.33 and validates with kubeconform, and every pod meets
+  the chart's security rules (`make helm-check`). It has **not been installed on a cluster
+  yet** ([docs/deploy/kubernetes.md](docs/deploy/kubernetes.md)).
+- **Backups.** `make backup` and `make restore` for the Compose stack: databases, Qdrant
+  snapshots, files and the license, with checksums. A restore drill into a separate stack gave
+  identical rows, points and files and took about a minute at the demo's size
+  ([backup and restore](docs/operations/backup-restore.md)).
+- **Upgrades.** Tested from v0.1.0 to this code: 17 of 17 checks after the upgrade, and a
+  rollback by restoring the pre-upgrade backup ([upgrades](docs/operations/upgrade.md)).
+- **Several companies on one deployment.** Isolation per layer, `wm tenant create|delete`, rate
+  limits, and a test that sends every route another tenant's ids
+  ([docs/multi-tenancy.md](docs/multi-tenancy.md)).
+- **Security.** A [threat model](docs/security/threat-model.md), a review against the
+  [OWASP Top 10 for LLM Applications](docs/security/owasp-llm-top10.md) and a red team of 59
+  attacks; dependency, image, chart and workflow scans with SBOMs
+  ([supply chain](docs/security/supply-chain.md)); how to report a vulnerability:
+  [SECURITY.md](SECURITY.md).
+- **Releases.** release-please and a release workflow for multi-arch images with SBOM and
+  provenance attestations ([releasing](docs/operations/releasing.md), [CHANGELOG](CHANGELOG.md)).
+  These workflows have not run yet: there is no public repository.
+- **Load tests.** A Locust harness with a stub model server ([docs/load-testing.md](docs/load-testing.md)).
+  No performance numbers under load have been published yet.
+- **Docs site.** `make docs-serve` serves every page on http://127.0.0.1:8495, with the
+  configuration and HTTP API reference generated from the code.
+
 ## Architecture
 
 ```text
@@ -145,21 +176,20 @@ Celery workers (from Phase 2) ──► ingestion, connectors, long agent runs, 
 - [Architecture](docs/ARCHITECTURE.md): every component, flow and decision, end to end.
 - [Roadmap](docs/ROADMAP.md): 13 phases from foundation to v1.0, each a working release.
 - [Decision records](docs/adr/): why things are the way they are.
-- Operations: [backup and restore](docs/operations/backup-restore.md) (`make backup`,
-  `make restore`) and [upgrades](docs/operations/upgrade.md) (tested from v0.1.0).
-- [Security](docs/security/threat-model.md): the threat model and the
-  [OWASP Top 10 for LLM Applications review](docs/security/owasp-llm-top10.md).
 
 ## Repository layout
 
 ```text
 apps/api      FastAPI backend (Python 3.13, uv)
 apps/web      Next.js frontend (TypeScript, pnpm)
-deploy/       Postgres init, Caddy, later Keycloak realm and OpenFGA model
+deploy/       Postgres init, Caddy, the Keycloak realm, the Helm chart (deploy/helm)
 seed/         Acme Robotics: the fictional demo company and test corpus
 evals/        Evaluation datasets, runners and published results
 ee/           Enterprise Edition (separate license): budgets, chargeback, retention, SIEM export
-docs/         Architecture, roadmap, ADRs
+docs/         The docs site (mkdocs.yml): guides, architecture, roadmap, ADRs, security, operations
+e2e/browser   Browser end-to-end tests (Playwright) against a running stack
+loadtests/    Load tests (Locust) and the stub model server
+scripts/      Backup, restore, upgrade test, supply-chain scans
 ```
 
 ## Contributing
