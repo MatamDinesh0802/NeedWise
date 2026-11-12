@@ -21,6 +21,7 @@ from workmind.modules.knowledge.storage import ObjectStorage
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.extract import clock, extract, speaker_name
 from workmind.modules.meetings.models import Meeting, held_on
+from workmind.modules.usage.calls import attribute
 from workmind.modules.work.links import meeting_link
 from workmind.modules.work.notifications import notify
 from workmind.providers.llm import LLMError, LLMProvider
@@ -104,8 +105,13 @@ def transcript_markdown(meeting: Meeting) -> str:
 
 
 async def process_meeting(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
+    """The extraction's model calls count for the person who uploaded the meeting. A budget
+    that is used up fails the meeting, and its error says which budget and when it resets."""
+    async with tenant_transaction(deps.sessions, tenant_id) as session:
+        owner_id = await session.scalar(select(Meeting.owner_id).where(Meeting.id == meeting_id))
     try:
-        await _process(deps, tenant_id, meeting_id)
+        with attribute("meetings", user_id=owner_id, ref=("meeting", meeting_id)):
+            await _process(deps, tenant_id, meeting_id)
     except MeetingDeletedError:
         log.info("meeting_deleted_while_processing", meeting_id=str(meeting_id))
 

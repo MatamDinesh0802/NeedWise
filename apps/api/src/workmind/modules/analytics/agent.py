@@ -46,6 +46,8 @@ from workmind.modules.analytics.service import (
     QueryResult,
 )
 from workmind.modules.analytics.verify import Verification, verify
+from workmind.modules.usage.budgets import BudgetExceededError
+from workmind.modules.usage.calls import refine
 from workmind.providers.llm import (
     LLMError,
     LLMMessage,
@@ -294,7 +296,8 @@ async def answer(
     today: date | None = None,
 ) -> AnalyticsAnswer:
     """Answer one question as `ctx`, store it, and return it (status answered, no_access or
-    failed: a failure is an answer too, with `error` saying what went wrong)."""
+    failed: a failure is an answer too, with `error` saying what went wrong). A used-up budget
+    is stored as a failed answer and raised (BudgetExceededError): the API answers 429."""
     created_at = datetime.now(UTC)
     run_id = await analytics.start_run(ctx, question, created_at=created_at)
     base = AnalyticsAnswer(
@@ -302,9 +305,16 @@ async def answer(
     )
     state = _State()
     try:
-        result = await _answer(
-            llm, analytics, ctx, base, state, organization, today or created_at.date()
+        with refine(ref=("analytics_run", run_id)):  # usage events point at this run
+            result = await _answer(
+                llm, analytics, ctx, base, state, organization, today or created_at.date()
+            )
+    except BudgetExceededError as exc:
+        failed = _failed(base, state, exc.detail)
+        await analytics.finish_run(
+            ctx, run_id, status="failed", answer=failed.model_dump(mode="json")
         )
+        raise
     except Exception:
         log.exception("analytics_answer_failed", run_id=str(run_id))
         result = _failed(base, state, FAILED)
@@ -351,6 +361,8 @@ async def _answer(
     try:
         async with asyncio.timeout(AGENT_TIMEOUT_S):
             loop = await llm.run_tools("agent", request, tools, execute, max_steps=MAX_STEPS)
+    except BudgetExceededError:
+        raise
     except LLMError as exc:
         log.warning("analytics_model_error", error=str(exc)[:300])
         return _failed(base, state, MODEL_DOWN)
@@ -364,6 +376,8 @@ async def _answer(
     compose = compose_request(base.question, model, access, state.queries, notes, today)
     try:
         composed, usage = await llm.structured("answer", compose, Composed)
+    except BudgetExceededError:
+        raise
     except (LLMError, ValidationError) as exc:
         log.warning("analytics_compose_failed", error=str(exc)[:300])
         return _failed(base, state, UNUSABLE if isinstance(exc, ValidationError) else MODEL_DOWN)

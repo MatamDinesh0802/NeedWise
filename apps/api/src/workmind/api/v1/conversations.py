@@ -29,6 +29,7 @@ from workmind.modules.conversations.events import RunMeta
 from workmind.modules.conversations.models import Conversation, Message
 from workmind.modules.conversations.runner import RunDeps, execute_research_run, execute_run
 from workmind.modules.identity.models import Tenant
+from workmind.modules.usage.calls import Feature, attribute
 
 router = APIRouter(tags=["conversations"])
 AskContext = Annotated[RequestContext, require_scope("assistant:ask")]
@@ -216,6 +217,8 @@ async def send_message(
     ctx: AskContext, request: Request, conversation_id: uuid.UUID, body: MessageCreate
 ) -> RunStarted:
     resources = resources_of(request)
+    # A used-up budget refuses the question (429 budget_exceeded) before it is stored.
+    await resources.usage.check(ctx)
     run_id = uuid.uuid4()
     meta = RunMeta(run_id, ctx.tenant_id, ctx.user_id, conversation_id)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
@@ -249,29 +252,42 @@ async def send_message(
         mode=resources.assistant_mode,
         tools=resources.tools,
     )
-    if body.mode == "research":
+    # Every model call of the run counts for this person and the answer it produces (the run's
+    # task inherits the attribution). The agents modes plan and use department agents.
+    answer_id = uuid.uuid4()
+    feature: Feature = (
+        "research"
+        if body.mode == "research"
+        else "agents"
+        if resources.assistant_mode in ("agents", "auto")
+        else "chat"
+    )
+    with attribute(feature, user_id=ctx.user_id, ref=("message", answer_id)):
+        if body.mode == "research":
+            resources.runs.start(
+                execute_research_run(
+                    deps,
+                    ctx,
+                    meta,
+                    question=question,
+                    user_message_id=message.id,
+                    organization=tenant.name if tenant else "the company",
+                    answer_id=answer_id,
+                )
+            )
+            return RunStarted(run_id=run_id, user_message=user_message)
         resources.runs.start(
-            execute_research_run(
+            execute_run(
                 deps,
                 ctx,
                 meta,
                 question=question,
                 user_message_id=message.id,
                 organization=tenant.name if tenant else "the company",
+                policy=llm.max_external_sensitivity,
+                answer_id=answer_id,
             )
         )
-        return RunStarted(run_id=run_id, user_message=user_message)
-    resources.runs.start(
-        execute_run(
-            deps,
-            ctx,
-            meta,
-            question=question,
-            user_message_id=message.id,
-            organization=tenant.name if tenant else "the company",
-            policy=llm.max_external_sensitivity,
-        )
-    )
     return RunStarted(run_id=run_id, user_message=user_message)
 
 

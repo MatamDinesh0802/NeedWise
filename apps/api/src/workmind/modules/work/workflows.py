@@ -34,6 +34,8 @@ from workmind.modules.identity.service import load_identity
 from workmind.modules.model_catalog.resolver import LLMResolver
 from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError, ToolRegistry
+from workmind.modules.usage.budgets import BudgetExceededError
+from workmind.modules.usage.calls import attribute
 from workmind.modules.work.approvals import propose
 from workmind.modules.work.cron import Cron, CronError
 from workmind.modules.work.links import workflow_link
@@ -239,15 +241,17 @@ async def advance(deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID) -
         try:
             if step.research is not None:
                 question = str(render(step.research, context))
-                result = await research(
-                    await deps.llm_for(tenant_id),
-                    deps.tools,
-                    deps.sessions,
-                    owner,
-                    question,
-                    organization=tenant.name if tenant else "the company",
-                    propose_actions=False,  # research steps only read
-                )
+                # The step's model calls count for the workflow's owner, and this run.
+                with attribute("workflow", user_id=owner.user_id, ref=("workflow_run", run.id)):
+                    result = await research(
+                        await deps.llm_for(tenant_id),
+                        deps.tools,
+                        deps.sessions,
+                        owner,
+                        question,
+                        organization=tenant.name if tenant else "the company",
+                        propose_actions=False,  # research steps only read
+                    )
                 outputs[step.id] = {"status": "done", "text": result.text}
             else:
                 assert step.tool is not None  # noqa: S101
@@ -284,6 +288,10 @@ async def advance(deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID) -
             outputs[step.id] = {"status": "failed", "error": f"{exc.code}: {exc}"}
             await _save(deps, run, outputs, step.id)
             return await _finish(deps, run, "failed", f"step {step.id}: {exc}")
+        except BudgetExceededError as exc:  # a used-up budget: the run ends and says which one
+            outputs[step.id] = {"status": "failed", "error": f"budget_exceeded: {exc}"[:500]}
+            await _save(deps, run, outputs, step.id)
+            return await _finish(deps, run, "failed", f"step {step.id}: {exc}"[:500])
         except LLMError as exc:  # the model is down: the run ends visibly, never stuck running
             outputs[step.id] = {"status": "failed", "error": f"model_unavailable: {exc}"[:500]}
             await _save(deps, run, outputs, step.id)
