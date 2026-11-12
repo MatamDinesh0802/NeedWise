@@ -422,14 +422,24 @@ class QueryPool:
                 continue
             except BaseException:
                 worker.kill()
+                self._spare()
                 raise
             if reply.get("recycle") or self._closed:
                 worker.kill()
+                self._spare()
             else:
                 with self._lock:
                     self._idle.append(worker)
             return reply
         raise AssertionError("unreachable")
+
+    def _spare(self) -> None:
+        """Start a replacement for a worker that was stopped, so the next query does not wait
+        for a new interpreter to import DuckDB (about 0.3 s)."""
+        with self._lock:
+            if self._closed or len(self._idle) >= self.workers - 1:
+                return
+            self._idle.append(_Worker.spawn(self.memory_mb))
 
     def _checkout(self) -> "_Worker":
         with self._lock:
