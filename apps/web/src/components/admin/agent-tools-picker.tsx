@@ -43,7 +43,7 @@ export function AgentToolsPicker({
               <li key={tool.name} className="flex items-start gap-2 rounded-md px-1.5 py-1 hover:bg-muted/50">
                 <Checkbox
                   id={id}
-                  className="mt-0.5"
+                  className={tool.for_agents || checked ? "mt-0.5" : "mt-0.5 opacity-50"}
                   checked={checked}
                   disabled={!tool.for_agents && !checked}
                   aria-describedby={tool.for_agents ? undefined : reasonId}

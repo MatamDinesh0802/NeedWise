@@ -1,7 +1,7 @@
 "use client";
 
 import { Bot, Info, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { AgentTestConsole } from "@/components/admin/agent-test-console";
 import { AgentToolsPicker } from "@/components/admin/agent-tools-picker";
@@ -238,6 +238,7 @@ function AgentEditor({
   const [tab, setTab] = useState<EditorTab>("definition");
   const [form, setForm] = useState<AgentForm>(() => (agent ? formFromAgent(agent) : emptyAgentForm()));
   const [showErrors, setShowErrors] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -248,6 +249,12 @@ function AgentEditor({
     setShowErrors(true);
     if (invalid) {
       setTab("definition");
+      // After the errors render: focus the first invalid field, or show the first message.
+      requestAnimationFrame(() => {
+        const field = formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
+        if (field) field.focus();
+        else formRef.current?.querySelector(".text-destructive")?.scrollIntoView({ block: "center" });
+      });
       return;
     }
     setPending(true);
@@ -271,6 +278,7 @@ function AgentEditor({
 
   return (
     <form
+      ref={formRef}
       className="contents"
       noValidate
       onSubmit={(e) => {
