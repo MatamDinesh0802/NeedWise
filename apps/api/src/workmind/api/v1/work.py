@@ -16,6 +16,8 @@ from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN, Department, DepartmentMember, User
+from workmind.modules.knowledge.models import Collection
+from workmind.modules.knowledge.service import collection_access
 from workmind.modules.work.approvals import decide
 from workmind.modules.work.links import task_link
 from workmind.modules.work.models import Approval, Notification, Task, Workflow, WorkflowRun
@@ -418,6 +420,29 @@ def _definition(raw: dict[str, Any]) -> dict[str, Any]:
         ) from exc
 
 
+async def _check_event_collection(
+    session: AsyncSession, ctx: RequestContext, definition: dict[str, Any]
+) -> None:
+    """An event trigger's collection must exist, and the admin saving it must be able to view it:
+    runs act as them, so a collection they can't view would never start one."""
+    trigger: dict[str, Any] = definition.get("trigger") or {}
+    key = trigger.get("collection")
+    if not isinstance(key, str) or not key:
+        return
+    collection_id = await session.scalar(select(Collection.id).where(Collection.key == key))
+    try:
+        if collection_id is None:
+            raise ApiError(404, "not_found", "Collection not found")
+        await collection_access(session, ctx, collection_id)
+    except ApiError as exc:
+        raise ApiError(
+            422,
+            "unknown_collection",
+            f"No collection “{key}” that you can view",
+            "The workflow runs as you, so it only starts for documents you can view.",
+        ) from exc
+
+
 @admin_router.get("")
 async def list_workflows(ctx: AdminContext, request: Request) -> list[WorkflowOut]:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
@@ -435,6 +460,7 @@ async def save_workflow(
         raise ApiError(422, "key_mismatch", "The key in the body must match the URL")
     definition = _definition(body.definition)
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        await _check_event_collection(session, ctx, definition)
         workflow = await session.scalar(select(Workflow).where(Workflow.key == key))
         if workflow is None:
             workflow = Workflow(
