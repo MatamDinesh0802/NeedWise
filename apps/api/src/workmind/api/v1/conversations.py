@@ -330,10 +330,11 @@ async def run_events(
     events = resources_of(request).runs.events
 
     async def stream() -> AsyncIterator[str]:
+        # No is_disconnected() per event: StreamingResponse listens for the disconnect itself
+        # and cancels this generator (or, on ASGI 2.4 servers, the next write fails, within one
+        # keep-alive). The check cost an anyio cancel scope per event (docs/benchmarks/load.md).
         yield "retry: 2000\n\n"
         async for event in events.read(meta, after=last_event_id or "0"):
-            if await request.is_disconnected():
-                return
             yield ": keep-alive\n\n" if event is None else event.sse()
 
     return StreamingResponse(

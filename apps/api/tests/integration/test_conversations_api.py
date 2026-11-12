@@ -17,6 +17,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from starlette.types import Message
 
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
@@ -406,3 +407,102 @@ async def test_a_long_pause_between_events_keeps_the_stream_alive(
     received = events(api, acme, "alice", ask(api, acme, "alice", conversation, "Leave?"))
 
     assert received[-1][0] == "run.completed"
+
+
+async def test_a_fast_stream_arrives_as_fewer_token_events_with_the_same_text(
+    api: TestClient, acme: Acme
+) -> None:
+    """Pieces that arrive within TOKEN_INTERVAL_S of the last event share one event
+    (docs/benchmarks/load.md); the reader gets exactly the same text."""
+    words = [f"w{i} " for i in range(100)] + ["[S1]."]
+    use_model(api, FakeLLM(words, delay=0.002))  # about 500 pieces a second
+    conversation = start(api, acme, "alice")
+
+    received = events(api, acme, "alice", ask(api, acme, "alice", conversation, "Leave?"))
+    detail = api.get(f"/api/v1/conversations/{conversation}", headers=acme.as_("alice")).json()
+
+    texts = [d["text"] for n, d in received if n == "token"]
+    assert "".join(texts) == "".join(words) == detail["messages"][-1]["content"]
+    assert 2 <= len(texts) <= 25  # instead of 101: one event per ~50 ms
+    assert received[-1][0] == "run.completed"
+    assert detail["messages"][-1]["usage"]["output_tokens"] == len(words)
+
+
+async def test_an_event_stream_ends_soon_after_the_client_goes_away(
+    api: TestClient, acme: Acme
+) -> None:
+    """The stream does not check for a disconnect per event: Starlette's StreamingResponse
+    notices it and cancels the generator. The answer itself keeps going and is stored."""
+    use_model(api, FakeLLM([f"w{i} " for i in range(40)], delay=0.15))  # about 6 seconds
+    conversation = start(api, acme, "alice")
+    run = ask(api, acme, "alice", conversation, "Leave?")
+    cookie = acme.as_("alice")["Cookie"].encode()
+
+    async def client_leaves_after_the_first_event() -> tuple[float, list[bytes]]:
+        first_body = asyncio.Event()
+        bodies: list[bytes] = []
+        sent_request = False
+
+        async def receive() -> Message:
+            nonlocal sent_request
+            if not sent_request:
+                sent_request = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+            await first_body.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message: Message) -> None:
+            if message["type"] == "http.response.body" and message.get("body"):
+                bodies.append(message["body"])
+                if b"event: " in message["body"]:
+                    first_body.set()
+
+        path = f"/api/v1/runs/{run}/events"
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0", "spec_version": "2.3"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode(),
+            "root_path": "",
+            "query_string": b"",
+            "headers": [(b"host", b"testserver"), (b"cookie", cookie)],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 80),
+        }
+        began = time.monotonic()
+        await asyncio.wait_for(api.app(scope, receive, send), timeout=5)
+        return time.monotonic() - began, bodies
+
+    assert api.portal is not None
+    seconds, bodies = api.portal.call(client_leaves_after_the_first_event)
+    received = events(api, acme, "alice", run)  # a new reader still gets the whole run
+
+    assert seconds < 2  # the run itself takes about 6 seconds
+    assert any(b"event: run.started" in body for body in bodies)
+    assert not any(b"run.completed" in body for body in bodies)
+    assert received[-1][0] == "run.completed"
+
+
+async def test_each_event_still_refreshes_the_streams_expiry(api: TestClient, acme: Acme) -> None:
+    """emit writes the event and the expiry in one round trip (a pipeline): both happen."""
+    from redis.asyncio import Redis
+
+    from workmind.modules.conversations.events import TTL_SECONDS
+
+    use_model(api, FakeLLM())
+    conversation = start(api, acme, "alice")
+    run = ask(api, acme, "alice", conversation, "Leave?")
+    received = events(api, acme, "alice", run)
+
+    valkey = Redis.from_url(VALKEY_URL or "")  # pyright: ignore[reportUnknownMemberType]
+    try:
+        key = f"t:{acme.tenant_id}:run:{run}:events"
+        stored = await valkey.xlen(key)  # pyright: ignore[reportUnknownMemberType]
+        ttl = await valkey.ttl(key)
+    finally:
+        await valkey.aclose()
+    assert stored == len(received)
+    assert TTL_SECONDS - 60 < ttl <= TTL_SECONDS

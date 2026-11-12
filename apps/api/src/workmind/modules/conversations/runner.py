@@ -37,7 +37,7 @@ from workmind.modules.assistant.answer import (
     answer_stream,
 )
 from workmind.modules.assistant.safety import escape_tags
-from workmind.modules.conversations.events import RunEvents, RunMeta
+from workmind.modules.conversations.events import RunEvents, RunMeta, TokenBatcher
 from workmind.modules.conversations.models import Conversation, Message
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.retrieval.service import Passage, Retriever
@@ -248,6 +248,7 @@ async def execute_run(
     )
     usage = Usage()
     parts: list[str] = []
+    tokens = TokenBatcher(events, meta)
     final: Answer | None = None
     search_query = question
     status, error = "complete", None
@@ -313,7 +314,7 @@ async def execute_run(
                 )
             elif isinstance(event, TokenEvent):
                 parts.append(event.text)
-                await events.emit(meta, "token", {"text": event.text})
+                await tokens.add(event.text)
                 if len(parts) % CANCEL_CHECK_EVERY == 0 and await events.cancelled(meta):
                     status = "cancelled"
                     break
@@ -322,6 +323,7 @@ async def execute_run(
         await stream.aclose()
     except asyncio.CancelledError:
         # Server shutdown: end the stream and free the conversation, then stop.
+        tokens.cancel()
         await events.emit(
             meta, "run.failed", {"code": "interrupted", "message": "The server restarted."}
         )
@@ -335,6 +337,8 @@ async def execute_run(
     except Exception:
         status, error = "failed", ("internal", "Something went wrong while answering.")
         log.exception("run_failed", run_id=str(run_id))
+    # The text still waiting goes out before citations and the end of the run.
+    await tokens.close(quiet=status == "failed")
 
     if final is not None:
         usage.add(final.usage)
