@@ -42,12 +42,19 @@ from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.analytics import dataset, engine
-from workmind.modules.analytics.compiler import CompileError, SemanticQuery, compile_query
+from workmind.modules.analytics.compiler import (
+    CompileError,
+    SemanticQuery,
+    compile_query,
+    duplicate_keys_sql,
+    orphan_keys_sql,
+)
 from workmind.modules.analytics.guard import GuardedQuery, QueryRejectedError, check
 from workmind.modules.analytics.models import AnalyticsModel, AnalyticsRun
 from workmind.modules.analytics.semantic import (
     GRAINS,
     Format,
+    Join,
     ModelError,
     Resolved,
     RowPolicy,
@@ -291,6 +298,8 @@ class Analytics:
         # at once and per person); a pool starts its workers on first use.
         self.pool = pool or engine.shared_pool()
         self._owns_pool = pool is not None
+        # (dataset file, join) -> how many one-side key values repeat; a version never changes.
+        self._duplicates: dict[tuple[str, str], int] = {}
 
     def close(self) -> None:
         """Stop the pool's workers, unless it is the process's shared pool."""
@@ -645,6 +654,7 @@ class Analytics:
         if query is not None:
             try:
                 compiled = compile_query(prepared.model, query)
+                await self._check_joins(ctx, prepared, compiled.joins)
             except CompileError as exc:
                 audit.status, audit.reason = "invalid", str(exc)[:300]
                 await self._audit(ctx, audit)
@@ -721,6 +731,36 @@ class Analytics:
             row_policies=audit.row_policies,
         )
 
+    async def _check_joins(
+        self, ctx: RequestContext, prepared: _Prepared, joins: Sequence[Join]
+    ) -> None:
+        """Refuse a semantic query whose many-to-one join is not many-to-one in the loaded data:
+        a repeated key on the one side would count fact rows twice (silently: the numbers would
+        still be in the results, so verification would back them)."""
+        path = prepared.loaded.dataset_path(self.root, ctx.tenant_id)
+        if path is None:
+            return  # nothing loaded: the query itself reports it
+        for join in joins:
+            key = (str(path), join.right)
+            if key not in self._duplicates:
+                try:
+                    result = await self.pool.execute(
+                        path, duplicate_keys_sql(join), max_rows=1, timeout_s=self.timeout_s
+                    )
+                except engine.EngineError:
+                    return  # the query itself will report a missing table or column
+                count = result.rows[0][0] if result.rows else 0
+                if len(self._duplicates) > 1000:
+                    self._duplicates.clear()
+                self._duplicates[key] = count if isinstance(count, int) else 0
+            if self._duplicates[key]:
+                raise CompileError(
+                    f"The join {join.left} = {join.right} is declared many-to-one, but "
+                    f"{join.right} repeats {self._duplicates[key]} time(s) in the loaded data, "
+                    "so this breakdown would count rows twice. An admin needs to fix the "
+                    f"{join.right.split('.')[0]} table."
+                )
+
     async def _execute(
         self, ctx: RequestContext, prepared: _Prepared, guarded: GuardedQuery, cap: int
     ) -> engine.EngineResult:
@@ -774,7 +814,8 @@ class Analytics:
         self, loaded: LoadedModel, resolved: Resolved, tenant_id: uuid.UUID
     ) -> list[str]:
         """What an admin should fix: principals that match nobody, model tables or columns
-        that the loaded data lacks."""
+        that the loaded data lacks, and joins whose keys break many-to-one (repeated keys on the
+        one side, keys on the many side that match nothing)."""
         problems = [f"{key} matches nobody in this organization" for key in resolved.unresolved]
         model = loaded.model
         if model is None:
@@ -790,6 +831,30 @@ class Analytics:
             missing = [c for c in table.columns if c not in loaded_columns]
             if missing:
                 problems.append(f"Table {name} lacks the columns {', '.join(missing)}.")
+        path = loaded.dataset_path(self.root, tenant_id)
+        if problems or path is None:
+            return problems
+        for join in model.joins:
+            try:
+                duplicates, orphans = [
+                    (await self.pool.execute(path, sql, max_rows=1, timeout_s=self.timeout_s)).rows[
+                        0
+                    ][0]
+                    for sql in (duplicate_keys_sql(join), orphan_keys_sql(join))
+                ]
+            except engine.EngineError as exc:
+                problems.append(f"The join {join.left} = {join.right} cannot run: {exc.message}")
+                continue
+            if duplicates:
+                problems.append(
+                    f"{join.right} repeats {duplicates} time(s): the join {join.left} = "
+                    f"{join.right} counts those rows twice, so breakdowns by it are refused."
+                )
+            if orphans:
+                problems.append(
+                    f"{orphans} row(s) of {join.left.split('.')[0]} have a {join.left} that "
+                    f"{join.right.split('.')[0]} lacks: they show as an empty group."
+                )
         return problems
 
 

@@ -2,8 +2,12 @@
 
 The BI agent asks for metrics by dimensions, with filters and a date range; the compiler turns
 that into one SELECT over the model's tables, joining from the metrics' fact table along the
-model's (many-to-one) joins. It is built as a sqlglot tree: the model's SQL fragments are parsed,
-and every value from the request is a literal node, so nothing is ever spliced into SQL text.
+model's (many-to-one) joins. They are LEFT JOINs: a fact row whose key has no match (an orphan)
+stays in the totals, under a NULL group, instead of silently dropping out of a breakdown. That
+the other side's key is unique is checked by the service against the loaded data
+(Analytics._check_joins): a duplicate would count fact rows twice. The SQL is built as a
+sqlglot tree: the model's SQL fragments are parsed, and every value from the request is a
+literal node, so nothing is ever spliced into SQL text.
 
 The compiled SQL then goes through the SQL guard like any other query (service.py), which adds
 the user's row policies: there is one code path for permissions.
@@ -94,6 +98,7 @@ class CompiledQuery:
     fact: str
     columns: list[OutputColumn]
     limit: int
+    joins: tuple[Join, ...] = ()  # many-to-one: each right-hand key must be unique
 
 
 def compile_query(model: SemanticModel, query: SemanticQuery) -> CompiledQuery:
@@ -140,19 +145,20 @@ def compile_query(model: SemanticModel, query: SemanticQuery) -> CompiledQuery:
         column = _column(fact, time_column)
         if query.date_from:
             conditions.append(exp.GTE(this=column.copy(), expression=_date(query.date_from)))
-        if query.date_to:
+        if query.date_to and query.date_to < date.max:  # 9999-12-31: no upper bound
             # Exclusive upper bound on the next day: also right for timestamp columns.
             end = query.date_to + timedelta(days=1)
             conditions.append(exp.LT(this=column.copy(), expression=_date(end)))
 
     select = select.from_(exp.to_table(fact), copy=False)
-    for join in _joins(model, fact, needed):
+    joins = _joins(model, fact, needed)
+    for join in joins:
         left_table, left_column = join.left.split(".")
         right_table, right_column = join.right.split(".")
         on = exp.EQ(
             this=_column(left_table, left_column), expression=_column(right_table, right_column)
         )
-        select = select.join(exp.to_table(right_table), on=on, join_type="inner", copy=False)
+        select = select.join(exp.to_table(right_table), on=on, join_type="left", copy=False)
     if conditions:
         select = select.where(exp.and_(*conditions, copy=False), copy=False)
     if query.dimensions:
@@ -176,7 +182,11 @@ def compile_query(model: SemanticModel, query: SemanticQuery) -> CompiledQuery:
             copy=False,
         )
     return CompiledQuery(
-        sql=select.sql(dialect=DIALECT), fact=fact, columns=columns, limit=query.limit
+        sql=select.sql(dialect=DIALECT),
+        fact=fact,
+        columns=columns,
+        limit=query.limit,
+        joins=tuple(joins),
     )
 
 
@@ -278,3 +288,38 @@ def _default_order(query: SemanticQuery) -> list[OrderBy]:
     if grains:
         return [OrderBy(field=grains[0], direction="asc")]
     return [OrderBy(field=query.metrics[0], direction="desc")]
+
+
+def duplicate_keys_sql(join: Join) -> str:
+    """How many values of the join's right-hand (one-side) key appear more than once: any is a
+    fan-out, counting the fact rows that match it several times."""
+    table, column = join.right.split(".")
+    key = _column(table, column)
+    select = exp.select(
+        exp.Sub(
+            this=exp.func("count", key.copy()),
+            expression=exp.func("count", exp.Distinct(expressions=[key.copy()])),
+        )
+    ).from_(exp.to_table(table))
+    return select.sql(dialect=DIALECT)
+
+
+def orphan_keys_sql(join: Join) -> str:
+    """How many rows on the many side have a key the one side lacks (they show as NULL)."""
+    left_table, left_column = join.left.split(".")
+    right_table, right_column = join.right.split(".")
+    on = exp.EQ(
+        this=_column(left_table, left_column), expression=_column(right_table, right_column)
+    )
+    select = (
+        exp.select(exp.func("count", exp.Star()))
+        .from_(exp.to_table(left_table))
+        .join(exp.to_table(right_table), on=on, join_type="left")
+        .where(
+            exp.and_(
+                exp.Not(this=exp.Is(this=_column(left_table, left_column), expression=exp.Null())),
+                exp.Is(this=_column(right_table, right_column), expression=exp.Null()),
+            )
+        )
+    )
+    return select.sql(dialect=DIALECT)

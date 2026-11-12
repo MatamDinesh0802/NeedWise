@@ -310,6 +310,27 @@ async def test_every_query_is_audited_without_its_rows(acme: AcmeAnalytics) -> N
     assert not any(name in json.dumps(details) for name in names)  # never the rows
 
 
+async def test_a_join_key_that_repeats_refuses_breakdowns_not_totals(acme: AcmeAnalytics) -> None:
+    erin, carol = await acme.ctx("erin"), await acme.ctx("carol")
+    customers = (ACME_ANALYTICS / "data" / "customers.csv").read_bytes().rstrip(b"\r\n")
+    bluefin = next(line for line in customers.split(b"\r\n") if line.startswith(b"C001,"))
+    await acme.service.put_table(
+        erin, "customers", customers + b"\r\n" + bluefin.replace(b",3PL,", b",Retail,"), "text/csv"
+    )
+
+    # Bluefin twice would count its invoice lines twice in every breakdown by customer.
+    with pytest.raises(AnalyticsError) as refused:
+        await acme.service.run_semantic(
+            carol, SemanticQuery(metrics=["revenue"], dimensions=["segment"])
+        )
+    assert refused.value.code == "invalid_query"
+    assert "customers.customer_id repeats 1 time(s)" in (refused.value.detail or "")
+    total = await acme.service.run_semantic(carol, SemanticQuery(metrics=["revenue"]))
+    assert total.rows == [[TOTAL_REVENUE]]
+    problems = (await acme.service.describe(erin)).problems
+    assert any("customers.customer_id repeats 1 time(s)" in p for p in problems)
+
+
 async def test_admins_load_tables_and_versions_switch_atomically(acme: AcmeAnalytics) -> None:
     erin = await acme.ctx("erin")
     async with tenant_transaction(acme.sessions, acme.tenant_id) as session:

@@ -1,6 +1,7 @@
 """Semantic queries compiled to SQL, checked as SQL and run on the Acme data: the numbers must
 match the finance workbook and the sales notes in seed/acme/corpus."""
 
+import uuid
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -9,9 +10,22 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from tests.analytics_support import ACME_ANALYTICS, acme_model, build_acme, dan_filters, run
-from workmind.modules.analytics import semantic
-from workmind.modules.analytics.compiler import CompileError, SemanticQuery, compile_query
+from tests.analytics_support import (
+    ACME_ANALYTICS,
+    acme_model,
+    build_acme,
+    csv_rows,
+    dan_filters,
+    run,
+)
+from workmind.modules.analytics import dataset, engine, semantic
+from workmind.modules.analytics.compiler import (
+    CompileError,
+    SemanticQuery,
+    compile_query,
+    duplicate_keys_sql,
+    orphan_keys_sql,
+)
 
 MODEL = acme_model()
 # finance-reports/monthly-revenue-by-product-2026.xlsx, thousands of euros (generate.py)
@@ -59,8 +73,8 @@ def test_only_the_needed_tables_are_joined() -> None:
         "SELECT products.product_line AS product_line, "
         "SUM(invoice_lines.amount_eur) FILTER(WHERE invoice_lines.status <> 'void') AS revenue "
         "FROM invoice_lines "
-        "INNER JOIN customers ON invoice_lines.customer_id = customers.customer_id "
-        "INNER JOIN products ON invoice_lines.product_id = products.product_id "
+        "LEFT JOIN customers ON invoice_lines.customer_id = customers.customer_id "
+        "LEFT JOIN products ON invoice_lines.product_id = products.product_id "
         "WHERE invoice_lines.status <> 'void' AND customers.region = 'DACH' "
         "GROUP BY 1 ORDER BY 2 DESC"
     )
@@ -306,3 +320,60 @@ def test_limit_detects_truncation(acme: Path) -> None:
     result = run(acme, sql, max_rows=query.limit)
 
     assert (len(result.rows), result.truncated) == (3, True)
+
+
+# --- Joins that break many-to-one -------------------------------------------------------------
+
+
+def acme_with(root: Path, table: str, extra_rows: str) -> Path:
+    """The Acme dataset with rows appended to one table's CSV."""
+    sources = []
+    for path in sorted((ACME_ANALYTICS / "data").glob("*.csv")):
+        data = path.read_bytes()
+        if path.stem == table:
+            data = data.rstrip(b"\r\n") + b"\r\n" + extra_rows.replace("\n", "\r\n").encode()
+        sources.append(dataset.TableSource(name=path.stem, data=data, content_type="text/csv"))
+    return dataset.build(root, uuid.UUID(int=2), base=None, put=sources).path
+
+
+def test_an_orphan_key_stays_in_a_breakdown_as_an_empty_group(tmp_path: Path) -> None:
+    # An invoice line for a product the products table lacks.
+    path = acme_with(tmp_path, "invoice_lines", "INV-99999,2026-03-01,C001,AMR-999,1,79925,paid\n")
+
+    total = results(path, metrics=["revenue"])[0][0]
+    by_line = results(path, metrics=["revenue"], dimensions=["product_line"])
+
+    assert total == 38_900_000 + 79_925
+    assert sum(r[1] for r in by_line) == total  # nothing dropped out
+    assert [None, 79_925] in by_line
+
+
+def test_duplicate_keys_on_the_one_side_are_counted(tmp_path: Path) -> None:
+    bluefin = next(r for r in csv_rows("customers") if r["customer_id"] == "C001")
+    duplicate = ",".join([*list(bluefin.values())[:2], "Retail", *list(bluefin.values())[3:]])
+    path = acme_with(tmp_path, "customers", duplicate + "\n")
+    joins = {j.right: j for j in MODEL.joins}
+
+    duplicates = engine.execute_sync(
+        path, duplicate_keys_sql(joins["customers.customer_id"]), max_rows=1
+    )
+    clean = engine.execute_sync(path, duplicate_keys_sql(joins["products.product_id"]), max_rows=1)
+
+    assert duplicates.rows == [[1]]
+    assert clean.rows == [[0]]
+
+
+def test_orphan_keys_are_counted(tmp_path: Path) -> None:
+    path = acme_with(tmp_path, "invoice_lines", "INV-99999,2026-03-01,C001,AMR-999,1,79925,paid\n")
+    joins = {j.right: j for j in MODEL.joins}
+
+    orphans = engine.execute_sync(path, orphan_keys_sql(joins["products.product_id"]), max_rows=1)
+
+    assert orphans.rows == [[1]]
+
+
+def test_an_open_ended_date_range_compiles() -> None:
+    sql = compiled(metrics=["revenue"], date_from="2026-01-01", date_to="9999-12-31")
+
+    assert "invoice_lines.invoice_date >= CAST('2026-01-01' AS DATE)" in sql
+    assert "9999" not in sql
