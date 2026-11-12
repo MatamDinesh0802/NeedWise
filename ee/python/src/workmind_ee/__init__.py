@@ -10,19 +10,26 @@ belongs to; the core checks that feature on every request, task run and hook cal
 import structlog
 from workmind.core.edition import Edition
 from workmind.core.extensions import ExtensionRegistry
+from workmind.modules.usage.extensions import CHARGEBACK_REPORT, DEPARTMENT_BUDGETS
+
+from workmind_ee.budgets import department_budgets
+from workmind_ee.chargeback import chargeback_csv
 
 __version__ = "0.0.1"
 
 log = structlog.get_logger("workmind_ee")
 
-# The features this package implements. Empty for now: Phase 11 adds retention policies,
-# department budgets, chargeback reports and advanced audit export here.
-IMPLEMENTED: tuple[str, ...] = ()
+# The features this package implements (the others in workmind.core.edition.FEATURES are
+# not built yet).
+IMPLEMENTED: tuple[str, ...] = ("department_budgets", "chargeback_reports")
 
 
 def setup(registry: ExtensionRegistry, edition: Edition) -> None:
     """Called once per process at startup, with a valid license, before any request."""
-    del registry  # nothing to register yet
+    # Department budgets: stored, shown and enforced by the core's usage module through this.
+    registry.add_hook(DEPARTMENT_BUDGETS, department_budgets, feature="department_budgets")
+    # GET /api/v1/usage/export.csv (the core's route, behind require_feature) calls this.
+    registry.add_hook(CHARGEBACK_REPORT, chargeback_csv, feature="chargeback_reports")
     log.info(
         "workmind_ee_loaded",
         version=__version__,
