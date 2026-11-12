@@ -30,9 +30,11 @@ render() { # name, values files...
   shift
   local args=()
   for values in "$@"; do args+=(-f "$values"); done
-  # ${args[@]+...}: an empty array under `set -u` (bash 3.2 on macOS).
-  $HELM lint --strict "$CHART" ${args[@]+"${args[@]}"}
-  $HELM template workmind "$CHART" --namespace workmind ${args[@]+"${args[@]}"} >"$OUT/$name.yaml"
+  # ${args[@]+...}: an empty array under `set -u` (bash 3.2 on macOS). --kube-version: render
+  # for the version we validate against (Helm 4.0.0's default for `template` is 1.20).
+  $HELM lint --strict --kube-version "$KUBERNETES_VERSION" "$CHART" ${args[@]+"${args[@]}"}
+  $HELM template workmind "$CHART" --namespace workmind --kube-version "$KUBERNETES_VERSION" \
+    ${args[@]+"${args[@]}"} >"$OUT/$name.yaml"
   echo "$name: $(grep -c '^kind:' "$OUT/$name.yaml") resources"
 }
 render default
@@ -55,7 +57,7 @@ refuse() { # description, expected message, helm template arguments...
   local description=$1 expected=$2
   shift 2
   local output
-  if output=$($HELM template workmind "$CHART" "$@" 2>&1); then
+  if output=$($HELM template workmind "$CHART" --kube-version "$KUBERNETES_VERSION" "$@" 2>&1); then
     echo "FAIL: accepted $description"
     return 1
   fi

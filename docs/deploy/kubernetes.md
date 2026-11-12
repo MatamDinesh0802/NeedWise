@@ -62,7 +62,10 @@ release name alone when it already contains "workmind". Installed as `workmind`,
 ## Prerequisites
 
 - **Kubernetes 1.29 or later** (the chart is validated against the 1.33 schemas and uses
-  gRPC probes, stable since 1.27) and **Helm 3.19 or later, or Helm 4**.
+  gRPC probes, stable since 1.27) and **Helm 3.19 or later, or Helm 4**. Helm 4.0.0's
+  `helm template` assumes Kubernetes 1.20 unless told otherwise, which the chart's
+  `kubeVersion` refuses: pass `--kube-version` (e.g. `--kube-version 1.33.0`). `helm install`
+  and `helm upgrade` use the cluster's version.
 - **Images.** No WorkMind images are published yet. Build both and push them to a registry
   your cluster can pull from:
 
