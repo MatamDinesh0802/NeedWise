@@ -223,7 +223,14 @@ def upgrade_before(base: str, state_file: str) -> int:
 def upgrade_after(base: str, state_file: str) -> int:
     state = json.loads(Path(state_file).read_text())
     report = Report()
-    status = Client(base).call("GET", "/api/v1/system/status")
+    # Each dependency gets 2 s to answer; right after a start, on a busy machine, Keycloak can
+    # take longer for a while.
+    deadline = time.monotonic() + 90
+    while True:
+        status = Client(base).call("GET", "/api/v1/system/status")
+        if status["status"] == "ok" or time.monotonic() > deadline:
+            break
+        time.sleep(5)
     report.check(
         "system status",
         status["status"] == "ok",

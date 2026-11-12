@@ -97,7 +97,10 @@ fi
 
 # --- 3. Stop what uses the data ----------------------------------------------------------------
 say "Stopping the application, Keycloak and OpenFGA"
-compose stop caddy web api worker beat keycloak openfga >/dev/null 2>&1 || true
+# Only the services this version's compose file has (v0.1 had no worker or beat).
+to_stop=$(compose config --services | grep -xE 'caddy|web|api|worker|beat|keycloak|openfga' || true)
+# shellcheck disable=SC2086 # one word per service
+compose stop $to_stop >/dev/null 2>&1 || die "could not stop: $(echo "$to_stop" | tr '\n' ' ')"
 
 # --- 4. Postgres -------------------------------------------------------------------------------
 step=$(date +%s)
@@ -186,9 +189,17 @@ compose run --rm --no-deps -T migrate wm authz sync 2>&1 | sed 's/^/    /' >&2 |
 
 # --- 11. Checks --------------------------------------------------------------------------------
 say "Checks"
-if tool http-json "$API_URL/api/v1/system/status" >"$WORK/status.json"; then
+# Each dependency gets 2 s to answer: just after a start Keycloak can be slower for a while.
+status_ok() {
+  "${TOOL[0]}" -c 'import json, sys; sys.exit(json.load(open(sys.argv[1]))["status"] != "ok")' "$WORK/status.json" 2>/dev/null
+}
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  tool http-json "$API_URL/api/v1/system/status" >"$WORK/status.json" 2>/dev/null && status_ok && break
+  sleep 5
+done
+if [[ -s "$WORK/status.json" ]]; then
   "${TOOL[0]}" -c 'import json,sys; s=json.load(open(sys.argv[1])); print("    system status: %s, version %s (%s)" % (s["status"], s["version"], ", ".join("%s %s" % (c["name"], c["status"]) for c in s["components"])))' "$WORK/status.json" >&2
-  grep -q '"status": "ok"' "$WORK/status.json" || MISMATCH="$MISMATCH status"
+  status_ok || MISMATCH="$MISMATCH status"
 else
   warn "no answer from $API_URL/api/v1/system/status"
   MISMATCH="$MISMATCH status"
