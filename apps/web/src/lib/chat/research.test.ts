@@ -108,6 +108,10 @@ describe("tool activity labels", () => {
     [{ tool: "web_search", ok: false, error: "upstream_unavailable" }, "Couldn't search the web (service unavailable)"],
     [{ tool: "erp.stock_level", ok: true, error: null }, "Used erp stock level"],
     [{ tool: "erp.stock_level", ok: false, error: "rate_limited" }, "Erp stock level failed (rate limited)"],
+    [
+      { tool: "search_knowledge", ok: false, error: "limit_reached" },
+      "Couldn't search company documents (skipped: the run's tool-call limit was reached)",
+    ],
   ])("%j → %s", (step, label) => {
     expect(toolStepLabel(step)).toBe(label);
   });
