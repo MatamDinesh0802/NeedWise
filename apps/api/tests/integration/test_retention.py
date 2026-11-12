@@ -334,6 +334,36 @@ async def test_preview_is_exact_and_a_run_deletes_only_this_tenants_expired_data
     assert again.json()["would_delete"] == dict.fromkeys(expected, 0)
 
 
+async def test_a_draft_policy_is_previewed_without_saving_it(
+    licensed: TestClient, acme: Acme, app_sessions: SessionFactory, tmp_path: Path
+) -> None:
+    await _populate(app_sessions, acme, tmp_path)
+    saved = licensed.post("/api/v1/admin/retention/preview", headers=acme.as_("erin", write=True))
+    draft = licensed.post(
+        "/api/v1/admin/retention/preview",
+        json={"conversations_days": 30, "read_notifications_days": 30},
+        headers=acme.as_("erin", write=True),
+    )
+    too_short = licensed.post(
+        "/api/v1/admin/retention/preview",
+        json={"conversations_days": 7},
+        headers=acme.as_("erin", write=True),
+    )
+    policy = licensed.get("/api/v1/admin/retention", headers=acme.as_("erin")).json()
+
+    assert saved.json()["would_delete"] == dict.fromkeys(saved.json()["would_delete"], 0)
+    assert draft.status_code == 200, draft.text
+    assert draft.json()["would_delete"] == {
+        "conversations": 1,
+        "analytics_runs": 0,
+        "meeting_recordings": 0,
+        "read_notifications": 1,
+    }
+    assert draft.json()["cutoffs"]["analytics_runs"] is None
+    assert too_short.status_code == 422  # a draft follows the same 30-day minimum
+    assert policy["conversations_days"] is None  # previewing saved nothing
+
+
 async def test_the_daily_task_applies_every_tenants_policy(
     licensed: TestClient, acme: Acme, app_sessions: SessionFactory, tmp_path: Path
 ) -> None:

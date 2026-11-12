@@ -344,11 +344,12 @@ async def put_policy(ctx: AdminContext, request: Request, body: PolicyIn) -> Pol
 
 
 @router.post("/preview")
-async def preview(ctx: AdminContext, request: Request) -> PreviewOut:
-    """What a run would delete now. Deletes nothing."""
+async def preview(ctx: AdminContext, request: Request, body: PolicyIn | None = None) -> PreviewOut:
+    """What a run would delete now. Deletes nothing. Without a body: the saved policy; with one:
+    that draft, so an admin sees the effect of a change before saving it."""
     now = datetime.now(UTC)
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
-        policy = _policy_in(await session.scalar(select(RetentionPolicy)))
+        policy = body or _policy_in(await session.scalar(select(RetentionPolicy)))
         counts = await count_expired(session, policy, now)
     return PreviewOut(
         as_of=now,
