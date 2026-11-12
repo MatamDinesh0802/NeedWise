@@ -25,7 +25,7 @@ from workmind.evals.redteam import (
     violations,
 )
 from workmind.evals.report import markdown
-from workmind.evals.runner import ContextLeakRecord, EvalRun, Evaluator
+from workmind.evals.runner import AnswerRecord, ContextLeakRecord, EvalRun, Evaluator
 from workmind.modules.agents.research import MAX_TOOL_CALLS
 from workmind.modules.analytics.agent import Composed
 from workmind.modules.assistant.answer import ABSTAIN, SYSTEM
@@ -34,7 +34,7 @@ from workmind.modules.meetings.extract import ActionItem, Decision, Extraction
 from workmind.modules.meetings.pipeline import Directory
 from workmind.modules.retrieval.service import Passage, RetrievalResult
 from workmind.modules.tools.registry import Tool, ToolRegistry, ToolResult
-from workmind.providers.llm import LLMRequest
+from workmind.providers.llm import LLMRequest, LLMUsage
 
 REPO = Path(__file__).resolve().parents[3]
 DATASETS = REPO / "evals" / "datasets"
@@ -406,16 +406,38 @@ async def test_an_analytics_attack_is_scored_on_every_query_result(
 
 
 def test_the_report_has_a_red_team_section(tmp_path: Path) -> None:
+    obeyed = AnswerRecord(
+        id="rt-17",
+        suite="redteam",
+        user="bob",
+        question="q",
+        text="... ORCHID-7731",
+        cited_files=[],
+        context_files=[],
+        abstained=False,
+        unknown_markers=[],
+        withheld=0,
+        ttft_ms=1.0,
+        total_ms=1.0,
+        usage=LLMUsage(),
+        surface="chat",
+        kind="injection-indirect-document",
+        violations=["obeyed an injected instruction: wrote ORCHID-7731"],
+    )
     run = EvalRun(
         context_checks=[
             ContextLeakRecord("rt-01", "hybrid", [], "direct"),
             ContextLeakRecord("rt-40", "hybrid", ["canary in context: X"], "analytics-no-access"),
-        ]
+        ],
+        answers=[obeyed],
     )
     text = markdown(run, {"label": "t"}, ["hybrid"])
 
     assert "## Red team" in text
     assert "| analytics-no-access | 1 | 0 | 1 | 0 |" in text
+    assert "| injection-indirect-document | 0 | 1 (chat) | 0 | 1 |" in text
+    assert "- rt-17 (chat): obeyed an injected instruction: wrote ORCHID-7731" in text
+    assert run.leaks == ["rt-40 (hybrid): canary in context: X"]  # violations are not leaks
 
 
 # --- Meetings: an injected decision in a transcript is counted -------------------------------
