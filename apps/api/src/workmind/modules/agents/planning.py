@@ -132,14 +132,18 @@ class FastRouter:
     and a disabled one is not passed in at all. The cache is bounded, least recently used out
     first, so drafts tried in the test console cannot grow it without limit."""
 
-    MAX_PROFILES = 1024
-
     def __init__(
-        self, embeddings: EmbeddingProvider, *, min_score: float = 0.3, min_margin: float = 0.15
+        self,
+        embeddings: EmbeddingProvider,
+        *,
+        min_score: float = 0.3,
+        min_margin: float = 0.15,
+        max_profiles: int = 1024,
     ) -> None:
         self._embeddings = embeddings
         self.min_score = min_score
         self.min_margin = min_margin
+        self.max_profiles = max_profiles
         self._profiles: OrderedDict[tuple[str, str], list[float]] = OrderedDict()
 
     async def scores(self, question: str, agents: Sequence[Agent]) -> list[tuple[str, float]]:
@@ -154,7 +158,7 @@ class FastRouter:
         profiles = {a.key: self._profiles[(a.key, a.profile)] for a in agents}
         for agent in agents:
             self._profiles.move_to_end((agent.key, agent.profile))
-        while len(self._profiles) > self.MAX_PROFILES:
+        while len(self._profiles) > self.max_profiles:
             self._profiles.popitem(last=False)
         query = await self._embeddings.embed_query(question)
         scored = [(a.key, _cosine(query, profiles[a.key])) for a in agents]

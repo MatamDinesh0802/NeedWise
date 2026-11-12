@@ -16,16 +16,20 @@ down_revision: str | None = "0012"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# The same fields as workmind.modules.agents.definitions.snapshot(), for definitions that
-# existed before versioning: each gets version 1.
-SNAPSHOT_SQL = """
-    jsonb_build_object(
-        'key', key, 'name', name, 'description', description, 'instructions', instructions,
-        'collections', to_jsonb(collection_keys), 'examples', to_jsonb(examples),
-        'tools', to_jsonb(tools), 'model', model, 'max_searches', max_searches,
-        'max_tool_calls', max_tool_calls, 'max_output_tokens', max_output_tokens,
-        'enabled', enabled
-    )
+# Version 1 for definitions that existed before versioning, with the same fields as
+# workmind.modules.agents.definitions.snapshot().
+BACKFILL_SQL = """
+    INSERT INTO agent_definition_versions (tenant_id, agent_id, version, snapshot, note)
+    SELECT tenant_id, id, 1,
+        jsonb_build_object(
+            'key', key, 'name', name, 'description', description, 'instructions', instructions,
+            'collections', to_jsonb(collection_keys), 'examples', to_jsonb(examples),
+            'tools', to_jsonb(tools), 'model', model, 'max_searches', max_searches,
+            'max_tool_calls', max_tool_calls, 'max_output_tokens', max_output_tokens,
+            'enabled', enabled
+        ),
+        'Definition before versioning'
+    FROM agent_definitions
 """
 
 
@@ -124,14 +128,7 @@ def upgrade() -> None:
             sa.text("SELECT set_config('app.tenant_id', :tenant, true)"),
             {"tenant": str(tenant_id)},
         )
-        connection.execute(
-            sa.text(
-                "INSERT INTO agent_definition_versions "
-                "(tenant_id, agent_id, version, snapshot, note) "
-                f"SELECT tenant_id, id, 1, {SNAPSHOT_SQL}, 'Definition before versioning' "
-                "FROM agent_definitions"
-            )
-        )
+        connection.execute(sa.text(BACKFILL_SQL))
     connection.execute(sa.text("SELECT set_config('app.tenant_id', '', true)"))
 
 
