@@ -84,6 +84,20 @@ export interface AuditEvent {
 export interface AuditPage {
   items: AuditEvent[];
   next_before_seq: number | null;
+  /** Opaque: pass it back as `cursor` for the next (older) page. null: no more events. */
+  next_cursor: string | null;
+}
+
+/** The audit explorer's filters, as the API takes them (api/v1/admin.py AuditFilters). */
+export interface AuditQuery {
+  action?: string;
+  actor_id?: string;
+  resource_type?: string;
+  resource_id?: string;
+  /** ISO 8601 with a time zone; `from` inclusive, `to` exclusive. */
+  from?: string;
+  to?: string;
+  q?: string;
 }
 
 export interface ChainResult {
@@ -155,8 +169,12 @@ export const adminApi = {
     apiJson<void>(`${BASE}/groups/${id(groupId)}/members/groups/${id(childId)}`, { method: "DELETE" }),
 
   // Audit
-  listAuditEvents: (params: { action?: string; actor_id?: string; before_seq?: number | null; limit?: number }) =>
-    apiJson<AuditPage>(`${BASE}/audit-events${queryString(params)}`),
+  listAuditEvents: (params: AuditQuery & { cursor?: string | null; before_seq?: number | null; limit?: number }) =>
+    apiJson<AuditPage>(`${BASE}/audit-events${queryString({ ...params })}`),
+  /** Plain links: the browser downloads with the session cookie (Content-Disposition: attachment). */
+  auditCsvUrl: (params: AuditQuery) => `${BASE}/audit-events/export.csv${queryString({ ...params })}`,
+  /** Enterprise "advanced_audit_export": the whole hash chain as JSON lines. */
+  auditChainUrl: (afterSeq?: number | null) => `${BASE}/audit-events/export.jsonl${queryString({ after_seq: afterSeq ?? null })}`,
   verifyAuditChain: () => apiJson<ChainResult>(`${BASE}/audit-events/verify`),
 };
 
