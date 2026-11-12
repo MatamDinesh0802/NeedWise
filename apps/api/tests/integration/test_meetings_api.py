@@ -196,6 +196,20 @@ async def test_a_transcript_becomes_notes_tasks_and_commitments(
     wei_notes = api.get("/api/v1/notifications", headers=acme.as_("wei.zhang")).json()
     assert any(n["kind"] == "task.assigned" for n in wei_notes)
 
+    # Wei hands it over to Olivia, who is told; a colleague who doesn't exist is refused.
+    url, as_wei = f"/api/v1/tasks/{task_id}", acme.as_("wei.zhang", write=True)
+    nobody = api.patch(url, json={"assignee_id": str(uuid.uuid4())}, headers=as_wei)
+    handed = api.patch(url, json={"assignee_id": str(acme.users["olivia.grant"])}, headers=as_wei)
+    assert nobody.status_code == 422
+    assert (handed.status_code, handed.json()["assignee_id"]) == (
+        200,
+        str(acme.users["olivia.grant"]),
+    )
+    olivia_notes = api.get("/api/v1/notifications", headers=acme.as_("olivia.grant")).json()
+    assert any(
+        n["kind"] == "task.assigned" and n["link"] == f"/tasks/{task_id}" for n in olivia_notes
+    )
+
 
 async def test_speaker_mapping_relinks_owners(api: TestClient, acme: Acme) -> None:
     unnamed = b"WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nSPEAKER_1: I'll send the quote today.\n"

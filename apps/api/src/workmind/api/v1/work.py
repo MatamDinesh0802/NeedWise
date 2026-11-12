@@ -273,8 +273,20 @@ async def update_task(
         task = await _visible_task(session, ctx, task_id)
         if body.status:
             task.status = body.status
-        if body.assignee_id:
-            task.assignee_id = body.assignee_id  # claiming from a queue, or handing over
+        if body.assignee_id and body.assignee_id != task.assignee_id:
+            # Claiming from a queue, or handing over (the new assignee is told).
+            if await session.get(User, body.assignee_id) is None:
+                raise ApiError(422, "unknown_user", "Unknown assignee")
+            task.assignee_id = body.assignee_id
+            if body.assignee_id != ctx.user_id:
+                await notify(
+                    session,
+                    ctx.tenant_id,
+                    body.assignee_id,
+                    kind="task.assigned",
+                    title=f"Handed over to you: {task.title}",
+                    link=f"/tasks/{task.id}",
+                )
         await record_event(
             session,
             tenant_id=ctx.tenant_id,
