@@ -4,6 +4,7 @@
  */
 
 import { ApiError } from "@/lib/api";
+import { budgetBlockCopy, budgetBlockFromError } from "@/lib/usage/budget-error";
 
 export interface ErrorMessage {
   title: string;
@@ -120,6 +121,12 @@ export function errorMessage(error: unknown): ErrorMessage {
   if (error instanceof ApiError) {
     const code = error.code;
     if (code && Object.hasOwn(MESSAGES, code)) return { ...MESSAGES[code], code };
+    const block = budgetBlockFromError(error);
+    if (block) {
+      // Toasts and plain alerts get the budget, the reset and who to ask in one description.
+      const copy = budgetBlockCopy(block, null);
+      return { title: copy.title, description: [copy.description, copy.resets ? `${copy.resets}.` : null, copy.who].filter(Boolean).join(" "), code };
+    }
     if (code === "validation_error") {
       const fields = fieldErrors(error);
       return {

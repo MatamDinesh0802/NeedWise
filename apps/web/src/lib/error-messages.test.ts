@@ -97,3 +97,32 @@ describe("fieldErrors", () => {
     expect(fieldErrors(api(422, "validation_error"))).toEqual([]);
   });
 });
+
+describe("budget_exceeded", () => {
+  const budget = {
+    id: "b1",
+    scope: "department",
+    subject: { id: "d1", name: "Finance" },
+    period: "month",
+    limit_usd: 100,
+    spent_usd: 101,
+    warn_at: 0.8,
+    status: "exceeded",
+    resets_at: "2026-12-01T00:00:00Z",
+  };
+
+  it("names the budget, when it resets and who to ask, for toasts and plain alerts", () => {
+    const message = errorMessage(api(429, "budget_exceeded", "Budget exceeded", { detail: "Finance's budget is used up.", budget }));
+    expect(message.title).toBe("The monthly budget for Finance is used up");
+    expect(message.description).toMatch(
+      /^\$101 of \$100 spent \(101%\)\. Requests that use an AI model are paused until it resets\. Resets .+\. Ask your department manager/,
+    );
+    expect(message.code).toBe("budget_exceeded");
+  });
+
+  it("uses the API's words when the budget isn't included", () => {
+    const message = errorMessage(api(429, "budget_exceeded", "Budget exceeded", { detail: "A budget is used up." }));
+    expect(message.title).toBe("A usage budget is used up");
+    expect(message.description).toBe("A budget is used up. Ask an owner or admin of your organization if you need more.");
+  });
+});
