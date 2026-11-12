@@ -168,14 +168,15 @@ async def ask(ctx: AskContext, request: Request, body: AskIn) -> AnalyticsAnswer
     await resources.usage.check(ctx)  # 429 budget_exceeded before anything is stored
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         tenant = await session.get(Tenant, ctx.tenant_id)
-    with attribute("analytics", user_id=ctx.user_id):
-        return await agent.answer(
-            await resources.models.for_tenant(ctx.tenant_id),
-            resources.analytics,
-            ctx,
-            body.question,
-            organization=tenant.name if tenant else "the company",
-        )
+    async with resources.runs.inflight.hold(ctx):  # 429 too_many_requests
+        with attribute("analytics", user_id=ctx.user_id):
+            return await agent.answer(
+                await resources.models.for_tenant(ctx.tenant_id),
+                resources.analytics,
+                ctx,
+                body.question,
+                organization=tenant.name if tenant else "the company",
+            )
 
 
 @router.get("/runs")

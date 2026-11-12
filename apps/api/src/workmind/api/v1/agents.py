@@ -476,15 +476,18 @@ async def test_agent(ctx: AdminContext, request: Request, body: TestRequest) -> 
         tools=resources.tools,
     )
     try:
-        with attribute("agent_test", user_id=ctx.user_id, agent_key=tested.key if tested else None):
-            run = await run_console(
-                deps,
-                ctx,
-                body.question,
-                tested,
-                organization=tenant.name if tenant else "the company",
-                policy=llm.max_external_sensitivity,
-            )
+        async with resources.runs.inflight.hold(ctx):  # 429 too_many_requests
+            with attribute(
+                "agent_test", user_id=ctx.user_id, agent_key=tested.key if tested else None
+            ):
+                run = await run_console(
+                    deps,
+                    ctx,
+                    body.question,
+                    tested,
+                    organization=tenant.name if tenant else "the company",
+                    policy=llm.max_external_sensitivity,
+                )
     except BudgetExceededError:
         raise  # 429 budget_exceeded (main.py)
     except LLMError as exc:

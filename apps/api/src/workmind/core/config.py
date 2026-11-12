@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     # (ARCHITECTURE 12). "auto": agents only when a question spans several areas.
     # Chosen by the ablation in evals/README.md (ADR 0009).
     assistant_mode: Literal["single", "agents", "auto"] = "single"
+    # Answers one person may have in progress at once: chat and research runs, ask, MCP
+    # ask, analytics questions (modules/conversations/inflight.py). More get 429.
+    max_inflight_per_user: int = Field(default=4, ge=1, le=100)
     # Fast-path routing: skip the planner when one agent's profile clearly matches.
     # Public web search for agents (a self-hosted SearXNG); unset = no web_search tool.
     searxng_url: str | None = None

@@ -124,16 +124,17 @@ async def ask(
     organization = tenant.name if tenant else "the company"
     llm = await resources.models.for_tenant(ctx.tenant_id)
     try:
-        with attribute("chat", user_id=ctx.user_id):
-            result = await answer(
-                llm,
-                resources.retriever,
-                ctx,
-                body.question,
-                organization=organization,
-                policy=llm.max_external_sensitivity,
-                local_llm=llm.local,
-            )
+        async with resources.runs.inflight.hold(ctx):  # 429 too_many_requests
+            with attribute("chat", user_id=ctx.user_id):
+                result = await answer(
+                    llm,
+                    resources.retriever,
+                    ctx,
+                    body.question,
+                    organization=organization,
+                    policy=llm.max_external_sensitivity,
+                    local_llm=llm.local,
+                )
     except BudgetExceededError:
         raise  # 429 budget_exceeded (main.py)
     except LLMError as exc:
@@ -214,16 +215,17 @@ async def research_question(
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         tenant = await session.get(Tenant, ctx.tenant_id)
     try:
-        with attribute("research", user_id=ctx.user_id):
-            result = await research(
-                await resources.models.for_tenant(ctx.tenant_id),
-                resources.tools,
-                resources.db,
-                ctx,
-                body.question,
-                organization=tenant.name if tenant else "the company",
-                tool_names=body.tools,
-            )
+        async with resources.runs.inflight.hold(ctx):  # 429 too_many_requests
+            with attribute("research", user_id=ctx.user_id):
+                result = await research(
+                    await resources.models.for_tenant(ctx.tenant_id),
+                    resources.tools,
+                    resources.db,
+                    ctx,
+                    body.question,
+                    organization=tenant.name if tenant else "the company",
+                    tool_names=body.tools,
+                )
     except BudgetExceededError:
         raise  # 429 budget_exceeded (main.py)
     except LLMError as exc:
