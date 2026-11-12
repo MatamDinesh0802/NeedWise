@@ -61,8 +61,9 @@ Operations: `make backup` and `make restore` with a measured restore drill
 ([backup and restore](docs/operations/backup-restore.md)); an upgrade test from a release tag,
 passed from v0.1.0 ([upgrades](docs/operations/upgrade.md)); `wm authz sync`.
 
-Deployment and docs: a Helm chart in `deploy/helm/workmind`, validated but not yet installed on a
-cluster ([docs/deploy/kubernetes.md](docs/deploy/kubernetes.md)); the docs site (`make docs`,
+Deployment and docs: a Helm chart in `deploy/helm/workmind`, validated, and installed, tested,
+upgraded and uninstalled on kind clusters with Kubernetes 1.34 and 1.37 (`make helm-kind-test`;
+[docs/deploy/kubernetes.md](docs/deploy/kubernetes.md#tested-on-a-cluster)); the docs site (`make docs`,
 `make docs-serve`) with the configuration and HTTP API reference generated from the code.
 
 Tests: a browser end-to-end suite in `e2e/browser` (sign-in per role, every page, permissions,

@@ -6,16 +6,22 @@ the database migrations as a Helm hook, and optionally Postgres, Valkey, Qdrant,
 Keycloak and an embedding server. This page covers what you need, how to install and upgrade,
 the settings that matter, secrets, external services, backups and what the chart does not do.
 
-**What has been checked, and how.** `deploy/helm/validate.sh` (CI: `.github/workflows/helm.yml`,
-with Helm 3.19 and 4.0) runs `helm lint --strict`, renders the chart with the default values,
-both examples and a CI values file (145 resources), validates them with `kubeconform -strict`
-against the Kubernetes 1.33 schemas, checks every pod spec against the chart's security rules,
-and checks that eight kinds of invalid values are refused. Separately, every image was run in
-Docker with the user, group, read-only root filesystem and dropped capabilities the chart
-gives it: Postgres ran its init script, OpenFGA migrated, Keycloak imported the realm in
-production mode (`start`), the API answered `/readyz` with every dependency "ok" in
-`APP_ENV=production`, and the worker, beat, web and embedding server started. **The chart
-itself has not been installed on a cluster yet**; that is the next step of Phase 12.
+**What has been checked, and how.** The chart was installed, tested, upgraded and uninstalled
+on local [kind](https://kind.sigs.k8s.io) clusters: Kubernetes 1.37.0 with Helm 3.19.0 and
+1.34.11 with Helm 4.0.0, everything bundled except the embedding server (hash embeddings), no
+model key, behind ingress-nginx, in a namespace that enforces the "restricted" Pod Security
+Standard, with NetworkPolicies on. The migrate and seed hooks, `helm test`, the API end-to-end
+tests and the browser suite passed; the four chart problems the test found are fixed.
+[Tested on a cluster](#tested-on-a-cluster) has the details and what was not tested: TLS, a
+cloud load balancer or ingress, managed databases and the embedding server among them.
+`make helm-kind-test` repeats it. Without a cluster, `deploy/helm/validate.sh` (CI:
+`.github/workflows/helm.yml`, with Helm 3.19 and 4.0) runs `helm lint --strict`, renders the
+chart with the default values, both examples and two CI values files (191 resources),
+validates them with `kubeconform -strict` against the Kubernetes 1.33 schemas, checks every
+pod spec against the chart's security rules, and checks that eleven kinds of invalid values
+are refused. Before the cluster test, every image was also run in Docker with the user, group,
+read-only root filesystem and dropped capabilities the chart gives it, the embedding server
+included.
 
 ## Contents
 
@@ -28,7 +34,9 @@ itself has not been installed on a cluster yet**; that is the next step of Phase
 - [External services](#external-services)
 - [Upgrades and the migrate hook](#upgrades-and-the-migrate-hook)
 - [Backups](#backups)
+- [Uninstall](#uninstall)
 - [Security settings](#security-settings)
+- [Tested on a cluster](#tested-on-a-cluster)
 - [What is not covered](#what-is-not-covered)
 
 ## What it installs
@@ -40,6 +48,7 @@ itself has not been installed on a cluster yet**; that is the next step of Phase
 | `beat` | Deployment (Recreate), PVC for the schedule | always 1 | `beat` and its `beat_schedule` volume |
 | `web` | Deployment, Service, PodDisruptionBudget, optional HPA | 1 | `web` |
 | `migrate` | Job as a Helm hook | | `migrate` |
+| `authz-sync` | Job as a Helm hook (`migrate.authzSync`) | | `docker compose run --rm migrate wm authz sync`, by hand after an upgrade |
 | `seed` | Job as a Helm hook, off by default | | `seed` (profile `tools`) |
 | object storage | PersistentVolumeClaim at `/data/objects` | | `./.data/objects` |
 | `postgresql` | StatefulSet, Services, ConfigMap with the init script | 1 | `postgres` |
@@ -62,8 +71,9 @@ release name alone when it already contains "workmind". Installed as `workmind`,
 ## Prerequisites
 
 - **Kubernetes 1.29 or later** (the chart is validated against the 1.33 schemas and uses
-  gRPC probes, stable since 1.27) and **Helm 3.19 or later, or Helm 4**. Helm 4.0.0's
-  `helm template` assumes Kubernetes 1.20 unless told otherwise, which the chart's
+  gRPC probes, stable since 1.27; it was installed on 1.34 and 1.37, see
+  [Tested on a cluster](#tested-on-a-cluster)) and **Helm 3.19 or later, or Helm 4**. Helm
+  4.0.0's `helm template` assumes Kubernetes 1.20 unless told otherwise, which the chart's
   `kubeVersion` refuses: pass `--kube-version` (e.g. `--kube-version 1.33.0`). `helm install`
   and `helm upgrade` use the cluster's version.
 - **Images.** No WorkMind images are published yet. Build both and push them to a registry
@@ -122,7 +132,9 @@ What happens, in order:
 3. The `migrate` hook Job runs `alembic upgrade head`. With the bundled Postgres this is a
    post-install hook: a pre-install hook would run before the database exists. Until it
    finishes, the API and the workers log database errors (the API's `/healthz` stays up).
-4. If `seed.enabled`, the seed Job loads the demo company (below).
+4. The `authz-sync` hook Job runs `wm authz sync` (below); on a first install there is no
+   tenant yet, so it does nothing.
+5. If `seed.enabled`, the seed Job loads the demo company (below).
 
 `helm test` runs a pod that calls the API's `/readyz` (Postgres, Valkey, Qdrant, OpenFGA and
 Keycloak) and the web app's home page.
@@ -134,7 +146,7 @@ add their own provider keys in Admin > Models ([models.md](../models.md)).
 
 `seed.enabled: true` runs `python -m workmind.seed` after install and after every upgrade (it is
 safe to re-run): the Acme Robotics company, its logins (password `credentials.demoPassword`,
-default `workmind-demo`), 34 documents through the ingestion pipeline, analytics data and the
+default `workmind-demo`), 47 documents through the ingestion pipeline, analytics data and the
 authorization tuples. It refuses `config.appEnv: production`; use `demo`. The repository's
 `seed/` directory (about 9 MB) is not in the API image, so the Job fetches it in an init
 container, from `seed.data.source`:
@@ -263,7 +275,11 @@ Things to know:
   uninstall` leaves it. Losing `SECRETS_ENCRYPTION_KEY` or `SECRETS_KEY` makes the stored
   provider keys and connector credentials unreadable, and the bundled Postgres keeps the
   passwords it was initialized with. Back the Secret up. A reinstall with the same release
-  name and namespace adopts and reuses it.
+  name and namespace adopts and reuses it ([Uninstall](#uninstall)).
+- **Your own Secret needs a name of its own.** `credentials.existingSecret`, and each
+  credential's `existingSecret`, must not be `<fullname>-credentials`, the Secret the chart
+  creates: the chart refuses it (it would otherwise create that Secret itself, with generated
+  values for every key).
 - **Generated values need a cluster lookup.** `helm install` and `helm upgrade` read the
   existing Secret (Helm's `lookup`). Tools that only run `helm template`, such as Argo CD,
   would generate new values on every sync: give every credential a value or an existing
@@ -359,6 +375,12 @@ helm upgrade workmind deploy/helm/workmind -n workmind -f my-values.yaml --wait 
   ServiceAccount do not exist yet when pre-install hooks run, so the Job brings its own hook
   ServiceAccount and, when the chart holds the owner password, a hook Secret with only that
   password. Both are deleted once the hooks succeed.
+- **Authorization stores.** Once the new pods are ready, the `authz-sync` hook Job runs `wm
+  authz sync` with the owner role: every active tenant's OpenFGA store gets the current
+  authorization model, and its tuples are recomputed from Postgres. The Compose procedure runs
+  the same command by hand after every upgrade ([upgrades](../operations/upgrade.md)). It is
+  safe to repeat; `migrate.authzSync: false` turns it off. Its logs: `kubectl logs -n workmind
+  job/workmind-authz-sync`.
 - **`helm rollback` does not downgrade the schema.**
 - **OpenFGA** migrates in a Job named after the release revision, so every install and upgrade
   runs it once; OpenFGA reports "not serving" until it is done.
@@ -367,6 +389,39 @@ helm upgrade workmind deploy/helm/workmind -n workmind -f my-values.yaml --wait 
   post-logout URIs).
 - **Bundled Postgres major versions** are not upgraded by the chart: a new major version needs
   `pg_upgrade` or a dump and restore.
+- **What restarts.** A pod is replaced when its own values change, or when the data of the
+  chart's ConfigMap or Secret changes (checksum annotations); a new chart or app version alone
+  restarts no bundled service. On kind, an upgrade that only added a label replaced no running
+  pod, and one that changed a setting (`config.env`) replaced only the API, worker and beat pods.
+  Credentials in Secrets you manage are not in the checksums: after changing one, restart the
+  pods that read it (`kubectl rollout restart`).
+- **Keycloak runs one replica.** While its pod is replaced (when its credentials or the realm
+  file change), a sign-in can fail: on kind, one request in about 70 timed out (5 s) during
+  that replacement.
+
+## Uninstall
+
+```bash
+helm uninstall workmind -n workmind
+```
+
+It deletes the Deployments, StatefulSets, Services, ConfigMaps, the Ingress, the
+NetworkPolicies, the PodDisruptionBudgets and the beat schedule's claim. What stays (checked
+on kind):
+
+- the chart's Secret `<fullname>-credentials` and the object storage claim `<fullname>-objects`,
+  both annotated `helm.sh/resource-policy: keep` (`objectStorage.keepOnUninstall: false` lets
+  the claim go);
+- the bundled services' claims `data-<fullname>-postgresql-0`, `data-<fullname>-qdrant-0` and
+  `data-<fullname>-valkey-0`: Kubernetes keeps a StatefulSet's claims when it is deleted;
+- the last `migrate`, `authz-sync` and `seed` hook Jobs and the `helm test` pod, with their
+  logs: Helm does not delete hook resources on uninstall (the next install replaces them).
+
+Installed again with the same release name and namespace, the chart adopts the kept Secret
+and claims. On kind, the new release found its database, files and index: the seed reported
+its 47 documents unchanged, and `helm test` and the API end-to-end tests passed as before. To
+remove everything, delete the namespace, or those objects by hand; a deleted claim's volume
+then follows its storage class's reclaim policy.
 
 ## Backups
 
@@ -399,8 +454,9 @@ together:
   file). The exception is Keycloak: the stock image builds itself on `start` and writes into
   `/opt/keycloak/lib`, which fails on a read-only filesystem (tried in Docker).
 - These are the rules of the "restricted" Pod Security Standard; `check-manifests.py` checks
-  them on every rendered pod in CI. No cluster with `enforce: restricted` has admitted the
-  chart yet.
+  them on every rendered pod in CI. On kind (Kubernetes 1.34 and 1.37), a namespace labelled
+  `pod-security.kubernetes.io/enforce: restricted` admitted every pod of the chart, the hook
+  Jobs and the `helm test` pod included, with no warning.
 - Credentials are only in Secrets and reach containers as `secretKeyRef` variables; the
   ConfigMap holds no credential (checked in CI). Valkey reads its password from a file on a
   memory volume, not from its command line.
@@ -415,10 +471,93 @@ together:
   not change with the deployment: the runtime role has no `BYPASSRLS`, the owner role is used
   only by the migrate and seed Jobs.
 
+## Tested on a cluster
+
+On 2026-11-13 the chart was installed on local kind clusters, on one laptop (Apple M5, 24 GB,
+macOS; Docker Desktop 29.4.3 with 8 CPUs and 15.6 GiB). Run 1, by hand, found the first two
+problems listed below (the other two came up while fixing and documenting them), and the
+fixes were checked on its cluster; the later runs used `deploy/helm/kind-test.sh` and the
+fixed chart. These are local clusters, not a cloud: read
+the results as "the chart and the app work on Kubernetes", not as a production qualification.
+
+| | Run 1 | Run 2 | Runs 3 and 4 |
+|---|---|---|---|
+| Kubernetes | 1.37.0 (`kindest/node:v1.37.0`) | 1.34.11 (`kindest/node:v1.34.11`) | 1.37.0 |
+| Helm, kubectl | 3.19.0, 1.37.2 | 4.0.0, 1.34.13 | 3.19.0, 1.37.2 |
+| How | step by step, by hand | `deploy/helm/kind-test.sh` | `make helm-kind-test`; run 4 with the `authz-sync` hook |
+| `RETRIEVAL_MIN_SIMILARITY` | `0`, as CI's compose stack | the default (0.25) | the default |
+
+All: kind v0.33.0, one control-plane node and two workers (containerd 2.3.4, kindnet, the
+local-path storage class), ingress-nginx controller v1.15.1 on the control plane, published
+on `127.0.0.1:8680`. ingress-nginx was retired in March 2026 and v1.15.1 is its last release;
+other controllers were not tried.
+
+**Values** ([`ci/kind-values.yaml`](../../deploy/helm/workmind/ci/kind-values.yaml)): the API
+and web images built from the checkout (the application code did not change between the runs)
+and loaded into the nodes (`kind load docker-image`),
+`config.publicUrl: http://localhost:8680`, `config.appEnv: demo`, Postgres, Valkey, Qdrant,
+OpenFGA and Keycloak (production mode, `start`) bundled, the embedding server off and
+`config.embedding.provider: hash`, no model key, no license (Community), the seed Job with
+`seed.data.source: image` (the busybox image above), `ingress.className: nginx` with the body
+size and read timeout annotations, and `networkPolicy.enabled: true` with `publicFrom` set to
+the `ingress-nginx` namespace. The `workmind` namespace enforced the "restricted" Pod Security
+Standard.
+
+**What passed** (in every run unless a run is named):
+
+| Step | Result |
+|---|---|
+| `helm install --wait` | Every pod admitted and ready, Keycloak included (46 s after the start in run 1, about 80 s in run 2). Then the `migrate` hook: 19 migrations (to `0019`) in about 6 s; in run 4 the `authz-sync` hook (no tenant yet: nothing to do); then the `seed` hook: 47 documents (364 chunks), 4 analytics tables (527 rows), 164 authorization tuples, 9 logins, in under 10 s. The install returned after 61 to 100 s, with the images already on the nodes. Run 1: the hook ServiceAccount and Secret were deleted once the hooks had succeeded |
+| `helm test` | `/readyz`: Postgres, Valkey, Qdrant, OpenFGA and Keycloak "ok"; the web app answered 200 |
+| NetworkPolicies (run 1) | Enforced: from a pod in another namespace, and from an unlabelled pod in `workmind`, all seven Services refused connections; a pod labelled as the web component reached the API and nothing else |
+| API end-to-end tests, through the Ingress and Keycloak | Runs 2 to 4: 14 passed (2 model tests skipped). Run 1: 13 passed, 1 failed: with `RETRIEVAL_MIN_SIMILARITY=0` the guest's one collection always matches, so her question goes to the model, which fails without a key, where the test expects "not found". With the default floor on the same install: 14 passed. The test assumes the real floor; it is not a chart problem |
+| Browser suite (`make e2e-browser`) | 159 of 159 in each run (the 3 `@model` tests left out), in about a minute; run 1 also with two API replicas |
+| `helm upgrade` to `api.replicas=2` | The `migrate` Job ran again before any Deployment changed (pre-upgrade), the `seed` Job after (0 documents changed), OpenFGA's migrate Job once more; in run 4 the `authz-sync` Job too, which synced the seeded tenant (0 tuples written, 0 removed). Run 1: the generated credentials were kept (the Secret's data unchanged), and both API pods ran on the node of the object storage volume. A poller called `/api/v1/system/status`, `/` and `/auth/realms/workmind` every 0.25 s through the Ingress during the upgrade: run 1, 705 requests, all answered 200, but 3 status pages reported a dependency down (the second problem below); runs 2, 3 and 4, 237, 228 and 282 requests, all 200 with every dependency "ok" |
+| `helm uninstall` | The Secret, the object storage claim, the three StatefulSet claims and the last hook Jobs were left, as listed in [Uninstall](#uninstall) |
+| Install again (run 1) | Adopted the kept Secret and claims; data intact, `helm test` and the API tests as before |
+
+**Problems it found, fixed in the chart:**
+
+- The seed Job failed with `seed.data.source: image` and the default path: its init container
+  mounted the copy's volume over the image's own `/seed`, so `helm install` failed in its
+  post-install hook. Found by run 1's first install.
+- Every chart upgrade restarted Valkey, Keycloak and OpenFGA: the checksum annotations hashed
+  the rendered ConfigMap and Secret with their labels, which carry the chart version. During
+  run 1's first upgrade the status page reported a dependency down for about 4 s. The
+  checksums now cover the data only.
+- Both examples (`external-services.yaml`, `production.yaml`) named their own Secret
+  `workmind-credentials`, the chart's own Secret's name for a release called `workmind`: the
+  chart then created that Secret itself with a generated value for every key (found while
+  checking the previous fix). The chart now refuses that name.
+- Upgrades never ran `wm authz sync`, which the upgrade procedure requires after every
+  upgrade, and there was no easy way to run it: only the hook Jobs have the owner role's
+  password. Found while comparing the chart's upgrade with the Compose procedure; the
+  authorization model has not changed since v0.1.0, so no upgrade has needed it yet. The
+  `authz-sync` hook Job now runs it after every install and upgrade (from run 4 on).
+
+**Not tested on a cluster:** TLS (cert-manager, an `https` public URL and the `Secure`,
+`__Host-` cookie), cloud load balancers and cloud ingress controllers, the Gateway API route
+(`httpRoute`), managed or external databases and the other external services
+(`examples/external-services.yaml`), `examples/production.yaml` (ReadWriteMany storage,
+autoscaling, replicas spread over nodes), the bundled embedding server and real embeddings,
+any model call, an Enterprise license, the `archive` and `existingClaim` seed sources, node
+drains and failures (the PodDisruptionBudgets), backups and restores, an upgrade between two
+WorkMind versions (both releases ran the same build, so the upgrade's migrate Job had nothing
+new to apply; [operations/upgrade.md](../operations/upgrade.md) covers version upgrades with
+Compose), and load.
+
+**Repeat it:** `make helm-kind-test` (needs Docker, kind, kubectl, Helm, uv, pnpm and python3)
+builds the images, creates the cluster `workmind-test` with
+[`deploy/helm/kind/cluster.yaml`](../../deploy/helm/kind/cluster.yaml), and runs the install,
+the checks, the upgrade and the uninstall above, then deletes the cluster and the images.
+`KIND_NODE_IMAGE`, `HELM`, `KUBECTL`, `HTTP_PORT`, `SKIP_BROWSER=1` and `KEEP=1` change it;
+it writes its kubeconfig to a temporary directory, never to `~/.kube/config`.
+
 ## What is not covered
 
-- **No cluster install in CI yet.** The chart is linted, rendered and schema-validated; it has
-  not been installed and exercised on a cluster by this repository's CI.
+- **No cluster install in CI.** CI lints, renders and schema-validates the chart. The kind
+  test ([Tested on a cluster](#tested-on-a-cluster)) was run by hand on one laptop, and no
+  cloud cluster has run the chart.
 - **No published images or chart.** Build and push the images yourself; the chart is not in a
   Helm repository or OCI registry, and its version is not bumped by release-please yet.
 - **The bundled services are single instances** without high availability, automated

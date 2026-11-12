@@ -421,7 +421,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
-### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged, the load test is run and tuned, and the v1.0 benchmarks and the case study are written; a cluster install, the final review and the release remain
+### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged, the load test is run and tuned, and the v1.0 benchmarks and the case study are written, and the Helm chart is tested on kind; the final review and the release remain
 
 **Goal:** a release companies can trust in production.
 
@@ -452,9 +452,15 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   [upgrades](operations/upgrade.md)): a restore drill into a separate stack with identical rows,
   points and files, about a minute at the demo's size; the upgrade from v0.1.0 passed 17 of 17
   checks, and rolling back by restoring the pre-upgrade backup worked.
-- [ ] **Helm chart** ([Kubernetes](deploy/kubernetes.md)): written and validated with
+- [x] **Helm chart** ([Kubernetes](deploy/kubernetes.md#tested-on-a-cluster)): validated with
   `helm lint`, kubeconform (Kubernetes 1.33) and its own security rules, with Helm 3.19 and
-  4.0. Not yet installed on a cluster (kind is next).
+  4.0, and installed on kind clusters with Kubernetes 1.37 (Helm 3.19) and 1.34 (Helm 4.0):
+  the migrate and seed hooks, `helm test`, the API end-to-end tests and 159 browser tests
+  through the Ingress, the "restricted" Pod Security Standard enforced, NetworkPolicies
+  enforced, an upgrade to two API replicas with every request answered, an uninstall and a
+  reinstall over the kept data. Four chart problems found and fixed (among them, upgrades now
+  run `wm authz sync`). Not tested: a cloud cluster, TLS, managed databases, the embedding
+  server, model calls, an upgrade between two WorkMind versions.
 - [x] **Docs site** (MkDocs, `make docs`, strict build in CI), with the configuration and HTTP
   API reference generated from the code. Not published: Pages needs a public repository.
 - [x] **Browser end-to-end suite** in CI (`e2e/browser`): 162 tests pass on the rebuilt stack,

@@ -235,7 +235,7 @@ Uncommon ports were chosen on purpose: 8080, 8000 and 3000 are often taken by ot
 |---|---|---|---|
 | Dev | Laptop, Docker Compose | Local (Ollama) | Synthetic "Acme Robotics" corpus |
 | Public demo | One cloud VM, Docker Compose | A low-cost paid API through the adapter (avoids GPU hosting cost) | Acme corpus, reset nightly, demo logins per role |
-| Self-hosted customer | Their servers: Compose, or Kubernetes with the Helm chart ([deploy/kubernetes.md](deploy/kubernetes.md); validated, not yet installed on a cluster) | Local or bring-your-own API keys | Theirs |
+| Self-hosted customer | Their servers: Compose, or Kubernetes with the Helm chart ([deploy/kubernetes.md](deploy/kubernetes.md); tested on kind clusters, not yet on a cloud cluster) | Local or bring-your-own API keys | Theirs |
 | WorkMind Cloud (paid, later) | Kubernetes, managed Postgres/Qdrant | Per-tenant policy | Multi-tenant |
 
 ---

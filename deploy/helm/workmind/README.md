@@ -8,9 +8,12 @@ as `compose.yaml`) or from services you run. The full guide is
 
 **Status.** The chart passes `helm lint --strict`, renders with the default values and the
 examples, and validates against the Kubernetes 1.33 schemas (`deploy/helm/validate.sh`, run
-in CI by `.github/workflows/helm.yml`). The images and security settings it uses were run in
-Docker with the same users, read-only root filesystems and dropped capabilities. It has not
-been installed on a cluster by this repository's CI yet. No WorkMind images are published:
+in CI by `.github/workflows/helm.yml`). It was installed, tested, upgraded and uninstalled on
+kind clusters with Kubernetes 1.37 (Helm 3.19) and 1.34 (Helm 4.0), everything bundled but the
+embedding server, in a namespace that enforces the "restricted" Pod Security Standard
+(`deploy/helm/kind-test.sh`; results and what was not tested in
+[docs/deploy/kubernetes.md](../../../docs/deploy/kubernetes.md#tested-on-a-cluster)). It has
+not run on a cloud cluster, and CI does not install it. No WorkMind images are published:
 build them first (below).
 
 ## Install
@@ -57,6 +60,7 @@ Other setups:
 | beat | Deployment (always 1 replica, Recreate), PVC | Celery beat; its schedule survives restarts |
 | web | Deployment, Service, PDB, optional HPA | Next.js on :3000. Probes on `/`, as in compose |
 | migrate | hook Job (+ hook ServiceAccount and Secret) | `alembic upgrade head` with the owner role |
+| authz-sync | hook Job, after install and upgrade | `wm authz sync`: each tenant's OpenFGA store gets the current model and tuples (`migrate.authzSync`) |
 | seed | hook Job, optional | The Acme Robotics demo; refuses `config.appEnv: production` |
 | objects | PVC | `/data/objects`, shared by the API, the worker and the seed Job |
 | postgresql | StatefulSet, Services, ConfigMap | `postgres:18.6` with `deploy/postgres/init` as a ConfigMap |
@@ -76,7 +80,8 @@ Postgres, so a StatefulSet would add nothing but ordered rollouts.
 - `files/postgres/01-databases.sh` and `files/keycloak/realm-workmind.json` are copies of the
   files in `deploy/postgres/init` and `deploy/keycloak` (Helm can only read files inside the
   chart). `validate.sh` fails when they differ: edit the originals and copy them.
-- `ci/` holds values used only by the CI checks; it is left out of a packaged chart.
+- `ci/` holds values used only by the checks (`validate.sh`, and `kind-test.sh` for
+  `kind-values.yaml`); it is left out of a packaged chart.
 
 ## Validate
 
@@ -87,6 +92,12 @@ make helm-check   # = PYTHON="uv run --no-project --with pyyaml==6.0.2 python" d
 `HELM` and `KUBECONFORM` choose other binaries than the ones on `PATH`.
 
 It needs Helm, [kubeconform](https://github.com/yannh/kubeconform) and network access to the
-schema repositories. It lints, renders four sets of values, validates them against the
+schema repositories. It lints, renders five sets of values, validates them against the
 Kubernetes 1.33 schemas, checks every pod against the chart's rules (`../check-manifests.py`),
 and checks that invalid values are refused.
+
+On a throwaway kind cluster (needs Docker, kind, kubectl, uv, pnpm and python3 as well):
+
+```bash
+make helm-kind-test   # = deploy/helm/kind-test.sh: build, install, test, upgrade, uninstall, delete
+```

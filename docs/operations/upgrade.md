@@ -168,7 +168,10 @@ twice:
 
 ## Kubernetes
 
-There is no Helm chart in this commit. The same order applies: back up; run
-`alembic upgrade head` once, as a Job with the owner role's URL (`MIGRATIONS_DATABASE_URL`),
-before the new `api`, `worker` and `beat` start; then `wm authz sync` as a Job; never run two
-`beat` replicas.
+The Helm chart follows the same order
+([Kubernetes](../deploy/kubernetes.md#upgrades-and-the-migrate-hook)): its `migrate` hook Job
+runs `alembic upgrade head` with the owner role before the new `api`, `worker` and `beat` pods
+start, its `authz-sync` hook Job runs `wm authz sync` once they are ready, and beat is always
+one replica. Back up first ([backups](../deploy/kubernetes.md#backups)). An upgrade from one
+WorkMind version to another has not been run on Kubernetes: the chart's test on kind upgraded
+a release to the same build ([tested on a cluster](../deploy/kubernetes.md#tested-on-a-cluster)).

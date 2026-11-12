@@ -287,7 +287,8 @@ searches with `python3 scripts/lib/stack_checks.py search <url> <out.json>` on b
 
 ## Kubernetes
 
-There is no Helm chart in this commit, so nothing here is tested on Kubernetes. Pointers:
+Nothing here has been run on Kubernetes. The Helm chart's page lists what a backup of a
+cluster install needs ([Kubernetes](../deploy/kubernetes.md#backups)). Pointers:
 
 - **Postgres:** a managed database's snapshots and point-in-time recovery, or an operator such
   as CloudNativePG with WAL archiving, give a much better RPO than nightly `pg_dump`. The

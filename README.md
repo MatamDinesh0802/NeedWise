@@ -159,8 +159,10 @@ Not yet: v1.0 is not released. What exists for it so far, and what has been chec
 - **Kubernetes.** A Helm chart in [`deploy/helm/workmind`](deploy/helm/workmind), with optional
   bundled Postgres, Valkey, Qdrant, OpenFGA, Keycloak and embedding server. It passes
   `helm lint`, renders for Kubernetes 1.33 and validates with kubeconform, and every pod meets
-  the chart's security rules (`make helm-check`). It has **not been installed on a cluster
-  yet** ([docs/deploy/kubernetes.md](docs/deploy/kubernetes.md)).
+  the chart's security rules (`make helm-check`). It was installed, tested, upgraded and
+  uninstalled on local kind clusters (Kubernetes 1.34 and 1.37, `make helm-kind-test`); it has
+  **not run on a cloud cluster**, nor with TLS or managed databases
+  ([docs/deploy/kubernetes.md](docs/deploy/kubernetes.md#tested-on-a-cluster)).
 - **Backups.** `make backup` and `make restore` for the Compose stack: databases, Qdrant
   snapshots, files and the license, with checksums. A restore drill into a separate stack gave
   identical rows, points and files and took about a minute at the demo's size
