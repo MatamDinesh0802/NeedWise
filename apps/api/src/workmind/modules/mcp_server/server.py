@@ -118,7 +118,8 @@ class HideUnavailableTools:
         except McpToolError:
             owner = None
         if owner is not None:
-            hidden = {t.name for t in gated if t not in await resources.tools.usable(owner)}
+            usable = {t.name for t in await resources.tools.usable(owner, hidden)}
+            hidden -= usable
         return _without(result, hidden)
 
 
