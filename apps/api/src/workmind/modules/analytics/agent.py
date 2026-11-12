@@ -627,6 +627,10 @@ def _chart(draft: ChartDraft | None, queries: Sequence[AnswerQuery]) -> Chart | 
         if draft.type != "table":
             return None
         y = [c.name for c in query.columns if c.name != x]
+    if draft.type != "table":
+        # One value axis: measures in another unit (a count beside euros) would be drawn on
+        # it with the first one's unit. They stay in the table.
+        y = [c for c in y if formats[c] == formats[y[0]]]
     series = draft.series if draft.series in formats and draft.series not in (x, *y) else None
     kind: ChartType = draft.type
     if kind == "stacked_bar" and series is None and len(y) < 2:

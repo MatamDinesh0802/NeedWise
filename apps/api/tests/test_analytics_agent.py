@@ -482,6 +482,24 @@ def test_a_chart_must_fit_its_query() -> None:
     assert (chart.y, chart.series, chart.y_format) == (["revenue"], None, "eur")
 
 
+def test_a_chart_keeps_one_unit_on_its_value_axis() -> None:
+    queries = [
+        query(("month", "date"), ("revenue", "eur"), ("customers_billed", "number"), ("won", "eur"))
+    ]
+
+    line = _chart(draft(type="line", y=["revenue", "customers_billed", "won"]), queries)
+    counts = _chart(draft(type="line", y=["customers_billed", "revenue"]), queries)
+    table = _chart(draft(type="table", y=["revenue", "customers_billed"]), queries)
+
+    assert line is not None
+    assert counts is not None
+    assert table is not None
+    # A count beside euros would be drawn as a flat line at "€18" on a millions-of-euros axis.
+    assert (line.y, line.y_format) == (["revenue", "won"], "eur")
+    assert counts.y == ["customers_billed"]
+    assert table.y == ["revenue", "customers_billed"]  # a table shows every column
+
+
 def test_a_stacked_bar_without_parts_is_a_bar() -> None:
     queries = [query(("month", "date"), ("product_line", "text"), ("revenue", "eur"))]
 
