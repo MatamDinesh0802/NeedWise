@@ -413,7 +413,7 @@ class QueryPool:
             worker = self._checkout()
             holder["worker"] = worker
             try:
-                reply = worker.call(line, timeout_s + self.grace_s, self.startup_s)
+                reply = worker.call(line, timeout_s, self.grace_s, self.startup_s)
             except _WorkerGoneError:
                 # It died between queries (or was killed while idle): once more, on a new one.
                 worker.kill()
@@ -499,7 +499,11 @@ class _Worker:
                 if stream is not None:
                     stream.close()
 
-    def call(self, line: bytes, timeout_s: float, startup_s: float) -> dict[str, Any]:
+    def call(
+        self, line: bytes, timeout_s: float, grace_s: float, startup_s: float
+    ) -> dict[str, Any]:
+        """Send one request and wait for its answer: the timeout plus `grace_s` (plus
+        `startup_s` while the worker is new), then the worker is killed."""
         stdin, stdout = self.process.stdin, self.process.stdout
         if stdin is None or stdout is None:
             raise _WorkerGoneError
@@ -508,7 +512,7 @@ class _Worker:
             stdin.flush()
         except (BrokenPipeError, ValueError, OSError) as exc:
             raise _WorkerGoneError from exc
-        deadline = time.monotonic() + timeout_s + (startup_s if self.fresh else 0)
+        deadline = time.monotonic() + timeout_s + grace_s + (startup_s if self.fresh else 0)
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:

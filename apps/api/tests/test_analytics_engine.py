@@ -298,7 +298,7 @@ async def test_a_query_stuck_in_one_function_is_killed(db: Path, pool: engine.Qu
     started = time.perf_counter()
 
     # DuckDB's interrupt is not honoured inside this call: it would take a minute.
-    with pytest.raises(engine.QueryTimeoutError):
+    with pytest.raises(engine.QueryTimeoutError, match=r"longer than 0\.5 s"):
         await pool.execute(
             db,
             "SELECT levenshtein(repeat('a', 100000), repeat('b', 100000))",
