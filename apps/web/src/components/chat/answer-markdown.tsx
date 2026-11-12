@@ -4,6 +4,7 @@ import { memo, type ComponentProps } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { MarkdownImage } from "@/components/markdown/markdown-image";
 import { remarkCitations } from "@/lib/chat/citations";
 import { cn } from "@/lib/utils";
 
@@ -53,6 +54,7 @@ export const AnswerMarkdown = memo(function AnswerMarkdown({
     th: (props) => <th className="border-b bg-muted/50 px-3 py-1.5 text-left font-medium" {...dom(props)} />,
     td: (props) => <td className="border-b px-3 py-1.5 align-top" {...dom(props)} />,
     a: (props) => <a target="_blank" rel="noopener noreferrer nofollow" className="underline underline-offset-2" {...dom(props)} />,
+    img: MarkdownImage,
     code: ({ className, ...props }) => (
       <code className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]", className)} {...dom(props)} />
     ),

