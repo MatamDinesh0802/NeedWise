@@ -247,6 +247,8 @@ async def run(args: argparse.Namespace) -> int:
         f"{len(cross)} cross-department, {len(routing)} routing, "
         f"{len(analytics_items)} analytics",
     }
+    if result.routing:
+        meta["planner model"] = model_of("router")
     if result.analytics:
         meta["analytics agent model"] = model_of("agent")
         meta["analytics compose model"] = model_of("answer")
