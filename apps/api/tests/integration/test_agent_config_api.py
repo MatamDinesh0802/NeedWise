@@ -187,6 +187,8 @@ async def test_versions_go_with_a_deleted_agent_and_stay_in_their_tenant(
         ({"tools": ["search_knowledge"]}, "tool_not_allowed"),  # built in, scoped
         ({"tools": ["no_such_tool"]}, "unknown_tool"),
         ({"model": "claude-sonnet-5-5"}, "validation_error"),  # not a catalog id
+        ({"model": "system:claude-not-offered"}, "unknown_model"),  # not in the catalog
+        ({"model": "11111111-2222-4333-8444-555555555555:llama3"}, "unknown_model"),
         ({"max_tool_calls": 6}, "validation_error"),
         ({"max_output_tokens": 100}, "validation_error"),
     ],

@@ -16,6 +16,7 @@ from workmind.api.deps import require_scope, resources_of
 from workmind.api.v1.admin import AdminContext
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
+from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.agents.console import run_console
 from workmind.modules.agents.definitions import (
@@ -39,6 +40,8 @@ from workmind.modules.agents.planning import Agent, agent_from_definition, colle
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN, Tenant, User
 from workmind.modules.knowledge.models import Collection
+from workmind.modules.model_catalog.catalog import Catalog
+from workmind.modules.model_catalog.store import load_config
 from workmind.modules.tools.registry import ToolRegistry
 from workmind.modules.usage.budgets import BudgetExceededError
 from workmind.modules.usage.calls import attribute
@@ -126,11 +129,38 @@ def _check_tools(registry: ToolRegistry, names: list[str]) -> None:
         raise ApiError(422, code, title, " ".join(message for _, message in problems))
 
 
-async def _validate(session: AsyncSession, registry: ToolRegistry, body: AgentFields) -> None:
+async def _check_model(
+    session: AsyncSession, resources: Resources, tenant_id: uuid.UUID, model: str | None
+) -> None:
+    """The schema checks the id's shape; the tenant's catalog decides whether it can be used
+    (an enabled model of an enabled provider, Admin > Models)."""
+    if model is None:
+        return
+    catalog = Catalog(resources.models.system_catalog, await load_config(session, tenant_id))
+    if catalog.usable(model):
+        return
+    if catalog.model(model) is None:
+        raise ApiError(
+            422,
+            "unknown_model",
+            "Unknown model",
+            f"{model} is not in this organization's model catalog (Admin > Models).",
+        )
+    raise ApiError(
+        422,
+        "model_disabled",
+        "This model is disabled",
+        f"{model} is disabled in Admin > Models, or its provider is. Enable it there, or "
+        "choose another model.",
+    )
+
+
+async def _validate(
+    session: AsyncSession, resources: Resources, tenant_id: uuid.UUID, body: AgentFields
+) -> None:
     await _check_collections(session, body.collections)
-    _check_tools(registry, body.tools)
-    # The model id's shape is checked by the schema. INTEGRATION (models branch): check it
-    # against the tenant's model catalog too (an enabled model of an enabled provider).
+    _check_tools(resources.tools, body.tools)
+    await _check_model(session, resources, tenant_id, body.model)
 
 
 def _fields(body: AgentFields) -> dict[str, Any]:
@@ -160,7 +190,7 @@ async def list_agents(ctx: AdminContext, request: Request) -> Items:
 async def create_agent(ctx: AdminContext, request: Request, body: AgentCreate) -> AgentOut:
     resources = resources_of(request)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
-        await _validate(session, resources.tools, body)
+        await _validate(session, resources, ctx.tenant_id, body)
         if await session.scalar(select(AgentDefinition.id).where(AgentDefinition.key == body.key)):
             raise ApiError(409, "slug_taken", "An agent with this key already exists")
         agent = AgentDefinition(tenant_id=ctx.tenant_id, key=body.key)
@@ -179,7 +209,7 @@ async def update_agent(
     resources = resources_of(request)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         agent = await _locked(session, key)
-        await _validate(session, resources.tools, body)
+        await _validate(session, resources, ctx.tenant_id, body)
         before = snapshot(agent)
         apply_fields(agent, _fields(body))
         await session.flush()
@@ -305,7 +335,7 @@ async def restore_version(
             raise ApiError(
                 422, "invalid_version", "This version can't be restored", str(exc)[:300]
             ) from exc
-        await _validate(session, resources.tools, restored)
+        await _validate(session, resources, ctx.tenant_id, restored)
         before = snapshot(agent)
         apply_fields(agent, _fields(restored))
         await session.flush()
@@ -428,7 +458,7 @@ async def test_agent(ctx: AdminContext, request: Request, body: TestRequest) -> 
         ids = await collection_ids(session)
         tested: Agent | None = None
         if body.draft is not None:
-            await _validate(session, resources.tools, body.draft)
+            await _validate(session, resources, ctx.tenant_id, body.draft)
             draft = AgentDefinition(
                 tenant_id=ctx.tenant_id, key=body.key or body.draft.key or "draft"
             )

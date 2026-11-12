@@ -241,7 +241,8 @@ async def advance(deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID) -
         try:
             if step.research is not None:
                 question = str(render(step.research, context))
-                # The step's model calls count for the workflow's owner, and this run.
+                # The step's model calls count for the workflow's owner, and this run (whatever
+                # started it: a schedule, a person, or an event such as document.ready).
                 with attribute("workflow", user_id=owner.user_id, ref=("workflow_run", run.id)):
                     result = await research(
                         await deps.llm_for(tenant_id),

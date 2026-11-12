@@ -27,7 +27,13 @@ Engineering…) handle department work. Actions that leave the system need human
   stays the default because it wins on everything else ([ADR 0009](docs/adr/0009-orchestration-without-a-graph-framework.md)).
   Agents are configuration: an administrator adds one in the UI (collections, read-only tools,
   model, limits), tries it on a draft in a test console, and can restore any earlier version
-  ([docs/agents.md](docs/agents.md)).
+  ([docs/agents.md](docs/agents.md)). A Legal agent added that way, with no code, gets 15 of 15
+  legal questions in the routing evaluation and none it should not (53/56 overall with Claude
+  Sonnet 5.5).
+- **Your models, per organization.** Admin › Models adds providers (Anthropic or any
+  OpenAI-compatible server, hosted or local) with encrypted, write-only keys, a catalog with
+  prices, which model serves each role and each agent, and how sensitive data sent to external
+  models may be ([docs/models.md](docs/models.md)).
 - **Restricted data stays local** if you want: per-company policy routes restricted sources
   to a local model, or leaves them out and says so.
 - **Knowledge Hub:** upload PDF, Word, Excel, PowerPoint, Markdown, HTML, CSV or Slack exports;

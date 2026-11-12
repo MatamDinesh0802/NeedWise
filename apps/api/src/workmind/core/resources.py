@@ -221,7 +221,8 @@ class Resources:
         return resources
 
     async def start_workflow_runs(self, tenant_id: uuid.UUID, run_ids: Sequence[uuid.UUID]) -> None:
-        """Starts runs an event queued, in the background (with the model and tools of now)."""
+        """Starts runs an event queued, in the background (with the tenant's models and the tools
+        of now)."""
         deps = WorkflowDeps(self.db, self.llm, self.tools, self.models)
 
         async def start() -> None:

@@ -23,7 +23,7 @@ from workmind.modules.agents.department import (
     render_tool_outputs,
     run_agent,
 )
-from workmind.modules.agents.model_choice import ModelResolver, SystemModels
+from workmind.modules.agents.model_choice import CatalogModels, ModelResolver
 from workmind.modules.agents.planning import Agent, FastRouter, Plan, load_agents, plan_question
 from workmind.modules.assistant.answer import (
     ABSTAIN,
@@ -87,7 +87,7 @@ class OrchestratorDeps:
     # Agents with tools call them through this registry (as the person asking). None: no tools.
     tools: ToolRegistry | None = None
     # Agents configured with their own model (a catalog id) run on what this returns.
-    models: ModelResolver = field(default_factory=SystemModels)
+    models: ModelResolver = field(default_factory=CatalogModels)
 
 
 @dataclass

@@ -2,7 +2,7 @@
 
     llm = await resources.models.for_tenant(ctx.tenant_id)   # a TenantLLM: an LLMProvider
     await llm.complete("router", request)                    # the tenant's model for the role
-    agent_llm = with_model(llm, agent.model)                 # a per-request catalog override
+    agent_llm = llm.select(agent.model)                      # an agent's own model, or None
     route(passages, policy=llm.max_external_sensitivity, llm=llm, local_llm=llm.local)
 
 A tenant that configured nothing gets the deployment's providers exactly as before: every role
@@ -53,7 +53,7 @@ from workmind.modules.model_catalog.secrets import KeyRing
 from workmind.modules.model_catalog.store import load_config, read_stamp
 from workmind.modules.model_catalog.urls import UnsafeUrlError, check_base_url
 from workmind.modules.usage.calls import Attribution, CallMeter, ModelCall, current
-from workmind.providers.factory import create_llm, single_model_roles
+from workmind.providers.factory import single_model_roles
 from workmind.providers.llm import (
     AnthropicLLM,
     Done,
@@ -62,6 +62,7 @@ from workmind.providers.llm import (
     LLMRequest,
     LLMUsage,
     OpenAICompatibleLLM,
+    PinnedModel,
     Role,
     StreamEvent,
     ToolExecutor,
@@ -214,7 +215,10 @@ class TenantLLM:
     sensitivity: `max_external_sensitivity` and `local`, the model sensitive sources may go to.
 
     `external` is True when any role's model is external, so routing that looks at it is
-    cautious when roles mix local and external models."""
+    cautious when roles mix local and external models.
+
+    Its four methods are the one place every model call passes through: each asks the usage
+    meter first (budgets) and records one usage event at the end (docs/usage.md)."""
 
     def __init__(
         self,
@@ -241,13 +245,17 @@ class TenantLLM:
     def using(self, model_id: str | None) -> "TenantLLM":
         """This tenant's resolution with every role on `model_id` (an agent's own model).
         None, or a model that is not usable (deleted, disabled), keeps the role defaults."""
-        if not model_id or self._override is None:
+        if not model_id:
             return self
-        chosen = self._override(model_id)
+        chosen = self.select(model_id)
         if chosen is None:
             log.warning("model_override_unavailable", model=model_id)
             return self
         return chosen
+
+    def select(self, model_id: str) -> "TenantLLM | None":
+        """Every role on `model_id`, or None when it is not a usable model of the catalog."""
+        return self._override(model_id) if self._override is not None else None
 
     # --- Metering ------------------------------------------------------------------------------
 
@@ -405,7 +413,6 @@ class LLMResolver:
         system_local: LLMProvider | None,
         ttl_s: float = DEFAULT_TTL_S,
         build: ClientFactory | None = None,
-        build_system: Callable[[str], LLMProvider] | None = None,
     ) -> None:
         # The deployment's providers. Assignable (tests swap in scripted models).
         self.system = system
@@ -417,14 +424,10 @@ class LLMResolver:
         self.probe_transport: httpx.AsyncBaseTransport | None = None
         self._sessions = sessions
         self._catalog: SystemCatalog = system_catalog(settings)
-        # Builds tenant providers' clients and the deployment's other models (assignable).
+        # Builds tenant providers' clients (assignable).
         self.build = build or tenant_llm_factory(http, fallbacks=settings.llm_fallbacks)
         # Usage accounting and budgets for every call (docs/usage.md). None: not metered.
         self.meter: CallMeter | None = None
-        self.build_system: Callable[[str], LLMProvider] = build_system or (
-            lambda name: create_llm(settings, http, model=name)
-        )
-        self._system_clients: dict[str, LLMProvider] = {}
         self._cache: dict[uuid.UUID, _Entry] = {}
 
     @property
@@ -541,10 +544,8 @@ class LLMResolver:
             name = model.name
             if name == self._catalog.role_models[role]:
                 client = self.system  # exactly what the deployment does for this role
-            else:
-                if name not in self._system_clients:
-                    self._system_clients[name] = self.build_system(name)
-                client = self._system_clients[name]
+            else:  # another model of the deployment's provider: the same client, that model
+                client = PinnedModel(self.system, name)
             return Target(model_id, client, client.external, name=name, provider=system_kind)
         provider = catalog.provider(provider_id)
         if model is None or provider is None:  # not reachable through Catalog.roles

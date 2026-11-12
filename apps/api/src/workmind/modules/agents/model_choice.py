@@ -1,25 +1,28 @@
 """Which model an agent's calls use (docs/agents.md, "Model").
 
-An agent definition stores a *model catalog id* or nothing. Nothing means the model the
-deployment maps to the agent's role (`agent`, see providers/factory.py). A catalog id is
-`<provider id>:<model name>`: `system:<model>` is a model of the deployment's own provider; a
-UUID names a provider a tenant administrator added (bring-your-own key or a local server).
+An agent definition stores a *model catalog id* or nothing. Nothing means the model the tenant
+maps to the agent's role (`agent`, Admin > Models), or the deployment's default for it. A
+catalog id is `<provider id>:<model name>` (docs/models.md): `system:<model>` is a model of the
+deployment's own provider, `system-local:<model>` its local model, and a UUID names a provider a
+tenant administrator added (bring-your-own key or a local server).
 
-Tenant providers come from the model catalog (GET /api/v1/admin/models). Until a resolver for
-that catalog is passed in, only `system:` ids can run, and any other id fails the agent's run
-rather than quietly sending the question to a different provider than the one configured.
+Ids are checked against the tenant's catalog when an agent is saved, and again on every run:
+a model that was disabled or deleted since then fails that agent's run ("model unavailable")
+rather than quietly sending the question to a different model than the one configured.
 """
 
 import re
 import uuid
 from typing import Protocol
 
+from workmind.modules.model_catalog.resolver import TenantLLM
 from workmind.providers.llm import LLMError, LLMProvider, PinnedModel
 
 SYSTEM_PROVIDER = "system"
+SYSTEM_LOCAL_PROVIDER = "system-local"
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 # The model name is what the provider expects ("claude-sonnet-5-5", "llama3.3:70b", ...).
-MODEL_ID_PATTERN = rf"^(?:{SYSTEM_PROVIDER}|{_UUID}):\S{{1,200}}$"
+MODEL_ID_PATTERN = rf"^(?:{SYSTEM_PROVIDER}|{SYSTEM_LOCAL_PROVIDER}|{_UUID}):\S{{1,200}}$"
 _MODEL_ID = re.compile(MODEL_ID_PATTERN)
 
 
@@ -37,23 +40,30 @@ class ModelResolver(Protocol):
     async def agent_llm(
         self, tenant_id: uuid.UUID, model_id: str | None, base: LLMProvider
     ) -> LLMProvider:
-        """The provider to run an agent configured with `model_id` on. `base` is the
-        deployment's provider. Raises LLMError when the model cannot be used."""
+        """The provider to run an agent configured with `model_id` on. `base` is the provider
+        the rest of the question uses. Raises LLMError when the model cannot be used."""
         ...
 
 
-class SystemModels:
-    """The resolver used until the tenant model catalog is wired in: `system:<model>` runs on
-    the deployment's provider with that model; other providers are not known here."""
+class CatalogModels:
+    """Agent models from the tenant's catalog. When `base` is a tenant's resolution (every
+    request path: `resources.models.for_tenant`), the agent runs on that catalog model, and an
+    id that is not usable fails. Any other `base` (a scripted model in tests, a bare
+    deployment provider) can only run `system:<model>`, pinned on that provider."""
 
     async def agent_llm(
         self, tenant_id: uuid.UUID, model_id: str | None, base: LLMProvider
     ) -> LLMProvider:
         if model_id is None:
             return base
+        if isinstance(base, TenantLLM):
+            chosen = base.select(model_id)
+            if chosen is None:
+                raise LLMError(
+                    f"model {model_id!r} is not an enabled model in this organization's catalog"
+                )
+            return chosen
         provider, name = split_model_id(model_id)
         if provider == SYSTEM_PROVIDER and name:
             return PinnedModel(base, name)
-        # INTEGRATION (models branch): look the id up in the tenant's catalog (enabled
-        # provider and model, sensitivity policy) and return that provider pinned to the model.
         raise LLMError(f"model {model_id!r} is not in this deployment's model catalog")

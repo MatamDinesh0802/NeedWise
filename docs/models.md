@@ -41,10 +41,13 @@ so they stay stable.
 and planning), `agent` (department, research and analytics agents), `generator` (meeting
 extraction) and `judge` (evaluations). Each role uses the model you chose for it, or the
 deployment's default. An agent definition can name its own catalog model; without one, it uses
-the `agent` role. If a model you chose is no longer usable (disabled, or its provider disabled),
-the role falls back to the deployment's default rather than failing. Disabling or deleting a model
-that a role, the data policy or an agent uses is refused (409), so this only happens when the
-deployment's own configuration changes.
+the `agent` role ([docs/agents.md](agents.md#model)). If a model you chose for a role is no
+longer usable (disabled, or its provider disabled), the role falls back to the deployment's
+default rather than failing. An agent's own model does not fall back: saving an agent with a
+model the catalog does not offer is refused (`422 unknown_model` or `model_disabled`), and if it
+becomes unusable later, that agent's run fails ("model unavailable") rather than going to
+another model. Disabling or deleting a model that a role, the data policy or an agent uses is
+refused (409), so this only happens when the deployment's own configuration changes.
 
 **Prices and cost.** The cost shown with an answer uses your catalog price for your models,
 then the built-in price list (`providers/pricing.py`) by model name. A model with neither shows
@@ -142,13 +145,14 @@ level.
 ## How a request finds its model
 
 `resources.models` (an `LLMResolver`) is the one seam every model call goes through: chat and
-`/ask`, research mode, the agents' planner and department agents, workflows, meeting
-extraction, the analytics agent, the MCP server's `ask` and the evaluations.
+`/ask`, research mode, the agents' planner and department agents (the test console included),
+workflows (scheduled, manual and `document.ready` runs), meeting extraction, the analytics
+agent, the MCP server's `ask` and the evaluations.
 
 ```python
 llm = await resources.models.for_tenant(ctx.tenant_id)  # a TenantLLM, itself an LLMProvider
 text, usage = await llm.complete("router", request)      # the tenant's model for the role
-agent_llm = with_model(llm, agent.model)                 # an agent's own model, if any
+agent_llm = llm.select(agent.model)                      # an agent's own model; None if unusable
 route(passages, policy=llm.max_external_sensitivity, llm=llm, local_llm=llm.local)
 ```
 
@@ -178,9 +182,9 @@ is audited.
 | PUT | `/api/v1/admin/models/policy` | `{max_external_sensitivity, local_model}`; the local model must be on a local provider |
 
 The deployment's providers and models answer `409 read_only` to changes. A provider or model in
-use answers `409 model_in_use` and says where ("the judge role", "the agent 'Legal'"). Other
-modules can register their own checks (`model_catalog/references.py`); agent definitions are
-checked when their table has a `model` column.
+use answers `409 model_in_use` and says where ("the judge role", "the agent 'Legal agent'").
+Other modules can register their own checks (`model_catalog/references.py`); agent definitions
+(`agent_definitions.model`) are checked out of the box.
 
 ## What was tested, and what was not
 
@@ -190,11 +194,16 @@ rotation; base URL checks, including names that resolve to metadata addresses; t
 appears in no API response (validation errors included), no audit event and no log line at any
 level while it is created, changed, used and tested; two tenants resolving the same role to
 their own providers with their own keys; a change reaching a second resolver through the
-settings version; 409 for models used by a role, the policy or an agent; the policy end to end
+settings version; 409 for models used by a role, the policy or an agent; an agent's model
+checked against the catalog when it is saved (422) and run through the tenant's resolution
+(and failing, not falling back, once disabled); `document.ready` workflow runs using the
+tenant's role models; the policy end to end
 with real retrieval (sources above the threshold go to the local model or are withheld, and
 the external model is not called); the provider test's error reporting; tenant isolation.
 
 Not measured: latency added by resolution (one indexed query per tenant every 5 seconds per
 process, plus the first load), and any real provider through a tenant key. Not built: quotas and
-budgets per tenant or model (Phase 11 usage work), a rate limit on the provider test, streaming
+budgets per tenant or model (Phase 11 usage work, not merged yet: `TODO(usage)` in
+`model_catalog/resolver.py` marks where the meter and budget checks wrap model calls), a rate
+limit on the provider test, streaming
 in the provider test, and the policy for tool results noted above.

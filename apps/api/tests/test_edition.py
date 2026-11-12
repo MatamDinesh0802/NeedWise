@@ -233,6 +233,11 @@ PRODUCTION_SECRETS: dict[str, object] = {
     "oidc_client_secret": "s",
     "openfga_api_key": "k",
     "secrets_key": "c2VjcmV0LWtleS1mb3ItdGVzdHMtMzItYnl0ZXMtISE=",
+    "secrets_encryption_key": "b3RoZXIta2V5LWZvci10ZXN0cy0zMi1ieXRlcy0hISE=",
+}
+# Outside dev and test, model provider keys need their own encryption key (docs/models.md).
+DEMO_SECRETS: dict[str, object] = {
+    "secrets_encryption_key": PRODUCTION_SECRETS["secrets_encryption_key"]
 }
 
 
@@ -255,7 +260,7 @@ def test_a_dev_license_is_accepted_in_development() -> None:
 @pytest.mark.parametrize("environment", ["test", "demo", "production"])
 def test_the_dev_key_is_refused_outside_development(environment: str, logs: Logs) -> None:
     secret = token()
-    extra = PRODUCTION_SECRETS if environment == "production" else {}
+    extra = {"production": PRODUCTION_SECRETS, "demo": DEMO_SECRETS}.get(environment, {})
     edition = load_edition(
         settings(
             app_env=environment, license_key=secret, license_dev_public_key=DEV_PUBLIC, **extra

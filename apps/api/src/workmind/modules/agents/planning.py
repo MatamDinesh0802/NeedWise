@@ -114,7 +114,8 @@ agents each search one area of the company's documents:
 {agents}
 
 Choose a mode:
-- "direct": the question is general, chit-chat, or not tied to any area above. No subtasks.
+- "direct": the question needs none of the company's documents: a greeting, thanks, or a \
+general request such as writing or general knowledge. No subtasks.
 - "single": one agent's area covers the whole question. One subtask.
 - "fan_out": the question needs facts from two or more areas. One subtask per area (at most \
 {max_subtasks}), each a self-contained question that agent can search for.
