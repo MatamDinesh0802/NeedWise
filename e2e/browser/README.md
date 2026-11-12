@@ -96,6 +96,19 @@ What the suite assumes of the stack is the seed: the demo logins, the collection
 `seed/acme/company.yaml` and their documents, the seeded agents (HR, Engineering, Finance).
 Approvals, tasks and meetings may be empty (CI has none).
 
+## Measured (2026-11-12, when the suite was added)
+
+- **CI's setup**, on a separate local stack built from the same commit (Community, hash
+  embeddings with `RETRIEVAL_MIN_SIMILARITY=0`, no model key, seeded like CI): 159 of 159
+  passed with `CI=1` (2 workers, retries allowed, none used) in 1.5 minutes from fresh
+  sign-ins, and 159 of 159 again with cached sign-ins and through `make e2e-browser`.
+- **The shared development stack** (Enterprise license, real embeddings), whose web image
+  was built before the fixes listed above: 138 passed, 21 failed. The 21 are those findings:
+  18 axe tests (contrast), the approvals tabs at 375 px, the phone sidebar, and the test
+  console's markdown.
+- No test file left a document behind on either stack. The `@model` tests have not been run
+  yet: that run made no model calls.
+
 ## Not covered
 
 Firefox and WebKit, visual comparison, connectors and their sync, uploading a meeting, chat

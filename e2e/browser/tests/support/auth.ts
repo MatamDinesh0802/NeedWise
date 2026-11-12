@@ -62,7 +62,9 @@ export async function storageStateFor(browser: Browser, user: DemoUser, baseURL:
   if (checked !== undefined && Date.now() - checked < REVALIDATE_MS) return file;
   if (!(await stillSignedIn(file, user, baseURL))) {
     await fs.mkdir(path.dirname(file), { recursive: true });
-    const context = await browser.newContext({ baseURL });
+    // Explicitly signed out: inside a test, browser.newContext() inherits the test's options,
+    // including the storage state of the user the test runs as.
+    const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
     try {
       await signInThroughKeycloak(await context.newPage(), user);
       const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
