@@ -428,24 +428,31 @@ then follows its storage class's reclaim policy.
 
 ## Backups
 
-The procedure for backing up and restoring WorkMind is a separate Phase 12 item
-([ROADMAP](../ROADMAP.md)). A backup of a Kubernetes install needs all of these, taken
-together:
+The scripts in [backup and restore](../operations/backup-restore.md) are for Compose and have
+not been run on Kubernetes; that page explains the consistency rules that apply here too. A
+backup of a Kubernetes install needs all of these, taken together:
 
 - **Postgres:** the `workmind`, `keycloak` and `openfga` databases (`pg_dump`, or your managed
   service's snapshots). With the bundled server: `kubectl exec` into
   `<fullname>-postgresql-0` and run `pg_dump`, or snapshot its volume.
 - **The object storage volume** (`<fullname>-objects`): uploaded files, recordings and
   analytics datasets. Postgres refers to these files.
-- **Qdrant:** its snapshots API writes to `/qdrant/snapshots` (an emptyDir in the bundled pod:
-  copy the files out). Every call but the health checks needs the `api-key` header with the
-  key in the credentials Secret (`qdrant-api-key`). The index can also be rebuilt from the
-  documents by re-indexing.
+- **Qdrant:** its snapshots API writes to `/qdrant/snapshots`, in the bundled pod an emptyDir
+  limited to `qdrant.snapshotsSizeLimit` (5Gi): copy the files out. A snapshot larger than
+  that gets the pod evicted, which takes search down, so raise the limit with the index (a
+  snapshot is not proportional to the points: 50.9 MB for 421 points on the development stack,
+  8.9 MB for 408 in the backup drill). Every call but the health checks needs the `api-key`
+  header with the key in the credentials Secret (`qdrant-api-key`). The index can also be
+  rebuilt from the documents by re-indexing.
 - **The credentials Secret** (`<fullname>-credentials`) or your own Secret: without
   `SECRETS_ENCRYPTION_KEY` and `SECRETS_KEY`, a restored database has unreadable provider keys
   and connector credentials.
 - Valkey holds sessions, queued tasks and caches. Losing it signs people out and drops queued
   tasks; it is usually not backed up.
+
+After restoring, OpenFGA must be brought in line with Postgres (`wm authz sync`). The API pods
+have no owner-role database URL, so run it through the hook: `helm upgrade` with the same
+values runs the `authz-sync` Job again (or apply that Job's manifest from `helm get manifest`).
 
 ## Security settings
 

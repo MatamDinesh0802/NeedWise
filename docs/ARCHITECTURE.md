@@ -191,24 +191,28 @@ flowchart LR
 |---|---|---|---|
 | `web` | `workmind-web` | Next.js UI (server rendering + static assets) | Requests |
 | `api` | `workmind-api` (slim) | REST + SSE, interactive chat runs, auth BFF, MCP server at `/mcp`. Uvicorn worker processes: `API_WORKERS` (compose) or `api.workers` (Helm), 2 by default; one process uses at most one core ([load benchmarks](benchmarks/load.md)) | Concurrent users |
-| `worker-ingest` | `workmind-worker` (heavy: Docling, torch) | Parsing, OCR, chunking, embedding | `ingest` / `embed` queue depth |
+| `worker-ingest` *(planned, not built)* | `workmind-worker` (heavy: Docling, torch) | Parsing, OCR, chunking, embedding | `ingest` / `embed` queue depth |
 | `worker` | `workmind-api` | Long agent runs, workflows, connector sync, notifications, evals | Queue depth |
 | `scheduler` | `workmind-api` | Celery beat | Always exactly one instance |
 
 Infrastructure: `postgres` (also stores Keycloak and OpenFGA data in separate databases), `qdrant`, `valkey`, `keycloak`, `openfga`, `caddy`.
 Optional: `tei` (embeddings + reranker), `vllm`, `langfuse` (+ ClickHouse), `prometheus`, `grafana`, `searxng`.
 
-**Celery queues:** `ingest`, `embed`, `sync`, `agents`, `workflows`, `default`, `eval`. Ingestion gets its own worker so a bulk import can never slow down chat.
+**Celery queues:** `ingest`, `embed`, `sync`, `agents`, `workflows`, `default`, `eval`. Ingestion gets its own worker so a bulk import can never slow down chat. *As built:* two queues, `ingest` (documents and meetings) and `default` (everything else), served by one `worker` service (`--concurrency 2`); there is no `worker-ingest` process or `workmind-worker` image yet, and the other queues do not exist.
 
 **Interactive vs long-running:** chat answers run inside `api` (async) for low latency. Multi-minute reports, scheduled workflows and bulk ingestion run in `worker`. Both publish progress events to a Valkey Stream that the same SSE endpoint reads, so the UI handles them the same way.
 
 ### 5.2 Docker Compose profiles
 
 ```bash
-docker compose up                                # core: app + Postgres, Qdrant, Valkey, Keycloak, OpenFGA, Caddy
-docker compose --profile local-ai up             # + TEI for embeddings and reranking
-docker compose --profile observability up        # + Langfuse (with ClickHouse), Prometheus, Grafana
+docker compose up -d --wait                      # core: app + Postgres, Qdrant, Valkey, Keycloak, OpenFGA, Caddy, Mailpit
+COMPOSE_PROFILES=embeddings docker compose up -d # + the embedding model (llama.cpp, CPU) in a container
+docker compose --profile tools run --rm seed     # the demo data (make seed)
 ```
+
+*As built:* those are the only two profiles. The `local-ai` (TEI) and `observability` (Langfuse,
+Prometheus, Grafana) profiles planned here do not exist; `--profile local-ai` or
+`--profile observability` would silently start the default stack.
 
 **Default host ports** (all bound to `127.0.0.1`, all overridable in `.env`):
 
@@ -1110,7 +1114,7 @@ per component). The table below is the summary; "as built" says what exists (rev
 | Secret leakage | Connector OAuth tokens, provider keys | AES-256-GCM with the deployment's keys (`SECRETS_KEY`; `SECRETS_ENCRYPTION_KEY` with key ids for rotation), bound by associated data to the tenant, provider or source; write-only in the API; scrubbed from errors. *Not built:* per-tenant data keys, KMS. |
 | Session attacks | Session hijacking, CSRF | HttpOnly Secure cookies, SameSite=Lax, an Origin check and the `X-CSRF-Protection: 1` header on writes, 30-minute idle and 12-hour absolute lifetimes, back-channel logout (§6.3). |
 | Abuse / cost blow-up | Scripted spam, runaway agent loops | Budgets in USD per tenant and person (department: Enterprise), checked before every model call; per-person and per-tenant request limits on expensive endpoints and per-address sign-in limits (`core/ratelimit.py`, 429 `rate_limited`); at most 4 answers in progress per person (`MAX_INFLIGHT_PER_USER`); step, tool-call, token and time limits per agent run. *Not built:* storage quotas, per-tenant limit overrides; budgets do not count models without a listed price. |
-| Supply chain | Malicious dependency or image | Lockfiles (`uv.lock`, `pnpm-lock.yaml`), Dependabot, pinned image digests, SBOM (syft), image scanning (Trivy), CodeQL, gitleaks. *As built* ([docs/security/supply-chain.md](security/supply-chain.md)): osv-scanner and Trivy gate the lockfiles, the repository and the images; images, actions and scanners are pinned by digest or commit SHA; releases carry SBOM and provenance attestations ([releasing](operations/releasing.md)) |
+| Supply chain | Malicious dependency or image | Lockfiles (`uv.lock`, `pnpm-lock.yaml`), Dependabot, pinned image digests, SBOM (syft), image scanning (Trivy), CodeQL, gitleaks. *As built* ([docs/security/supply-chain.md](security/supply-chain.md)): osv-scanner and Trivy gate the lockfiles, the repository and the images; images, third-party actions and scanners are pinned by digest or commit SHA, while GitHub's own `actions/*` stay on major tags by policy (`.github/zizmor.yml`), including in the release jobs that can write packages and attestations; releases carry SBOM and provenance attestations ([releasing](operations/releasing.md)) |
 | Audit tampering | An admin deletes evidence | Insert-only for the app role, hash chain verifiable from Admin › Audit; a verifiable JSONL export for a SIEM (Enterprise). |
 | Malicious insider admin | An admin grants themselves the salary collection | Not prevented: separation of duties is a default (admins are not viewers), and every grant, agent, workflow and provider change is audited. |
 
@@ -1318,7 +1322,7 @@ workmind/
 | Module boundaries | Modules talk through their public service interfaces only; enforced with import-linter |
 | Commits / releases | Conventional Commits → release-please (changelog, version tags) |
 | CI (GitHub Actions) | Lint → typecheck → unit → integration → authz matrix + tenant-isolation tests → eval smoke + red team → build images → Trivy scan |
-| Dependencies | Dependabot (uv, npm, Docker, Compose, GitHub Actions), weekly and grouped. Lockfiles committed. Images pinned by digest, actions by commit SHA ([supply chain](security/supply-chain.md)). |
+| Dependencies | Dependabot (uv, npm, Docker, Compose, GitHub Actions), weekly and grouped. Lockfiles committed. Images pinned by digest, third-party actions by commit SHA; GitHub's own `actions/*` on major tags ([supply chain](security/supply-chain.md)). |
 | Docs | ADRs in `docs/adr/`. *As built:* the docs site is MkDocs Material (`mkdocs.yml`, `make docs`, a strict build in CI), with the configuration and HTTP API reference generated from the code. |
 | Security | gitleaks pre-commit + CI, DCO sign-off check, `SECURITY.md` with a private disclosure process |
 

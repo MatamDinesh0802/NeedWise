@@ -57,10 +57,18 @@ and stay):
    Keep it until you have checked the upgraded system.
 4. `docker compose down` (**without** `-v`: the volumes hold your data).
 5. Make the [manual changes](#from-v010-manual-steps) for your path, in `.env`.
-6. `make up` (= `mkdir -p .data/objects .workmind && docker compose up -d --build --wait`). The
+6. `make up` (= `make objects-dir && docker compose up -d --build --wait`). The
    migrations run before the application starts.
 7. `docker compose run --rm migrate wm authz sync`.
 8. Check: `make status`, sign in, search for something you know is there.
+
+**With released images** (`WORKMIND_API_IMAGE` and `WORKMIND_WEB_IMAGE` set to the published
+images, digest-pinned as [releasing](releasing.md) recommends), nothing is built: step 2 is
+`docker compose pull` after setting the new version's images in `.env`, and step 6 is
+`make objects-dir && docker compose up -d --no-build --wait`. Do not run `docker compose build`
+or `make up` there: with a digest in the image name they fail ("build tag cannot contain a
+digest"); with a tag only, they replace the released image, which was scanned and passed the
+permission gate, with a local build under the same tag.
 
 `scripts/upgrade-test.sh <from tag>` runs exactly these steps on a throwaway copy, if you want
 to try an upgrade before doing it (it needs the old tag in your git history).

@@ -24,6 +24,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # the release tags
+          persist-credentials: false
       - name: Upgrade test
         env:
           # No embedding server on the runner: the compose `embeddings` profile (CPU llama.cpp).

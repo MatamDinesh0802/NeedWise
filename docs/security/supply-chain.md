@@ -194,6 +194,7 @@ older scanner still sees new advisories; updates bring new detectors and fewer f
 - **CodeQL and the Security workflow are advisory until branch protection requires them.** The
   GitHub organization and branch protection are not set up yet ([ROADMAP §8](../ROADMAP.md#8-checklist-before-going-public)).
 - **ci.yml's checkouts keep the (read-only) token in `.git/config`.** zizmor reports this at low
-  severity; the new workflows set `persist-credentials: false`.
+  severity. Every other workflow sets `persist-credentials: false` (docs.yml, helm.yml,
+  loadtest.yml and upgrade-test.yml did not until a review found them).
 - **Not yet run on GitHub.** The workflows pass actionlint, zizmor and the GitHub workflow schema,
   and every scan command was run locally, but no repository exists to run them in yet.

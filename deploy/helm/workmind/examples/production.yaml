@@ -101,6 +101,9 @@ valkey:
 qdrant:
   persistence:
     size: 100Gi
+  # Snapshots (backups) are written to an emptyDir of this size: keep it above the largest
+  # snapshot, or writing one evicts the pod.
+  snapshotsSizeLimit: 50Gi
   resources:
     requests: {cpu: "1", memory: 2Gi}
     limits: {cpu: "4", memory: 8Gi}
