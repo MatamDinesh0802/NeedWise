@@ -14,8 +14,9 @@ export interface ApprovalOrigin {
   /** Chat (research mode). */
   conversation_id?: string;
   run_id?: string;
-  /** Workflow runs. */
+  /** Workflow runs (`workflow`: its key, recorded since the links fix). */
   via?: string;
+  workflow?: string;
   workflow_run_id?: string;
   step?: string;
   [key: string]: unknown;

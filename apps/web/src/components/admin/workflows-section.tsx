@@ -2,7 +2,8 @@
 
 import { CalendarClock, ChevronRight, CircleAlert, FileText, History, Info, LoaderCircle, Play, Plus, ShieldCheck, Wand2, Workflow as WorkflowIcon } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 import { Field } from "@/components/data/form";
 import { EmptyState, ErrorAlert, RefreshingHint, TableSkeleton } from "@/components/data/states";
@@ -20,9 +21,11 @@ import {
   BLANK_DEFINITION,
   definitionText,
   isRunActive,
+  linkedWorkflow,
   parseDefinition,
   RUN_STATUS_LABELS,
   runSteps,
+  runTriggerText,
   STEP_STATUS_LABELS,
   triggerText,
   waitingApprovalId,
@@ -41,6 +44,7 @@ import { toast } from "@/lib/stores/toasts";
 import { cn } from "@/lib/utils";
 
 const RUN_STYLE: Record<RunStatus, string> = {
+  queued: "bg-muted text-muted-foreground",
   running: "bg-sky-500/15 text-sky-800 dark:text-sky-300",
   waiting_approval: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
   succeeded: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
@@ -63,6 +67,8 @@ export function WorkflowsSection() {
   const workflows = useApiQuery(workflowsKeys.list, workflowsApi.list);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [history, setHistory] = useState<Workflow | null>(null);
+  // The run a link (a notification, an approval) asked to show, expanded.
+  const [focusRun, setFocusRun] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
 
   async function runNow(workflow: Workflow) {
@@ -185,13 +191,61 @@ export function WorkflowsSection() {
         </DialogContent>
       </Dialog>
 
-      <Sheet open={history !== null} onOpenChange={(open) => !open && setHistory(null)}>
+      <Sheet
+        open={history !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          setHistory(null);
+          setFocusRun(null);
+        }}
+      >
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
-          {history ? <RunHistory workflow={history} onRun={() => void runNow(history)} running={starting === history.key} /> : null}
+          {history ? (
+            <RunHistory
+              key={history.key}
+              workflow={history}
+              focusRun={focusRun}
+              onRun={() => void runNow(history)}
+              running={starting === history.key}
+            />
+          ) : null}
         </SheetContent>
       </Sheet>
+
+      {/* ?workflow=…&run=… (search params are runtime data: behind Suspense). */}
+      <Suspense fallback={null}>
+        <OpenLinkedWorkflow
+          workflows={workflows.state.status === "success" ? workflows.state.data : null}
+          onOpen={(workflow, runId) => {
+            setHistory(workflow);
+            setFocusRun(runId);
+          }}
+        />
+      </Suspense>
     </section>
   );
+}
+
+/** Opens the runs of the workflow a link names, once per link, when the list has loaded. */
+function OpenLinkedWorkflow({
+  workflows,
+  onOpen,
+}: {
+  workflows: Workflow[] | null;
+  onOpen: (workflow: Workflow, runId: string | null) => void;
+}) {
+  const params = useSearchParams();
+  const handled = useRef<string | null>(null);
+  useEffect(() => {
+    if (workflows === null) return;
+    const linked = linkedWorkflow(workflows, params);
+    const id = params.toString();
+    if (!linked || handled.current === id) return;
+    handled.current = id;
+    if (linked.workflow) onOpen(linked.workflow, linked.runId);
+    else toast({ title: "Workflow not found", description: `There is no workflow “${linked.key}” any more.`, tone: "error" });
+  }, [workflows, params, onOpen]);
+  return null;
 }
 
 function WorkflowEditor({ workflow, template, onDone }: { workflow: Workflow | null; template: boolean; onDone: () => void }) {
@@ -291,9 +345,12 @@ function WorkflowEditor({ workflow, template, onDone }: { workflow: Workflow | n
           label="Definition (JSON)"
           hint={
             <>
-              <code>trigger.schedule</code> is a cron expression in UTC (omit it for manual only). Each step has an <code>id</code> and
-              either <code>research</code> (a question) or <code>tool</code> with <code>arguments</code>; <code>approver</code> is an
-              email. Templates: <code>{"{{ steps.gather.text }}"}</code>, <code>{"{{ today }}"}</code>.
+              <code>trigger.schedule</code> is a cron expression in UTC; <code>{'{"event": "document.ready", "collection": "…"}'}</code>{" "}
+              runs it when a document version is ready (in that collection, if given, and only for documents you can view); omit
+              the trigger for manual only. Each step has an <code>id</code> and either <code>research</code> (a question) or{" "}
+              <code>tool</code> with <code>arguments</code>; <code>approver</code> is an email. Templates:{" "}
+              <code>{"{{ steps.gather.text }}"}</code>, <code>{"{{ today }}"}</code>, and for events <code>{"{{ event.title }}"}</code>,{" "}
+              <code>{"{{ event.link }}"}</code>, <code>{"{{ event.collection }}"}</code>.
             </>
           }
           error={showErrors && !parsed.ok ? `${parsed.message}${parsed.line ? ` (line ${parsed.line}, column ${parsed.column})` : ""}` : null}
@@ -361,10 +418,20 @@ function WorkflowEditor({ workflow, template, onDone }: { workflow: Workflow | n
   );
 }
 
-function RunHistory({ workflow, onRun, running }: { workflow: Workflow; onRun: () => void; running: boolean }) {
+function RunHistory({
+  workflow,
+  focusRun,
+  onRun,
+  running,
+}: {
+  workflow: Workflow;
+  focusRun: string | null;
+  onRun: () => void;
+  running: boolean;
+}) {
   const runs = useApiQuery(workflowsKeys.runs(workflow.key), () => workflowsApi.runs(workflow.key));
   const data = runs.state.status === "success" ? runs.state.data : [];
-  const active = data.some((r) => r.status === "running");
+  const active = data.some((r) => r.status === "running" || r.status === "queued");
   const waiting = data.some((r) => r.status === "waiting_approval");
   // Running: every 3 s. Waiting for a person: every 10 s (the decision may come from another device).
   usePolling(workflowsKeys.runs(workflow.key), active || waiting, active ? 3000 : 10_000);
@@ -391,7 +458,13 @@ function RunHistory({ workflow, onRun, running }: { workflow: Workflow; onRun: (
       ) : (
         <ol className="flex flex-col gap-3">
           {data.map((run, index) => (
-            <RunItem key={run.id} run={run} workflow={workflow} defaultOpen={index === 0} />
+            <RunItem
+              key={run.id}
+              run={run}
+              workflow={workflow}
+              defaultOpen={focusRun ? run.id === focusRun : index === 0}
+              focused={run.id === focusRun}
+            />
           ))}
         </ol>
       )}
@@ -399,12 +472,26 @@ function RunHistory({ workflow, onRun, running }: { workflow: Workflow; onRun: (
   );
 }
 
-function RunItem({ run, workflow, defaultOpen }: { run: WorkflowRun; workflow: Workflow; defaultOpen: boolean }) {
+function RunItem({
+  run,
+  workflow,
+  defaultOpen,
+  focused,
+}: {
+  run: WorkflowRun;
+  workflow: Workflow;
+  defaultOpen: boolean;
+  focused: boolean;
+}) {
   const [open, setOpen] = useState(defaultOpen || isRunActive(run));
   const approvalId = waitingApprovalId(run);
   const steps = runSteps(run, workflow.definition);
+  const item = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (focused) item.current?.scrollIntoView({ block: "nearest" });
+  }, [focused]);
   return (
-    <li className="rounded-xl border">
+    <li ref={item} className={cn("rounded-xl border", focused && "ring-2 ring-ring/40")}>
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-muted/40"
@@ -414,7 +501,7 @@ function RunItem({ run, workflow, defaultOpen }: { run: WorkflowRun; workflow: W
         <ChevronRight className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} aria-hidden="true" />
         <span className="min-w-0 flex-1 text-sm">
           <span title={formatDateTime(run.created_at)}>{formatRelative(run.created_at)}</span>
-          <span className="text-muted-foreground"> · {run.trigger === "manual" ? "Run now" : run.trigger}</span>
+          <span className="text-muted-foreground"> · {runTriggerText(run.trigger)}</span>
           {run.finished_at ? <span className="text-muted-foreground"> · finished {formatRelative(run.finished_at)}</span> : null}
         </span>
         <RunStatusBadge status={run.status} />

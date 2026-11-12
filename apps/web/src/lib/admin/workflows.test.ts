@@ -4,12 +4,16 @@ import { ApiError } from "@/lib/api";
 
 import {
   definitionText,
+  isRunActive,
+  linkedWorkflow,
   parseDefinition,
   runSteps,
+  runTriggerText,
   triggerText,
   waitingApprovalId,
   WEEKLY_OPS_TEMPLATE,
   workflowProblems,
+  workflowRunHref,
   type WorkflowDefinition,
   type WorkflowRun,
 } from "./workflows";
@@ -102,5 +106,33 @@ describe("run history", () => {
     expect(triggerText(definition)).toBe("Schedule: 0 8 * * MON (UTC)");
     expect(triggerText({ steps: [], trigger: { event: "document.ready", collection: "finance" } })).toBe("When a document is ready in finance");
     expect(triggerText({ steps: [] })).toBe("Manual only");
+  });
+});
+
+describe("links to a workflow run", () => {
+  const workflow = { id: "w1", key: "weekly-ops-report", name: "Weekly", definition, enabled: true, owner_id: "u1" };
+
+  it("builds the same link as the API's notifications (modules/work/links.py)", () => {
+    expect(workflowRunHref("weekly-ops-report", "r1")).toBe("/admin/workflows?workflow=weekly-ops-report&run=r1");
+    expect(workflowRunHref("weekly-ops-report")).toBe("/admin/workflows?workflow=weekly-ops-report");
+  });
+
+  it("opens the linked workflow and run, or says it is gone", () => {
+    const params = (query: string) => new URLSearchParams(query);
+    expect(linkedWorkflow([workflow], params("workflow=weekly-ops-report&run=r1"))).toEqual({
+      workflow,
+      key: "weekly-ops-report",
+      runId: "r1",
+    });
+    expect(linkedWorkflow([workflow], params("workflow=deleted"))).toEqual({ workflow: null, key: "deleted", runId: null });
+    expect(linkedWorkflow([workflow], params(""))).toBeNull();
+  });
+
+  it("counts a queued (event) run as active, and says what started a run", () => {
+    expect(isRunActive({ status: "queued" })).toBe(true);
+    expect(isRunActive({ status: "cancelled" })).toBe(false);
+    expect(runTriggerText("event")).toBe("A document became ready");
+    expect(runTriggerText("manual")).toBe("Run now");
+    expect(runTriggerText("schedule")).toBe("Schedule");
   });
 });

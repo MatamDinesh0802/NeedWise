@@ -30,7 +30,8 @@ export interface Workflow {
   owner_id: string;
 }
 
-export type RunStatus = "running" | "waiting_approval" | "succeeded" | "failed" | "cancelled";
+/** "queued": an event created it and it hasn't started yet (it does within a minute). */
+export type RunStatus = "queued" | "running" | "waiting_approval" | "succeeded" | "failed" | "cancelled";
 
 export interface StepOutput {
   status?: string;
@@ -178,6 +179,7 @@ function withoutStepPrefix(message: string, stepId: string | null): string {
 }
 
 export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
+  queued: "Queued",
   running: "Running",
   waiting_approval: "Waiting for approval",
   succeeded: "Succeeded",
@@ -195,7 +197,35 @@ export const STEP_STATUS_LABELS: Record<string, string> = {
 };
 
 export function isRunActive(run: Pick<WorkflowRun, "status">): boolean {
-  return run.status === "running" || run.status === "waiting_approval";
+  return run.status === "queued" || run.status === "running" || run.status === "waiting_approval";
+}
+
+/** Who or what started a run, in words. */
+export function runTriggerText(trigger: string): string {
+  if (trigger === "manual") return "Run now";
+  if (trigger === "schedule") return "Schedule";
+  if (trigger === "event") return "A document became ready";
+  return trigger;
+}
+
+/**
+ * Where a workflow run lives in the app: Admin › Workflows with its runs open (notifications and
+ * approvals link here; the API builds the same link in modules/work/links.py).
+ */
+export function workflowRunHref(key: string, runId?: string | null): `/admin/workflows?${string}` {
+  const params = new URLSearchParams({ workflow: key });
+  if (runId) params.set("run", runId);
+  return `/admin/workflows?${params.toString()}`;
+}
+
+/** The workflow (and run) a link asks to open, once the list is loaded; null if none or gone. */
+export function linkedWorkflow(
+  workflows: readonly Workflow[],
+  params: { get: (name: string) => string | null },
+): { workflow: Workflow | null; key: string; runId: string | null } | null {
+  const key = params.get("workflow");
+  if (!key) return null;
+  return { workflow: workflows.find((w) => w.key === key) ?? null, key, runId: params.get("run") };
 }
 
 export interface RunStepView {
