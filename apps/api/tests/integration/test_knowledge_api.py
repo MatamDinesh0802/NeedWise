@@ -119,7 +119,9 @@ async def test_an_editor_uploads_and_the_document_becomes_searchable(
     document = _wait_ready(api, acme, "alice", response.json()["document"]["id"])
 
     client, name = qdrant
-    points = await client.count(name, {"must": [match("document_id", str(document["id"]))]})
+    points = await client.count(
+        name, {"must": [match("document_id", str(document["id"]))]}, tenant_id=acme.tenant_id
+    )
     chunks = api.get(f"/api/v1/documents/{document['id']}/chunks", headers=acme.as_("bob")).json()[
         "items"
     ]
@@ -175,7 +177,9 @@ async def test_same_bytes_change_nothing_and_new_bytes_replace_the_old_version(
     final = _wait_ready(api, acme, "alice", updated["document"]["id"])
 
     client, name = qdrant
-    points = await client.count(name, {"must": [match("document_id", final["id"])]})
+    points = await client.count(
+        name, {"must": [match("document_id", final["id"])]}, tenant_id=acme.tenant_id
+    )
     assert again["unchanged"] is True
     assert updated["document"]["id"] == first["document"]["id"]
     assert (final["version"], final["chunk_count"], points) == (
@@ -223,7 +227,12 @@ async def test_deleting_removes_chunks_from_search_and_queues_the_tuple_removal(
             d for row in (await session.scalars(select(AuthzOutbox))).all() for d in row.deletes
         ]
     assert response.status_code == 204
-    assert await client.count(name, {"must": [match("document_id", document["id"])]}) == 0
+    assert (
+        await client.count(
+            name, {"must": [match("document_id", document["id"])]}, tenant_id=acme.tenant_id
+        )
+        == 0
+    )
     assert {
         "user": f"collection:{handbook}",
         "relation": "collection",
@@ -246,7 +255,7 @@ async def test_sharing_changes_update_the_acl_inside_the_search_index(
     visible_to_bob = {
         "must": [match("document_id", document["id"]), {"key": "acl", "match": {"any": [bob]}}]
     }
-    assert await client.count(name, visible_to_bob) == 0
+    assert await client.count(name, visible_to_bob, tenant_id=acme.tenant_id) == 0
 
     viewers = [
         g["principal"]
@@ -262,7 +271,7 @@ async def test_sharing_changes_update_the_acl_inside_the_search_index(
     )
 
     assert shared.status_code == 200, shared.text
-    assert await client.count(name, visible_to_bob) == 1
+    assert await client.count(name, visible_to_bob, tenant_id=acme.tenant_id) == 1
 
 
 async def test_admins_list_every_collection_with_sharing_but_still_cannot_read_restricted_ones(
@@ -351,7 +360,9 @@ async def test_editors_correct_labels_and_the_index_follows_at_once(
 
     client, name = qdrant
     restricted_points = await client.count(
-        name, {"must": [match("document_id", document["id"]), match("sensitivity", "restricted")]}
+        name,
+        {"must": [match("document_id", document["id"]), match("sensitivity", "restricted")]},
+        tenant_id=acme.tenant_id,
     )
     assert as_viewer.status_code == 403
     assert changed.status_code == 200, changed.text

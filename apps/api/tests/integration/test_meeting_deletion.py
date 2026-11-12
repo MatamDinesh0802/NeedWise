@@ -136,7 +136,7 @@ async def test_deleting_a_meeting_removes_it_its_file_and_its_transcript_but_kee
     media = tmp_path / object_key(acme.tenant_id, hashlib.sha256(VTT).hexdigest())
     in_index = {"must": [match("document_id", document_id)]}
     assert media.exists()
-    assert await client.count(points, in_index) > 0
+    assert await client.count(points, in_index, tenant_id=acme.tenant_id) > 0
 
     # Viewers can't; people outside the collection don't even see it.
     assert delete(api, acme, "bob", meeting_id) == 403
@@ -147,7 +147,7 @@ async def test_deleting_a_meeting_removes_it_its_file_and_its_transcript_but_kee
     me = acme.as_("olivia.grant")
     assert api.get(f"/api/v1/meetings/{meeting_id}", headers=me).status_code == 404
     assert api.get(f"/api/v1/documents/{document_id}", headers=me).status_code == 404
-    assert await client.count(points, in_index) == 0
+    assert await client.count(points, in_index, tenant_id=acme.tenant_id) == 0
     assert not media.exists()
     assert meeting_id not in {m["id"] for m in api.get("/api/v1/meetings", headers=me).json()}
     # Wei's task stays his; it names the meeting it came from, without a link to it.

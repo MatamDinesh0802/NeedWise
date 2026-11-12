@@ -12,7 +12,7 @@ from workmind.core.errors import ApiError, unauthenticated
 from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.identity import tokens
-from workmind.modules.identity.service import load_identity
+from workmind.modules.identity.service import load_identity, tenant_is_active
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 CSRF_HEADER = "x-csrf-protection"
@@ -76,10 +76,12 @@ async def get_request_context(request: Request) -> RequestContext:
     session = await resources.sessions.get(session_id)
     if session is None:
         raise unauthenticated("Your session has expired. Sign in again.")
-    # Loaded on every request, so disabling a user or changing a role applies immediately.
+    # Loaded on every request, so disabling a user, changing a role or suspending the tenant
+    # applies immediately.
     async with tenant_transaction(resources.db, session.tenant_id) as db:
         identity = await load_identity(db, session.user_id)
-    if identity is None or identity.user.status != "active":
+        active_tenant = await tenant_is_active(db, session.tenant_id)
+    if identity is None or identity.user.status != "active" or not active_tenant:
         await resources.sessions.delete(session_id)
         raise unauthenticated()
 

@@ -160,6 +160,12 @@ async def record_denied_sign_in(
         )
 
 
+async def tenant_is_active(session: AsyncSession, tenant_id: uuid.UUID) -> bool:
+    """False for a suspended or deleted tenant: its sessions stop working at once."""
+    status = await session.scalar(select(Tenant.status).where(Tenant.id == tenant_id))
+    return status == "active"
+
+
 async def load_identity(session: AsyncSession, user_id: uuid.UUID) -> Identity | None:
     """Load a user with departments and all groups, including groups inherited through
     nested groups. Must run inside the user's tenant transaction."""

@@ -229,7 +229,7 @@ async def run(args: argparse.Namespace) -> int:
                     analytics_items, today=args.today, reference_users=analytics_people
                 )
                 result.analytics, result.analytics_problems = done.records, done.problems
-        points = await resources.qdrant.count(settings.qdrant_collection, {"must": []})
+        points = await resources.qdrant.count_all(settings.qdrant_collection)
     finally:
         await resources.aclose()
 

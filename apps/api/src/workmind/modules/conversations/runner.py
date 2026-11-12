@@ -243,7 +243,7 @@ async def execute_run(
     """`answer_id`: the id the answer is stored under (usage events refer to it)."""
     events, run_id = deps.events, meta.run_id
     await events.emit(
-        run_id, "run.started", {"run_id": str(run_id), "conversation_id": str(meta.conversation_id)}
+        meta, "run.started", {"run_id": str(run_id), "conversation_id": str(meta.conversation_id)}
     )
     usage = Usage()
     parts: list[str] = []
@@ -260,7 +260,7 @@ async def execute_run(
         search_query, rewrite_usage = await rewrite_question(deps.llm, history.messages, question)
         usage.add(rewrite_usage)
         if search_query != question:
-            await events.emit(run_id, "query.rewritten", {"query": search_query})
+            await events.emit(meta, "query.rewritten", {"query": search_query})
         stream = assistant_stream(
             deps,
             ctx,
@@ -275,7 +275,7 @@ async def execute_run(
             if isinstance(event, PlanEvent):
                 spent.append(event.plan.usage)
                 await events.emit(
-                    run_id,
+                    meta,
                     "plan",
                     {
                         "mode": event.plan.mode,
@@ -289,7 +289,7 @@ async def execute_run(
             elif isinstance(event, AgentStepEvent):
                 spent.extend(event.usage)
                 await events.emit(
-                    run_id,
+                    meta,
                     "agent.step",
                     {
                         "agent": event.agent,
@@ -303,7 +303,7 @@ async def execute_run(
                 )
             elif isinstance(event, SourcesEvent):
                 await events.emit(
-                    run_id,
+                    meta,
                     "retrieval",
                     {
                         "sources": [source_ref(p, with_text=True) for p in event.passages],
@@ -312,8 +312,8 @@ async def execute_run(
                 )
             elif isinstance(event, TokenEvent):
                 parts.append(event.text)
-                await events.emit(run_id, "token", {"text": event.text})
-                if len(parts) % CANCEL_CHECK_EVERY == 0 and await events.cancelled(run_id):
+                await events.emit(meta, "token", {"text": event.text})
+                if len(parts) % CANCEL_CHECK_EVERY == 0 and await events.cancelled(meta):
                     status = "cancelled"
                     break
             else:
@@ -322,7 +322,7 @@ async def execute_run(
     except asyncio.CancelledError:
         # Server shutdown: end the stream and free the conversation, then stop.
         await events.emit(
-            run_id, "run.failed", {"code": "interrupted", "message": "The server restarted."}
+            meta, "run.failed", {"code": "interrupted", "message": "The server restarted."}
         )
         raise
     except BudgetExceededError as exc:
@@ -341,7 +341,7 @@ async def execute_run(
             usage.add(extra, keep_model=True)
         for citation in final.citations:
             await events.emit(
-                run_id,
+                meta,
                 "citation",
                 {
                     "marker": citation.marker,
@@ -353,7 +353,7 @@ async def execute_run(
                     "review_overdue": citation.review_overdue,
                 },
             )
-        await events.emit(run_id, "verification", {"unknown_markers": final.unknown_markers})
+        await events.emit(meta, "verification", {"unknown_markers": final.unknown_markers})
     else:
         for extra in spent:  # no answer to carry them: the run still paid for them
             usage.add(extra, keep_model=True)
@@ -372,7 +372,7 @@ async def execute_run(
     )
     if status == "complete":
         await events.emit(
-            run_id,
+            meta,
             "run.completed",
             {
                 "message_id": str(message_id),
@@ -383,9 +383,9 @@ async def execute_run(
         )
         await _maybe_summarize(deps, ctx, meta.conversation_id)
     elif status == "cancelled":
-        await events.emit(run_id, "run.cancelled", {"message_id": str(message_id)})
+        await events.emit(meta, "run.cancelled", {"message_id": str(message_id)})
     else:
-        await _emit_failure(deps, run_id, message_id, error, budget)
+        await _emit_failure(deps, meta, message_id, error, budget)
 
 
 def _failure(error: tuple[str, str] | None, budget: BudgetExceededError | None) -> dict[str, Any]:
@@ -399,13 +399,13 @@ def _failure(error: tuple[str, str] | None, budget: BudgetExceededError | None) 
 
 async def _emit_failure(
     deps: RunDeps,
-    run_id: uuid.UUID,
+    meta: RunMeta,
     message_id: uuid.UUID,
     error: tuple[str, str] | None,
     budget: BudgetExceededError | None,
 ) -> None:
     await deps.events.emit(
-        run_id, "run.failed", {**_failure(error, budget), "message_id": str(message_id)}
+        meta, "run.failed", {**_failure(error, budget), "message_id": str(message_id)}
     )
 
 
@@ -423,7 +423,7 @@ async def execute_research_run(
     (an email, a task) that wait for the person's approval as inline cards (`approval.required`)."""
     events, run_id = deps.events, meta.run_id
     await events.emit(
-        run_id, "run.started", {"run_id": str(run_id), "conversation_id": str(meta.conversation_id)}
+        meta, "run.started", {"run_id": str(run_id), "conversation_id": str(meta.conversation_id)}
     )
     usage = Usage()
     status, error, text = "complete", None, ""
@@ -442,12 +442,12 @@ async def execute_research_run(
             }
         )
         await events.emit(
-            run_id, "tool.step", {"tool": step.tool, "ok": step.ok, "error": step.error}
+            meta, "tool.step", {"tool": step.tool, "ok": step.ok, "error": step.error}
         )
         if step.approval_id:
             approvals.append(step.approval_id)
             await events.emit(
-                run_id,
+                meta,
                 "approval.required",
                 {"approval_id": step.approval_id, "tool": step.tool, "summary": step.summary},
             )
@@ -473,7 +473,7 @@ async def execute_research_run(
             usage.add(step_usage)
         text = result.text
         for start in range(0, len(text), 60):  # the loop isn't token-streamed; replay it in pieces
-            await events.emit(run_id, "token", {"text": text[start : start + 60]})
+            await events.emit(meta, "token", {"text": text[start : start + 60]})
     except BudgetExceededError as exc:
         status, budget = "failed", exc
         log.info("research_budget_exceeded", run_id=str(run_id), budget_id=str(exc.status.id))
@@ -498,12 +498,12 @@ async def execute_research_run(
     )
     if status == "complete":
         await events.emit(
-            run_id,
+            meta,
             "run.completed",
             {"message_id": str(message_id), "usage": usage.as_dict(), "approvals": approvals},
         )
     else:
-        await _emit_failure(deps, run_id, message_id, error, budget)
+        await _emit_failure(deps, meta, message_id, error, budget)
 
 
 async def _store(

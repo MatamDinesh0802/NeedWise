@@ -150,14 +150,16 @@ async def _ingest(
         for chunk_id, draft, vector, text in zip(chunk_ids, drafts, dense, inputs, strict=True)
     ]
     await deps.qdrant.ensure_collection(deps.collection_name, dense_size=deps.embeddings.dimensions)
-    await deps.qdrant.upsert(deps.collection_name, points)
+    await deps.qdrant.upsert(deps.collection_name, points, tenant_id=tenant_id)
 
     async with tenant_transaction(deps.sessions, tenant_id) as session:
         document = await session.get(Document, document_id)
         version = await session.get(DocumentVersion, version_id)
         if document is None or version is None:  # deleted while we were embedding
             await deps.qdrant.delete(
-                deps.collection_name, {"must": [match("version_id", str(version_id))]}
+                deps.collection_name,
+                {"must": [match("version_id", str(version_id))]},
+                tenant_id=tenant_id,
             )
             raise PermanentIngestionError("document was deleted during ingestion")
         await session.execute(delete(Chunk).where(Chunk.document_id == document_id))
@@ -212,9 +214,10 @@ async def _ingest(
     await deps.qdrant.delete(
         deps.collection_name,
         {
-            "must": [match("tenant_id", str(tenant_id)), match("document_id", str(document_id))],
+            "must": [match("document_id", str(document_id))],
             "must_not": [{"has_id": [str(chunk_id) for chunk_id in chunk_ids]}],
         },
+        tenant_id=tenant_id,
     )
     log.info(
         "document_indexed",
@@ -254,7 +257,8 @@ async def refresh_collection_acl(
     await qdrant.set_payload(
         collection_name,
         {"acl": acl_principals(collection, grants)},
-        {"must": [match("tenant_id", str(tenant_id)), match("collection_id", str(collection.id))]},
+        {"must": [match("collection_id", str(collection.id))]},
+        tenant_id=tenant_id,
     )
 
 
@@ -272,7 +276,8 @@ async def set_document_labels(
     await qdrant.set_payload(
         collection_name,
         labels,
-        {"must": [match("tenant_id", str(tenant_id)), match("document_id", str(document_id))]},
+        {"must": [match("document_id", str(document_id))]},
+        tenant_id=tenant_id,
     )
 
 
@@ -282,5 +287,6 @@ async def delete_document_points(
     if await qdrant.collection_exists(collection_name):
         await qdrant.delete(
             collection_name,
-            {"must": [match("tenant_id", str(tenant_id)), match("document_id", str(document_id))]},
+            {"must": [match("document_id", str(document_id))]},
+            tenant_id=tenant_id,
         )
