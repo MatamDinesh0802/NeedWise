@@ -73,7 +73,7 @@ describe("RowFields", () => {
     expect(html).toMatch(/aria-describedby="([^"]+-error)" aria-invalid="true".*<p id="\1"[^>]*>Enter a limit in US dollars, more than 0\./);
     expect(html).toContain(">Choose a person.</p>");
     expect(html).toContain("Not saved yet.");
-    expect(html).toContain("When it is used up, requests that use a model are refused until it resets.");
+    expect(html).toContain("Requests that use a model are refused until it resets.");
   });
 });
 

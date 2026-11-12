@@ -37,7 +37,7 @@ import {
   type DefaultCapForm,
   type FormErrors,
 } from "@/lib/usage/budgets";
-import { formatUsd, PERIOD_ADJECTIVES, PERIOD_NOUNS } from "@/lib/usage/format";
+import { formatUsd, PERIOD_ADJECTIVES } from "@/lib/usage/format";
 
 /** Admin › Budgets: spending limits on model usage. The API enforces them; this edits them. */
 export function BudgetsSection() {
@@ -350,7 +350,8 @@ export function RowFields({
       </div>
       {error("subject") ? <p className="text-xs text-destructive">{error("subject")}</p> : null}
       <div className="flex flex-wrap items-start gap-3">
-        <Field label="Limit (USD)" error={error("limit")}>
+        {/* Fixed widths: a message under a field wraps instead of pushing the row apart. */}
+        <Field label="Limit (USD)" error={error("limit")} className="w-40">
           {({ id, describedBy, invalid }) => (
             <LimitInput id={id} value={row.limit} onChange={(limit) => onChange(row.key, { limit })} describedBy={describedBy} invalid={invalid} />
           )}
@@ -360,7 +361,7 @@ export function RowFields({
             <SimpleSelect id={id} value={row.period} onChange={(period) => onChange(row.key, { period })} options={PERIOD_OPTIONS} describedBy={describedBy} invalid={invalid} />
           )}
         </Field>
-        <Field label="Warn at (% of the limit)" error={error("warn")}>
+        <Field label="Warn at (% of the limit)" error={error("warn")} className="w-44">
           {({ id, describedBy, invalid }) => (
             <Input
               id={id}
@@ -385,7 +386,7 @@ export function RowFields({
       {status ? (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span className="tabular-nums">
-            {formatUsd(status.spent_usd)} spent this {PERIOD_NOUNS[status.period]}
+            {formatUsd(status.spent_usd)} spent {status.period === "day" ? "today" : "this month"}
           </span>
           <BudgetStatusLabel budget={status} className="text-foreground" />
         </p>
@@ -405,7 +406,7 @@ export function DefaultCapFields({ cap, error, onChange }: { cap: DefaultCapForm
       </label>
       {cap.enabled ? (
         <div className="flex flex-wrap items-start gap-3">
-          <Field label="Limit per person (USD)" error={error}>
+          <Field label="Limit per person (USD)" error={error} className="w-44">
             {({ id, describedBy, invalid }) => (
               <LimitInput id={id} value={cap.limit} onChange={(limit) => onChange({ limit })} describedBy={describedBy} invalid={invalid} />
             )}

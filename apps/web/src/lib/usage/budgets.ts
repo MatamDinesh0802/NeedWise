@@ -30,7 +30,7 @@ export const ACTION_OPTIONS: readonly { value: BudgetAction; label: string }[] =
 ];
 
 export const ACTION_HINTS: Record<BudgetAction, string> = {
-  block: "When it is used up, requests that use a model are refused until it resets.",
+  block: "Requests that use a model are refused until it resets.",
   warn: "Requests keep working; people are only told.",
 };
 

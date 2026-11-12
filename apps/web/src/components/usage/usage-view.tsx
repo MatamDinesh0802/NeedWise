@@ -250,7 +250,7 @@ export function UsageReport({ summary, me, stale = false, now }: { summary: Usag
           description={`Nothing used an AI model between ${rangeText(range)}. Choose a longer period, or come back after people have used the assistant.`}
         />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-5">
+        <div className="grid items-start gap-4 lg:grid-cols-5">
           <section className="min-w-0 rounded-xl border bg-card p-4 lg:col-span-3" aria-label="Cost over time">
             {chart ? <AnalyticsChart data={chart} /> : <p className="text-sm text-muted-foreground">No periods to chart.</p>}
           </section>

@@ -35,10 +35,12 @@ export function BudgetExceededView({
 }) {
   const copy = budgetBlockCopy(block, viewer, now);
   return (
-    <Alert variant="destructive" data-code="budget_exceeded" className={cn("text-foreground", className)}>
-      <OctagonX aria-hidden="true" />
+    // Not the destructive variant: its red body text is hard to read at this length. The icon
+    // and the title carry the state; the text stays in the text colours.
+    <Alert data-code="budget_exceeded" className={cn("border-destructive/40", className)}>
+      <OctagonX aria-hidden="true" style={{ color: "var(--viz-critical)" }} />
       <AlertTitle>{copy.title}</AlertTitle>
-      <AlertDescription className="flex flex-col gap-1 text-foreground/90">
+      <AlertDescription className="flex flex-col gap-1 [&_p:not(:last-child)]:mb-0">
         <p>{copy.description}</p>
         {copy.resets ? (
           <p className="flex items-center gap-1.5">
