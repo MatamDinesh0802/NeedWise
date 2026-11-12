@@ -284,6 +284,10 @@ async def list_tasks(
 
 @router.post("/tasks", status_code=201)
 async def create_task(ctx: AskContext, request: Request, body: TaskCreate) -> TaskOut:
+    """A guest may only make tasks for themselves: other people's lists and department queues
+    are for members (a guest cannot see the directory either)."""
+    if ctx.org_role == "guest" and (body.department or body.assignee_id not in (None, ctx.user_id)):
+        raise ApiError(403, "forbidden", "Guests can only create tasks for themselves")
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         department = (
             await session.scalar(select(Department).where(Department.slug == body.department))
