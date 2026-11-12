@@ -22,6 +22,8 @@ export interface Citation {
   section: string | null;
   page: number | null;
   trust: Trust;
+  /** Official, but past its review date (answers stored before this existed lack it). */
+  review_overdue?: boolean;
 }
 
 /** A retrieved passage. `text` only arrives live (retrieval event), never from history. */
@@ -36,6 +38,8 @@ export interface Source {
   page: number | null;
   trust: Trust;
   sensitivity: Sensitivity;
+  /** Official, but past its review date (docs/governance.md). */
+  review_overdue?: boolean;
   text?: string;
 }
 

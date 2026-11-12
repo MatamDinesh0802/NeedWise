@@ -13,7 +13,7 @@ import type { Approval, DecisionBody } from "@/lib/work/api";
 // --- Status ---------------------------------------------------------------------------------
 
 /** What the card shows. "running": approved, the action is being carried out right now. */
-export type DisplayStatus = "pending" | "running" | "executed" | "failed" | "rejected" | "expired";
+export type DisplayStatus = "pending" | "running" | "executed" | "failed" | "rejected" | "expired" | "superseded";
 
 export function displayStatus(approval: Pick<Approval, "status" | "expires_at">, now: number = Date.now()): DisplayStatus {
   switch (approval.status) {
@@ -35,9 +35,38 @@ export const STATUS_LABELS: Record<DisplayStatus, string> = {
   failed: "Failed",
   rejected: "Rejected",
   expired: "Expired",
+  superseded: "Decided by another approver",
 };
 
-const TERMINAL: ReadonlySet<DisplayStatus> = new Set(["executed", "failed", "rejected", "expired"]);
+const TERMINAL: ReadonlySet<DisplayStatus> = new Set(["executed", "failed", "rejected", "expired", "superseded"]);
+
+// --- Approval kinds the core carries out (not tool calls) ----------------------------------
+
+/** Approval.tool of a request for official status (modules/knowledge/governance.py). */
+export const OFFICIAL_KIND = "knowledge.official_status";
+
+/** Kinds are approved or rejected as they are: their arguments can't be edited. */
+export function isEditable(tool: string): boolean {
+  return tool !== OFFICIAL_KIND;
+}
+
+/** What deciding means, said before the approver decides. */
+export function decisionMeaning(tool: string): { approve: string; reject: string } | null {
+  if (tool !== OFFICIAL_KIND) return null;
+  return {
+    approve:
+      "Approving makes the document official: answers rank it first and prefer it when sources disagree. It also counts as a review.",
+    reject: "Rejecting keeps its current trust level. The person who asked sees your note.",
+  };
+}
+
+/** Where a kind's subject lives, e.g. the document an official-status request is about. */
+export function subjectLink(approval: Pick<Approval, "tool" | "arguments">): string | null {
+  const documentId = approval.arguments.document_id;
+  return approval.tool === OFFICIAL_KIND && typeof documentId === "string"
+    ? `/knowledge/documents/${encodeURIComponent(documentId)}`
+    : null;
+}
 
 export function isSettled(approval: Pick<Approval, "status" | "expires_at">, now?: number): boolean {
   return TERMINAL.has(displayStatus(approval, now));
@@ -52,6 +81,7 @@ export function canDecide(approval: Approval, userId: string | null | undefined,
 export function outcomeText(approval: Approval, now?: number): string | null {
   switch (displayStatus(approval, now)) {
     case "executed":
+      if (approval.tool === OFFICIAL_KIND) return "The document is now official.";
       return approval.result?.content?.trim() || "The action ran.";
     case "failed":
       return approval.result?.error ? `It didn't run: ${approval.result.error}` : "It was approved, but the action failed.";
@@ -59,6 +89,10 @@ export function outcomeText(approval: Approval, now?: number): string | null {
       return approval.decision_note ? `Rejected: “${approval.decision_note}”. Nothing ran.` : "Rejected. Nothing ran.";
     case "expired":
       return "No decision in time. Nothing ran.";
+    case "superseded":
+      return approval.tool === OFFICIAL_KIND
+        ? "Another approver decided this request first. Nothing more to do."
+        : "Another approver decided this first.";
     default:
       return null;
   }
@@ -69,6 +103,7 @@ export function outcomeText(approval: Approval, now?: number): string | null {
 export const TOOL_TITLES: Record<string, string> = {
   send_email: "Send an email",
   create_task: "Create a task",
+  [OFFICIAL_KIND]: "Official status for a document",
 };
 
 export function toolTitle(tool: string): string {
@@ -96,6 +131,14 @@ export function argumentRows(tool: string, args: Record<string, unknown>): Argum
     const rows: ArgumentRow[] = [{ label: "To", value: list(args.to) }];
     if (list(args.cc).length > 0) rows.push({ label: "Cc", value: list(args.cc) });
     rows.push({ label: "Subject", value: text(args.subject) }, { label: "Body", value: text(args.body), multiline: true });
+    return rows;
+  }
+  if (tool === OFFICIAL_KIND) {
+    const rows: ArgumentRow[] = [
+      { label: "Document", value: text(args.title) },
+      { label: "Collection", value: text(args.collection) },
+    ];
+    if (text(args.note)) rows.push({ label: "Why", value: text(args.note), multiline: true });
     return rows;
   }
   if (tool === "create_task") {
@@ -362,6 +405,7 @@ export function serverFieldErrors(error: DecisionError | null): DraftErrors {
 /** Where an approval came from, in words. */
 export function originLabel(approval: Approval): string {
   if (approval.origin.via === "workflow") return "From a workflow run";
+  if (approval.origin.via === "governance") return "Requested in the Knowledge Hub";
   if (approval.origin.conversation_id) return "From a conversation with the assistant";
   return "Proposed by the assistant";
 }

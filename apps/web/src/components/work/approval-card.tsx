@@ -2,6 +2,7 @@
 
 import {
   Ban,
+  BadgeCheck,
   CircleAlert,
   CircleCheck,
   Clock,
@@ -13,6 +14,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { useId, useReducer } from "react";
 
 import { Field } from "@/components/data/form";
@@ -34,16 +36,20 @@ import { workApi, workKeys, type Approval } from "@/lib/work/api";
 import {
   argumentRows,
   canDecide,
+  decisionMeaning,
   decisionRequest,
   displayStatus,
   effectiveArguments,
   initialCardState,
+  isEditable,
   latestApproval,
+  OFFICIAL_KIND,
   originLabel,
   outcomeText,
   reduceCard,
   serverFieldErrors,
   STATUS_LABELS,
+  subjectLink,
   toolTitle,
   withAssigneeName,
   type DisplayStatus,
@@ -55,7 +61,7 @@ import {
 } from "@/lib/work/approvals";
 import { getNotificationsStore } from "@/lib/work/notifications";
 
-const TOOL_ICONS: Record<string, LucideIcon> = { send_email: Mail, create_task: ListTodo };
+const TOOL_ICONS: Record<string, LucideIcon> = { send_email: Mail, create_task: ListTodo, [OFFICIAL_KIND]: BadgeCheck };
 
 const STATUS_STYLE: Record<DisplayStatus, string> = {
   pending: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
@@ -64,6 +70,7 @@ const STATUS_STYLE: Record<DisplayStatus, string> = {
   failed: "bg-destructive/10 text-destructive",
   rejected: "bg-muted text-muted-foreground",
   expired: "bg-muted text-muted-foreground",
+  superseded: "bg-muted text-muted-foreground",
 };
 
 export function ApprovalStatusBadge({ approval }: { approval: Approval }) {
@@ -109,6 +116,8 @@ export function ApprovalCard({
   const rows = baseRows ? withAssigneeName(baseRows, colleagues.people) : null;
   const outcome = outcomeText(approval);
   const fieldErrors: DraftErrors = { ...serverFieldErrors(state.error), ...state.draftErrors };
+  const meaning = decisionMeaning(approval.tool);
+  const subject = subjectLink(approval);
 
   async function submit(kind: SubmitKind) {
     const request = decisionRequest(state, kind);
@@ -158,9 +167,11 @@ export function ApprovalCard({
           <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           <p>
             <span className="font-medium">Nothing has happened yet.</span>{" "}
-            {decidable
-              ? "This only runs if you approve it. You can edit it first, or reject it."
-              : `It only runs once ${approver} says yes.`}
+            {meaning && decidable
+              ? `${meaning.approve} ${meaning.reject}`
+              : decidable
+                ? "This only runs if you approve it. You can edit it first, or reject it."
+                : `It only runs once ${approver} says yes.`}
           </p>
         </div>
       ) : null}
@@ -205,6 +216,12 @@ export function ApprovalCard({
             />
           )}
         </Field>
+      ) : null}
+
+      {subject ? (
+        <Link href={subject} className="w-fit text-sm text-primary hover:underline">
+          Open the document
+        </Link>
       ) : null}
 
       {outcome ? <Outcome status={status} text={outcome} approval={approval} /> : null}
@@ -284,16 +301,24 @@ function Actions({
         <Ban data-icon="inline-start" aria-hidden="true" />
         Reject
       </Button>
-      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => dispatch({ type: "edit", approval })}>
-        <PencilLine data-icon="inline-start" aria-hidden="true" />
-        Edit & approve
-      </Button>
+      {isEditable(approval.tool) ? (
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => dispatch({ type: "edit", approval })}>
+          <PencilLine data-icon="inline-start" aria-hidden="true" />
+          Edit & approve
+        </Button>
+      ) : null}
       <Button type="button" size="sm" disabled={busy} onClick={() => onSubmit("approve")}>
         {spinner("approve") ?? <CircleCheck data-icon="inline-start" aria-hidden="true" />}
-        {state.submitting === "approve" ? "Approving…" : approval.tool === "send_email" ? "Approve and send" : "Approve"}
+        {state.submitting === "approve" ? "Approving…" : approveLabel(approval.tool)}
       </Button>
     </div>
   );
+}
+
+function approveLabel(tool: string): string {
+  if (tool === "send_email") return "Approve and send";
+  if (tool === OFFICIAL_KIND) return "Approve: make it official";
+  return "Approve";
 }
 
 function ArgumentList({ rows, edited }: { rows: NonNullable<ReturnType<typeof argumentRows>>; edited: boolean }) {

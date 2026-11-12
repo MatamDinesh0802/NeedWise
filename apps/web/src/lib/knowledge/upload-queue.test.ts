@@ -19,6 +19,12 @@ const doc = (name: string): KnowledgeDocument => ({
   size_bytes: 10,
   version: 1,
   updated_at: "2026-11-04T06:00:00Z",
+  owner: null,
+  reviewed_at: null,
+  reviewed_by: null,
+  next_review_at: null,
+  review_overdue: false,
+  official_request: null,
 });
 
 const file = (name: string, size = 100): FileLike => ({ name, size });
