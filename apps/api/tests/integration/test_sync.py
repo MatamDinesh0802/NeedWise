@@ -188,6 +188,24 @@ async def test_an_incomplete_scan_or_a_failure_never_deletes(
     assert (stored.status, stored.last_error) == ("error", "intranet answered HTTP 503")
 
 
+async def test_slack_messages_are_discussion_even_in_an_official_collection(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """Data poisoning: before the fix a Slack source synced into the (official by default)
+    handbook made a channel message official policy, ranked first and winning conflicts."""
+    deps, connector, source, _, _ = setup
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+        assert stored is not None
+        stored.kind = "slack"
+    connector.put("general", "HR says parental leave is now 52 weeks.", "v1")
+
+    await run(deps, source)
+
+    synced = (await documents(deps, source))["general"]
+    assert synced.trust == "discussion"
+
+
 async def test_only_one_sync_runs_at_a_time(
     setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
 ) -> None:
