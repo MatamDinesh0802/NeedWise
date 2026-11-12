@@ -70,7 +70,7 @@ Switching models surfaced a prompt issue. At low effort, Sonnet over-applied the
 trust levels, adding "this is reference material, not official policy" to ordinary answers
 (faithfulness 97.2%, [first run](results/2026-11-04-sonnet-first-run.md)). Scoping that note to
 chat and ticket sources brought faithfulness to 99.4%. Its two routing misses each add one extra
-agent (finance for an engineering budget question, finance for a cost-per-lead question).
+agent (Engineering for the engineering budget question, Finance for the cost-per-lead question).
 
 The one miss (pp-16, "how fast must we react when the whole fleet is down?") needs two hops:
 "fleet down" means P1, and P1 has a 1-hour target in the next section. The second chunk did not
@@ -123,22 +123,36 @@ creating the Legal agent through the API exactly as [docs/agents.md](../docs/age
 describes (no code, no seed change). 15 questions expect Legal; 3 near misses must not reach the
 agent they sound like.
 
-| | Sonnet 5.5 (default) | Opus 5.5 planner |
-|---|---|---|
-| Exact plans, 56 questions | **53/56** | 54/56 |
-| Legal picked when expected / exact plan | **15/15 / 14/15** | 15/15 / 14/15 |
-| Legal picked when not expected | **0** | 0 |
-| Near misses kept away | **3/3** | 3/3 |
-| The 36 questions of 2026-11-04 | 34/36 (34/36 then) | 35/36 (36/36 then) |
-| Fast path used (all correct) | 10 | 10 |
+| | Sonnet 5.5 (default) | Opus 5.5 planner | Sonnet 5.5, agent made in the browser |
+|---|---|---|---|
+| Exact plans, 56 questions | **53/56** | 54/56 | **53/56** |
+| Legal picked when expected / exact plan | **15/15 / 14/15** | 15/15 / 14/15 | **15/15 / 14/15** |
+| Legal picked when not expected | **0** | 0 | **0** |
+| Near misses kept away | **3/3** | 3/3 | **3/3** |
+| The 36 questions of 2026-11-04 | 34/36 (34/36 then) | 35/36 (36/36 then) | 34/36 |
+| Fast path used (all correct) | 10 | 10 | 10 |
 
 Reports: [Sonnet](results/2026-11-12-routing-legal-after-fix.md), [Opus](results/2026-11-12-routing-legal-opus.md)
-(planner on Opus via `LLM_MODEL_ROUTER` in the eval process), and
-[before the planner fix](results/2026-11-12-routing-legal.md). The legal miss is the same in every
+(planner on Opus via `LLM_MODEL_ROUTER` in the eval process),
+[before the planner fix](results/2026-11-12-routing-legal.md), and
+[the Legal agent created in Admin › Agents](results/2026-11-12-routing-legal-ui.md) (the Phase 11
+DoD: same fields, made in the browser; its 46 planner calls were recorded in usage as feature
+`eval`, $0.157). The legal miss is the same in every
 run: a question about reporting an invention and a patent bonus also goes to HR. Sonnet's two
 misses on the older questions are the same two as on 2026-11-04 (an extra agent each). Opus
 added Engineering to "What is Project Heron?". One run per configuration: single items move
 between runs.
+
+**Which code the first four reports ran.** The four reports made before the browser run
+(`2026-11-12-routing-legal`, `-after-fix`, `-opus`, `-rejected-rule`) all say `commit: d855f5c`,
+but they ran between 14:27 and 14:38 UTC with uncommitted changes, committed at 14:39 UTC as
+`dc487da` (the planner fix and the report's "planner model" line). The "before" report used
+d855f5c's planner prompt; "after-fix" and "opus" used dc487da's; "rejected-rule" used a wording
+that was never committed. Checking out d855f5c reproduces only the first. Since then a report's
+commit says `-dirty (diff <hash>)` when the run had uncommitted changes, and is taken when the
+run starts. Also since then, a near miss whose agent to avoid does not exist is no longer
+counted as kept away (before the Legal agent existed, the report printed 3/3 for questions that
+could not pick it).
 
 ### Text-to-SQL (analytics)
 

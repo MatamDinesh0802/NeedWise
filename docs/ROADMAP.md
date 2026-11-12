@@ -333,7 +333,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #11 — "Letting an LLM write SQL against company data, safely."**
 
-### Phase 11 — Admin, governance and usage analytics (v0.11) 🚧 Built and merged; the DoD is measured through the API (a Legal agent made from configuration routes 15/15), and the browser walkthrough is pending
+### Phase 11 — Admin, governance and usage analytics (v0.11) ✅ Built and merged; the DoD is measured with the Legal agent created in the browser (routes 15/15, 53/56 overall); the review findings are fixed
 
 **Goal:** organizations can run WorkMind themselves: configure, control and account for it.
 
@@ -355,12 +355,17 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >   it runs), limits, numbered versions with diff and restore, and a test console that routes
 >   and answers with an unsaved draft. A Legal & Contracts collection (10 documents) and 15
 >   legal routing questions are seeded; the Legal agent itself is not.
-> - **DoD, measured through the API:** the Legal agent created as docs/agents.md describes (no
->   code) is picked for 15 of 15 legal questions (14 exact plans) and for none it should not
->   be, 53/56 overall with Claude Sonnet 5.5, 54/56 with Opus 5.5 planning
->   ([evals/README.md](../evals/README.md#routing-with-an-agent-made-from-configuration-phase-11)).
->   The run caught a planner rule that let a new agent change an unrelated plan; fixed. Creating
->   the agent in the browser is still to be recorded.
+> - **DoD, measured:** `erin@acme.test` created the Legal agent in Admin › Agents (no code, the
+>   fields docs/agents.md gives; the editor suggested the key `legal-agent`, changed by hand to
+>   `legal`, and now suggests `legal`). Against that agent the routing evaluation picks Legal for
+>   15 of 15 legal questions (14 exact plans) and for none it should not, keeps 3/3 near misses
+>   away, and gets 53/56 plans exactly right with Claude Sonnet 5.5
+>   ([report](../evals/results/2026-11-12-routing-legal-ui.md)): the same as the agent made
+>   through the API earlier (54/56 with Opus 5.5 planning). The three misses each add one agent
+>   (patent bonus: Legal and HR; engineering budget: Engineering and Finance; cost per lead:
+>   Finance and Marketing). One run per configuration. Its 46 planner calls were recorded in usage
+>   as feature `eval` ($0.157). The first API run caught a planner rule that let a new agent change
+>   an unrelated plan; fixed.
 > - **Models ([docs/models.md](models.md)):** providers with encrypted bring-your-own keys, a
 >   catalog with prices, a model per role and the data policy, resolved per organization for
 >   every model call. Tested with scripted models; no real provider was called through a tenant
@@ -370,16 +375,19 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >   the agent, the feature and the record; costs from the catalog's prices; the Usage page,
 >   Admin › Budgets and "Your usage this month" on the Overview; organization budgets, personal
 >   and default caps that warn or block (429 `budget_exceeded`, the chat run's error event, or
->   an MCP tool error), checked before every model call; `wm usage backfill` for older answers.
+>   an MCP tool error), checked before every model call, including every turn of a tool loop
+>   (fixed 2026-11-12: a loop was checked once); `wm usage backfill` for older answers.
 >   On the running stack, one real Claude Sonnet 5.5 answer was recorded as one event with the
 >   provider's tokens and the right cost, and the backfill imported 33 older records (21 chat
 >   answers, 10 Insights answers, 2 meetings). Failed and stopped calls are tested with scripted
 >   models only.
 > - **Knowledge governance and the audit explorer ([docs/governance.md](governance.md)):**
 >   document owners, review cycles with a daily reminder (a task and a notification, once per
->   cycle), official status only through an approval (never self-approved; demotion immediate
->   and audited), a governance overview for admins and collection owners, "Review overdue" on
->   cited official documents, and audit filters, cursor paging and a CSV export. All Community.
+>   cycle, following the document to a new owner), official status only through an approval
+>   for one version of the content (never self-approved, only by people who can read the
+>   collection; new content ends official status; demotion immediate and audited), a
+>   governance overview for admins and collection owners, "Review overdue" on cited official
+>   documents, and audit filters, cursor paging and a CSV export. All Community.
 >   On the running stack, through the API: an overdue official source was flagged in a real
 >   answer, and an official-status request was refused when repeated, rejected by an admin and
 >   superseded for the other approver.
@@ -388,14 +396,28 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >   and plug in through the registry: department budgets, the chargeback CSV, retention
 >   policies (with a preview of a draft and a typed confirmation to run) and the export of the
 >   audit hash chain for a SIEM. Without a license they answer `402 enterprise_feature`.
-> - **Gates on the merged `main`:** 1098 backend tests (unit, integration and `ee/`), 1013 web
->   tests, `pyright` and `ruff` clean, `pnpm build`; migrations 0012 → 0018 → 0012 → 0018 on a
->   fresh database with no model drift.
-> - **Not done:** the browser walkthrough of the Phase 11 screens against the running stack
->   (they are tested with vitest and mocked APIs); a reminder sent by the daily task on the
->   running stack (it first runs a day after beat starts); review escalation, legal hold and
->   retention of documents. DLP, permission sync, SCIM and the other paid features of §5 are
->   not built and not part of this phase.
+> - **Review and browser walkthrough (2026-11-12):** a security review and a walkthrough of the
+>   Phase 11 screens in a browser found, among others: an editor could replace an official
+>   document's content and keep its official status and review; official-status requests went
+>   to admins who could not open the collection (and showed them its title); requests and
+>   review reminders stayed with former owners; tool loops were budget-checked once; a budget
+>   crossed mid-answer showed only "This answer failed"; rejections were audited as
+>   `approval.rejectd`; the audit explorer ignored its URL after client-side navigation; two
+>   tables widened the page at 1280 px. All of these are fixed with regression tests (the
+>   audit-URL and table-width fixes were checked in headless Chromium, since the web tests run
+>   without a DOM), plus smaller ones (a failed agent's raw provider error shown to the asker,
+>   official decisions with access tokens, budgets below $0.0001, the default cap's warning
+>   level, second-department budgets shown as limiting, weekly charts without empty weeks,
+>   ranges over 400 days, an edition request failure shown as "not licensed", the agent key
+>   suggestion, review tasks without a link, empty conversations left by refused questions).
+>   Not changed: the agent editor's older Restricted badge contrast (3.19:1, from Phase 4).
+> - **Gates on `main` after the fixes:** 1115 backend tests (852 unit, the rest integration and `ee/`),
+>   1023 web tests, `pyright` and `ruff` clean, `pnpm build`; migration 0019 (the reason a failed
+>   answer failed) up, down and up again with `alembic check` clean.
+> - **Not done:** a reminder sent by the daily task on the running stack (it first runs a day
+>   after beat starts); review escalation, legal hold and retention of documents. DLP,
+>   permission sync, SCIM and the other paid features of §5 are not built and not part of this
+>   phase.
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 

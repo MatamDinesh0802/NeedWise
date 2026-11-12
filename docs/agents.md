@@ -10,10 +10,11 @@ Design: [ARCHITECTURE section 12](ARCHITECTURE.md#12-agent-orchestration).
 Built (in `apps/api/src/workmind/modules/agents/`, `api/v1/agents.py`, migration `0013`, and
 `apps/web/src/components/admin/agent-*.tsx`): everything on this page. The tests use a
 scripted model (`tests/fakes.py`). **Measured** on 2026-11-12 with Claude Sonnet 5.5 planning:
-with the Legal agent created as described [below](#create-the-legal-agent-step-by-step) (through
-the API, with exactly these fields), the routing evaluation picks it for 15 of 15 legal
-questions (14 with exactly the expected agents), never picks it for a question that does not
-need it, and gets 53 of 56 questions exactly right ([results](#measured-routing-with-the-legal-agent)).
+with the Legal agent created as described [below](#create-the-legal-agent-step-by-step), first
+through the API and then in the browser (Admin › Agents, no code), the routing evaluation picks
+it for 15 of 15 legal questions (14 with exactly the expected agents), never picks it for a
+question that does not need it, and gets 53 of 56 questions exactly right, the same numbers
+both times ([results](#measured-routing-with-the-legal-agent)).
 See [Not built and not measured](#not-built-and-not-measured).
 
 ## Where agents run
@@ -177,7 +178,7 @@ seeded**: this is the Phase 11 check that a new agent needs no code.
 
    | Field | Value |
    |---|---|
-   | Name | `Legal agent` (the key follows: `legal`) |
+   | Name | `Legal agent` (the key follows: `legal`; a trailing "agent" is left out of the suggested key. Before 2026-11-12 the editor suggested `legal-agent`: check the **Key** field, the evaluation looks for `legal`) |
    | Description | `Contracts and compliance: who may sign which contract and up to what value (the signature authority matrix), NDAs and when the standard NDA needs no legal review, supplier contract reviews, data processing agreements and GDPR, the standard customer terms (payment terms, liability cap, warranty), export control and sanctions for robot shipments, records retention and litigation holds, IP and invention assignment, and anti-bribery rules for gifts and hospitality to customers and public officials. Not for employment contracts, probation, leave or pay (HR), or a customer's renewal date or deal status (Sales).` |
    | Collections | Legal & Contracts |
    | Example questions | `Who signs a customer contract worth more than one million euros?` · `When can I sign an NDA without a legal review?` · `Does a supplier that processes personal data need a DPA?` · `Which countries can't we ship robots to?` · `What are the rules for gifts to public officials?` |
@@ -224,6 +225,7 @@ evaluation ran against the seeded stack (56 questions, 3 at a time, fast path on
 | Before the planner fix | Sonnet 5.5 | 53/56 | 15/15 / 14/15 | 3/3 | [`2026-11-12-routing-legal`](../evals/results/2026-11-12-routing-legal.md) |
 | **After the planner fix** | **Sonnet 5.5** | **53/56** | **15/15 / 14/15** | **3/3** | [`2026-11-12-routing-legal-after-fix`](../evals/results/2026-11-12-routing-legal-after-fix.md) |
 | After the fix | Opus 5.5 | 54/56 | 15/15 / 14/15 | 3/3 | [`2026-11-12-routing-legal-opus`](../evals/results/2026-11-12-routing-legal-opus.md) |
+| **Agent created in the browser** | **Sonnet 5.5** | **53/56** | **15/15 / 14/15** | **3/3** | [`2026-11-12-routing-legal-ui`](../evals/results/2026-11-12-routing-legal-ui.md) |
 
 - **The miss on legal questions** is the same in all three runs: *"I came up with a new charging
   technique at work. Do I need to report it, and is there a bonus if it gets patented?"* goes to
@@ -247,7 +249,22 @@ evaluation ran against the seeded stack (56 questions, 3 at a time, fast path on
   it was not kept. The dataset was not changed.
 - Planner calls are not deterministic: one run moves single items, as the 2026-11-04 runs did.
 
-The API-made Legal agent was deleted afterwards, so that it can be created again in the UI.
+The API-made Legal agent was deleted afterwards, so that it could be created again in the UI.
+
+**Created in the browser (the Phase 11 DoD).** Later on 2026-11-12 `erin@acme.test` created the
+Legal agent in **Admin › Agents › New agent** with the fields of step 2, tried it in the test
+console before saving, and saved it (the browser walkthrough also changed a field and restored
+version 1, so it is at version 3 with the same content). The editor suggested the key
+`legal-agent`; it was changed to `legal` by hand (the suggestion is fixed now). The routing
+evaluation against that agent
+([`2026-11-12-routing-legal-ui`](../evals/results/2026-11-12-routing-legal-ui.md), commit
+`d43225e`, Sonnet 5.5 planner, 3 at a time) gave the same result as the API-made agent: 53/56
+exact plans, Legal picked for 15/15 legal questions with 14 exact plans, never picked when not
+expected, 3/3 near misses kept away from Legal. The three wrong plans are the same three: the
+invention and patent-bonus question (Legal and HR), the engineering budget (Engineering and
+Finance) and cost per lead (Finance and Marketing). 10 questions took the fast path (all
+correct); the other 46 each made one planner call, and all 46 were recorded in usage as feature
+`eval` with no person: 57,069 input and 4,245 output tokens, $0.157.
 
 ## The routing dataset
 
