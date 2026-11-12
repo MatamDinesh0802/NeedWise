@@ -73,8 +73,24 @@ const catalog: ModelCatalog = {
     { id: "system:claude-haiku", provider_id: "system", name: "claude-haiku", label: "Claude Haiku", local: false, input_usd_per_mtok: 1, output_usd_per_mtok: 5, enabled: false },
     { id: "p-off:llama", provider_id: "p-off", name: "llama", label: "Llama", local: true, input_usd_per_mtok: null, output_usd_per_mtok: null, enabled: true },
   ],
-  roles: { agent: "system:claude-sonnet-5-5" },
+  roles: {
+    answer: "system:claude-sonnet-5-5",
+    router: "system:claude-sonnet-5-5",
+    judge: "system:claude-sonnet-5-5",
+    generator: "system:claude-sonnet-5-5",
+    agent: "system:claude-sonnet-5-5",
+  },
   policy: { max_external_sensitivity: "confidential", local_model: "p-local:qwen3:8b" },
+  defaults: {
+    roles: {
+      answer: "system:claude-sonnet-5-5",
+      router: "system:claude-sonnet-5-5",
+      judge: "system:claude-sonnet-5-5",
+      generator: "system:claude-sonnet-5-5",
+      agent: "system:claude-sonnet-5-5",
+    },
+    policy: { max_external_sensitivity: "confidential", local_model: null },
+  },
 };
 
 describe("key suggestion", () => {

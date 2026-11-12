@@ -394,9 +394,10 @@ function DefinitionFields({
   const code = errorMessage(error).code;
   const keyError = code === "slug_taken" ? "An agent with this key already exists." : (server.key ?? null);
   const toolError = code === "tool_not_allowed" || code === "unknown_tool" ? errorMessage(error).description : null;
+  const modelError = code === "unknown_model" || code === "model_disabled" ? errorMessage(error).description : null;
   const shown = (field: keyof typeof errors) => (showErrors ? (errors[field] ?? null) : null);
   const patch = (change: Partial<AgentForm>) => setForm((f) => ({ ...f, ...change }));
-  const handled = keyError || toolError || code === "unknown_collection";
+  const handled = keyError || toolError || modelError || code === "unknown_collection";
 
   return (
     <div className="flex flex-col gap-4">
@@ -542,11 +543,12 @@ function DefinitionFields({
         label="Model"
         hint={
           catalog
-            ? "Its own model, or the default the deployment uses for agents. Planning and the final answer keep their own models."
+            ? "Its own model, or the model Admin › Models sets for agents. Planning and the final answer keep their own models."
             : catalogFailed
               ? "The model catalog could not be loaded, so only the default is offered."
               : "This deployment has no model catalog: agents use the default model for their role."
         }
+        error={modelError}
       >
         {({ id, describedBy }) => (
           <SimpleSelect

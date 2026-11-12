@@ -5,6 +5,7 @@
  */
 
 import { ApiError, apiJson } from "@/lib/api";
+import { modelsKey, type ModelCatalog } from "@/lib/admin/models";
 import { isValidSlug, suggestSlug } from "@/lib/slug";
 
 export interface Agent {
@@ -165,39 +166,12 @@ export const agentsKey = "admin/agents";
 export const agentToolsKey = "admin/tools";
 export const agentVersionsKey = (key: string) => `admin/agents/${key}/versions`;
 
-// --- Model catalog (GET /api/v1/admin/models, built by the models branch) -------------------
+// --- Model catalog (GET /api/v1/admin/models; types and query key from Admin > Models) ------
 
-export interface CatalogModel {
-  id: string;
-  provider_id: string;
-  name: string;
-  label: string;
-  local: boolean;
-  input_usd_per_mtok: number | null;
-  output_usd_per_mtok: number | null;
-  enabled: boolean;
-}
+export type { ModelCatalog };
 
-export interface CatalogProvider {
-  id: string;
-  name: string;
-  kind: string;
-  base_url: string | null;
-  local: boolean;
-  has_key: boolean;
-  key_hint: string | null;
-  enabled: boolean;
-  system: boolean;
-}
-
-export interface ModelCatalog {
-  providers: CatalogProvider[];
-  models: CatalogModel[];
-  roles: Partial<Record<"answer" | "router" | "judge" | "generator" | "agent", string>>;
-  policy?: { max_external_sensitivity: string; local_model: string | null };
-}
-
-export const modelCatalogKey = "admin/models";
+/** The same query as Admin > Models, so a model added there shows up here. */
+export const modelCatalogKey = modelsKey;
 
 /** The tenant's model catalog, or null where this deployment has none (404). */
 export async function fetchModelCatalog(): Promise<ModelCatalog | null> {
