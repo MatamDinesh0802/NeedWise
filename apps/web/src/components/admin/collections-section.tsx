@@ -4,6 +4,7 @@ import { Info, LibraryBig, Plus } from "lucide-react";
 import { useState } from "react";
 
 import { EMPTY_NAME_SLUG, NameSlugFields, nameSlugErrors, type NameSlugValue } from "@/components/admin/name-slug-fields";
+import { PersonPicker } from "@/components/admin/person-picker";
 import { SharingEditor } from "@/components/admin/sharing-editor";
 import { Field, SimpleSelect } from "@/components/data/form";
 import { EmptyState, ErrorAlert, RefreshingHint, TableSkeleton } from "@/components/data/states";
@@ -19,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { useDirectory } from "@/hooks/use-directory";
@@ -33,6 +35,7 @@ import {
   type Trust,
 } from "@/lib/knowledge/api";
 import { SCOPE_LABELS, SENSITIVITY_LABELS, TRUST_LABELS } from "@/lib/knowledge/labels";
+import { intervalError, intervalText, parseInterval } from "@/lib/knowledge/review-interval";
 import {
   buildSharingPayload,
   grantsToEntries,
@@ -62,6 +65,7 @@ function Collections({ me }: { me: Me }) {
   const dir = useDirectory(me.tenant);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminCollection | null>(null);
+  const [governing, setGoverning] = useState<AdminCollection | null>(null);
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="collections-heading">
@@ -114,6 +118,7 @@ function Collections({ me }: { me: Me }) {
               <TableHead className="text-right">Docs</TableHead>
               <TableHead>Can view</TableHead>
               <TableHead>Can edit</TableHead>
+              <TableHead>Owner and reviews</TableHead>
               <TableHead className="w-28">
                 <span className="sr-only">Actions</span>
               </TableHead>
@@ -145,10 +150,19 @@ function Collections({ me }: { me: Me }) {
                   <TableCell className="max-w-72">
                     <PrincipalList principals={editors} directory={dir.directory} loading={dir.loading} empty="Nobody" />
                   </TableCell>
+                  <TableCell className="max-w-48 text-sm">
+                    {c.owner ? <p>{c.owner.display_name}</p> : <p className="text-muted-foreground">No owner</p>}
+                    <p className="text-xs text-muted-foreground">{intervalText(c.review_interval_days)}</p>
+                  </TableCell>
                   <TableCell>
-                    <Button variant="outline" size="sm" onClick={() => setEditing(c)}>
-                      Edit sharing
-                    </Button>
+                    <div className="flex flex-col items-stretch gap-1.5">
+                      <Button variant="outline" size="sm" onClick={() => setEditing(c)}>
+                        Edit sharing
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setGoverning(c)} aria-label={`Owner and reviews of ${c.name}`}>
+                        Owner and reviews
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -166,6 +180,12 @@ function Collections({ me }: { me: Me }) {
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           {editing ? <EditSharingForm key={editing.id} collection={editing} dir={dir} onDone={() => setEditing(null)} /> : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={governing !== null} onOpenChange={(open) => !open && setGoverning(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          {governing ? <EditGovernanceForm key={governing.id} collection={governing} onDone={() => setGoverning(null)} /> : null}
         </DialogContent>
       </Dialog>
     </section>
@@ -419,6 +439,96 @@ function EditSharingForm({ collection, dir, onDone }: { collection: AdminCollect
         </Button>
         <Button type="submit" disabled={pending || problems.length > 0}>
           {pending ? "Saving…" : "Save sharing"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+/** The collection's owner (approves official status, sees its governance overview) and review interval. */
+export function EditGovernanceForm({ collection, onDone }: { collection: AdminCollection; onDone: () => void }) {
+  const [owner, setOwner] = useState(collection.owner);
+  const [days, setDays] = useState(collection.review_interval_days?.toString() ?? "");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const problem = intervalError(days);
+
+  async function save() {
+    if (problem) return;
+    setPending(true);
+    setError(null);
+    try {
+      await knowledgeApi.updateGovernance(collection.id, { owner_id: owner?.id ?? null, review_interval_days: parseInterval(days) });
+      await refreshCollections();
+      onDone();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <form
+      className="contents"
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle>Owner and reviews: {collection.name}</DialogTitle>
+        <DialogDescription>
+          The owner approves requests to make documents official and sees this collection&apos;s governance overview. The
+          owner can also view and edit the collection.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="flex flex-col gap-2">
+        <p className="text-sm font-medium">Owner</p>
+        {owner ? (
+          <div className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm">
+            <span>{owner.display_name}</span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setOwner(null)} disabled={pending}>
+              Remove
+            </Button>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No owner: administrators approve official status.</p>
+        )}
+        <PersonPicker
+          label="Find the owner"
+          exclude={new Set(owner ? [owner.id] : [])}
+          disabled={pending}
+          onPick={(user) => setOwner({ id: user.id, display_name: user.display_name })}
+        />
+      </div>
+      <Field
+        label="Review every (days)"
+        hint="Each document is due for review this many days after its last review. Leave empty for no reviews. Changing it reschedules every document."
+        error={problem}
+      >
+        {({ id, describedBy, invalid }) => (
+          <Input
+            id={id}
+            inputMode="numeric"
+            value={days}
+            onChange={(e) => setDays(e.target.value)}
+            aria-describedby={describedBy}
+            aria-invalid={invalid || undefined}
+            disabled={pending}
+            placeholder="e.g. 365"
+            className="max-w-40"
+          />
+        )}
+      </Field>
+      {error ? <ErrorAlert error={error} /> : null}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onDone} disabled={pending}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={pending || problem !== null}>
+          {pending ? "Saving…" : "Save"}
         </Button>
       </DialogFooter>
     </form>
