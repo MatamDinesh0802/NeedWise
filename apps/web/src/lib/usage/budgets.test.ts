@@ -31,13 +31,13 @@ describe("formFromBudgets", () => {
       warnPercent: "80",
       action: "warn",
     });
-    expect(form.userDefault).toEqual({ enabled: true, period: "month", limit: "25", action: "block" });
+    expect(form.userDefault).toEqual({ enabled: true, period: "month", limit: "25", warnPercent: "80", action: "block" });
   });
 
   it("starts the default cap switched off when there is none", () => {
     expect(formFromBudgets({ budgets: [], user_default: null })).toEqual({
       rows: [],
-      userDefault: { enabled: false, period: "month", limit: "", action: "block" },
+      userDefault: { enabled: false, period: "month", limit: "", warnPercent: "80", action: "block" },
     });
   });
 });
@@ -110,7 +110,7 @@ describe("toUpdate", () => {
         { scope: "department", subject_id: "d-finance", period: "month", limit_usd: 100, warn_at: 0.8, action: "warn" },
         { scope: "user", subject_id: "0190f2c4-0000-7000-8000-000000000001", period: "day", limit_usd: 2, warn_at: 0.8, action: "block" },
       ],
-      user_default: { period: "month", limit_usd: 25, action: "block" },
+      user_default: { period: "month", limit_usd: 25, warn_at: 0.8, action: "block" },
     });
     expect(order).toEqual(["b-tenant", "b-finance", "b-alice"]);
   });
@@ -119,6 +119,14 @@ describe("toUpdate", () => {
     const { body, order } = toUpdate(formFromBudgets(adminBudgets), { includeDepartments: false });
     expect(body.budgets.map((b) => b.scope)).toEqual(["tenant", "user"]);
     expect(order).toEqual(["b-tenant", "b-alice"]);
+  });
+
+  it("keeps the default cap's warning level: it is read, shown and sent back", () => {
+    const saved = { budgets: [], user_default: { period: "month" as const, limit_usd: 5, action: "block" as const, warn_at: 0.5 } };
+    const form = formFromBudgets(saved);
+    expect(form.userDefault.warnPercent).toBe("50");
+    expect(toUpdate(form).body.user_default).toEqual({ period: "month", limit_usd: 5, warn_at: 0.5, action: "block" });
+    expect(validateBudgets({ ...form, userDefault: { ...form.userDefault, warnPercent: "0" } })).toEqual({ "default.warn": WARN_ERROR });
   });
 
   it("sends no default cap when it is switched off", () => {

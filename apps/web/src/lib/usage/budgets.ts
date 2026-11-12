@@ -54,6 +54,7 @@ export interface DefaultCapForm {
   enabled: boolean;
   period: BudgetPeriod;
   limit: string;
+  warnPercent: string;
   action: BudgetAction;
 }
 
@@ -97,8 +98,14 @@ export function formFromBudgets(data: AdminBudgets): BudgetsForm {
   return {
     rows,
     userDefault: cap
-      ? { enabled: true, period: cap.period, limit: amount(cap.limit_usd), action: cap.action }
-      : { enabled: false, period: "month", limit: "", action: "block" },
+      ? {
+          enabled: true,
+          period: cap.period,
+          limit: amount(cap.limit_usd),
+          warnPercent: String(Math.round((cap.warn_at ?? DEFAULT_WARN_PERCENT / 100) * 100)),
+          action: cap.action,
+        }
+      : { enabled: false, period: "month", limit: "", warnPercent: String(DEFAULT_WARN_PERCENT), action: "block" },
   };
 }
 
@@ -151,6 +158,7 @@ export function validateBudgets(form: BudgetsForm): FormErrors {
     seen.add(identity);
   }
   if (form.userDefault.enabled && parseLimit(form.userDefault.limit) === null) errors["default.limit"] = LIMIT_ERROR;
+  if (form.userDefault.enabled && parseWarn(form.userDefault.warnPercent) === null) errors["default.warn"] = WARN_ERROR;
   return errors;
 }
 
@@ -176,7 +184,16 @@ export function toUpdate(form: BudgetsForm, { includeDepartments = true }: { inc
   return {
     body: {
       budgets,
-      user_default: cap.enabled ? { period: cap.period, limit_usd: parseLimit(cap.limit) ?? 0, action: cap.action } : null,
+      // PUT replaces everything: the default cap's warning level is always sent, so saving
+      // another budget never resets it.
+      user_default: cap.enabled
+        ? {
+            period: cap.period,
+            limit_usd: parseLimit(cap.limit) ?? 0,
+            warn_at: parseWarn(cap.warnPercent) ?? DEFAULT_WARN_PERCENT / 100,
+            action: cap.action,
+          }
+        : null,
     },
     order: rows.map((row) => row.key),
   };
@@ -213,6 +230,8 @@ export function problemsFromError(error: unknown, order: readonly string[]): { f
       fields[`${order[loc[1]]}.${FIELD_FOR[loc[2]]}`] = message;
     } else if (loc[0] === "user_default" && loc[1] === "limit_usd") {
       fields["default.limit"] = message;
+    } else if (loc[0] === "user_default" && loc[1] === "warn_at") {
+      fields["default.warn"] = message;
     } else {
       general.push(loc.length > 0 ? `${loc.join(" › ")}: ${message}` : message);
     }

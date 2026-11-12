@@ -63,6 +63,9 @@ describe("rangeError", () => {
     [{ from: "2026-11-31", to: "2026-12-01" }, "Enter dates as YYYY-MM-DD."],
     [{ from: "2026-11-05", to: "2026-11-01" }, "The end date is before the start date."],
     [{ from: "2026-11-01", to: "2026-11-01" }, null],
+    // The API refuses more than 400 days: say so before asking it.
+    [{ from: "2025-01-01", to: "2026-11-12" }, "Choose at most 400 days."],
+    [{ from: "2025-10-09", to: "2026-11-12" }, null],
   ])("%j → %s", (range, message) => {
     expect(rangeError(range)).toBe(message);
   });
@@ -82,8 +85,12 @@ describe("expectedPeriods", () => {
     expect(expectedPeriods({ from: "2026-10-15", to: "2027-01-02" }, "month")).toEqual(["2026-10-01", "2026-11-01", "2026-12-01", "2027-01-01"]);
   });
 
-  it("leaves weeks to the API", () => {
-    expect(expectedPeriods({ from: "2026-08-01", to: "2026-10-31" }, "week")).toBeNull();
+  it("lists every week from the Monday on or before the start, as the API counts weeks", () => {
+    const weeks = expectedPeriods({ from: "2026-08-01", to: "2026-11-12" }, "week")!;
+    expect(weeks).toHaveLength(16);
+    expect(weeks[0]).toBe("2026-07-27"); // Aug 1, 2026 is a Saturday
+    expect(weeks.at(-1)).toBe("2026-11-09");
+    expect(expectedPeriods({ from: "2026-11-09", to: "2026-11-09" }, "week")).toEqual(["2026-11-09"]);
     expect(expectedPeriods({ from: "2026-11-05", to: "2026-11-01" }, "day")).toBeNull();
   });
 });

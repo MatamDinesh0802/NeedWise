@@ -3,6 +3,7 @@
 import { Gem } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ErrorAlert } from "@/components/data/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,28 +23,41 @@ import {
  * explanation. Cosmetic: the API refuses unlicensed requests (402) on its own.
  */
 export function EnterpriseGate({ feature, children }: { feature: EnterpriseFeature; children: ReactNode }) {
-  const { edition, loading } = useEdition();
+  const { edition, loading, error, retry } = useEdition();
   return (
-    <EnterpriseGateView feature={feature} edition={edition} loading={loading}>
+    <EnterpriseGateView feature={feature} edition={edition} loading={loading} error={error} onRetry={retry}>
       {children}
     </EnterpriseGateView>
   );
 }
+
+/** The license could not be checked: say so, with a retry, never "this deployment doesn't have it". */
+export const EDITION_UNKNOWN = {
+  title: "Couldn't check the license",
+  description: "Whether this deployment includes this Enterprise feature is not known right now. Try again in a moment.",
+  code: null,
+};
 
 /** The gate without fetching: for tests and for pages that already have the edition. */
 export function EnterpriseGateView({
   feature,
   edition,
   loading = false,
+  error = null,
+  onRetry,
   children,
 }: {
   feature: EnterpriseFeature;
   edition: EditionInfo | null;
   loading?: boolean;
+  /** The edition request failed: the feature may well be licensed. */
+  error?: unknown;
+  onRetry?: () => void;
   children: ReactNode;
 }) {
   if (loading) return <Skeleton className="h-16 w-full" aria-busy="true" aria-label="Checking the license" />;
   if (hasFeature(edition, feature)) return <>{children}</>;
+  if (edition === null && error) return <ErrorAlert error={error} message={EDITION_UNKNOWN} onRetry={onRetry} className="sm:max-w-xl" />;
   return <EnterpriseNotice feature={feature} />;
 }
 

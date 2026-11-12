@@ -76,7 +76,7 @@ describe("the real usage API", () => {
         { scope: "tenant", subject_id: null, period: "month", limit_usd: 5, warn_at: 0.8, action: "block" },
         { scope: "user", subject_id: "u-bob", period: "day", limit_usd: 0.5, warn_at: 0.8, action: "block" },
       ],
-      user_default: { period: "month", limit_usd: 20, action: "warn" },
+      user_default: { period: "month", limit_usd: 20, warn_at: 0.8, action: "warn" },
     });
   });
 

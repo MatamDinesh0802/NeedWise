@@ -42,7 +42,7 @@ import { formatUsd, PERIOD_ADJECTIVES } from "@/lib/usage/format";
 /** Admin › Budgets: spending limits on model usage. The API enforces them; this edits them. */
 export function BudgetsSection() {
   const budgets = useApiQuery(usageKeys.budgets, usageApi.budgets);
-  const { edition, loading: editionLoading } = useEdition();
+  const { edition, loading: editionLoading, error: editionError, retry: retryEdition } = useEdition();
   return (
     <section className="flex flex-col gap-4" aria-labelledby="budgets-heading">
       <div>
@@ -61,7 +61,13 @@ export function BudgetsSection() {
       ) : budgets.state.status === "error" ? (
         <ErrorAlert error={budgets.state.error} onRetry={() => void budgets.refetch()} />
       ) : (
-        <BudgetsEditor saved={budgets.state.data} edition={edition} editionLoading={editionLoading} />
+        <BudgetsEditor
+          saved={budgets.state.data}
+          edition={edition}
+          editionLoading={editionLoading}
+          editionError={editionError}
+          onRetryEdition={retryEdition}
+        />
       )}
       <p className="text-xs text-muted-foreground">
         See what has been spent on the{" "}
@@ -81,10 +87,14 @@ export function BudgetsEditor({
   saved: initial,
   edition,
   editionLoading = false,
+  editionError = null,
+  onRetryEdition,
 }: {
   saved: AdminBudgets;
   edition: EditionInfo | null;
   editionLoading?: boolean;
+  editionError?: unknown;
+  onRetryEdition?: () => void;
 }) {
   const [saved, setSaved] = useState(initial);
   const [form, setForm] = useState<BudgetsForm>(() => formFromBudgets(initial));
@@ -171,7 +181,12 @@ export function BudgetsEditor({
       </Group>
 
       <Group icon={UserRound} title="Default cap per person" description="Applies to everyone who has no cap of their own below.">
-        <DefaultCapFields cap={form.userDefault} error={errors["default.limit"] ?? null} onChange={patchDefault} />
+        <DefaultCapFields
+          cap={form.userDefault}
+          error={errors["default.limit"] ?? null}
+          warnError={errors["default.warn"] ?? null}
+          onChange={patchDefault}
+        />
       </Group>
 
       <Group icon={UserRound} title="Caps for specific people" description="Replace the default cap for these people.">
@@ -194,7 +209,13 @@ export function BudgetsEditor({
         badge={<EnterpriseBadge feature="department_budgets" />}
         description="A limit on the usage of everyone in a department."
       >
-        <EnterpriseGateView feature="department_budgets" edition={edition} loading={editionLoading}>
+        <EnterpriseGateView
+          feature="department_budgets"
+          edition={edition}
+          loading={editionLoading}
+          error={editionError}
+          onRetry={onRetryEdition}
+        >
           {departmentRows.map((row) => (
             <RowFields key={row.key} row={row} title={row.subject?.name ?? "Choose a department"} errors={errors} status={row.id ? status.get(row.id) : undefined} onChange={patchRow} onRemove={removeRow} />
           ))}
@@ -397,7 +418,17 @@ export function RowFields({
   );
 }
 
-export function DefaultCapFields({ cap, error, onChange }: { cap: DefaultCapForm; error: string | null; onChange: (patch: Partial<DefaultCapForm>) => void }) {
+export function DefaultCapFields({
+  cap,
+  error,
+  warnError = null,
+  onChange,
+}: {
+  cap: DefaultCapForm;
+  error: string | null;
+  warnError?: string | null;
+  onChange: (patch: Partial<DefaultCapForm>) => void;
+}) {
   return (
     <div className="flex flex-col gap-3">
       <label className="flex w-fit items-center gap-2 text-sm">
@@ -413,6 +444,22 @@ export function DefaultCapFields({ cap, error, onChange }: { cap: DefaultCapForm
           </Field>
           <Field label="Period" className="max-w-xs">
             {({ id, describedBy }) => <SimpleSelect id={id} value={cap.period} onChange={(period) => onChange({ period })} options={PERIOD_OPTIONS} describedBy={describedBy} />}
+          </Field>
+          <Field label="Warn at (% of the limit)" error={warnError} className="w-44">
+            {({ id, describedBy, invalid }) => (
+              <Input
+                id={id}
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                value={cap.warnPercent}
+                onChange={(event) => onChange({ warnPercent: event.target.value })}
+                aria-describedby={describedBy}
+                aria-invalid={invalid || undefined}
+                className="w-24"
+              />
+            )}
           </Field>
           <Field label="When it is used up" hint={ACTION_HINTS[cap.action]} className="max-w-56">
             {({ id, describedBy }) => <SimpleSelect id={id} value={cap.action} onChange={(action) => onChange({ action })} options={ACTION_OPTIONS} describedBy={describedBy} />}

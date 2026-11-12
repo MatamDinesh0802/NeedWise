@@ -80,6 +80,12 @@ export interface BudgetStatus {
   status: BudgetState;
   /** ISO 8601 date-time. */
   resets_at: string;
+  /**
+   * Usage summary only: whether it limits the caller's own requests. A person in two departments
+   * sees both departments' budgets; only the one their usage counts for limits them. Missing
+   * from older API versions.
+   */
+  applies_to_me?: boolean;
 }
 
 export interface UsageSummary {
@@ -146,6 +152,8 @@ export interface UserDefaultCap {
   period: BudgetPeriod;
   limit_usd: number;
   action: BudgetAction;
+  /** 0–1. Missing from API versions before it was returned (they kept it, and used 0.8). */
+  warn_at?: number;
 }
 
 export interface AdminBudgets {

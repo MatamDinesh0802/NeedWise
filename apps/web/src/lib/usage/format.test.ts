@@ -175,4 +175,16 @@ describe("budgets", () => {
     const mine = budgetsForMe([tenantBudget, financeBudget, hr, aliceCap, other], manager);
     expect(mine.map((b) => b.id)).toEqual(["b-tenant", "b-hr", "b-alice"]);
   });
+
+  it("follows the API when it says which budgets limit the person (two departments, one counts)", () => {
+    const hr = { ...financeBudget, id: "b-hr", subject: { id: "d1", name: "People & HR" } };
+    const both = { ...manager, departments: [...manager.departments, { id: "d-finance", slug: "finance", name: "Finance", role: "member" as const }] };
+    const said = [
+      { ...tenantBudget, applies_to_me: true },
+      { ...financeBudget, applies_to_me: false },
+      { ...hr, applies_to_me: true },
+      { ...aliceCap, applies_to_me: true },
+    ];
+    expect(budgetsForMe(said, both).map((b) => b.id)).toEqual(["b-tenant", "b-hr", "b-alice"]);
+  });
 });

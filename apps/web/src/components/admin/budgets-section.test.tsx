@@ -79,12 +79,14 @@ describe("RowFields", () => {
 
 describe("DefaultCapFields", () => {
   it("hides the fields while the default cap is off, and says what that means", () => {
-    const off = renderToStaticMarkup(<DefaultCapFields cap={{ enabled: false, period: "month", limit: "", action: "block" }} error={null} onChange={() => {}} />);
+    const off = renderToStaticMarkup(<DefaultCapFields cap={{ enabled: false, period: "month", limit: "", warnPercent: "80", action: "block" }} error={null} onChange={() => {}} />);
     expect(off).toContain("No default cap");
     expect(off).not.toContain("Limit per person (USD)");
-    const on = renderToStaticMarkup(<DefaultCapFields cap={{ enabled: true, period: "day", limit: "5", action: "warn" }} error={null} onChange={() => {}} />);
+    const on = renderToStaticMarkup(<DefaultCapFields cap={{ enabled: true, period: "day", limit: "5", warnPercent: "50", action: "warn" }} error={null} onChange={() => {}} />);
     expect(on).toContain("Limit per person (USD)");
     expect(on).toContain('value="5"');
+    expect(on).toContain("Warn at (% of the limit)");
+    expect(on).toContain('value="50"');
     expect(on).toContain("Requests keep working; people are only told.");
   });
 });

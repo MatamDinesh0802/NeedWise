@@ -15,23 +15,28 @@ describe("costChart", () => {
     expect(data.series[0]).toMatchObject({ label: "Cost", slot: 1, values: [3.5, 4.25, 0, 6, 5] });
   });
 
-  it("keeps the API's weeks as they are", () => {
+  it("draws every week of the range, weeks without usage as zero", () => {
     const data = costChart({
       from: "2026-08-01",
-      to: "2026-10-31",
+      to: "2026-11-12",
       interval: "week",
       series: [
-        { period: "2026-08-10", cost_usd: 2, input_tokens: 0, output_tokens: 0, requests: 1 },
-        { period: "2026-08-03", cost_usd: 1, input_tokens: 0, output_tokens: 0, requests: 1 },
+        { period: "2026-11-09", cost_usd: 2, input_tokens: 0, output_tokens: 0, requests: 1 },
+        { period: "2026-11-02", cost_usd: 1, input_tokens: 0, output_tokens: 0, requests: 1 },
       ],
     })!;
-    expect(data.categories.map((c) => c.label)).toEqual(["Week of Aug 3", "Week of Aug 10"]);
-    expect(data.series[0].values).toEqual([1, 2]);
+    expect(data.categories).toHaveLength(16);
+    expect(data.categories[0].label).toBe("Week of Jul 27");
+    expect(data.categories.slice(-2).map((c) => c.label)).toEqual(["Week of Nov 2", "Week of Nov 9"]);
+    expect(data.series[0].values.slice(0, 3)).toEqual([0, 0, 0]);
+    expect(data.series[0].values.slice(-2)).toEqual([1, 2]);
     expect(data.xLabel).toBe("Week");
   });
 
-  it("has nothing to draw for weeks without data", () => {
-    expect(costChart({ from: "2026-08-01", to: "2026-10-31", interval: "week", series: [] })).toBeNull();
+  it("draws weeks without data at zero, like days and months", () => {
+    const data = costChart({ from: "2026-08-01", to: "2026-10-31", interval: "week", series: [] })!;
+    expect(data.categories).toHaveLength(14);
+    expect(new Set(data.series[0].values)).toEqual(new Set([0]));
   });
 
   it("fills whole months for a monthly chart", () => {

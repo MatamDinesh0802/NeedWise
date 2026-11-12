@@ -16,6 +16,20 @@ const enterprise: EditionInfo = {
 const secret = <p>Retention rules editor</p>;
 
 describe("EnterpriseGateView", () => {
+  it("says the license could not be checked, with a retry, when the edition request failed", () => {
+    const failed = new Error("network down");
+    const html = renderToStaticMarkup(
+      <EnterpriseGateView feature="retention_policies" edition={null} error={failed} onRetry={() => {}}>
+        {secret}
+      </EnterpriseGateView>,
+    );
+    expect(html).not.toContain("Retention rules editor");
+    expect(html).toContain("Couldn&#x27;t check the license");
+    expect(html).toContain("Retry");
+    expect(html).not.toContain("doesn&#x27;t have");
+  });
+
+
   it("shows its children when the feature is licensed", () => {
     const html = renderToStaticMarkup(
       <EnterpriseGateView feature="retention_policies" edition={enterprise}>

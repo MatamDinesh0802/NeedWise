@@ -238,15 +238,18 @@ export function sortBudgets<T extends Pick<BudgetStatus, "status" | "spent_usd" 
 }
 
 /**
- * The budgets that limit this person's own requests: the tenant's, their departments', and their
- * own cap. An admin's summary also lists everyone else's caps; those don't apply to them.
+ * The budgets that limit this person's own requests: the tenant's, the department their usage
+ * counts for, and their own cap. The API says which (`applies_to_me`); without it (older API
+ * versions) every department of theirs is assumed. An admin's summary also lists everyone
+ * else's caps; those don't apply to them.
  */
-export function budgetsForMe<T extends Pick<BudgetStatus, "scope" | "subject">>(
+export function budgetsForMe<T extends Pick<BudgetStatus, "scope" | "subject" | "applies_to_me">>(
   budgets: readonly T[],
   me: Pick<Me, "id" | "departments">,
 ): T[] {
   const departments = new Set(me.departments.map((d) => d.id));
   return budgets.filter((b) => {
+    if (typeof b.applies_to_me === "boolean") return b.applies_to_me;
     if (b.scope === "tenant") return true;
     if (b.scope === "department") return b.subject !== null && departments.has(b.subject.id);
     return b.subject === null || b.subject.id === me.id;

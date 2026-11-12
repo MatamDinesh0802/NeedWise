@@ -63,10 +63,14 @@ export function presetRange(preset: Exclude<RangePreset, "custom">, now: Date = 
 }
 
 /** Why a custom range can't be used, in words; null when it's fine. */
+/** The longest range the API reports on (MAX_RANGE_DAYS in api/v1/usage.py). */
+export const MAX_RANGE_DAYS = 400;
+
 export function rangeError(range: DateRange): string | null {
   if (!range.from || !range.to) return "Choose both a start and an end date.";
   if (!parseDay(range.from) || !parseDay(range.to)) return "Enter dates as YYYY-MM-DD.";
   if (range.to < range.from) return "The end date is before the start date.";
+  if (rangeDays(range) > MAX_RANGE_DAYS) return `Choose at most ${MAX_RANGE_DAYS} days.`;
   return null;
 }
 
@@ -84,13 +88,20 @@ export function intervalFor(range: DateRange): Interval {
 export const INTERVAL_NOUNS: Record<Interval, string> = { day: "day", week: "week", month: "month" };
 
 /**
- * Every period start in the range, for intervals whose boundaries are unambiguous (days and
- * calendar months). Weeks are left to the API: where a week starts is its choice.
+ * Every period start in the range, so periods without usage are drawn at $0. Weeks start on
+ * Monday (UTC), as the API counts them (PostgreSQL's date_trunc('week')); the first one may
+ * start before the range.
  */
 export function expectedPeriods(range: DateRange, interval: Interval): string[] | null {
   const days = rangeDays(range);
-  if (days === 0 || interval === "week") return null;
+  if (days === 0) return null;
   if (interval === "day") return Array.from({ length: days }, (_, i) => addDays(range.from, i));
+  if (interval === "week") {
+    const sinceMonday = (parseDay(range.from)!.getUTCDay() + 6) % 7;
+    const weeks: string[] = [];
+    for (let start = addDays(range.from, -sinceMonday); start <= range.to; start = addDays(start, 7)) weeks.push(start);
+    return weeks;
+  }
   const from = parseDay(range.from)!;
   const to = parseDay(range.to)!;
   const periods: string[] = [];
