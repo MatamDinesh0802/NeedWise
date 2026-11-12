@@ -54,6 +54,9 @@ Engineering…) handle department work. Actions that leave the system need human
   (median) and $0.026 per answer.
 - **Enterprise identity:** Keycloak SSO, company isolation enforced by PostgreSQL Row-Level
   Security, departments and nested groups, a hash-chained audit log, scoped access tokens.
+- **Knowledge with an owner and a review date.** Every document has an owner who is reminded
+  when its review is due; "official" (what answers prefer) needs a second person's approval;
+  the audit log can be filtered and exported ([docs/governance.md](docs/governance.md)).
 
 ## What makes it different
 

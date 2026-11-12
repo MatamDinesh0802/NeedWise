@@ -10,6 +10,7 @@ from workmind.api.v1 import (
     assistant,
     conversations,
     edition,
+    governance,
     knowledge,
     me,
     meetings,
@@ -28,6 +29,7 @@ router.include_router(me.router)
 router.include_router(admin.router)
 router.include_router(knowledge.router)
 router.include_router(knowledge.admin_router)
+router.include_router(governance.router)
 router.include_router(assistant.router)
 router.include_router(conversations.router)
 router.include_router(agents.router)

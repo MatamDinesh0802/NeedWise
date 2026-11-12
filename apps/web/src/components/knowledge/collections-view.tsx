@@ -1,15 +1,17 @@
 "use client";
 
-import { FileText, LibraryBig, PencilLine } from "lucide-react";
+import { BadgeCheck, FileText, LibraryBig, PencilLine } from "lucide-react";
 import Link from "next/link";
 
 import { SignedInGate } from "@/components/auth/signed-in-gate";
 import { EmptyState, ErrorAlert, RefreshingHint } from "@/components/data/states";
 import { ScopeBadge, SensitivityBadge, TrustBadge } from "@/components/knowledge/badges";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiQuery } from "@/hooks/use-api-query";
 import { knowledgeApi, knowledgeKeys, type Collection } from "@/lib/knowledge/api";
+import type { Me } from "@/lib/session";
 
 export function CollectionsView() {
   return (
@@ -20,12 +22,12 @@ export function CollectionsView() {
           Collections you can open. Answers only ever use documents from collections you have access to.
         </p>
       </header>
-      <SignedInGate purpose="see your organization's knowledge">{() => <CollectionGrid />}</SignedInGate>
+      <SignedInGate purpose="see your organization's knowledge">{(me) => <CollectionGrid me={me} />}</SignedInGate>
     </div>
   );
 }
 
-function CollectionGrid() {
+function CollectionGrid({ me }: { me: Me }) {
   const { state, refetch } = useApiQuery(knowledgeKeys.collections, knowledgeApi.listCollections);
 
   if (state.status === "loading") {
@@ -48,9 +50,17 @@ function CollectionGrid() {
     );
   }
 
+  // Collection owners (and admins) review their collections' governance.
+  const governs = me.org_role === "owner" || me.org_role === "admin" || state.data.items.some((c) => c.owner?.id === me.id);
   return (
     <>
       <RefreshingHint active={state.refreshing} />
+      {governs ? (
+        <Link href="/knowledge/governance" className={buttonVariants({ variant: "outline", size: "sm", className: "w-fit" })}>
+          <BadgeCheck data-icon="inline-start" aria-hidden="true" />
+          Governance: reviews, owners and official requests
+        </Link>
+      ) : null}
       <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {state.data.items.map((collection) => (
           <li key={collection.id}>
@@ -85,6 +95,7 @@ function CollectionCard({ collection }: { collection: Collection }) {
       {collection.description ? (
         <p className="line-clamp-2 text-sm text-muted-foreground">{collection.description}</p>
       ) : null}
+      {collection.owner ? <p className="text-xs text-muted-foreground">Owner: {collection.owner.display_name}</p> : null}
       <div className="relative z-10 mt-auto flex flex-wrap items-center gap-2 text-sm">
         <span className="mr-auto inline-flex items-center gap-1 text-muted-foreground">
           <FileText className="size-4" aria-hidden="true" />

@@ -15,6 +15,11 @@ export interface Grant {
   relation: "viewer" | "editor" | string;
 }
 
+export interface PersonRef {
+  id: string;
+  display_name: string;
+}
+
 export interface Collection {
   id: string;
   key: string;
@@ -25,6 +30,10 @@ export interface Collection {
   default_sensitivity: Sensitivity;
   document_count: number;
   can_edit: boolean;
+  /** Approves official status and sees the collection's governance overview. */
+  owner: PersonRef | null;
+  /** Documents are due for review this many days after their last review; null: never. */
+  review_interval_days: number | null;
 }
 
 export interface CollectionDetail extends Collection {
@@ -46,6 +55,21 @@ export interface KnowledgeDocument {
   size_bytes: number;
   version: number;
   updated_at: string;
+  /** Governance (docs/governance.md). */
+  owner: PersonRef | null;
+  reviewed_at: string | null;
+  reviewed_by: PersonRef | null;
+  next_review_at: string | null;
+  review_overdue: boolean;
+  official_request: OfficialRequest | null;
+}
+
+/** A pending request to make a document official. */
+export interface OfficialRequest {
+  requested_by: PersonRef | null;
+  requested_at: string;
+  note: string | null;
+  approvers: PersonRef[];
 }
 
 export interface DocumentVersion {
@@ -62,6 +86,10 @@ export interface DocumentVersion {
 export interface DocumentDetail extends KnowledgeDocument {
   versions: DocumentVersion[];
   can_edit: boolean;
+  /** The owner or a collection editor. */
+  can_review: boolean;
+  /** A collection editor or an org admin. */
+  can_change_owner: boolean;
 }
 
 export interface Chunk {
@@ -90,6 +118,14 @@ export interface AdminCollection {
   default_sensitivity: Sensitivity;
   document_count: number;
   grants: Grant[];
+  owner: PersonRef | null;
+  review_interval_days: number | null;
+}
+
+/** Fields left out stay as they are; null clears them. */
+export interface CollectionGovernanceUpdate {
+  owner_id?: string | null;
+  review_interval_days?: number | null;
 }
 
 export interface CollectionCreate {
@@ -120,6 +156,21 @@ export const knowledgeApi = {
   reindex: (documentId: string) =>
     apiJson<KnowledgeDocument>(`/api/v1/documents/${id(documentId)}/reindex`, { method: "POST" }),
   deleteDocument: (documentId: string) => apiJson<void>(`/api/v1/documents/${id(documentId)}`, { method: "DELETE" }),
+  /** Trust "official" needs `requestOfficial`; demoting from official takes a note. */
+  updateLabels: (documentId: string, body: { trust?: Exclude<Trust, "official">; sensitivity?: Sensitivity; note?: string }) =>
+    apiJson<KnowledgeDocument>(`/api/v1/documents/${id(documentId)}`, { method: "PATCH", json: body }),
+  setOwner: (documentId: string, ownerId: string) =>
+    apiJson<{ document_id: string; owner: PersonRef }>(`/api/v1/documents/${id(documentId)}/owner`, {
+      method: "PUT",
+      json: { owner_id: ownerId },
+    }),
+  markReviewed: (documentId: string, note?: string) =>
+    apiJson<DocumentDetail>(`/api/v1/documents/${id(documentId)}/review`, {
+      method: "POST",
+      json: note?.trim() ? { note: note.trim() } : {},
+    }),
+  requestOfficial: (documentId: string, note: string) =>
+    apiJson<DocumentDetail>(`/api/v1/documents/${id(documentId)}/official`, { method: "POST", json: { note } }),
   /** Plain link: the browser downloads with the session cookie (Content-Disposition: attachment). */
   fileUrl: (documentId: string) => `/api/v1/documents/${id(documentId)}/file`,
 
@@ -129,6 +180,8 @@ export const knowledgeApi = {
     apiJson<CollectionDetail>("/api/v1/admin/collections", { method: "POST", json: body }),
   replaceGrants: (collectionId: string, body: { viewers: string[]; editors: string[] }) =>
     apiJson<Items<Grant>>(`/api/v1/admin/collections/${id(collectionId)}/grants`, { method: "PUT", json: body }),
+  updateGovernance: (collectionId: string, body: CollectionGovernanceUpdate) =>
+    apiJson<AdminCollection>(`/api/v1/admin/collections/${id(collectionId)}`, { method: "PATCH", json: body }),
 };
 
 export const knowledgeKeys = {

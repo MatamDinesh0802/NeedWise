@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ClipboardCheck, ExternalLink, ListTodo, Mail, Wrench, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BadgeCheck, ClipboardCheck, ExternalLink, ListTodo, Mail, Wrench, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -15,9 +15,9 @@ import { canSeeAdministration, type Me } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { workApi, workKeys, type Approval } from "@/lib/work/api";
 import { workflowRunHref } from "@/lib/admin/workflows";
-import { displayStatus, originLabel, toolTitle } from "@/lib/work/approvals";
+import { displayStatus, OFFICIAL_KIND, originLabel, toolTitle } from "@/lib/work/approvals";
 
-const TOOL_ICONS: Record<string, LucideIcon> = { send_email: Mail, create_task: ListTodo };
+const TOOL_ICONS: Record<string, LucideIcon> = { send_email: Mail, create_task: ListTodo, [OFFICIAL_KIND]: BadgeCheck };
 
 export function ApprovalsInbox() {
   return (

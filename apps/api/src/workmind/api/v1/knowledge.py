@@ -7,6 +7,7 @@ needs a browser session. Uploads send the raw file as the request body:
 """
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -17,13 +18,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from workmind.api.deps import SessionContext, require_scope, resources_of, settings_of
-from workmind.api.v1.admin import AdminContext
+from workmind.api.v1.admin import AdminContext, PersonRef
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.authz.sync import enqueue
 from workmind.modules.governance.audit import Actor, record_event
-from workmind.modules.knowledge import service
+from workmind.modules.identity.models import User
+from workmind.modules.knowledge import governance, service
 from workmind.modules.knowledge.acl import collection_tuples
 from workmind.modules.knowledge.models import (
     Chunk,
@@ -32,8 +34,11 @@ from workmind.modules.knowledge.models import (
     Document,
     DocumentVersion,
 )
-from workmind.modules.knowledge.pipeline import delete_document_points, refresh_collection_acl
-from workmind.modules.retrieval.qdrant import match
+from workmind.modules.knowledge.pipeline import (
+    delete_document_points,
+    refresh_collection_acl,
+    set_document_labels,
+)
 
 router = APIRouter(tags=["knowledge"])
 ReadContext = Annotated[RequestContext, require_scope("knowledge:read")]
@@ -49,6 +54,8 @@ class CollectionOut(BaseModel):
     default_sensitivity: str
     document_count: int
     can_edit: bool
+    owner: PersonRef | None
+    review_interval_days: int | None
 
 
 class GrantOut(BaseModel):
@@ -58,6 +65,15 @@ class GrantOut(BaseModel):
 
 class CollectionDetail(CollectionOut):
     grants: list[GrantOut]
+
+
+class OfficialRequestOut(BaseModel):
+    """A pending request for official status (docs/governance.md)."""
+
+    requested_by: PersonRef | None
+    requested_at: datetime
+    note: str | None
+    approvers: list[PersonRef]
 
 
 class DocumentOut(BaseModel):
@@ -75,6 +91,13 @@ class DocumentOut(BaseModel):
     size_bytes: int
     version: int
     updated_at: datetime
+    # Governance: who answers for it, and its review cycle.
+    owner: PersonRef | None = None
+    reviewed_at: datetime | None = None
+    reviewed_by: PersonRef | None = None
+    next_review_at: datetime | None = None
+    review_overdue: bool = False
+    official_request: OfficialRequestOut | None = None
 
 
 class VersionOut(BaseModel):
@@ -91,6 +114,9 @@ class VersionOut(BaseModel):
 class DocumentDetail(DocumentOut):
     versions: list[VersionOut]
     can_edit: bool
+    # May mark it reviewed (the owner or an editor) and may hand it to another owner.
+    can_review: bool
+    can_change_owner: bool
 
 
 class ChunkOut(BaseModel):
@@ -111,7 +137,21 @@ class Items[T](BaseModel):
     items: list[T]
 
 
-def _collection_out(access: service.CollectionAccess, count: int) -> CollectionOut:
+def _person(people: dict[uuid.UUID, User], user_id: uuid.UUID | None) -> PersonRef | None:
+    user = people.get(user_id) if user_id else None
+    return PersonRef(id=user.id, display_name=user.display_name) if user else None
+
+
+async def _people(session: AsyncSession, ids: set[uuid.UUID | None]) -> dict[uuid.UUID, User]:
+    wanted = {i for i in ids if i is not None}
+    if not wanted:
+        return {}
+    return {u.id: u for u in await session.scalars(select(User).where(User.id.in_(wanted)))}
+
+
+def _collection_out(
+    access: service.CollectionAccess, count: int, people: dict[uuid.UUID, User] | None = None
+) -> CollectionOut:
     c = access.collection
     return CollectionOut(
         id=c.id,
@@ -123,7 +163,41 @@ def _collection_out(access: service.CollectionAccess, count: int) -> CollectionO
         default_sensitivity=c.default_sensitivity,
         document_count=count,
         can_edit=access.can_edit,
+        owner=_person(people or {}, c.owner_id),
+        review_interval_days=c.review_interval_days,
     )
+
+
+async def _governed(
+    session: AsyncSession, outs: list[tuple[Document, DocumentOut]]
+) -> list[DocumentOut]:
+    """Adds owners, review state and pending official requests to documents being returned."""
+    requests = await governance.pending_official_requests(session, [d.id for d, _ in outs])
+    ids: set[uuid.UUID | None] = set()
+    for document, _ in outs:
+        ids.update((document.owner_id, document.reviewed_by))
+    for request in requests.values():
+        ids.update([request.requested_by, *request.approvers])
+    people = await _people(session, ids)
+    now = governance.utcnow()
+    for document, out in outs:
+        out.owner = _person(people, document.owner_id)
+        out.reviewed_at = document.reviewed_at
+        out.reviewed_by = _person(people, document.reviewed_by)
+        out.next_review_at = document.next_review_at
+        out.review_overdue = governance.review_overdue(document, now)
+        request = requests.get(document.id)
+        out.official_request = (
+            OfficialRequestOut(
+                requested_by=_person(people, request.requested_by),
+                requested_at=request.requested_at,
+                note=request.note,
+                approvers=[p for a in request.approvers if (p := _person(people, a))],
+            )
+            if request
+            else None
+        )
+    return [out for _, out in outs]
 
 
 def _document_out(document: Document, version: DocumentVersion | None) -> DocumentOut:
@@ -180,7 +254,8 @@ async def _document_for(
 async def list_collections(ctx: ReadContext, request: Request) -> Items[CollectionOut]:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         visible = await service.visible_collections(session, ctx)
-    return Items(items=[_collection_out(access, count) for access, count in visible])
+        people = await _people(session, {a.collection.owner_id for a, _ in visible})
+    return Items(items=[_collection_out(access, count, people) for access, count in visible])
 
 
 @router.get("/collections/{collection_id}")
@@ -190,7 +265,8 @@ async def get_collection(
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         access = await service.collection_access(session, ctx, collection_id)
         visible = {a.collection.id: n for a, n in await service.visible_collections(session, ctx)}
-    base = _collection_out(access, visible.get(collection_id, 0))
+        people = await _people(session, {access.collection.owner_id})
+    base = _collection_out(access, visible.get(collection_id, 0), people)
     grants = (
         [GrantOut(principal=g.principal, relation=g.relation) for g in access.grants]
         if access.can_edit
@@ -215,7 +291,10 @@ async def list_documents(
             ).all()
         )
         versions = await _latest_versions(session, documents)
-    return Items(items=[_document_out(d, versions.get(d.id)) for d in documents])
+        items = await _governed(
+            session, [(d, _document_out(d, versions.get(d.id))) for d in documents]
+        )
+    return Items(items=items)
 
 
 @router.post("/collections/{collection_id}/documents", status_code=202)
@@ -260,19 +339,42 @@ async def get_document(
 ) -> DocumentDetail:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         document, access = await _document_for(session, ctx, document_id)
-        versions = (
-            await session.scalars(
-                select(DocumentVersion)
-                .where(DocumentVersion.document_id == document_id)
-                .order_by(DocumentVersion.version_no.desc())
-            )
-        ).all()
-    base = _document_out(document, versions[0] if versions else None)
+        return await _governance_detail(session, ctx, document, access)
+
+
+def _detail(
+    base: DocumentOut,
+    document: Document,
+    access: service.CollectionAccess,
+    ctx: RequestContext,
+    versions: Sequence[DocumentVersion],
+) -> DocumentDetail:
     return DocumentDetail(
         **base.model_dump(),
         versions=[VersionOut.model_validate(v, from_attributes=True) for v in versions],
         can_edit=access.can_edit,
+        can_review=access.can_edit or document.owner_id == ctx.user_id,
+        can_change_owner=access.can_edit or governance.is_org_admin(ctx),
     )
+
+
+async def _governance_detail(
+    session: AsyncSession,
+    ctx: RequestContext,
+    document: Document,
+    access: service.CollectionAccess,
+) -> DocumentDetail:
+    versions = (
+        await session.scalars(
+            select(DocumentVersion)
+            .where(DocumentVersion.document_id == document.id)
+            .order_by(DocumentVersion.version_no.desc())
+        )
+    ).all()
+    (base,) = await _governed(
+        session, [(document, _document_out(document, versions[0] if versions else None))]
+    )
+    return _detail(base, document, access, ctx, versions)
 
 
 @router.get("/documents/{document_id}/chunks")
@@ -339,6 +441,17 @@ async def reindex_document(
 class LabelsUpdate(BaseModel):
     trust: Literal["official", "reference", "discussion"] | None = None
     sensitivity: Literal["internal", "confidential", "restricted"] | None = None
+    note: str | None = Field(default=None, max_length=2000, description="why, when demoting")
+
+
+def official_requires_approval() -> ApiError:
+    return ApiError(
+        403,
+        "official_requires_approval",
+        "Official status needs an approval",
+        "Request it with POST /documents/{id}/official: the collection's owner or an "
+        "administrator decides.",
+    )
 
 
 @router.patch("/documents/{document_id}")
@@ -346,12 +459,19 @@ async def update_labels(
     ctx: SessionContext, request: Request, document_id: uuid.UUID, body: LabelsUpdate
 ) -> DocumentOut:
     """Editors correct the trust level or sensitivity label (ARCHITECTURE 7.3). A label set here
-    is kept on re-index. The index is updated at once, so model routing follows immediately."""
+    is kept on re-index. The index is updated at once, so model routing follows immediately.
+
+    Trust "official" is never set here: it needs an approval (POST /documents/{id}/official).
+    Taking it away (demoting) is immediate, audited, and the owner is told."""
     resources = resources_of(request)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         document, _ = await _document_for(session, ctx, document_id, edit=True)
         before = {"trust": document.trust, "sensitivity": document.sensitivity}
-        if body.trust:
+        if body.trust == "official" and document.trust != "official":
+            raise official_requires_approval()
+        if body.trust and body.trust != "official" and document.trust == "official":
+            await governance.demote(session, ctx, document, trust=body.trust, note=body.note)
+        elif body.trust:
             document.trust = body.trust
         if body.sensitivity:
             document.sensitivity, document.sensitivity_manual = body.sensitivity, True
@@ -366,13 +486,80 @@ async def update_labels(
             details={"before": before, "after": after},
         )
         version = (await _latest_versions(session, [document])).get(document.id)
-        out = _document_out(document, version)
-    await resources.qdrant.set_payload(
-        resources.collection_name,
-        after,
-        {"must": [match("tenant_id", str(ctx.tenant_id)), match("document_id", str(document_id))]},
+        (out,) = await _governed(session, [(document, _document_out(document, version))])
+    await set_document_labels(
+        resources.qdrant, resources.collection_name, ctx.tenant_id, document_id, after
     )
     return out
+
+
+# --- Governance: owners, reviews, official status (docs/governance.md) ------------------------
+
+
+class OwnerUpdate(BaseModel):
+    owner_id: uuid.UUID
+
+
+class OwnerOut(BaseModel):
+    document_id: uuid.UUID
+    owner: PersonRef
+
+
+class ReviewIn(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class OfficialIn(BaseModel):
+    note: str = Field(min_length=1, max_length=2000, description="why it should be official")
+
+
+@router.put("/documents/{document_id}/owner")
+async def change_owner(
+    ctx: SessionContext, request: Request, document_id: uuid.UUID, body: OwnerUpdate
+) -> OwnerOut:
+    """Collection editors and org admins hand a document to another owner. Admins may do it in
+    collections they cannot read (separation of duties), so the answer holds no content."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        document = await session.get(Document, document_id)
+        if document is not None and governance.is_org_admin(ctx):
+            collection = await session.get(Collection, document.collection_id)
+            assert collection is not None  # noqa: S101 (foreign key)
+        else:
+            document, access = await _document_for(session, ctx, document_id, edit=True)
+            collection = access.collection
+        owner = await governance.set_owner(session, ctx, document, collection, body.owner_id)
+    return OwnerOut(
+        document_id=document_id, owner=PersonRef(id=owner.id, display_name=owner.display_name)
+    )
+
+
+@router.post("/documents/{document_id}/review")
+async def review_document(
+    ctx: SessionContext, request: Request, document_id: uuid.UUID, body: ReviewIn
+) -> DocumentDetail:
+    """The owner or a collection editor confirms the content is still correct."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        document, access = await _document_for(session, ctx, document_id)
+        if not (access.can_edit or document.owner_id == ctx.user_id):
+            raise ApiError(
+                403,
+                "forbidden",
+                "Only the document's owner or the collection's editors can mark it reviewed",
+            )
+        await governance.mark_reviewed(session, ctx, document, access.collection, note=body.note)
+        return await _governance_detail(session, ctx, document, access)
+
+
+@router.post("/documents/{document_id}/official")
+async def request_official(
+    ctx: SessionContext, request: Request, document_id: uuid.UUID, body: OfficialIn
+) -> DocumentDetail:
+    """A collection editor asks for official status. The collection's owner decides, or the
+    org admins when the owner is asking or there is none; nobody approves their own request."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        document, access = await _document_for(session, ctx, document_id, edit=True)
+        await governance.request_official(session, ctx, document, access.collection, note=body.note)
+        return await _governance_detail(session, ctx, document, access)
 
 
 @router.delete("/documents/{document_id}", status_code=204)
@@ -406,6 +593,7 @@ class CollectionCreate(BaseModel):
     default_sensitivity: Literal["internal", "confidential", "restricted"] = "internal"
     viewers: list[Principal] = []
     editors: list[Principal] = []
+    review_interval_days: int | None = Field(default=None, ge=1, le=3650)
 
 
 class GrantsUpdate(BaseModel):
@@ -445,6 +633,38 @@ class AdminCollectionOut(BaseModel):
     default_sensitivity: str
     document_count: int
     grants: list[GrantOut]
+    owner: PersonRef | None
+    review_interval_days: int | None
+
+
+class CollectionGovernanceUpdate(BaseModel):
+    """Fields left out stay as they are; null clears them."""
+
+    owner_id: uuid.UUID | None = None
+    review_interval_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+def _admin_collection_out(
+    c: Collection, count: int, grants: Sequence[CollectionGrant], people: dict[uuid.UUID, User]
+) -> AdminCollectionOut:
+    return AdminCollectionOut(
+        id=c.id,
+        key=c.key,
+        name=c.name,
+        description=c.description,
+        scope=c.scope,
+        department_id=c.department_id,
+        default_trust=c.default_trust,
+        default_sensitivity=c.default_sensitivity,
+        document_count=count,
+        grants=[
+            GrantOut(principal=g.principal, relation=g.relation)
+            for g in grants
+            if g.collection_id == c.id
+        ],
+        owner=_person(people, c.owner_id),
+        review_interval_days=c.review_interval_days,
+    )
 
 
 @admin_router.get("")
@@ -458,27 +678,88 @@ async def list_all_collections(ctx: AdminContext, request: Request) -> Items[Adm
             select(Document.collection_id, func.count()).group_by(Document.collection_id)
         )
         counts = {collection_id: count for collection_id, count in rows}
+        people = await _people(session, {c.owner_id for c in collections})
     return Items(
-        items=[
-            AdminCollectionOut(
-                id=c.id,
-                key=c.key,
-                name=c.name,
-                description=c.description,
-                scope=c.scope,
-                department_id=c.department_id,
-                default_trust=c.default_trust,
-                default_sensitivity=c.default_sensitivity,
-                document_count=counts.get(c.id, 0),
-                grants=[
-                    GrantOut(principal=g.principal, relation=g.relation)
-                    for g in grants
-                    if g.collection_id == c.id
-                ],
-            )
-            for c in collections
-        ]
+        items=[_admin_collection_out(c, counts.get(c.id, 0), grants, people) for c in collections]
     )
+
+
+@admin_router.patch("/{collection_id}")
+async def update_collection_governance(
+    ctx: AdminContext, request: Request, collection_id: uuid.UUID, body: CollectionGovernanceUpdate
+) -> AdminCollectionOut:
+    """The collection's owner (who approves official status and sees its governance overview)
+    and its review interval. The owner can view and edit the collection, so changing the owner
+    updates both permission locks like a sharing change does."""
+    resources = resources_of(request)
+    sent = body.model_fields_set
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        collection = await session.get(Collection, collection_id)
+        if collection is None:
+            raise ApiError(404, "not_found", "Collection not found")
+        grants = list(
+            (
+                await session.scalars(
+                    select(CollectionGrant).where(CollectionGrant.collection_id == collection_id)
+                )
+            ).all()
+        )
+        before = {
+            "owner_id": str(collection.owner_id) if collection.owner_id else None,
+            "review_interval_days": collection.review_interval_days,
+        }
+        owner_changed = "owner_id" in sent and body.owner_id != collection.owner_id
+        if owner_changed:
+            if body.owner_id is not None:
+                owner = await session.get(User, body.owner_id)
+                if owner is None or owner.status != "active":
+                    raise ApiError(422, "unknown_user", "Choose an active person as the owner")
+            old_tuples = collection_tuples(ctx.tenant_id, collection, grants)
+            collection.owner_id = body.owner_id
+            new_tuples = collection_tuples(ctx.tenant_id, collection, grants)
+            enqueue(
+                session,
+                ctx.tenant_id,
+                writes=new_tuples - old_tuples,
+                deletes=old_tuples - new_tuples,
+            )
+        rescheduled = 0
+        if (
+            "review_interval_days" in sent
+            and body.review_interval_days != collection.review_interval_days
+        ):
+            collection.review_interval_days = body.review_interval_days
+            await session.flush()
+            rescheduled = await governance.reschedule_collection(session, collection)
+        await session.flush()
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="admin.collection.governance_changed",
+            resource_type="collection",
+            resource_id=str(collection_id),
+            details={
+                "before": before,
+                "after": {
+                    "owner_id": str(collection.owner_id) if collection.owner_id else None,
+                    "review_interval_days": collection.review_interval_days,
+                },
+                "documents_rescheduled": rescheduled,
+            },
+        )
+        count = await session.scalar(
+            select(func.count())
+            .select_from(Document)
+            .where(Document.collection_id == collection_id)
+        )
+        people = await _people(session, {collection.owner_id})
+        out = _admin_collection_out(collection, count or 0, grants, people)
+    if owner_changed:
+        await refresh_collection_acl(
+            resources.qdrant, resources.collection_name, ctx.tenant_id, collection, grants
+        )
+    return out
 
 
 @admin_router.post("", status_code=201)
@@ -504,6 +785,7 @@ async def create_collection(
             department_id=body.department_id,
             default_trust=body.default_trust,
             default_sensitivity=body.default_sensitivity,
+            review_interval_days=body.review_interval_days,
         )
         session.add(collection)
         await session.flush()

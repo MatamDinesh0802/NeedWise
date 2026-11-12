@@ -41,6 +41,7 @@ class PassageOut(BaseModel):
     sensitivity: str
     score: float
     text: str
+    review_overdue: bool  # official, but past its review date
 
 
 class SearchOut(BaseModel):
@@ -60,6 +61,7 @@ class CitationOut(BaseModel):
     section: str
     page: int | None
     trust: str
+    review_overdue: bool
 
 
 class UsageOut(BaseModel):
@@ -91,6 +93,7 @@ def _passage_out(p: Passage) -> PassageOut:
         sensitivity=p.sensitivity,
         score=p.score,
         text=p.text,
+        review_overdue=p.review_overdue,
     )
 
 
@@ -164,6 +167,7 @@ async def ask(
                 section=c.section,
                 page=c.page,
                 trust=c.trust,
+                review_overdue=c.review_overdue,
             )
             for c in result.citations
         ],

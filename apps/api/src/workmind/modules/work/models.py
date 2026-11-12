@@ -28,7 +28,16 @@ def _in(column: str, values: tuple[str, ...]) -> str:
 
 
 TASK_STATUSES = ("open", "in_progress", "done", "cancelled")
-APPROVAL_STATUSES = ("pending", "approved", "rejected", "expired", "executed", "failed")
+# superseded: one of several approvers asked for the same request decided it first.
+APPROVAL_STATUSES = (
+    "pending",
+    "approved",
+    "rejected",
+    "expired",
+    "executed",
+    "failed",
+    "superseded",
+)
 # "queued": created by an event, not started yet (start_queued claims it, exactly once).
 RUN_STATUSES = ("queued", "running", "waiting_approval", "succeeded", "failed", "cancelled")
 

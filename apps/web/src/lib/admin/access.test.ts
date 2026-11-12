@@ -33,7 +33,7 @@ describe("adminAccess (from the session, no URL)", () => {
   it("lists the sections an admin or auditor may open", () => {
     const admin = adminAccess(signedIn("admin"));
     const auditor = adminAccess(signedIn("auditor"));
-    expect(admin.kind === "admin" && admin.sections.length).toBe(11); // models and budgets too
+    expect(admin.kind === "admin" && admin.sections.length).toBe(13); // models, budgets, governance and retention too
     expect(auditor.kind === "admin" && auditor.sections.map((s) => s.key)).toEqual(["audit"]);
   });
 });

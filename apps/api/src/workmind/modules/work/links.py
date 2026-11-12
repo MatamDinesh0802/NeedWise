@@ -17,6 +17,11 @@ def meeting_link(meeting_id: uuid.UUID) -> str:
     return f"/meetings/{meeting_id}"
 
 
+def document_link(document_id: uuid.UUID) -> str:
+    """A Knowledge Hub document (owners, reviews, official status: docs/governance.md)."""
+    return f"/knowledge/documents/{document_id}"
+
+
 def usage_link() -> str:
     """The usage page: everyone sees the budgets that apply to them there (docs/usage.md)."""
     return "/analytics"

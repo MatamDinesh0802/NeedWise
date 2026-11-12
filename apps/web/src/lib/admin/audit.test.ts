@@ -73,6 +73,6 @@ describe("audit row helpers", () => {
   });
 
   it("offers the action prefixes from the contract", () => {
-    expect(AUDIT_ACTION_FILTERS.map((f) => f.value)).toEqual(["", "auth.", "admin.", "seed."]);
+    expect(AUDIT_ACTION_FILTERS.map((f) => f.value)).toEqual(["", "auth.", "admin.", "knowledge.", "audit.", "seed."]);
   });
 });

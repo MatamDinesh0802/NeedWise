@@ -20,22 +20,93 @@ only with a valid license key. The Enterprise features the core knows about:
 
 | Feature name | What it is for | Status |
 |---|---|---|
-| `retention_policies` | Rules for how long data is kept before it is deleted | Not built yet |
+| `retention_policies` | Rules for how long data is kept before it is deleted | Built: [Retention policies](#retention-policies) |
 | `department_budgets` | Spending limits on model usage per department | Built ([docs/usage.md](usage.md#enterprise)) |
 | `chargeback_reports` | Usage and model costs per department, for internal billing | Built: `GET /api/v1/usage/export.csv` ([docs/usage.md](usage.md#enterprise)) |
-| `advanced_audit_export` | Audit log exports for security tools and long-term retention | Not built yet |
+| `advanced_audit_export` | Audit log exports for security tools and long-term retention | Built: [Audit export for a SIEM](#audit-export-for-a-siem) |
 
 ### What exists today
 
 Built: license verification, the edition object, `GET /api/v1/edition`, the `require_feature`
 dependency (402), the extension registry, the `workmind-ee` package, development licenses
-(`make ee-dev-license`), the web components `EnterpriseGate` and `EnterpriseBadge`, and two
-features: department budgets and the chargeback report (`ee/python/src/workmind_ee/budgets.py`
-and `chargeback.py`, registered on the usage hooks).
+(`make ee-dev-license`), the web components `EnterpriseGate` and `EnterpriseBadge`, and four
+features, all registered in `workmind_ee.setup`: department budgets and the chargeback report
+(`ee/python/src/workmind_ee/budgets.py` and `chargeback.py`, on the usage hooks), retention
+policies and the SIEM audit export (`retention.py` and `audit_export.py`, as routers and a
+scheduled task).
 
-Not built: retention policies and advanced audit export; official licenses (no production
-signing key is published, so `PRODUCTION_PUBLIC_KEYS` is empty and only development licenses
-exist); license revocation, online activation, seat counts; a screen to upload a license.
+Not built: the rest of the paid column in the ROADMAP (permission sync from source systems,
+SCIM, legal hold, DLP rules and the others have no feature name or code yet); official licenses
+(no production signing key is published, so `PRODUCTION_PUBLIC_KEYS` is empty and only development
+licenses exist); license revocation, online activation, seat counts; a screen to upload a
+license. A valid license shows "enterprise" and its features in `/api/v1/edition` and turns on
+the built features it lists; nothing else changes.
+
+## Retention policies
+
+Feature `retention_policies`, code in `ee/python/src/workmind_ee/retention.py`, screen
+**Admin > Retention**. Per tenant, an org owner or admin sets how many days to keep:
+
+| Data | Counted from | What is deleted |
+|---|---|---|
+| Conversations | The last message | The conversation and its messages |
+| Insights questions (BI agent runs) | When they were asked | The run: question, SQL and answer |
+| Meeting recordings | When the meeting was uploaded | The audio or video file only. The meeting, its transcript, summary, decisions and action items stay; the meeting shows that its recording was deleted, and its media URL answers `410` |
+| Read notifications | When they were read | The notification. Unread ones are never deleted |
+
+Every period is at least 30 days (checked by the API and by a database constraint) and at most
+36,500. An empty period keeps that data forever; with no policy saved, nothing is deleted.
+
+| Route | What it does |
+|---|---|
+| `GET /api/v1/admin/retention` | The policy, who saved it, and the last run |
+| `PUT /api/v1/admin/retention` | Saves it (audited as `admin.retention.updated`, before and after) |
+| `POST /api/v1/admin/retention/preview` | Counts exactly what a run would delete now, and the cutoff per kind. Deletes nothing. Without a body it previews the saved policy; with a policy in the body, that draft, without saving it |
+| `POST /api/v1/admin/retention/run` | Runs the saved policy now. The body must be `{"confirm": "delete"}`; the web app asks the admin to type the word. Audited as `admin.retention.run` with the counts |
+
+A scheduled task, `workmind_ee.retention.apply`, registered through the extension registry,
+runs once a day and applies every active tenant's saved policy (audited the same way, with the
+system as the actor). Each tenant's run happens inside that tenant's transaction, so row-level
+security limits it to its own rows. Recording files are deleted only after the database
+commit, only when their key is under the tenant's prefix, and only when no kept meeting and no
+document still uses the same stored file (storage is content-addressed, so identical bytes are
+stored once). The preview and the run use the same queries, and a test checks that the counts
+match.
+
+**Audit events are never deleted,** whatever the policy says. The log is append-only and
+hash-chained: each event's hash covers the previous one, so removing old events would break the
+verification of every later event. The database role the app runs as has no `DELETE`,
+`UPDATE` or `TRUNCATE` on `audit_events` (migration `0002`). Long-term retention of the log
+belongs in the SIEM that receives the export below.
+
+Without the license, the four routes answer `402 enterprise_feature` (the core's stand-ins in
+`api/v1/enterprise_fallbacks.py` know the paths), no task runs, and **Admin > Retention** shows
+the Enterprise notice. The `retention_policies` table and the meetings' `media_deleted_at`
+column exist in both editions (migration `0018`).
+
+Not built: legal hold (keeping something past its period on purpose), retention of documents
+and their versions, per-department or per-collection periods, and a dry-run report by
+department.
+
+## Audit export for a SIEM
+
+Feature `advanced_audit_export`, code in `ee/python/src/workmind_ee/audit_export.py`.
+`GET /api/v1/admin/audit-events/export.jsonl` (org owners, admins and auditors) streams the
+tenant's whole hash chain, oldest first, one JSON object per line: the fields the hash covers
+plus `prev_hash` and `hash` in hex. A receiver can verify the chain itself:
+
+```text
+hash = sha256(bytes.fromhex(prev_hash or "") + canonical(fields))
+canonical = the JSON of the fields (without prev_hash and hash), keys sorted, separators "," and ":"
+```
+
+`after_seq` resumes an incremental pull (only events after that one). Events are read in
+batches of 500, each in its own transaction. Each export is audited as `audit.export`. In the
+web app the button is in **Admin > Audit log > Export**, inside an `EnterpriseGate`.
+
+The Community edition keeps everything else: the chain itself, **Verify integrity**, the
+explorer's filters and paging, and a CSV export of a filtered view (the newest 10,000 events);
+see [governance.md](governance.md#the-audit-explorer).
 
 ## How licensing works
 
@@ -268,6 +339,10 @@ Backend tests run with the package installed (`uv sync --extra ee`, as CI does);
 `ee/python/tests` are collected from `apps/api` and skip without it. Relevant tests:
 `tests/test_edition.py` (tokens, keys, expiry, settings), `tests/test_extensions.py` (setup
 isolation, hooks, mounting), `tests/test_enterprise_tasks.py`, `tests/test_dev_license.py`,
-`tests/test_open_core_boundary.py`, and `tests/integration/test_edition_api.py`
-(`/edition` is Community without a license; a gated route answers 402). Lint `ee/python` with
+`tests/test_open_core_boundary.py`, `tests/integration/test_edition_api.py`
+(`/edition` is Community without a license; a gated route answers 402),
+`tests/integration/test_retention.py` (every route 402 without a license; with one, the 30-day
+minimum, exact preview counts, a run that deletes only its own tenant's expired rows and files,
+the daily task) and `tests/integration/test_audit_explorer.py` (the SIEM export is Enterprise
+only, and its chain verifies). Lint `ee/python` with
 `make lint`, which runs ruff on it too; pyright checks it in strict mode.

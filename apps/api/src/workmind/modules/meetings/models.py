@@ -4,11 +4,12 @@ and action items with timestamps, and a searchable transcript in the meeting's c
 
 import re
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     CheckConstraint,
+    DateTime,
     Float,
     ForeignKeyConstraint,
     Index,
@@ -48,6 +49,8 @@ class Meeting(Base, TenantScoped, Timestamps):
     error: Mapped[str | None] = mapped_column(Text)
     filename: Mapped[str] = mapped_column(Text)
     media_key: Mapped[str] = mapped_column(Text)  # content-addressed object storage key
+    # Set when a retention policy deleted the recording; the transcript and notes stay.
+    media_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duration_s: Mapped[float | None] = mapped_column(Float)
     language: Mapped[str | None] = mapped_column(String(16))
     # [{"id": "T1", "start": 12.3, "end": 18.0, "speaker": "Speaker 1", "text": "..."}]

@@ -14,6 +14,7 @@ from workmind.modules.knowledge.models import Collection
 from workmind.modules.work.events import DocumentReady, listens_to
 from workmind.modules.work.links import (
     approval_link,
+    document_link,
     meeting_link,
     task_link,
     usage_link,
@@ -91,6 +92,7 @@ def _page_exists(path: str) -> bool:
         approval_link(ID),
         task_link(ID),
         meeting_link(ID),
+        document_link(ID),
         workflow_link("weekly-ops-report"),
         workflow_link("weekly-ops-report", ID),
         usage_link(),
@@ -109,7 +111,14 @@ def test_the_workflow_link_names_the_workflow_and_the_run() -> None:
 
 
 def test_notifications_take_their_links_from_the_links_module() -> None:
-    helpers = ("approval_link(", "task_link(", "meeting_link(", "workflow_link(", "usage_link(")
+    helpers = (
+        "approval_link(",
+        "task_link(",
+        "meeting_link(",
+        "workflow_link(",
+        "document_link(",
+        "usage_link(",
+    )
     passthrough = {"link", "n.link"}  # notify() itself, and the notifications API
     offenders = [
         f"{file.name}: link={value}"

@@ -29,6 +29,7 @@ from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sync import SyncDeps, sync_source
 from workmind.modules.identity.models import Tenant
 from workmind.modules.knowledge.dispatch import CeleryDispatcher
+from workmind.modules.knowledge.governance import send_review_reminders
 from workmind.modules.knowledge.pipeline import IngestionDeps, PermanentIngestionError, ingest
 from workmind.modules.knowledge.storage import LocalObjectStorage
 from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
@@ -53,6 +54,7 @@ WORKFLOWS_TASK = "workmind.run_due_workflows"
 EXPIRE_TASK = "workmind.expire_approvals"
 MEETING_TASK = "workmind.process_meeting"
 WORKFLOW_RUN_TASK = "workmind.start_workflow_run"
+REVIEWS_TASK = "workmind.send_review_reminders"
 
 settings = get_settings()
 app = Celery("workmind", broker=settings.celery_broker_url)
@@ -72,6 +74,8 @@ app.conf.update(
         "sync-due-sources": {"task": SCHEDULE_TASK, "schedule": 60.0},
         "run-due-workflows": {"task": WORKFLOWS_TASK, "schedule": 60.0},
         "expire-approvals": {"task": EXPIRE_TASK, "schedule": 300.0},
+        # Daily: documents past their review date get one reminder per review cycle.
+        "review-reminders": {"task": REVIEWS_TASK, "schedule": 86_400.0},
     },
     broker_connection_retry_on_startup=True,
     task_ignore_result=True,
@@ -229,6 +233,24 @@ async def _expire_approvals() -> int:
 @app.task(name=EXPIRE_TASK)
 def expire_approvals() -> int:
     return asyncio.run(_expire_approvals())
+
+
+async def _send_review_reminders() -> int:
+    resources = Resources.create(settings, extensions=extensions)
+    reminded = 0
+    try:
+        for tenant_id in await _active_tenants(resources):
+            report = await send_review_reminders(resources.db, tenant_id)
+            reminded += len(report.reminded)
+    finally:
+        await resources.aclose()
+    return reminded
+
+
+@app.task(name=REVIEWS_TASK)
+def review_reminders() -> int:
+    """Idempotent: a document is reminded once per review cycle, however often this runs."""
+    return asyncio.run(_send_review_reminders())
 
 
 async def _process_meeting(tenant_id: str, meeting_id: str) -> None:

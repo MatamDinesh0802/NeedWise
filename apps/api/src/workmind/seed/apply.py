@@ -270,8 +270,13 @@ async def _seed_collections(
     """Collections and their grants exactly as the company file says (grants are replaced)."""
     ids: dict[str, uuid.UUID] = {}
     for collection in spec.collections:
-        # Only a file that names an owner sets one, so an owner chosen in the product stays.
-        owner = {"owner_id": user_ids[collection.owner.lower()]} if collection.owner else {}
+        # Only a file that names an owner (or a review interval) sets one, so an owner or an
+        # interval chosen in the product stays.
+        owner: dict[str, object] = (
+            {"owner_id": user_ids[collection.owner.lower()]} if collection.owner else {}
+        )
+        if collection.review_interval_days is not None:
+            owner["review_interval_days"] = collection.review_interval_days
         collection_id = (
             await session.execute(
                 insert(Collection)

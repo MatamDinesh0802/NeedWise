@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Download, Ellipsis, Eye, FileText, PencilLine, RotateCw, SearchX, Trash2 } from "lucide-react";
+import { ArrowLeft, Clock, Download, Ellipsis, Eye, FileText, PencilLine, RotateCw, SearchX, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useId, useState } from "react";
@@ -31,7 +31,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
-import { formatBytes, formatRelative } from "@/lib/format";
+import { formatBytes, formatDate, formatRelative } from "@/lib/format";
 import {
   knowledgeApi,
   knowledgeKeys,
@@ -39,7 +39,9 @@ import {
   type CollectionDetail,
   type KnowledgeDocument,
 } from "@/lib/knowledge/api";
+import { reviewBadge, reviewState } from "@/lib/knowledge/governance";
 import { createUploadQueue } from "@/lib/knowledge/upload-queue";
+import { cn } from "@/lib/utils";
 
 const back = (
   <Link href="/knowledge" className={buttonVariants({ variant: "ghost", size: "sm", className: "-ml-2 w-fit" })}>
@@ -174,6 +176,8 @@ function Documents({ collection }: { collection: CollectionDetail }) {
             <TableRow>
               <TableHead>Title</TableHead>
               <TableHead>Trust</TableHead>
+              <TableHead>Owner</TableHead>
+              <TableHead>Review</TableHead>
               <TableHead>Sensitivity</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Chunks</TableHead>
@@ -201,7 +205,21 @@ function Documents({ collection }: { collection: CollectionDetail }) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <TrustBadge trust={doc.trust} />
+                  <div className="flex flex-col items-start gap-1">
+                    <TrustBadge trust={doc.trust} />
+                    {doc.official_request ? (
+                      <Badge variant="outline" className="text-amber-800 dark:text-amber-300" title="Official status requested: waiting for approval">
+                        <Clock data-icon="inline-start" aria-hidden="true" />
+                        Official requested
+                      </Badge>
+                    ) : null}
+                  </div>
+                </TableCell>
+                <TableCell className="max-w-40 truncate" title={doc.owner?.display_name}>
+                  {doc.owner ? doc.owner.display_name : <span className="text-muted-foreground">No owner</span>}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <ReviewCell doc={doc} />
                 </TableCell>
                 <TableCell>
                   <SensitivityBadge sensitivity={doc.sensitivity} />
@@ -271,4 +289,19 @@ function Documents({ collection }: { collection: CollectionDetail }) {
       />
     </section>
   );
+}
+
+/** Overdue or due soon stands out; otherwise the next review date, or a dash without a cycle. */
+export function ReviewCell({ doc, now }: { doc: KnowledgeDocument; now?: number }) {
+  const label = reviewBadge(doc, now);
+  if (label) {
+    const overdue = reviewState(doc, now) === "overdue";
+    return (
+      <span className={cn("text-xs font-medium", overdue ? "text-amber-700 dark:text-amber-400" : "text-sky-700 dark:text-sky-400")}>
+        {label}
+      </span>
+    );
+  }
+  if (!doc.next_review_at) return <span className="text-muted-foreground">—</span>;
+  return <span className="text-xs text-muted-foreground">Next {formatDate(doc.next_review_at)}</span>;
 }

@@ -25,6 +25,7 @@ from workmind.seed.analytics_load import seed_analytics
 from workmind.seed.apply import SeedResult, seed_database, seed_keycloak
 from workmind.seed.company import CompanySpec, load_company
 from workmind.seed.corpus_load import load_corpus
+from workmind.seed.governance_load import seed_governance
 from workmind.seed.keycloak_admin import KeycloakAdmin
 
 
@@ -53,6 +54,11 @@ async def _run(
             await _load_analytics(settings, sessions, result, analytics_dir)
         if corpus_dir is not None:
             await _load_corpus(settings, sessions, result, spec, corpus_dir)
+        governed = await seed_governance(sessions, result.tenant_id, spec)
+        print(
+            f"Governance: {governed.owners_set} document owners and "
+            f"{governed.reviews_set} review dates set."
+        )
         if not skip_openfga:
             async with httpx.AsyncClient(timeout=15) as http:
                 fga = OpenFgaClient(

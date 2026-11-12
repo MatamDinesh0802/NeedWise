@@ -11,13 +11,15 @@ export type AdminSectionKey =
   | "departments"
   | "groups"
   | "collections"
+  | "governance"
   | "sources"
   | "agents"
   | "workflows"
   | "analytics"
   | "models"
   | "budgets"
-  | "audit";
+  | "audit"
+  | "retention";
 
 export interface AdminSection {
   key: AdminSectionKey;
@@ -56,6 +58,13 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     title: "Collections",
     href: "/admin/collections",
     description: "Who can view and edit each knowledge collection. Managing sharing doesn't let you read restricted documents.",
+    roles: MANAGERS,
+  },
+  {
+    key: "governance",
+    title: "Governance",
+    href: "/admin/governance",
+    description: "Document owners, reviews that are overdue or due soon, requests for official status and recent demotions.",
     roles: MANAGERS,
   },
   {
@@ -104,8 +113,15 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     key: "audit",
     title: "Audit log",
     href: "/admin/audit",
-    description: "Every sign-in and administrative change, in a tamper-evident chain.",
+    description: "Every sign-in and change, in a tamper-evident chain: filter it, page through it and export it.",
     roles: ["owner", "admin", "auditor"],
+  },
+  {
+    key: "retention",
+    title: "Retention",
+    href: "/admin/retention",
+    description: "How long conversations, BI runs, meeting recordings and read notifications are kept. Enterprise.",
+    roles: MANAGERS,
   },
 ];
 

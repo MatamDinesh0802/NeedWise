@@ -333,7 +333,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #11 — "Letting an LLM write SQL against company data, safely."**
 
-### Phase 11 — Admin, governance and usage analytics (v0.11) 🚧 In progress: agents as configuration, model management and the open-core boundary are built, and a Legal agent made from configuration routes 15/15 in the routing eval; the usage and budgets backend and knowledge governance are still being built
+### Phase 11 — Admin, governance and usage analytics (v0.11) 🚧 In progress: agents as configuration, model management and the open-core boundary are built, and a Legal agent made from configuration routes 15/15 in the routing eval; usage and budgets, knowledge governance, the audit explorer and retention are built
 
 **Goal:** organizations can run WorkMind themselves: configure, control and account for it.
 
@@ -365,8 +365,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >   every model call. Tested with scripted models; no real provider was called through a tenant
 >   key.
 > - **Open core ([docs/enterprise.md](enterprise.md)):** license keys, development licenses, the
->   extension registry and `GET /api/v1/edition`. Enterprise features built: department budgets
->   and the chargeback report.
+>   extension registry and `GET /api/v1/edition`. Enterprise features built: department budgets,
+>   the chargeback report, retention policies and the SIEM export of the audit chain.
 > - **Usage and budgets ([docs/usage.md](usage.md)):** one usage event per model call (failed
 >   and stopped calls included, never the text), attributed to the person, their department,
 >   the agent, the feature and the record; costs from the catalog's prices; the Usage page,
@@ -375,8 +375,14 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >   checked before every model call; `wm usage backfill` for older answers. Enterprise:
 >   department budgets and the chargeback CSV. Tested with scripted models only; the overshoot
 >   bound and what is not recorded are in the doc.
-> - **Knowledge governance** (audit log explorer, retention policies, document owners, review
->   reminders, the official approval flow) is being built and is not in `main`.
+> - **Knowledge governance, the audit explorer and retention ([docs/governance.md](governance.md),
+>   [docs/enterprise.md](enterprise.md#retention-policies)):** document owners, review cycles with
+>   a daily reminder (a task and a notification, once per cycle), official status only through an
+>   approval (never self-approved; demotion immediate and audited), a governance overview for
+>   admins and collection owners, and audit filters, cursor paging and a CSV export, all in
+>   Community. Retention policies and the SIEM export of the hash chain are Enterprise, in `ee/`.
+>   Tested with the integration suite and mocked screens; not yet walked through in the browser
+>   against the running stack. Not built: review escalation, legal hold, document retention.
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 

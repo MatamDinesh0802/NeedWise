@@ -62,6 +62,7 @@ class Citation:
     section: str
     page: int | None
     trust: str
+    review_overdue: bool = False
 
 
 @dataclass
@@ -152,6 +153,7 @@ def finish(text: str, passages: list[Passage], usage: LLMUsage) -> Answer:
             section=by_marker[m].section,
             page=by_marker[m].page,
             trust=by_marker[m].trust,
+            review_overdue=by_marker[m].review_overdue,
         )
         for m in markers
         if m in by_marker

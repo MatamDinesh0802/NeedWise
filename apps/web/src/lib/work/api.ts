@@ -7,8 +7,11 @@ import { apiJson } from "@/lib/api";
 
 // --- Approvals ------------------------------------------------------------------------------
 
-/** "approved" is transient: the action runs right after the claim and ends executed or failed. */
-export type ApprovalStatus = "pending" | "approved" | "executed" | "failed" | "rejected" | "expired";
+/**
+ * "approved" is transient: the action runs right after the claim and ends executed or failed.
+ * "superseded": the same request also went to other approvers, and one of them decided it.
+ */
+export type ApprovalStatus = "pending" | "approved" | "executed" | "failed" | "rejected" | "expired" | "superseded";
 
 export interface ApprovalOrigin {
   /** Chat (research mode). */
@@ -19,6 +22,10 @@ export interface ApprovalOrigin {
   workflow?: string;
   workflow_run_id?: string;
   step?: string;
+  /** Knowledge governance (via "governance"): an official-status request for a document. */
+  kind?: string;
+  document_id?: string;
+  request_id?: string;
   [key: string]: unknown;
 }
 

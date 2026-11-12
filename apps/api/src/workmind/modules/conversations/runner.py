@@ -82,6 +82,7 @@ def source_ref(passage: Passage, *, with_text: bool = False) -> dict[str, Any]:
         "page": passage.page,
         "trust": passage.trust,
         "sensitivity": passage.sensitivity,
+        "review_overdue": passage.review_overdue,
     }
     if with_text:  # sent live to the person allowed to read it, never stored with the message
         ref["text"] = passage.text
@@ -345,6 +346,7 @@ async def execute_run(
                     "section": citation.section,
                     "page": citation.page,
                     "trust": citation.trust,
+                    "review_overdue": citation.review_overdue,
                 },
             )
         await events.emit(run_id, "verification", {"unknown_markers": final.unknown_markers})
@@ -526,6 +528,7 @@ async def _store(
                     "section": c.section,
                     "page": c.page,
                     "trust": c.trust,
+                    "review_overdue": c.review_overdue,
                 }
                 for c in (final.citations if final else [])
             ],

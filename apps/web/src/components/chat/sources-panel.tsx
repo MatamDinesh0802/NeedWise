@@ -1,10 +1,11 @@
 "use client";
 
-import { ExternalLink, FileText, Lock, X } from "lucide-react";
+import { Clock, ExternalLink, FileText, Lock, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 
 import { SensitivityBadge, TrustBadge } from "@/components/knowledge/badges";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiQuery } from "@/hooks/use-api-query";
@@ -103,6 +104,7 @@ function SourceCard({ source, cited, focused }: { source: Source; cited: boolean
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <TrustBadge trust={source.trust} />
+        {reviewOverdue(source) ? <ReviewOverdueBadge /> : null}
         <SensitivityBadge sensitivity={source.sensitivity} />
         {source.page != null ? <span className="text-xs text-muted-foreground">Page {source.page}</span> : null}
       </div>
@@ -125,6 +127,24 @@ function SourceCard({ source, cited, focused }: { source: Source; cited: boolean
         ) : null}
       </div>
     </article>
+  );
+}
+
+/** Official, but past its review date (docs/governance.md): still used, with a warning. */
+export function reviewOverdue(source: Pick<Source, "trust" | "review_overdue">): boolean {
+  return source.trust === "official" && source.review_overdue === true;
+}
+
+function ReviewOverdueBadge() {
+  return (
+    <Badge
+      variant="secondary"
+      className="bg-amber-500/15 text-amber-800 dark:text-amber-300"
+      title="Official, but past its review date: its owner hasn't confirmed it is still correct."
+    >
+      <Clock data-icon="inline-start" aria-hidden="true" />
+      Review overdue
+    </Badge>
   );
 }
 
