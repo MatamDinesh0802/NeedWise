@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createPagedList } from "./paged-list";
 import { createQueryCache, type QueryState } from "./query-cache";
+import { toastStore } from "./toasts";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -134,5 +135,12 @@ describe("paged list", () => {
     await list.refresh();
     expect(list.getSnapshot()).toMatchObject({ status: "ready", items: [0, 1, 2] });
     expect(seen).not.toContain("loading");
+  });
+});
+
+describe("toasts", () => {
+  it("gives React the same server snapshot every time (a new [] per call is an error in dev)", () => {
+    expect(toastStore.getServerSnapshot()).toBe(toastStore.getServerSnapshot());
+    expect(toastStore.getServerSnapshot()).toEqual([]);
   });
 });

@@ -8,14 +8,16 @@ export interface Toast {
 }
 
 const DURATION_MS = 6000;
-let toasts: readonly Toast[] = [];
+/** One empty list for SSR and hydration: useSyncExternalStore needs the same value every call. */
+const NONE: readonly Toast[] = Object.freeze([]);
+let toasts: readonly Toast[] = NONE;
 let counter = 0;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((listener) => listener());
 
 export const toastStore = {
   getSnapshot: () => toasts,
-  getServerSnapshot: () => [] as readonly Toast[],
+  getServerSnapshot: () => NONE,
   subscribe(listener: () => void) {
     listeners.add(listener);
     return () => listeners.delete(listener);

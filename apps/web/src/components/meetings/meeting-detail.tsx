@@ -311,7 +311,7 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
             controls
             preload="metadata"
             src={meetingsApi.mediaUrl(meeting.id)}
-            className="w-full"
+            className="w-full shrink-0"
             onTimeUpdate={(e) => setCurrent(activeSegment(meeting.segments, e.currentTarget.currentTime))}
             aria-label={`Recording of ${meeting.title}`}
           >
