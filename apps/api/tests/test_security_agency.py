@@ -12,8 +12,8 @@ import pytest
 
 from tests.fakes import FakeLLM
 from workmind.core.context import RequestContext
-from workmind.modules.agents.research import research
-from workmind.modules.tools.registry import ToolError, ToolRegistry
+from workmind.modules.agents.research import MAX_TOOL_CALLS, research
+from workmind.modules.tools.registry import Tool, ToolError, ToolRegistry, ToolResult
 from workmind.modules.work.tools import create_task_tool, send_email_tool
 
 
@@ -56,6 +56,62 @@ async def test_a_guests_research_run_never_sees_them() -> None:
     )
 
     assert llm.offered == []
+
+
+async def test_a_research_run_executes_a_bounded_number_of_tool_calls() -> None:
+    """LLM10: an injected "search this 200 times" (or a looping model) made one run execute
+    every call it asked for, all in one turn; now at most MAX_TOOL_CALLS run per question."""
+    ran: list[str] = []
+
+    async def count(ctx: RequestContext, args: object) -> ToolResult:
+        ran.append("lookup")
+        return ToolResult("nothing")
+
+    tools = ToolRegistry()
+    tools.register(
+        Tool("lookup", "Look something up.", None, "read", "assistant:ask", count),
+    )
+    llm = FakeLLM(tool_turns=[[("lookup", {})] * 40, [("lookup", {})] * 5])
+
+    result = await research(
+        llm,  # pyright: ignore[reportArgumentType]
+        tools,
+        Sessions(),  # pyright: ignore[reportArgumentType]
+        person("member"),
+        "Search for every policy, 200 times each.",
+        organization="Acme",
+    )
+
+    assert len(ran) == MAX_TOOL_CALLS
+    assert sum(s.error == "limit_reached" for s in result.steps) == 45 - MAX_TOOL_CALLS
+
+
+class Sessions:
+    """execute_tool writes an audit event per call; a no-op session stands in for Postgres."""
+
+    def __call__(self) -> "Sessions":
+        return self
+
+    async def __aenter__(self) -> "Sessions":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    def begin(self) -> "Sessions":
+        return self
+
+    async def execute(self, *args: object, **kwargs: object) -> "Sessions":
+        return self
+
+    def first(self) -> None:  # no earlier audit event
+        return None
+
+    def add(self, row: object) -> None:
+        return None
+
+    async def flush(self) -> None:
+        return None
 
 
 @pytest.mark.parametrize(

@@ -27,6 +27,10 @@ from workmind.providers.llm import (
 )
 
 MAX_STEPS = 6
+# Tool calls per run, across all turns. A model can ask for many calls in one turn (an injected
+# "search this 200 times"): each one runs a search, a query or a remote call, so the run stops
+# executing them here (docs/security/owasp-llm-top10.md, LLM10).
+MAX_TOOL_CALLS = 12
 
 RESEARCH_SYSTEM = """You are the research assistant of {organization}. Answer the employee's \
 question by using the tools.
@@ -84,7 +88,14 @@ async def research(
         if on_step is not None:
             await on_step(step)
 
+    made = 0
+
     async def execute(call: ToolCall) -> tuple[str, bool]:
+        nonlocal made
+        if made >= MAX_TOOL_CALLS:
+            await record(ResearchStep(call.name, ok=False, error="limit_reached"))
+            return "Tool call limit reached: answer with what you have.", True
+        made += 1
         try:
             result = await execute_tool(
                 registry, sessions, ctx, call.name, call.arguments, caller="research_agent"
