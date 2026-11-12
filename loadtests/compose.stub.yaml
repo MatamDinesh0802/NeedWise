@@ -11,6 +11,12 @@
 # withheld, as with a local model), and the agents mode follows ASSISTANT_MODE as usual.
 # Organizations that chose other models in Admin > Models keep them: run
 # `python -m workmind_load.preflight --expect-model workmind-stub` (docs/load-testing.md).
+#
+# Abuse limits are lifted by default, because a run shares the nine demo logins among many
+# simulated users: without this, the per-person request limits, the per-address sign-in limit
+# and the in-flight cap answer 429 and the run measures those limits, not capacity. Set
+# LOADTEST_RATE_LIMITS_ENABLED=true and LOADTEST_MAX_INFLIGHT_PER_USER=4 to load-test with the
+# production limits instead.
 
 x-stub-llm: &stub-llm
   LLM_PROVIDER: openai_compatible
@@ -23,6 +29,8 @@ x-stub-llm: &stub-llm
   LLM_MODEL_GENERATOR: workmind-stub
   LLM_MODEL_AGENT: workmind-stub
   LLM_EXTERNAL: "false"
+  RATE_LIMITS_ENABLED: ${LOADTEST_RATE_LIMITS_ENABLED:-false}
+  MAX_INFLIGHT_PER_USER: ${LOADTEST_MAX_INFLIGHT_PER_USER:-100}
 
 services:
   api:

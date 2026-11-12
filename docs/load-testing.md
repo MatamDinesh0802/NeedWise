@@ -93,8 +93,12 @@ docker compose up -d --wait api worker beat         # back to the model in .env
 | `LLM_MODEL`, `LLM_MODEL_<ROLE>` | `workmind-stub` | Every role, so per-role models in `.env` do not leak through |
 | `LLM_API_KEY` | empty | The stub needs none |
 | `LLM_EXTERNAL` | `false` | The stub counts as a model on your own infrastructure, as a local model would: restricted sources are not withheld or rerouted (ARCHITECTURE 11.6). Set `true` to load the routing path instead. |
+| `RATE_LIMITS_ENABLED` | `false` (`LOADTEST_RATE_LIMITS_ENABLED`) | Many simulated users share nine demo logins and one client address, so the per-person, per-tenant and sign-in request limits ([multi-tenancy](multi-tenancy.md#abuse-limits)) would answer `429 rate_limited` and the run would measure the limits, not capacity |
+| `MAX_INFLIGHT_PER_USER` | `100` (`LOADTEST_MAX_INFLIGHT_PER_USER`) | The same for the cap of 4 answers in progress per person (`429 too_many_requests`); 100 is the highest value the setting accepts |
 
-The same lines in `.env` work as well; then restart `api`, `worker` and `beat`.
+The same lines in `.env` work as well; then restart `api`, `worker` and `beat`. To load-test
+with the production limits, start the override with `LOADTEST_RATE_LIMITS_ENABLED=true
+LOADTEST_MAX_INFLIGHT_PER_USER=4`; refusals then show as failures in the report.
 
 **What else decides which model is called.** The deployment's settings are only the defaults
 of each organization's model catalog ([docs/models.md](models.md)). An organization keeps its
@@ -286,7 +290,9 @@ Compare runs only with the same machine, stub timing, mix, think time and assist
   read as it arrives.
 - **The API only**: pages rendered by the web app (Next.js), the MCP endpoint, meeting uploads,
   workflow runs and approval decisions are not loaded.
-- **Shared logins**: nine demo logins carry all users (see "Who asks").
+- **Shared logins**: nine demo logins carry all users (see "Who asks"). This is why
+  `compose.stub.yaml` lifts the abuse limits; with `NO_MODEL=1` and no override, a run against an
+  unchanged stack keeps them, and a large one meets `429 rate_limited`.
 
 ## Measured so far
 
