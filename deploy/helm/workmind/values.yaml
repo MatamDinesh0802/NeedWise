@@ -309,8 +309,10 @@ api:
   extraEnvFrom: []
   resources:
     requests: {cpu: 250m, memory: 768Mi}
-    # The analytics query workers (ANALYTICS_WORKERS x ANALYTICS_WORKER_MEMORY_MB) run in this
-    # pod: raise the limit with those settings.
+    # The analytics query workers run in this pod next to the `workers` API processes: at most
+    # max(ANALYTICS_WORKERS, workers) x ANALYTICS_WORKER_MEMORY_MB (3 workers split across 2
+    # processes: 1 each, 2 GiB by default), plus about 0.5 GiB per API process. Raise the limit
+    # with those settings.
     limits: {cpu: "2", memory: 4Gi}
   tmpSizeLimit: 1Gi
   # The compose healthcheck uses /healthz (the process is up). /readyz also checks Postgres,

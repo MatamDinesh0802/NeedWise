@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # (docs/benchmarks/load.md).
     db_pool_size: int = Field(default=10, ge=1, le=200)
     db_max_overflow: int = Field(default=10, ge=0, le=200)
+    # Uvicorn's worker processes in this container (compose sets it from API_WORKERS, Helm from
+    # api.workers). Uvicorn reads it; the API reads it to split per-container budgets
+    # (ANALYTICS_WORKERS) across its processes.
+    web_concurrency: int = Field(default=1, ge=1, le=64)
     valkey_url: str = "redis://localhost:6379/0"
     qdrant_url: str = "http://localhost:6333"
     openfga_api_url: str = "http://localhost:8401"
@@ -175,8 +179,10 @@ class Settings(BaseSettings):
     # <object_storage_path>/analytics; every query is read-only, sandboxed and capped. ---
     analytics_max_rows: int = Field(default=1000, gt=0, le=10_000)
     analytics_timeout_s: float = Field(default=10.0, gt=0, le=120)
-    # Queries run in worker processes: how many at once, the resident memory at which a worker
-    # is stopped, and how many of one person's queries run at once (more wait their turn).
+    # Queries run in worker processes: how many at once per API container (split across its
+    # WEB_CONCURRENCY processes, at least one each), the resident memory at which a worker is
+    # stopped, and how many of one person's queries run at once across every API process
+    # (counted in Valkey; more wait their turn).
     analytics_workers: int = Field(default=3, ge=1, le=32)
     analytics_worker_memory_mb: int = Field(default=1024, ge=256, le=65_536)
     analytics_queries_per_user: int = Field(default=1, ge=1, le=32)

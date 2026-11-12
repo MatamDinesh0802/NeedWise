@@ -196,7 +196,7 @@ E: elevation of privilege. "Residual" lists what is not prevented.
 | I | Files, settings, catalog, environment through DuckDB functions | A deny-list of file, network, catalog and settings functions (`DENIED_FUNCTIONS`); model tables only; and, as the second lock, a read-only connection with external access off and its configuration locked | A DuckDB function missing from the deny-list is stopped only by the second lock |
 | I | Error messages as an oracle | Guard errors name rules, not data; queries on hidden rows are fenced, not refused | none known |
 | T | An uploaded CSV cell carries an instruction | Cells are escaped in prompts; numbers in the narrative are checked against results | The narrative is model text over attacker data |
-| D | Expensive queries | Worker processes with memory and time limits, a bounded pool, one query per person at a time, 16 tool calls per question | none known |
+| D | Expensive queries | Worker processes with memory and time limits, a bounded pool per API container, one query per person at a time across every API process (counted in Valkey; fixed after a review found it was per process), 16 tool calls per question | If Valkey is unreachable, the per-person count falls back to each process |
 
 ### 4.9 Governance, usage and budgets (`modules/knowledge/governance.py`, `modules/usage/`, `modules/governance/`)
 

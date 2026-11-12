@@ -40,7 +40,7 @@ from sqlglot import exp
 
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
-from workmind.core.tenancy import tenant_transaction
+from workmind.core.tenancy import tenant_key, tenant_transaction
 from workmind.modules.analytics import dataset, engine
 from workmind.modules.analytics.compiler import (
     CompileError,
@@ -768,7 +768,8 @@ class Analytics:
         if path is None:
             raise engine.DatasetMissingError("No data has been loaded for analytics yet.")
         fences = [(f.name, f.sql) for f in guarded.fences]
-        owner = f"{ctx.tenant_id}:{ctx.user_id}"
+        # One person's running queries, counted across every API process (a Valkey key).
+        owner = tenant_key(ctx.tenant_id, "analytics", "running", ctx.user_id)
         try:
             return await self.pool.execute(
                 path,

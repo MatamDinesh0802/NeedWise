@@ -128,9 +128,9 @@ not shown here; where one exists it is a development value.
 |---|---|---|---|
 | <a id="analytics_max_rows"></a>`ANALYTICS_MAX_ROWS` | integer, > 0, ≤ 10000 | `1000` | Row cap per analytics query. |
 | <a id="analytics_timeout_s"></a>`ANALYTICS_TIMEOUT_S` | number, > 0, ≤ 120 | `10.0` | Time limit per analytics query, in seconds. |
-| <a id="analytics_workers"></a>`ANALYTICS_WORKERS` | integer, ≥ 1, ≤ 32 | `3` | Analytics query worker processes: how many queries run at once. |
+| <a id="analytics_workers"></a>`ANALYTICS_WORKERS` | integer, ≥ 1, ≤ 32 | `3` | Analytics query worker processes per API container: how many queries run at once. Split across the container's `WEB_CONCURRENCY` processes (at least one each), so the container's memory bound is this x `ANALYTICS_WORKER_MEMORY_MB`. |
 | <a id="analytics_worker_memory_mb"></a>`ANALYTICS_WORKER_MEMORY_MB` | integer, ≥ 256, ≤ 65536 | `1024` | A query worker is stopped above this resident memory. |
-| <a id="analytics_queries_per_user"></a>`ANALYTICS_QUERIES_PER_USER` | integer, ≥ 1, ≤ 32 | `1` | How many of one person's queries run at once; more wait. |
+| <a id="analytics_queries_per_user"></a>`ANALYTICS_QUERIES_PER_USER` | integer, ≥ 1, ≤ 32 | `1` | How many of one person's queries run at once, across every API process and pod (counted in Valkey); more wait. |
 
 ## Tools and connectors
 
@@ -176,3 +176,4 @@ not shown here; where one exists it is a development value.
 |---|---|---|---|
 | <a id="db_pool_size"></a>`DB_POOL_SIZE` | integer, ≥ 1, ≤ 200 | `10` | The API's database connections per worker process: kept open, and extra under load. Every API worker process (API_WORKERS in compose, api.workers in Helm) has its own pool, so the API opens at most (size + overflow) x processes; keep that under Postgres's max_connections with room for Keycloak, OpenFGA and the Celery workers (docs/benchmarks/load.md). |
 | <a id="db_max_overflow"></a>`DB_MAX_OVERFLOW` | integer, ≥ 0, ≤ 200 | `10` | *Not described yet.* |
+| <a id="web_concurrency"></a>`WEB_CONCURRENCY` | integer, ≥ 1, ≤ 64 | `1` | Uvicorn's worker processes in this container (compose sets it from API_WORKERS, Helm from api.workers). Uvicorn reads it; the API reads it to split per-container budgets (ANALYTICS_WORKERS) across its processes. |

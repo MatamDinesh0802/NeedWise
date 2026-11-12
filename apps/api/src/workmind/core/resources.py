@@ -18,6 +18,7 @@ from workmind.core.ratelimit import RateLimiter, merge_limits
 from workmind.modules.agents.planning import FastRouter
 from workmind.modules.analytics.engine import QueryPool
 from workmind.modules.analytics.service import Analytics
+from workmind.modules.analytics.slots import ValkeySlots
 from workmind.modules.analytics.tools import describe_data_tool, query_data_tool
 from workmind.modules.authz.openfga import OpenFgaClient
 from workmind.modules.conversations.events import RunEvents
@@ -141,10 +142,13 @@ class Resources:
             settings.analytics_path,
             max_rows=settings.analytics_max_rows,
             timeout_s=settings.analytics_timeout_s,
+            # ANALYTICS_WORKERS is per container: each of its uvicorn processes gets a share,
+            # and one person's running queries are counted in Valkey, across every process.
             pool=QueryPool(
-                workers=settings.analytics_workers,
+                workers=max(1, settings.analytics_workers // settings.web_concurrency),
                 memory_mb=settings.analytics_worker_memory_mb,
                 per_owner=settings.analytics_queries_per_user,
+                slots=ValkeySlots(valkey),
             ),
         )
         tools = ToolRegistry()

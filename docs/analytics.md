@@ -336,10 +336,19 @@ use and reused):
   worker is replaced;
 - a query still running 2 s after the timeout is killed with its worker (408
   `query_timeout`), and so is the query of a caller that gives up;
-- at most `ANALYTICS_WORKERS` (3) queries run at once, each in a thread of the pool's own (not
-  the default executor the rest of the API uses), and at most `ANALYTICS_QUERIES_PER_USER` (1)
-  per person: a second query waits for the first, up to the timeout, then gets 429
-  `analytics_busy`. One person sending many slow queries holds one worker;
+- at most `ANALYTICS_WORKERS` (3) queries run at once per API container, each in a thread of
+  the pool's own (not the default executor the rest of the API uses). The API runs several
+  uvicorn processes (`API_WORKERS`, Helm `api.workers`, 2 by default), each with its own pool,
+  so the container's workers are split between them, at least one each: 3 // 2 = 1 per process,
+  2 in the container. The container's memory bound is therefore at most
+  `max(ANALYTICS_WORKERS, API_WORKERS)` x `ANALYTICS_WORKER_MEMORY_MB`;
+- at most `ANALYTICS_QUERIES_PER_USER` (1) per person, counted in Valkey across every API
+  process and pod (`modules/analytics/slots.py`: a lease per running query under
+  `t:<tenant>:analytics:running:<user>`, which expires if its process dies): a second query
+  waits for the first, up to the timeout, then gets 429 `analytics_busy`. One person sending
+  many slow queries holds one worker. Until a review found it, each process counted its own,
+  so with two processes one person ran two queries at once; if Valkey cannot be reached, each
+  process counts its own again (and logs a warning);
 - a result larger than 8 MB as JSON is refused;
 - workers get a minimal environment (`PATH`, `HOME`, locale and temp settings), no secrets.
 

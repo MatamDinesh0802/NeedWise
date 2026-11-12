@@ -180,7 +180,7 @@ wrong types. The ones you will most likely set:
 | `objectStorage.*` | 20 GiB, ReadWriteOnce, `colocatePods: true` | The shared files volume ([Object storage](#object-storage)) |
 | `api.replicas`, `web.replicas`, `worker.replicas` | 1 | Fixed replica counts; `*.autoscaling.enabled` adds an HPA on CPU (and memory if set) |
 | `worker.queues`, `worker.concurrency` | `[ingest, default]`, 2 | The Celery command line |
-| `*.resources` | see values.yaml | Requests and limits of every container. The API runs the analytics query workers: raise its memory with `ANALYTICS_WORKERS` and `ANALYTICS_WORKER_MEMORY_MB` |
+| `*.resources` | see values.yaml | Requests and limits of every container. The API runs the analytics query workers, split across its `api.workers` processes (at least one each): raise its memory with `ANALYTICS_WORKERS`, `ANALYTICS_WORKER_MEMORY_MB` and `api.workers` |
 | `*.startupProbe`, `*.livenessProbe`, `*.readinessProbe` | the compose healthchecks | Any probe object; `{}` removes one |
 | `ingress.*`, `httpRoute.*` | Ingress on | [Routing](#routing-ingress-or-gateway-api) |
 | `networkPolicy.enabled`, `networkPolicy.publicFrom` | off, any source | [Security settings](#security-settings) |

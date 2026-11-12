@@ -318,7 +318,8 @@ out; huge inputs; costs with no ceiling.
 every model call (`modules/usage/`); at most 4 answers in progress per person (fix 7); research
 at most 6 turns and 12 tool calls (fix 8); department agents bounded in searches, tool calls,
 output tokens and time; the BI agent at most 8 turns and 16 tool calls, queries in a bounded
-worker pool with memory and time limits, one per person at a time; questions up to 4,000
+worker pool with memory and time limits, one per person at a time across every API process
+(counted in Valkey; `integration/test_analytics_slots.py`); questions up to 4,000
 characters; uploads up to 50 MB (meetings 500 MB); a crawl up to 5,000 pages.
 
 **Tests.** `integration/test_usage_budgets.py::test_a_used_up_budget_refuses_every_model_entry_point_with_429`,

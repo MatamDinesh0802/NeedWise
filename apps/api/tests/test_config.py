@@ -105,6 +105,29 @@ async def test_the_database_pool_follows_its_settings(monkeypatch: pytest.Monkey
         await resources.aclose()
 
 
+async def test_the_analytics_workers_are_split_across_the_api_processes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: each uvicorn process had a pool of ANALYTICS_WORKERS, so two processes (the
+    # default) doubled the container's query workers and their memory (the Helm limit is sized
+    # for one pool).
+    from workmind.core.resources import Resources
+
+    monkeypatch.setenv("WEB_CONCURRENCY", "2")
+    monkeypatch.setenv("ANALYTICS_WORKERS", "3")
+    resources = Resources.create(Settings(_env_file=None))  # pyright: ignore[reportCallIssue]
+    try:
+        assert resources.analytics.pool.workers == 1
+    finally:
+        await resources.aclose()
+    monkeypatch.setenv("WEB_CONCURRENCY", "1")
+    resources = Resources.create(Settings(_env_file=None))  # pyright: ignore[reportCallIssue]
+    try:
+        assert resources.analytics.pool.workers == 3
+    finally:
+        await resources.aclose()
+
+
 def test_the_database_pool_settings_are_bounded() -> None:
     with pytest.raises(ValueError, match="db_pool_size"):
         Settings(_env_file=None, db_pool_size=0)  # pyright: ignore[reportCallIssue]

@@ -251,9 +251,16 @@ NOTES: dict[str, str] = {
     "transcription_api_key": "The transcription server's API key, if it needs one.",
     "analytics_max_rows": "Row cap per analytics query.",
     "analytics_timeout_s": "Time limit per analytics query, in seconds.",
-    "analytics_workers": "Analytics query worker processes: how many queries run at once.",
+    "analytics_workers": (
+        "Analytics query worker processes per API container: how many queries run at once. "
+        "Split across the container's `WEB_CONCURRENCY` processes (at least one each), so the "
+        "container's memory bound is this x `ANALYTICS_WORKER_MEMORY_MB`."
+    ),
     "analytics_worker_memory_mb": "A query worker is stopped above this resident memory.",
-    "analytics_queries_per_user": "How many of one person's queries run at once; more wait.",
+    "analytics_queries_per_user": (
+        "How many of one person's queries run at once, across every API process and pod "
+        "(counted in Valkey); more wait."
+    ),
     "searxng_url": (
         "A self-hosted SearXNG for the research agent's `web_search` tool. Unset: no web search."
     ),

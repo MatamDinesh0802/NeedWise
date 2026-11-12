@@ -340,6 +340,33 @@ async def test_one_person_cannot_take_every_worker(db: Path, pool: engine.QueryP
         await first
 
 
+async def test_pools_that_share_slots_share_the_per_person_limit(db: Path) -> None:
+    # Two pools are two API processes; with shared slots (Valkey in the API, analytics/slots.py)
+    # one person's second query waits in the other pool too.
+    slots = engine.LocalSlots()
+    one, two = (
+        engine.QueryPool(workers=1, memory_mb=320, grace_s=0.5, startup_s=20, slots=slots)
+        for _ in range(2)
+    )
+    try:
+        await asyncio.gather(
+            one.execute(db, "SELECT 1", max_rows=1), two.execute(db, "SELECT 1", max_rows=1)
+        )
+        slow = "SELECT levenshtein(repeat('a', 100000), repeat('b', 100000))"
+        first = asyncio.create_task(one.execute(db, slow, max_rows=1, timeout_s=1.0, owner="dan"))
+        await asyncio.sleep(0.2)
+
+        with pytest.raises(engine.QueryBusyError):
+            await two.execute(db, "SELECT 1", max_rows=1, timeout_s=0.3, owner="dan")
+        assert (await two.execute(db, "SELECT 3", max_rows=1, owner="carol")).rows == [[3]]
+        with pytest.raises(engine.QueryTimeoutError):
+            await first
+        assert (await two.execute(db, "SELECT 4", max_rows=1, owner="dan")).rows == [[4]]
+    finally:
+        one.close()
+        two.close()
+
+
 async def test_a_cancelled_query_stops_its_worker(db: Path, pool: engine.QueryPool) -> None:
     await pool.execute(db, "SELECT 1", max_rows=1)
     task = asyncio.create_task(

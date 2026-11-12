@@ -42,7 +42,7 @@ from datetime import date, datetime, timedelta
 from datetime import time as clock
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import duckdb
 from pydantic import JsonValue
@@ -283,6 +283,42 @@ EXIT_OUT_OF_MEMORY = 86  # a worker's exit status when its memory watchdog stopp
 WORKER_ENV = ("PATH", "LANG", "LC_ALL", "TZ", "HOME", "TMPDIR", "SYSTEMROOT")
 
 
+class OwnerSlots(Protocol):
+    """Counts each person's running queries for QueryPool. `LocalSlots` counts in this process;
+    `analytics.slots.ValkeySlots` counts across every API process and pod (the API runs
+    several), so "one query per person at a time" holds for the deployment."""
+
+    async def take(self, owner: str, limit: int, hold_s: float) -> str | None:
+        """A lease on one of `owner`'s `limit` slots, held at most `hold_s` (in case the
+        process dies before giving it back); None when every slot is taken."""
+        ...
+
+    async def give_back(self, owner: str, lease: str) -> None: ...
+
+
+class LocalSlots:
+    """Slots counted in this process only."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._running: dict[str, int] = {}
+
+    async def take(self, owner: str, limit: int, hold_s: float) -> str | None:
+        with self._lock:
+            if self._running.get(owner, 0) >= limit:
+                return None
+            self._running[owner] = self._running.get(owner, 0) + 1
+            return "local"
+
+    async def give_back(self, owner: str, lease: str) -> None:
+        with self._lock:
+            count = self._running.get(owner, 0) - 1
+            if count > 0:
+                self._running[owner] = count
+            else:
+                self._running.pop(owner, None)
+
+
 class QueryPool:
     """Runs queries in worker processes (python -m workmind.modules.analytics.worker), so one
     query cannot take the API process's memory or keep running past its timeout:
@@ -292,7 +328,8 @@ class QueryPool:
     - DuckDB is interrupted after the timeout; a query that does not stop (a long call inside
       one function) is killed `grace_s` later, with its worker;
     - at most `workers` queries run at once (each in a thread of a pool of its own, never the
-      default executor), and at most `per_owner` per person: more wait their turn, up to the
+      default executor), and at most `per_owner` per person, counted by `slots` (in this
+      process unless the caller shares them, e.g. in Valkey): more wait their turn, up to the
       timeout, then fail with QueryBusyError;
     - a result larger than `max_result_bytes` (as JSON) is refused.
 
@@ -308,6 +345,7 @@ class QueryPool:
         max_result_bytes: int = 8 * 1024 * 1024,
         grace_s: float = 2.0,
         startup_s: float = 15.0,
+        slots: OwnerSlots | None = None,
     ) -> None:
         if workers < 1 or per_owner < 1 or memory_mb < 64:
             raise ValueError("workers and per_owner must be positive, memory_mb at least 64")
@@ -320,7 +358,7 @@ class QueryPool:
         self._executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="analytics")
         self._lock = threading.Lock()
         self._idle: list[_Worker] = []
-        self._running: dict[str, int] = {}
+        self._slots: OwnerSlots = slots or LocalSlots()
         self._closed = False
 
     async def execute(
@@ -347,7 +385,7 @@ class QueryPool:
             "timeout_s": timeout_s,
             "max_result_bytes": self.max_result_bytes,
         }
-        await self._enter(owner, timeout_s)
+        lease = await self._enter(owner, timeout_s)
         try:
             holder: dict[str, _Worker] = {}
             call = self._executor.submit(self._call, request, timeout_s, time.monotonic(), holder)
@@ -360,7 +398,8 @@ class QueryPool:
                     worker.kill()
                 raise
         finally:
-            self._leave(owner)
+            if owner is not None and lease is not None:
+                await self._slots.give_back(owner, lease)
         return _from_reply(reply, timeout_s)
 
     @property
@@ -377,30 +416,21 @@ class QueryPool:
 
     # --- Internals ---
 
-    async def _enter(self, owner: str | None, wait_s: float) -> None:
+    async def _enter(self, owner: str | None, wait_s: float) -> str | None:
         if owner is None:
-            return
+            return None
         deadline = time.monotonic() + wait_s
+        # The longest a query can hold its slot: waiting for a pool thread, starting a worker,
+        # running, being killed. A lease lives that long, in case this process dies first.
+        hold_s = 2 * wait_s + self.startup_s + self.grace_s + 5
         while True:
-            with self._lock:
-                if self._running.get(owner, 0) < self.per_owner:
-                    self._running[owner] = self._running.get(owner, 0) + 1
-                    return
+            if (lease := await self._slots.take(owner, self.per_owner, hold_s)) is not None:
+                return lease
             if time.monotonic() >= deadline:
                 raise QueryBusyError(
                     "Your earlier queries are still running. Try again when they have finished."
                 )
             await asyncio.sleep(0.05)
-
-    def _leave(self, owner: str | None) -> None:
-        if owner is None:
-            return
-        with self._lock:
-            count = self._running.get(owner, 0) - 1
-            if count > 0:
-                self._running[owner] = count
-            else:
-                self._running.pop(owner, None)
 
     def _call(
         self, request: dict[str, Any], timeout_s: float, submitted: float, holder: dict[str, Any]
