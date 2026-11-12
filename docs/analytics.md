@@ -198,8 +198,17 @@ sent and of the SQL executed, the tables, the policies applied, the row count, w
 truncated and the time. Never the rows. Model and data changes are audited as
 `analytics.model.updated` and `analytics.dataset.updated`.
 
-`analytics_runs` (question, status `running` / `done` / `failed`, answer as JSON, per user) is
-in place for the agent to record questions and answers; nothing writes to it yet.
+For the agent's questions and answers (`analytics_runs`), each person sees only their own:
+
+```python
+run_id = await analytics.start_run(ctx, "Monthly revenue trend this year and the top 3 drivers")
+await analytics.finish_run(ctx, run_id, status="done", answer={...})  # or status="failed"
+await analytics.runs(ctx, limit=20)   # [RunSummary(id, question, status, created_at)], newest first
+await analytics.run(ctx, run_id)      # RunOut, with the answer; 404 for anyone else's run
+```
+
+The shape of `answer` (chart spec, narrative, SQL, data link) is for the agent to define; it is
+stored as JSON.
 
 ## Seeding
 
@@ -225,7 +234,7 @@ that the semantic layer reproduces the documents in `seed/acme/corpus`:
   Polaris Parcel.
 
 Tests: 372 unit tests (`tests/test_analytics_*.py`), including 158 queries the guard must refuse
-and 45 accepted queries run as Dan that must only return his rows, and 17 integration tests on
+and 45 accepted queries run as Dan that must only return his rows, and 18 integration tests on
 a seeded tenant (`tests/integration/test_analytics.py`).
 
 Latency, Apple M5, revenue by month and product line (27 rows), median of 50 runs: 15 ms end to

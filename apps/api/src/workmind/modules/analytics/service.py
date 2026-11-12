@@ -5,6 +5,8 @@
     model = await analytics.describe(ctx)             # tables, metrics, dimensions (GET /model)
     result = await analytics.run_semantic(ctx, SemanticQuery(metrics=["revenue"], ...))
     result = await analytics.run_sql(ctx, "SELECT ...")
+    run_id = await analytics.start_run(ctx, question)  # the agent's questions and answers
+    await analytics.finish_run(ctx, run_id, status="done", answer={...})
     # admins (org owner or admin):
     await analytics.set_model(ctx, yaml_text)
     await analytics.put_table(ctx, "customers", csv_bytes, "text/csv")
@@ -42,7 +44,7 @@ from workmind.core.tenancy import tenant_transaction
 from workmind.modules.analytics import dataset, engine
 from workmind.modules.analytics.compiler import CompileError, SemanticQuery, compile_query
 from workmind.modules.analytics.guard import GuardedQuery, QueryRejectedError, check
-from workmind.modules.analytics.models import AnalyticsModel
+from workmind.modules.analytics.models import AnalyticsModel, AnalyticsRun
 from workmind.modules.analytics.semantic import (
     GRAINS,
     Format,
@@ -61,6 +63,8 @@ from workmind.modules.identity.models import User
 
 SessionFactory = async_sessionmaker[AsyncSession]
 MANAGER_ROLES = ("owner", "admin")
+MAX_QUESTION_CHARS = 2000
+RunStatus = Literal["running", "done", "failed"]  # models.RUN_STATUSES
 NUMERIC_TYPES = (
     "TINYINT",
     "SMALLINT",
@@ -173,6 +177,17 @@ class ModelDescription(BaseModel):
     # Admins only:
     yaml: str | None = None
     problems: list[str] = []
+
+
+class RunSummary(BaseModel):
+    id: uuid.UUID
+    question: str
+    status: RunStatus
+    created_at: datetime
+
+
+class RunOut(RunSummary):
+    answer: dict[str, Any]
 
 
 # --- Loading ---------------------------------------------------------------------------------
@@ -331,6 +346,50 @@ class Analytics:
             actor=Actor(type="user", id=ctx.user_id),
             user_id=ctx.user_id,
         )
+
+    # --- The BI agent's questions and answers (each person sees their own) ---
+
+    async def start_run(self, ctx: RequestContext, question: str) -> uuid.UUID:
+        """Record a question before answering it. The answer is stored by finish_run."""
+        text = question.strip()
+        if not text or len(text) > MAX_QUESTION_CHARS:
+            raise AnalyticsError(
+                422, "invalid_question", f"Ask a question of 1 to {MAX_QUESTION_CHARS} characters"
+            )
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            run = AnalyticsRun(tenant_id=ctx.tenant_id, user_id=ctx.user_id, question=text)
+            session.add(run)
+            await session.flush()
+            return run.id
+
+    async def finish_run(
+        self,
+        ctx: RequestContext,
+        run_id: uuid.UUID,
+        *,
+        status: Literal["done", "failed"],
+        answer: dict[str, Any],
+    ) -> None:
+        """Store the answer (chart spec, narrative, SQL, data, or the error) as JSON."""
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            run = await _own_run(session, ctx, run_id)
+            run.status = status
+            run.answer = answer
+
+    async def runs(self, ctx: RequestContext, *, limit: int = 20) -> list[RunSummary]:
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            rows = await session.scalars(
+                select(AnalyticsRun)
+                .where(AnalyticsRun.user_id == ctx.user_id)
+                .order_by(AnalyticsRun.created_at.desc(), AnalyticsRun.id.desc())
+                .limit(max(1, min(limit, 100)))
+            )
+            return [RunSummary.model_validate(r, from_attributes=True) for r in rows]
+
+    async def run(self, ctx: RequestContext, run_id: uuid.UUID) -> RunOut:
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            run = await _own_run(session, ctx, run_id)
+            return RunOut.model_validate(run, from_attributes=True)
 
     # --- Without a request (seeding, admin internals) ---
 
@@ -644,6 +703,13 @@ class _Audit:
             "reason": self.reason,
         }
         return {k: v for k, v in details.items() if v is not None}
+
+
+async def _own_run(session: AsyncSession, ctx: RequestContext, run_id: uuid.UUID) -> AnalyticsRun:
+    run = await session.get(AnalyticsRun, run_id)
+    if run is None or run.user_id != ctx.user_id:  # someone else's run: as if it did not exist
+        raise AnalyticsError(404, "not_found", "Run not found")
+    return run
 
 
 async def _locked_row(session: AsyncSession, tenant_id: uuid.UUID) -> AnalyticsModel:

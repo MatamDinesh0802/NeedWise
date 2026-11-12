@@ -337,6 +337,33 @@ async def test_a_query_racing_a_version_switch_opens_the_new_version(
     assert result.rows == [[24]]
 
 
+async def test_runs_record_questions_and_answers_for_their_owner(acme: AcmeAnalytics) -> None:
+    dan, carol = await acme.ctx("dan"), await acme.ctx("carol")
+
+    first = await acme.service.start_run(dan, "  Monthly revenue trend this year?  ")
+    second = await acme.service.start_run(dan, "Top 3 drivers?")
+    await acme.service.finish_run(
+        dan, first, status="done", answer={"narrative": "Up every month.", "sql": "SELECT 1"}
+    )
+
+    runs = await acme.service.runs(dan)
+    assert [(r.id, r.status) for r in runs] == [(second, "running"), (first, "done")]
+    run = await acme.service.run(dan, first)
+    assert (run.question, run.answer["narrative"]) == (
+        "Monthly revenue trend this year?",
+        "Up every month.",
+    )
+    assert await acme.service.runs(carol) == []
+    with pytest.raises(AnalyticsError) as hidden:
+        await acme.service.run(carol, first)
+    with pytest.raises(AnalyticsError) as not_hers:
+        await acme.service.finish_run(carol, first, status="failed", answer={})
+    with pytest.raises(AnalyticsError) as empty:
+        await acme.service.start_run(dan, "   ")
+    assert hidden.value.status == not_hers.value.status == 404
+    assert empty.value.code == "invalid_question"
+
+
 async def test_admins_set_the_model_and_bad_models_are_refused(acme: AcmeAnalytics) -> None:
     erin = await acme.ctx("erin")
     original = (ACME_ANALYTICS / "semantic.yaml").read_text()
