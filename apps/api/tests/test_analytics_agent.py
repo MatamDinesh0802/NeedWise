@@ -11,6 +11,7 @@ from tests.analytics_support import DAN_POLICY, SALES, LocalAnalytics, build_acm
 from tests.fakes import FakeLLM, ToolTurn
 from workmind.modules.analytics.agent import (
     MAX_QUERIES,
+    MAX_STEPS,
     MODEL_DOWN,
     AnswerQuery,
     ChartDraft,
@@ -168,6 +169,12 @@ async def test_no_access_means_no_model_call(acme_file: Path) -> None:
     assert llm.requests == []
     assert analytics.executed == []
     assert analytics.denied == ["ask"]  # audited like a refused query
+    assert result.usage.model_dump() == {
+        "model": "",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0.0,
+    }
     assert analytics.runs[result.id]["status"] == "done"
     assert analytics.runs[result.id]["answer"]["status"] == "no_access"
 
@@ -411,3 +418,18 @@ def test_a_table_falls_back_to_the_querys_columns() -> None:
 
     assert chart is not None
     assert (chart.x, chart.y, chart.y_format) == ("customer", ["growth"], "eur")
+
+
+async def test_a_loop_cut_at_the_step_limit_is_still_composed(acme_file: Path) -> None:
+    analytics = LocalAnalytics(acme_file)
+    turns: list[ToolTurn] = [[("query_metrics", {"metrics": ["revenue"]})]] * (MAX_STEPS + 1)
+    llm = model(
+        Composed(narrative="Revenue was €38.9M [Q1].", chart=None, main_query="Q1"), turns=turns
+    )
+
+    result = await answer(llm, analytics, CTX, "Revenue?")
+
+    assert result.status == "answered"
+    assert len(result.queries) == MAX_STEPS
+    (_, _), (_, compose) = llm.requests
+    assert "stopped at its step limit" in compose.messages[0].content

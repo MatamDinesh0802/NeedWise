@@ -116,7 +116,7 @@ class AnswerUsage(BaseModel):
     model: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
-    cost_usd: float | None = None
+    cost_usd: float | None = 0.0  # None when a model without a listed price was used
 
 
 class AnalyticsAnswer(BaseModel):
@@ -355,7 +355,10 @@ async def _answer(
         return _failed(base, state, TOO_SLOW)
     state.usage.extend(loop.usage)
 
-    compose = compose_request(base.question, model, access, state.queries, loop.text, today)
+    notes = loop.text
+    if loop.stopped == "max_steps":
+        notes += "\n(The analysis stopped at its step limit; it may be incomplete.)"
+    compose = compose_request(base.question, model, access, state.queries, notes, today)
     try:
         composed, usage = await llm.structured("answer", compose, Composed)
     except (LLMError, ValidationError) as exc:
@@ -652,7 +655,7 @@ def _usage(usages: Sequence[LLMUsage]) -> AnswerUsage:
         model=next((u.model for u in used if u.model), ""),
         input_tokens=sum(u.input_tokens for u in used),
         output_tokens=sum(u.output_tokens for u in used),
-        cost_usd=None if total is None or not used else round(total, 6),
+        cost_usd=None if total is None else round(total, 6),
     )
 
 
