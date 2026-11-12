@@ -45,7 +45,7 @@ spec:
         {{- include "workmind.selectorLabels" (list . "keycloak") | nindent 8 }}
       annotations:
         checksum/realm: {{ $realm | sha256sum }}
-        checksum/credentials: {{ include (print .Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/credentials: {{ include "workmind.credentialsChecksum" . }}
         {{- with $c.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

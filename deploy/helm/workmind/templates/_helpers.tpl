@@ -287,10 +287,17 @@ others does that (the first one may go anywhere: a pod matching its own term is 
     limits: {cpu: 200m, memory: 256Mi}
 {{- end -}}
 
-{{/* Checksums that roll the pods when settings or credentials change. */}}
+{{/* Checksums that roll the pods when settings or credentials change. Of the data only: the
+labels carry the chart and app versions, and an upgrade that changes nothing else must not
+restart Valkey, Keycloak or OpenFGA. */}}
 {{- define "workmind.checksums" -}}
-checksum/config: {{ include (print .Template.BasePath "/configmap.yaml") . | sha256sum }}
-checksum/credentials: {{ include (print .Template.BasePath "/secret.yaml") . | sha256sum }}
+checksum/config: {{ (include (print .Template.BasePath "/configmap.yaml") . | fromYaml).data | toJson | sha256sum }}
+checksum/credentials: {{ include "workmind.credentialsChecksum" . }}
+{{- end -}}
+
+{{/* The chart Secret's data (empty when every credential comes from your own Secrets). */}}
+{{- define "workmind.credentialsChecksum" -}}
+{{- (include (print .Template.BasePath "/secret.yaml") . | fromYaml).data | toJson | sha256sum -}}
 {{- end -}}
 
 {{/* ------------------------------------------------------------------------------------------
