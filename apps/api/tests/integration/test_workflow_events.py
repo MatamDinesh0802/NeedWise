@@ -260,11 +260,11 @@ async def test_an_event_trigger_must_name_a_collection_its_owner_can_view(
         {"event": "document.ready", "collection": "hr-employee-records"},
     )
     assert hidden.status_code == 422, hidden.text
-    assert hidden.json()["code"] == "unknown_collection"
+    assert hidden.json()["code"] == "trigger_collection"
     missing = save_workflow(
         api, acme, "erin", "nothing", {"event": "document.ready", "collection": "no-such-thing"}
     )
-    assert missing.json()["code"] == "unknown_collection"
+    assert missing.json()["code"] == "trigger_collection"
     no_event = save_workflow(api, acme, "erin", "half", {"collection": "company-handbook"})
     assert (no_event.status_code, no_event.json()["code"]) == (422, "invalid_workflow")
 

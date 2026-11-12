@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from workmind.api.deps import require_scope, resources_of
@@ -450,7 +450,7 @@ async def _check_event_collection(
     except ApiError as exc:
         raise ApiError(
             422,
-            "unknown_collection",
+            "trigger_collection",
             f"No collection “{key}” that you can view",
             "The workflow runs as you, so it only starts for documents you can view.",
         ) from exc
@@ -501,6 +501,51 @@ async def save_workflow(
             details={"steps": [s["id"] for s in definition["steps"]], "enabled": body.enabled},
         )
         return _workflow(workflow)
+
+
+@admin_router.delete("/{key}", status_code=204)
+async def delete_workflow(ctx: AdminContext, request: Request, key: str) -> Response:
+    """Deletes the workflow and its run history. Refused while a run is queued, running or
+    waiting for an approval: its approval could still run the action after the workflow is gone.
+    Disable the workflow to stop new runs meanwhile."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        workflow = await session.scalar(
+            select(Workflow).where(Workflow.key == key).with_for_update()
+        )
+        if workflow is None:
+            raise ApiError(404, "not_found", "Workflow not found")
+        active = await session.scalar(
+            select(func.count())
+            .select_from(WorkflowRun)
+            .where(
+                WorkflowRun.workflow_id == workflow.id,
+                WorkflowRun.status.in_(("queued", "running", "waiting_approval")),
+            )
+        )
+        if active:
+            raise ApiError(
+                409,
+                "runs_in_progress",
+                "This workflow has runs in progress",
+                "Wait for them to finish, or reject the approvals they wait for, then delete it. "
+                "Disable it to stop new runs meanwhile.",
+            )
+        runs = await session.scalar(
+            select(func.count())
+            .select_from(WorkflowRun)
+            .where(WorkflowRun.workflow_id == workflow.id)
+        )
+        await session.delete(workflow)  # its runs go with it (ON DELETE CASCADE)
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="admin.workflow.deleted",
+            resource_type="workflow",
+            resource_id=key,
+            details={"name": workflow.name, "runs": runs or 0},
+        )
+    return Response(status_code=204)
 
 
 @admin_router.post("/{key}/run", status_code=202)

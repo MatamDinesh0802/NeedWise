@@ -82,6 +82,13 @@ definition:
 - **Schedules** are checked every minute by the `beat` service. Run one beat, however many
   workers you have. Run now: `POST /api/v1/admin/workflows/{key}/run`.
   History: `GET /api/v1/admin/workflows/{key}/runs`.
+- **Delete:** `DELETE /api/v1/admin/workflows/{key}` removes the workflow and its run history
+  (audited as `admin.workflow.deleted`). It is refused (`409 runs_in_progress`) while a run is
+  queued, running or waiting for an approval, because that approval could still run its action;
+  disable the workflow to stop new runs.
+- **In the app:** Admin › Workflows edits the definition (as JSON), runs a workflow now, shows
+  each run's steps and outputs, and deletes workflows. Notifications about a run open
+  `/admin/workflows?workflow={key}&run={id}`, with that run expanded.
 
 ### Event triggers: `document.ready`
 
@@ -108,7 +115,7 @@ steps:
 - **As the owner, with their current access:** the workflow's owner must be able to view the
   document's collection (the same rule as the Knowledge Hub and search). If they can't, no run
   is created and the event tells them nothing. Saving a workflow whose trigger names a
-  collection the admin cannot view is refused (`422 unknown_collection`).
+  collection the admin cannot view is refused (`422 trigger_collection`).
 - **The event** is available as `{{ event.<key> }}`: `name` (`document.ready`), `document_id`,
   `version_id`, `version` (1, 2, ...), `title`, `filename`, `source` (`upload`, `meeting`, a
   connector), `url` (the original, for synced items), `link` (`/knowledge/documents/{id}`),

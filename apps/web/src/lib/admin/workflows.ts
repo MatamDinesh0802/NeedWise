@@ -67,6 +67,8 @@ export const workflowsApi = {
   save: (body: WorkflowSave) => apiJson<Workflow>(`/api/v1/admin/workflows/${id(body.key)}`, { method: "PUT", json: body }),
   run: (key: string) => apiJson<WorkflowRun>(`/api/v1/admin/workflows/${id(key)}/run`, { method: "POST" }),
   runs: (key: string) => apiJson<WorkflowRun[]>(`/api/v1/admin/workflows/${id(key)}/runs`),
+  /** 409 runs_in_progress while a run is queued, running or waiting for an approval. */
+  remove: (key: string) => apiJson<void>(`/api/v1/admin/workflows/${id(key)}`, { method: "DELETE" }),
 };
 
 export const workflowsKeys = {

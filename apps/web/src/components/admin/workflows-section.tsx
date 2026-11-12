@@ -1,10 +1,11 @@
 "use client";
 
-import { CalendarClock, ChevronRight, CircleAlert, FileText, History, Info, LoaderCircle, Play, Plus, ShieldCheck, Wand2, Workflow as WorkflowIcon } from "lucide-react";
+import { CalendarClock, ChevronRight, CircleAlert, FileText, History, Info, LoaderCircle, Play, Plus, ShieldCheck, Trash2, Wand2, Workflow as WorkflowIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
+import { ConfirmDialog } from "@/components/data/confirm-dialog";
 import { Field } from "@/components/data/form";
 import { EmptyState, ErrorAlert, RefreshingHint, TableSkeleton } from "@/components/data/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -70,6 +71,7 @@ export function WorkflowsSection() {
   // The run a link (a notification, an approval) asked to show, expanded.
   const [focusRun, setFocusRun] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Workflow | null>(null);
 
   async function runNow(workflow: Workflow) {
     setStarting(workflow.key);
@@ -161,6 +163,10 @@ export function WorkflowsSection() {
                 ))}
               </ol>
               <div className="mt-auto flex flex-wrap justify-end gap-2 pt-1">
+                <Button variant="ghost" size="sm" className="mr-auto text-muted-foreground" onClick={() => setDeleting(workflow)}>
+                  <Trash2 data-icon="inline-start" />
+                  Delete
+                </Button>
                 <Button variant="ghost" size="sm" onClick={() => setHistory(workflow)}>
                   <History data-icon="inline-start" />
                   Runs
@@ -211,6 +217,20 @@ export function WorkflowsSection() {
           ) : null}
         </SheetContent>
       </Sheet>
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title={`Delete “${deleting?.name ?? ""}”?`}
+        description="The workflow and its run history are removed; the audit log keeps what it did. A workflow with a run in progress can't be deleted until the run ends. To only stop it, disable it instead."
+        confirmLabel="Delete workflow"
+        onConfirm={async () => {
+          if (!deleting) return;
+          await workflowsApi.remove(deleting.key);
+          await invalidateQueries(workflowsKeys.all);
+          toast({ title: `${deleting.name} deleted` });
+        }}
+      />
 
       {/* ?workflow=…&run=… (search params are runtime data: behind Suspense). */}
       <Suspense fallback={null}>
