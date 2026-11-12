@@ -238,6 +238,8 @@ async def advance(deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID) -
             continue
         try:
             if step.research is not None:
+                # TODO(usage): attribute this step's model usage to the workflow run (feature
+                # "workflow", trigger schedule/manual/event) once usage metering is merged.
                 question = str(render(step.research, context))
                 result = await research(
                     await deps.llm_for(tenant_id),

@@ -200,10 +200,10 @@ def run_due_workflows() -> int:
 
 
 async def _start_workflow_run(tenant_id: str, run_id: str) -> str | None:
-    resources = Resources.create(settings)
+    resources = Resources.create(settings, extensions=extensions)
     await resources.load_remote_tools()
     try:
-        deps = WorkflowDeps(resources.db, resources.llm, resources.tools)
+        deps = WorkflowDeps(resources.db, resources.llm, resources.tools, resources.models)
         run = await start_queued(deps, uuid.UUID(tenant_id), uuid.UUID(run_id))
     finally:
         await resources.aclose()

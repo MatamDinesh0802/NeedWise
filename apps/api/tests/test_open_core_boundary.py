@@ -85,4 +85,6 @@ def test_a_community_process_never_loads_the_enterprise_package(tmp_path: Path) 
         check=False,
     )
     assert result.returncode == 0, result.stderr[-2000:]
-    assert result.stdout.startswith("ok")
+    # The last line: a development license in <repo>/.workmind (`make ee-dev-license`) is
+    # refused with APP_ENV=test, and that warning is printed first.
+    assert result.stdout.strip().splitlines()[-1].startswith("ok"), result.stdout[-2000:]

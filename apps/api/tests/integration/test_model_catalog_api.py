@@ -15,12 +15,13 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, SessionFactory, seed_acme
 from workmind.core.config import DEV_SECRETS_ENCRYPTION_KEY, Settings
 from workmind.core.tenancy import tenant_transaction
+from workmind.modules.agents.model_choice import CatalogModels
 from workmind.modules.governance.models import AuditEvent
 from workmind.modules.model_catalog.catalog import ProviderInfo
 from workmind.modules.model_catalog.models import ModelProvider
@@ -375,21 +376,51 @@ async def test_models_in_use_cannot_be_deleted_or_disabled(
         assert refused.json()["code"] == "model_in_use"
         assert "the judge role" in refused.json()["detail"]
 
-    # An agent that uses it (agent definitions gain a model column in the agents work).
-    async with owner_sessions() as session, session.begin():
-        await session.execute(text("ALTER TABLE agent_definitions ADD COLUMN model text"))
-    try:
-        async with tenant_transaction(owner_sessions, acme.tenant_id) as session:
-            await session.execute(
-                text("UPDATE agent_definitions SET model = :m WHERE key = 'hr'"), {"m": model}
-            )
-        assert put(api, acme, "roles", {}).status_code == 200  # roles back to the defaults
-        by_agent = api.delete(f"{BASE}/catalog/{model}", headers=acme.as_("erin", write=True))
-        assert by_agent.status_code == 409
-        assert "the agent" in by_agent.json()["detail"]
-    finally:
-        async with owner_sessions() as session, session.begin():
-            await session.execute(text("ALTER TABLE agent_definitions DROP COLUMN model"))
+    # An agent that runs on it (Admin > Agents): accepted because the catalog offers it, and
+    # from then on the model can't be deleted or disabled under the agent.
+    assert put(api, acme, "roles", {}).status_code == 200  # roles back to the defaults
+    agent = api.post(
+        "/api/v1/admin/agents",
+        json={
+            "key": "contracts",
+            "name": "Contracts agent",
+            "description": "Contracts, NDAs and who may sign them.",
+            "collections": ["company-handbook"],
+            "model": model,
+        },
+        headers=acme.as_("erin", write=True),
+    )
+    assert agent.status_code == 201, agent.text
+    by_agent = api.delete(f"{BASE}/catalog/{model}", headers=acme.as_("erin", write=True))
+    assert by_agent.status_code == 409
+    assert "the agent 'Contracts agent'" in by_agent.json()["detail"]
+    disabled = api.patch(
+        f"{BASE}/providers/{pid}", json={"enabled": False}, headers=acme.as_("erin", write=True)
+    )
+    assert disabled.status_code == 409
+    assert (
+        api.delete("/api/v1/admin/agents/contracts", headers=acme.as_("erin", write=True))
+    ).status_code == 204
+    # Once disabled, no agent can be given it.
+    assert (
+        api.patch(
+            f"{BASE}/catalog/{model}", json={"enabled": False}, headers=acme.as_("erin", write=True)
+        ).status_code
+        == 200
+    )
+    refused_agent = api.post(
+        "/api/v1/admin/agents",
+        json={
+            "key": "contracts",
+            "name": "Contracts agent",
+            "description": "Contracts, NDAs and who may sign them.",
+            "collections": ["company-handbook"],
+            "model": model,
+        },
+        headers=acme.as_("erin", write=True),
+    )
+    assert refused_agent.status_code == 422
+    assert refused_agent.json()["code"] == "model_disabled"
 
     assert (
         api.delete(f"{BASE}/catalog/{model}", headers=acme.as_("erin", write=True)).status_code
@@ -447,6 +478,31 @@ async def test_each_tenant_gets_its_own_models(
     agent_model = resolved.using("system:claude-opus-5-5")
     assert agent_model.model_for("answer") == "system:claude-opus-5-5"  # a per-request override
     assert resolved.using("nope:model") is resolved
+
+
+async def test_an_agent_runs_on_its_catalog_model_until_that_model_is_disabled(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory, scripted: ScriptedProviders
+) -> None:
+    """What the orchestrator and the test console do for an agent with its own model: the
+    tenant's resolution, then `CatalogModels`. Nothing falls back to another model."""
+    pid = add_provider(api, acme, name="Alpha", base_url="https://alpha.example/v1", api_key=KEY)
+    model = add_model(api, acme, pid["id"], "alpha-legal")
+    models = CatalogModels()
+
+    resolved = await resolver(app_sessions, scripted).for_tenant(acme.tenant_id)
+    agent_llm = await models.agent_llm(acme.tenant_id, model, resolved)
+    _, usage = await agent_llm.complete("agent", REQUEST)
+    assert scripted.built[("Alpha", "alpha-legal")].llm.roles() == ["agent"]
+    assert usage.catalog_model == model
+    assert await models.agent_llm(acme.tenant_id, None, resolved) is resolved  # role default
+
+    disabled = api.patch(
+        f"{BASE}/catalog/{model}", json={"enabled": False}, headers=acme.as_("erin", write=True)
+    )
+    assert disabled.status_code == 200
+    fresh = await resolver(app_sessions, scripted).for_tenant(acme.tenant_id)
+    with pytest.raises(LLMError, match="not an enabled model"):
+        await models.agent_llm(acme.tenant_id, model, fresh)
 
 
 async def test_a_change_reaches_other_processes_through_the_settings_version(

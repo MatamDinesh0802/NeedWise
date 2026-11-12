@@ -29,7 +29,7 @@ from workmind.modules.agents.department import (
     ToolOutput,
     run_agent,
 )
-from workmind.modules.agents.model_choice import SystemModels, is_model_id
+from workmind.modules.agents.model_choice import CatalogModels, is_model_id
 from workmind.modules.agents.models import AgentDefinition
 from workmind.modules.agents.orchestrator import AgentResult, OrchestratorDeps, aggregate
 from workmind.modules.agents.planning import Agent, FastRouter, PlanOut, Subtask
@@ -226,15 +226,17 @@ def test_aggregation_renumbers_tool_outputs_across_agents() -> None:
 def test_model_ids_name_a_provider_and_a_model() -> None:
     assert is_model_id("system:claude-sonnet-5-5")
     assert is_model_id(f"{uuid.uuid4()}:llama3.3:70b")
+    assert is_model_id("system-local:llama3.3")
+    assert is_model_id(f"{uuid.uuid4()}:meta-llama/Llama-3.3-70B")
     assert not is_model_id("claude-sonnet-5-5")
-    assert not is_model_id("openai:gpt")  # a provider is "system" or a provider id
+    assert not is_model_id("openai:gpt")  # a provider is "system", "system-local" or an id
     assert not is_model_id("system:")
     assert not is_model_id("system:two words")
 
 
 async def test_a_system_model_pins_the_deployment_provider_and_others_fail_closed() -> None:
     base = FakeLLM(external=False)
-    resolver = SystemModels()
+    resolver = CatalogModels()
 
     assert await resolver.agent_llm(CTX.tenant_id, None, base) is base  # type: ignore[arg-type]
     pinned = await resolver.agent_llm(CTX.tenant_id, "system:claude-x", base)  # type: ignore[arg-type]
@@ -244,6 +246,37 @@ async def test_a_system_model_pins_the_deployment_provider_and_others_fail_close
     assert base.requests[-1][1].model == "claude-x"
     with pytest.raises(LLMError, match="not in this deployment's model catalog"):
         await resolver.agent_llm(CTX.tenant_id, f"{uuid.uuid4()}:llama3", base)  # type: ignore[arg-type]
+
+
+async def test_with_a_tenant_resolution_an_agent_runs_on_its_catalog_model_or_fails() -> None:
+    from workmind.modules.model_catalog.catalog import ROLES
+    from workmind.modules.model_catalog.resolver import Target, TenantLLM
+
+    default, chosen = FakeLLM("default"), FakeLLM("chosen")
+    usable = f"{uuid.uuid4()}:llama3.3"
+
+    def view(client: FakeLLM, model_id: str) -> TenantLLM:
+        return TenantLLM(
+            {role: Target(model_id, client, False) for role in ROLES},  # type: ignore[arg-type]
+            max_external_sensitivity="internal",
+            local=None,
+            override=lambda m: view(chosen, m) if m == usable else None,
+        )
+
+    base = view(default, "system:claude-sonnet-5-5")
+    resolver = CatalogModels()
+
+    assert await resolver.agent_llm(CTX.tenant_id, None, base) is base
+    picked = await resolver.agent_llm(CTX.tenant_id, usable, base)
+    assert isinstance(picked, TenantLLM)
+    assert picked.model_for("agent") == usable
+    _, usage = await picked.complete("agent", LLMRequest(system="s", messages=[]))
+    assert (chosen.roles(), default.roles()) == (["agent"], [])
+    assert usage.catalog_model == usable  # usage names the catalog model it ran on
+    # Disabled or deleted since the agent was saved: that agent's run fails, nothing falls back.
+    with pytest.raises(LLMError, match="not an enabled model"):
+        await resolver.agent_llm(CTX.tenant_id, f"{uuid.uuid4()}:gone", base)
+    assert base.using(f"{uuid.uuid4()}:gone") is base  # the lenient form keeps the default
 
 
 def test_providers_send_the_request_model_instead_of_the_roles() -> None:

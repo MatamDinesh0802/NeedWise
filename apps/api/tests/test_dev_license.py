@@ -11,6 +11,9 @@ from workmind.core.config import Settings
 from workmind.core.dev_license import write_dev_license
 from workmind.core.edition import FEATURES, load_edition
 
+# Outside dev and test, model provider keys need their own encryption key (docs/models.md).
+DEMO_ENCRYPTION_KEY = "b3RoZXIta2V5LWZvci10ZXN0cy0zMi1ieXRlcy0hISE="  # 32 bytes, base64
+
 
 def _settings(directory: Path, app_env: str = "dev") -> Settings:
     return Settings(
@@ -18,6 +21,7 @@ def _settings(directory: Path, app_env: str = "dev") -> Settings:
         app_env=app_env,  # pyright: ignore[reportArgumentType]
         license_file=directory / "license.key",
         license_dev_public_key_file=directory / "dev-public.key",
+        secrets_encryption_key=None if app_env in ("dev", "test") else DEMO_ENCRYPTION_KEY,  # pyright: ignore[reportArgumentType]
     )
 
 
