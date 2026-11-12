@@ -17,8 +17,7 @@ back. Backups are in [backup-restore.md](backup-restore.md).
   you took before upgrading), and running the old and the new version side by side (a rolling
   upgrade). Plan a short downtime: from `docker compose up` to healthy took 32 to 138 seconds
   in the test runs, depending on how busy the machine was (the migrations themselves take
-  seconds); build the images before stopping
-  the old version to keep builds out of it.
+  seconds); build the images before stopping the old version to keep builds out of it.
 
 ## How an upgrade runs
 
