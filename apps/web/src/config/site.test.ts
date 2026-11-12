@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -36,6 +36,13 @@ describe("navigation config", () => {
     for (const item of navItems) {
       const page = item.href === "/" ? `${appDir}/page.tsx` : `${appDir}${item.href}/page.tsx`;
       expect(existsSync(page), `missing ${page}`).toBe(true);
+    }
+  });
+
+  it("has working sections up to Phase 9 (Meetings); later phases are placeholders", () => {
+    const placeholder = (href: string) => readFileSync(`${appDir}${href}/page.tsx`, "utf8").includes("<PagePlaceholder");
+    for (const item of navItems.filter((i) => i.href !== "/")) {
+      expect(placeholder(item.href), item.href).toBe(item.phase > 9);
     }
   });
 

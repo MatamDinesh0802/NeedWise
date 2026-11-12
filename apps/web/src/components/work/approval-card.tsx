@@ -13,7 +13,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { useReducer } from "react";
+import { useId, useReducer } from "react";
 
 import { Field } from "@/components/data/form";
 import { ErrorAlert } from "@/components/data/states";
@@ -25,7 +25,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { AddressChips } from "@/components/work/address-chips";
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
+import { useColleagues } from "@/hooks/use-people";
 import { formatDateTime, formatRelative } from "@/lib/format";
+import { personName, type Person } from "@/lib/people";
 import { getQueryCache } from "@/lib/stores/query-cache";
 import { cn } from "@/lib/utils";
 import { workApi, workKeys, type Approval } from "@/lib/work/api";
@@ -43,6 +45,7 @@ import {
   serverFieldErrors,
   STATUS_LABELS,
   toolTitle,
+  withAssigneeName,
   type DisplayStatus,
   type Draft,
   type DraftErrors,
@@ -99,7 +102,11 @@ export function ApprovalCard({
   const decidable = canDecide(approval, meId);
   const Icon = TOOL_ICONS[approval.tool] ?? Wrench;
   const args = effectiveArguments(approval);
-  const rows = argumentRows(approval.tool, args);
+  // Names from the colleague directory (members; guests and loading states fall back to roles).
+  const colleagues = useColleagues();
+  const approver = personName(approval.approver_id, { meId, people: colleagues.byId, fallback: "the approver" });
+  const baseRows = argumentRows(approval.tool, args);
+  const rows = baseRows ? withAssigneeName(baseRows, colleagues.people) : null;
   const outcome = outcomeText(approval);
   const fieldErrors: DraftErrors = { ...serverFieldErrors(state.error), ...state.draftErrors };
 
@@ -153,7 +160,7 @@ export function ApprovalCard({
             <span className="font-medium">Nothing has happened yet.</span>{" "}
             {decidable
               ? "This only runs if you approve it. You can edit it first, or reject it."
-              : "It only runs once the approver says yes."}
+              : `It only runs once ${approver} says yes.`}
           </p>
         </div>
       ) : null}
@@ -164,6 +171,7 @@ export function ApprovalCard({
           errors={fieldErrors}
           disabled={state.submitting !== null}
           onChange={(draft) => dispatch({ type: "draft", draft })}
+          people={colleagues.people}
         />
       ) : rows ? (
         <ArgumentList rows={rows} edited={approval.edited_arguments !== null} />
@@ -223,7 +231,7 @@ export function ApprovalCard({
         ) : approval.decided_at ? (
           <span title={formatDateTime(approval.decided_at)}>Decided {formatRelative(approval.decided_at)}</span>
         ) : null}
-        {!decidable && status === "pending" && meId !== approval.approver_id ? <span>Waiting for the approver</span> : null}
+        {!decidable && status === "pending" && meId !== approval.approver_id ? <span>Waiting for {approver}</span> : null}
       </footer>
     </article>
   );
@@ -361,14 +369,16 @@ function EditForm({
   errors,
   disabled,
   onChange,
+  people,
 }: {
   draft: Draft;
   errors: DraftErrors;
   disabled: boolean;
   onChange: (draft: Draft) => void;
+  people: readonly Person[];
 }) {
   if (draft.kind === "email") return <EmailForm draft={draft} errors={errors} disabled={disabled} onChange={onChange} />;
-  if (draft.kind === "task") return <TaskForm draft={draft} errors={errors} disabled={disabled} onChange={onChange} />;
+  if (draft.kind === "task") return <TaskForm draft={draft} errors={errors} disabled={disabled} onChange={onChange} people={people} />;
   return (
     <Field label="Arguments (JSON)" hint="The tool checks these again before anything runs." error={errors.json ?? errors.form ?? null}>
       {({ id, describedBy, invalid }) => (
@@ -465,12 +475,16 @@ function TaskForm({
   errors,
   disabled,
   onChange,
+  people,
 }: {
   draft: TaskDraft;
   errors: DraftErrors;
   disabled: boolean;
   onChange: (draft: TaskDraft) => void;
+  people: readonly Person[];
 }) {
+  // The assignee is an email address; the browser suggests colleagues as you type a name or address.
+  const colleaguesList = useId();
   const input = (key: "title" | "assignee" | "department", label: string, hint?: string) => (
     <Field label={label} hint={hint} error={errors[key] ?? null}>
       {({ id, describedBy, invalid }) => (
@@ -478,6 +492,8 @@ function TaskForm({
           id={id}
           value={draft[key]}
           disabled={disabled}
+          list={key === "assignee" && people.length > 0 ? colleaguesList : undefined}
+          autoComplete={key === "assignee" ? "off" : undefined}
           onChange={(e) => onChange({ ...draft, [key]: e.target.value })}
           aria-describedby={describedBy}
           aria-invalid={invalid || undefined}
@@ -502,7 +518,16 @@ function TaskForm({
         )}
       </Field>
       <div className="grid gap-3 sm:grid-cols-3">
-        {input("assignee", "Assignee", "Their email address")}
+        {input("assignee", "Assignee", people.length > 0 ? "A colleague's email: type a name to find it" : "Their email address")}
+        {people.length > 0 ? (
+          <datalist id={colleaguesList}>
+            {people.map((p) => (
+              <option key={p.id} value={p.email}>
+                {p.display_name}
+              </option>
+            ))}
+          </datalist>
+        ) : null}
         {input("department", "Team queue", "Department key")}
         <Field label="Due" error={errors.due ?? null}>
           {({ id, describedBy, invalid }) => (

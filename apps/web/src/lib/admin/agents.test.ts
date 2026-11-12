@@ -5,6 +5,7 @@ import { CSRF_HEADER } from "@/lib/api";
 import {
   agentsApi,
   cleanExamples,
+  deleteAgentText,
   emptyAgentForm,
   formFromAgent,
   suggestAgentKey,
@@ -138,5 +139,25 @@ describe("agentsApi", () => {
     expect(init?.method).toBe("PUT");
     expect(new Headers(init?.headers).get(CSRF_HEADER)).toBe("1");
     expect(JSON.parse(String(init?.body)).enabled).toBe(false);
+  });
+
+  it("deletes by key with DELETE and CSRF (204, no body)", async () => {
+    fetchMock.mockImplementationOnce(async () => new Response(null, { status: 204 }));
+    await expect(agentsApi.remove("customer support")).resolves.toBeUndefined();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/v1/admin/agents/customer%20support");
+    expect(init?.method).toBe("DELETE");
+    expect(new Headers(init?.headers).get(CSRF_HEADER)).toBe("1");
+  });
+});
+
+describe("deleting an agent", () => {
+  it("asks by name and key, and says what stays", () => {
+    const text = deleteAgentText(support);
+    expect(text.title).toBe("Delete Support agent?");
+    expect(text.description).toContain("“Support agent” (support)");
+    expect(text.description).toContain("not touched");
+    expect(text.description).toContain("can't be undone");
+    expect(text.confirm).toBe("Delete agent");
   });
 });

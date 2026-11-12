@@ -1,25 +1,26 @@
 "use client";
 
-import { Bot, CalendarClock, CircleAlert, Hand, ListTodo, Plus, Workflow } from "lucide-react";
-import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Bot, CalendarClock, Hand, ListTodo, Plus, Workflow } from "lucide-react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
 
-import { PersonPicker } from "@/components/admin/person-picker";
 import { SignedInGate } from "@/components/auth/signed-in-gate";
 import { Field, SimpleSelect } from "@/components/data/form";
 import { EmptyState, ErrorAlert, RefreshingHint, TableSkeleton } from "@/components/data/states";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ColleaguePicker } from "@/components/work/colleague-picker";
+import { Commitments } from "@/components/work/commitments";
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
-import { allUsersKey, fetchAllUsers } from "@/hooks/use-directory";
-import { adminApi, adminKeys, type AdminUser } from "@/lib/admin/api";
+import { usePeople } from "@/hooks/use-people";
+import { adminApi, adminKeys } from "@/lib/admin/api";
 import { errorMessage } from "@/lib/error-messages";
 import { formatDateTime, formatRelative } from "@/lib/format";
+import { canUseDirectory, personDetail, type Person } from "@/lib/people";
 import type { Me } from "@/lib/session";
 import { toast } from "@/lib/stores/toasts";
 import { cn } from "@/lib/utils";
@@ -33,40 +34,54 @@ import {
   TASK_SCOPES,
   TASK_STATUS_LABELS,
   TASK_STATUSES,
+  taskOrigin,
   toTaskCreate,
   validateTaskForm,
   type AssignTo,
   type TaskForm,
 } from "@/lib/work/tasks";
 
-export function TasksView({ focusId }: { focusId?: string }) {
+export function TasksView() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <SignedInGate purpose="see your tasks">{(me) => <TaskBoard me={me} focusId={focusId ?? null} />}</SignedInGate>
+      <SignedInGate purpose="see your tasks">{(me) => <TaskBoard me={me} />}</SignedInGate>
     </div>
   );
 }
 
-/** /tasks/[id] (notification links): the board, opened on the tab that has the task, highlighted. */
-export function TaskRoute() {
-  const { id } = useParams<{ id: string }>();
-  return <TasksView focusId={id} />;
-}
-
-interface Names {
+export interface Names {
   meId: string;
   people: ReadonlyMap<string, { display_name: string }>;
   departments: ReadonlyMap<string, { name: string }>;
 }
 
-function TaskBoard({ me, focusId }: { me: Me; focusId: string | null }) {
+/**
+ * Names for assignees and team queues: people from the colleague directory (members), every
+ * department for admins (the admin list), otherwise the viewer's own departments.
+ */
+export function useTaskNames(me: Me) {
   const isAdmin = me.org_role === "owner" || me.org_role === "admin";
+  const directory = usePeople(canUseDirectory(me.org_role));
+  const allDepartments = useApiQuery(isAdmin ? adminKeys.departments : null, adminApi.listDepartments);
+  const departments = useMemo(
+    () =>
+      allDepartments.state.status === "success"
+        ? allDepartments.state.data.items.map((d) => ({ id: d.id, slug: d.slug, name: d.name }))
+        : me.departments.map((d) => ({ id: d.id, slug: d.slug, name: d.name })),
+    [allDepartments.state, me.departments],
+  );
+  const names: Names = useMemo(
+    () => ({ meId: me.id, people: directory.byId, departments: new Map(departments.map((d) => [d.id, { name: d.name }])) }),
+    [me.id, directory.byId, departments],
+  );
+  return { names, departments };
+}
+
+function TaskBoard({ me }: { me: Me }) {
   const mine = useApiQuery(workKeys.taskList("mine"), () => workApi.listTasks("mine"));
   const queues = useApiQuery(workKeys.taskList("queues"), () => workApi.listTasks("queues"));
   const created = useApiQuery(workKeys.taskList("created"), () => workApi.listTasks("created"));
-  // Names of other people and of every department need the admin directory.
-  const users = useApiQuery(isAdmin ? allUsersKey : null, fetchAllUsers);
-  const allDepartments = useApiQuery(isAdmin ? adminKeys.departments : null, adminApi.listDepartments);
+  const { names, departments: departmentChoices } = useTaskNames(me);
   const [picked, setPicked] = useState<TaskScope | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -77,25 +92,7 @@ function TaskBoard({ me, focusId }: { me: Me; focusId: string | null }) {
     created: created.state.status === "success" ? created.state.data : null,
   };
 
-  const departmentChoices = useMemo(
-    () =>
-      allDepartments.state.status === "success"
-        ? allDepartments.state.data.items.map((d) => ({ id: d.id, slug: d.slug, name: d.name }))
-        : me.departments.map((d) => ({ id: d.id, slug: d.slug, name: d.name })),
-    [allDepartments.state, me.departments],
-  );
-  const names: Names = useMemo(
-    () => ({
-      meId: me.id,
-      people: new Map((users.state.status === "success" ? users.state.data : []).map((u) => [u.id, { display_name: u.display_name }])),
-      departments: new Map(departmentChoices.map((d) => [d.id, { name: d.name }])),
-    }),
-    [me.id, users.state, departmentChoices],
-  );
-
-  const focusScope = focusId ? TASK_SCOPES.find((s) => lists[s.value]?.some((t) => t.id === focusId))?.value : undefined;
-  const allLoaded = TASK_SCOPES.every((s) => lists[s.value] !== null);
-  const tab: TaskScope = picked ?? focusScope ?? "mine";
+  const tab: TaskScope = picked ?? "mine";
 
   return (
     <>
@@ -111,14 +108,6 @@ function TaskBoard({ me, focusId }: { me: Me; focusId: string | null }) {
           New task
         </Button>
       </header>
-
-      {focusId && allLoaded && !focusScope ? (
-        <Alert>
-          <CircleAlert aria-hidden="true" />
-          <AlertTitle>This task isn&apos;t open for you anymore</AlertTitle>
-          <AlertDescription>It may be done, cancelled or handed to someone else.</AlertDescription>
-        </Alert>
-      ) : null}
 
       <Tabs value={tab} onValueChange={(value) => setPicked(value as TaskScope)} className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -148,7 +137,7 @@ function TaskBoard({ me, focusId }: { me: Me; focusId: string | null }) {
               ) : (
                 <ul className="flex flex-col divide-y rounded-xl border">
                   {sortTasks(query.state.data).map((task) => (
-                    <TaskRow key={task.id} task={task} scope={scope.value} names={names} focused={task.id === focusId} />
+                    <TaskRow key={task.id} task={task} scope={scope.value} names={names} />
                   ))}
                 </ul>
               )}
@@ -157,30 +146,43 @@ function TaskBoard({ me, focusId }: { me: Me; focusId: string | null }) {
         })}
       </Tabs>
 
+      <Commitments />
+
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent className="sm:max-w-lg">
-          {creating ? <CreateTask me={me} isAdmin={isAdmin} departments={departmentChoices} onDone={() => setCreating(false)} /> : null}
+          {creating ? <CreateTask me={me} departments={departmentChoices} onDone={() => setCreating(false)} /> : null}
         </DialogContent>
       </Dialog>
     </>
   );
 }
 
-const ORIGIN: Record<string, { label: string; icon: typeof Bot }> = {
-  assistant: { label: "From the assistant", icon: Bot },
-  workflow: { label: "From a workflow", icon: Workflow },
-};
+export const ORIGIN_ICONS = { assistant: Bot, research: Bot, workflow: Workflow, meeting: CalendarClock } as const;
 
-function TaskRow({ task, scope, names, focused }: { task: Task; scope: TaskScope; names: Names; focused: boolean }) {
+/** "From a meeting" (a link to it) or "From the assistant"; nothing for tasks made here. */
+export function OriginBadge({ task }: { task: Task }) {
+  const origin = taskOrigin(task);
+  if (!origin) return null;
+  const Icon = ORIGIN_ICONS[origin.kind];
+  const badge = (
+    <Badge variant="secondary" className="font-normal">
+      <Icon data-icon="inline-start" aria-hidden="true" />
+      {origin.label}
+    </Badge>
+  );
+  return origin.href ? (
+    <Link href={origin.href} className="rounded-full focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none">
+      {badge}
+    </Link>
+  ) : (
+    badge
+  );
+}
+
+function TaskRow({ task, scope, names }: { task: Task; scope: TaskScope; names: Names }) {
   const [saving, setSaving] = useState(false);
-  const ref = useRef<HTMLLIElement>(null);
   const due = dueText(task.due_at);
-  const origin = typeof task.origin.via === "string" ? ORIGIN[task.origin.via] : undefined;
   const closed = task.status === "done" || task.status === "cancelled";
-
-  useEffect(() => {
-    if (focused) ref.current?.scrollIntoView({ block: "center" });
-  }, [focused]);
 
   async function update(body: { status?: TaskStatus; assignee_id?: string }, done: string) {
     setSaving(true);
@@ -197,9 +199,13 @@ function TaskRow({ task, scope, names, focused }: { task: Task; scope: TaskScope
   }
 
   return (
-    <li ref={ref} className={cn("flex flex-wrap items-start gap-3 px-4 py-3", focused && "bg-sky-500/5 ring-2 ring-sky-500/40 ring-inset", closed && "opacity-70")}>
+    <li className={cn("flex flex-wrap items-start gap-3 px-4 py-3", closed && "opacity-70")}>
       <div className="min-w-0 flex-1">
-        <p className={cn("font-medium break-words", closed && "line-through decoration-muted-foreground/50")}>{task.title}</p>
+        <p className={cn("font-medium break-words", closed && "line-through decoration-muted-foreground/50")}>
+          <Link href={`/tasks/${task.id}`} className="rounded underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none">
+            {task.title}
+          </Link>
+        </p>
         {task.description ? <p className="line-clamp-2 text-sm whitespace-pre-line text-muted-foreground">{task.description}</p> : null}
         <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span>For: {assigneeText(task, names)}</span>
@@ -210,12 +216,7 @@ function TaskRow({ task, scope, names, focused }: { task: Task; scope: TaskScope
             </span>
           ) : null}
           <span title={formatDateTime(task.created_at)}>Created {formatRelative(task.created_at)}</span>
-          {origin ? (
-            <Badge variant="secondary" className="font-normal">
-              <origin.icon data-icon="inline-start" aria-hidden="true" />
-              {origin.label}
-            </Badge>
-          ) : null}
+          <OriginBadge task={task} />
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -240,17 +241,15 @@ function TaskRow({ task, scope, names, focused }: { task: Task; scope: TaskScope
 
 function CreateTask({
   me,
-  isAdmin,
   departments,
   onDone,
 }: {
   me: Me;
-  isAdmin: boolean;
   departments: { id: string; slug: string; name: string }[];
   onDone: () => void;
 }) {
   const [form, setForm] = useState<TaskForm>(emptyTaskForm);
-  const [person, setPerson] = useState<AdminUser | null>(null);
+  const [person, setPerson] = useState<Person | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -261,7 +260,7 @@ function CreateTask({
   const assignOptions: { value: AssignTo; label: string }[] = [
     { value: "me", label: "Me" },
     ...(departments.length > 0 ? [{ value: "queue" as const, label: "A team queue" }] : []),
-    ...(isAdmin ? [{ value: "person" as const, label: "Someone else" }] : []),
+    ...(canUseDirectory(me.org_role) ? [{ value: "person" as const, label: "A colleague" }] : []),
     { value: "nobody", label: "Nobody yet" },
   ];
 
@@ -293,7 +292,7 @@ function CreateTask({
     >
       <DialogHeader>
         <DialogTitle>New task</DialogTitle>
-        <DialogDescription>Assign it to yourself, to a team&apos;s queue, or leave it for later.</DialogDescription>
+        <DialogDescription>Assign it to yourself, a colleague or a team&apos;s queue, or leave it for later.</DialogDescription>
       </DialogHeader>
       <div className="flex flex-col gap-4">
         <Field label="Title" error={shown("title")}>
@@ -338,22 +337,33 @@ function CreateTask({
         ) : null}
         {form.assignTo === "person" ? (
           <div className="flex flex-col gap-2">
+            <p className="text-sm font-medium">Colleague</p>
             {person ? (
               <div className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm">
-                <span>
+                <span className="min-w-0">
                   {person.display_name} <span className="text-muted-foreground">{person.email}</span>
+                  {personDetail(person) ? <span className="block text-xs text-muted-foreground">{personDetail(person)}</span> : null}
                 </span>
-                <Button type="button" variant="ghost" size="xs" onClick={() => { setPerson(null); patch({ personId: "" }); }}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  aria-label={`Choose someone other than ${person.display_name}`}
+                  onClick={() => {
+                    setPerson(null);
+                    patch({ personId: "" });
+                  }}
+                >
                   Change
                 </Button>
               </div>
             ) : (
-              <PersonPicker
-                exclude={new Set()}
-                label="Find a person"
-                onPick={(user) => {
-                  setPerson(user);
-                  patch({ personId: user.id });
+              <ColleaguePicker
+                exclude={new Set([me.id])}
+                label="Find the colleague to assign it to"
+                onPick={(picked) => {
+                  setPerson(picked);
+                  patch({ personId: picked.id });
                 }}
               />
             )}

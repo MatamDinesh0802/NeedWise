@@ -6,11 +6,21 @@ import type { ReactNode } from "react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { errorMessage } from "@/lib/error-messages";
+import { errorMessage, type ErrorMessage } from "@/lib/error-messages";
 
-/** An API error, explained. Optionally with a retry button. */
-export function ErrorAlert({ error, onRetry, className }: { error: unknown; onRetry?: () => void; className?: string }) {
-  const message = errorMessage(error);
+/** An API error, explained (or `message`, already worded by the caller). Optionally with a retry button. */
+export function ErrorAlert({
+  error,
+  message: worded,
+  onRetry,
+  className,
+}: {
+  error: unknown;
+  message?: ErrorMessage;
+  onRetry?: () => void;
+  className?: string;
+}) {
+  const message = worded ?? errorMessage(error);
   return (
     <Alert variant="destructive" className={className}>
       <CircleAlert aria-hidden="true" />

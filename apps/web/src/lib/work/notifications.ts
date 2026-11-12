@@ -27,10 +27,19 @@ export type NotificationTone = "approval" | "done" | "problem" | "task" | "info"
 
 export function notificationTone(kind: string): NotificationTone {
   if (kind === "approval.requested") return "approval";
-  if (kind === "approval.executed" || kind === "workflow.succeeded") return "done";
+  if (kind === "approval.executed" || kind === "workflow.succeeded" || kind === "meeting.ready") return "done";
   if (/\.(failed|rejected|expired|cancelled)$/.test(kind)) return "problem";
   if (kind.startsWith("task.")) return "task";
   return "info";
+}
+
+/**
+ * Where a notification opens ("meeting.ready" → /meetings/{id}, "task.assigned" → /tasks/{id}).
+ * Only paths in this app: "//host" and "/\host" would leave the site, so they get no link.
+ */
+export function notificationHref(link: string | null | undefined): `/${string}` | null {
+  if (!link || !/^\/(?![/\\])/.test(link)) return null;
+  return link as `/${string}`;
 }
 
 export interface NotificationsState {

@@ -149,3 +149,81 @@ export async function apiJson<T>(path: string, init: ApiRequestInit = {}): Promi
   const text = await response.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }
+
+/** The parts of XMLHttpRequest an upload uses (injected in tests). */
+export interface XhrLike {
+  open(method: string, url: string): void;
+  setRequestHeader(name: string, value: string): void;
+  send(body: Blob): void;
+  abort(): void;
+  status: number;
+  responseText: string;
+  getResponseHeader(name: string): string | null;
+  upload: { onprogress: ((event: { loaded: number; total: number; lengthComputable: boolean }) => void) | null };
+  onload: (() => void) | null;
+  onerror: (() => void) | null;
+  onabort: (() => void) | null;
+}
+
+export interface UploadOptions {
+  /** 0…1 as the bytes go out. */
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+  createXhr?: () => XhrLike;
+}
+
+/**
+ * POSTs a file's raw bytes (not multipart) to an API path, with upload progress. fetch() can't
+ * report upload progress, so this uses XMLHttpRequest. Errors become ApiError like apiFetch's;
+ * cancelling through `signal` rejects with an AbortError.
+ */
+export function uploadRaw<T>(
+  path: string,
+  body: Blob,
+  contentType: string,
+  { onProgress, signal, createXhr = () => new XMLHttpRequest() as unknown as XhrLike }: UploadOptions = {},
+): Promise<T> {
+  if (!path.startsWith("/api/")) throw new Error(`uploadRaw only calls same-origin API paths, got "${path}"`);
+  return new Promise((resolve, reject) => {
+    const xhr = createXhr();
+    xhr.open("POST", path);
+    xhr.setRequestHeader(CSRF_HEADER, "1");
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.setRequestHeader("Content-Type", contentType);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) onProgress?.(Math.min(1, event.loaded / event.total));
+    };
+    xhr.onload = () => {
+      let parsed: unknown = null;
+      try {
+        parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        parsed = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(parsed as T);
+        return;
+      }
+      const problem = parseProblem(parsed, xhr.status);
+      reject(
+        new ApiError({
+          status: xhr.status,
+          title: problem?.title ?? `HTTP ${xhr.status}`,
+          code: problem?.code ?? null,
+          detail: problem?.detail ?? null,
+          problem,
+          requestId: xhr.getResponseHeader("X-Request-Id"),
+        }),
+      );
+    };
+    xhr.onerror = () =>
+      reject(new ApiError({ status: 0, title: "Network error", code: "network_error", detail: "The upload was interrupted." }));
+    xhr.onabort = () => reject(new DOMException("Upload cancelled", "AbortError"));
+    if (signal?.aborted) {
+      reject(new DOMException("Upload cancelled", "AbortError"));
+      return;
+    }
+    signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(body);
+  });
+}

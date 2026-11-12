@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Task } from "@/lib/work/api";
 
-import { assigneeText, dueText, emptyTaskForm, sortTasks, toTaskCreate, validateTaskForm } from "./tasks";
+import { assigneeText, canClaim, canSeeTask, dueText, emptyTaskForm, sortTasks, taskOrigin, toTaskCreate, validateTaskForm } from "./tasks";
 
 const task = (overrides: Partial<Task> = {}): Task => ({
   id: "t1",
@@ -63,5 +63,36 @@ describe("tasks", () => {
       task({ id: "soon", status: "in_progress", due_at: "2026-11-05T17:00:00Z" }),
     ]);
     expect(sorted.map((t) => t.id)).toEqual(["soon", "later", "none", "done"]);
+  });
+});
+
+describe("one task", () => {
+  const me = { id: "u-me", departments: [{ id: "d-ops" }] };
+
+  it("says where it came from, linking back to its meeting", () => {
+    expect(taskOrigin(task({ origin: { via: "meeting", meeting_id: "m 1", action_index: 0 } }))).toEqual({
+      kind: "meeting",
+      label: "From a meeting",
+      href: "/meetings/m%201",
+    });
+    expect(taskOrigin(task({ origin: { via: "assistant" } }))?.label).toBe("From the assistant");
+    expect(taskOrigin(task({ origin: { via: "workflow", workflow_run_id: "r1" } }))?.href).toBeNull();
+    expect(taskOrigin(task({ origin: { via: "web" } }))).toBeNull();
+  });
+
+  it("is visible to its assignee, its creator and its team queue, like the API's rule", () => {
+    expect(canSeeTask(task({ assignee_id: "u-me", created_by: "u-other" }), me)).toBe(true);
+    expect(canSeeTask(task({ assignee_id: "u-other", created_by: "u-me" }), me)).toBe(true);
+    expect(canSeeTask(task({ assignee_id: "u-other", created_by: "u-other", department_id: "d-ops" }), me)).toBe(true);
+    expect(canSeeTask(task({ assignee_id: "u-other", created_by: "u-other", department_id: "d-hr" }), me)).toBe(false);
+    expect(canSeeTask(task({ assignee_id: "u-other", created_by: null }), me)).toBe(false);
+  });
+
+  it("can be claimed only while open, unassigned and in one of my team queues", () => {
+    expect(canClaim(task({ department_id: "d-ops" }), me)).toBe(true);
+    expect(canClaim(task({ department_id: "d-ops", assignee_id: "u-other" }), me)).toBe(false);
+    expect(canClaim(task({ department_id: "d-hr" }), me)).toBe(false);
+    expect(canClaim(task({ department_id: "d-ops", status: "done" }), me)).toBe(false);
+    expect(canClaim(task(), me)).toBe(false);
   });
 });

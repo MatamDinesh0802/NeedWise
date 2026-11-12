@@ -107,6 +107,8 @@ export const workApi = {
     apiJson<Approval>(`/api/v1/approvals/${id(approvalId)}/decision`, { method: "POST", json: body }),
 
   listTasks: (scope: TaskScope) => apiJson<Task[]>(`/api/v1/tasks?scope=${scope}`),
+  /** Assignee, creator, or someone in the task's team queue; anyone else gets a 404. */
+  getTask: (taskId: string) => apiJson<Task>(`/api/v1/tasks/${id(taskId)}`),
   createTask: (body: TaskCreate) => apiJson<Task>("/api/v1/tasks", { method: "POST", json: body }),
   updateTask: (taskId: string, body: TaskUpdate) =>
     apiJson<Task>(`/api/v1/tasks/${id(taskId)}`, { method: "PATCH", json: body }),
@@ -126,5 +128,6 @@ export const workKeys = {
   approval: (approvalId: string) => `work/approvals/one/${approvalId}`,
   tasks: "work/tasks",
   taskList: (scope: TaskScope) => `work/tasks/${scope}`,
+  task: (taskId: string) => `work/tasks/one/${taskId}`,
   agents: "work/agents",
 };

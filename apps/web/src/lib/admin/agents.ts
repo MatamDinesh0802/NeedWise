@@ -41,7 +41,18 @@ export const agentsApi = {
   create: (body: AgentCreate) => apiJson<Agent>(BASE, { method: "POST", json: body }),
   update: (key: string, body: AgentFields) =>
     apiJson<Agent>(`${BASE}/${encodeURIComponent(key)}`, { method: "PUT", json: body }),
+  /** 204. The planner stops routing to it on the next question. */
+  remove: (key: string) => apiJson<void>(`${BASE}/${encodeURIComponent(key)}`, { method: "DELETE" }),
 };
+
+/** The confirmation names the agent and its key, so the wrong one is hard to delete. */
+export function deleteAgentText(agent: Pick<Agent, "name" | "key">): { title: string; description: string; confirm: string } {
+  return {
+    title: `Delete ${agent.name}?`,
+    description: `The planner stops sending questions to “${agent.name}” (${agent.key}) from the next question on. Its collections and their documents are not touched. To pause it instead, disable it. This can't be undone.`,
+    confirm: "Delete agent",
+  };
+}
 
 export const agentsKey = "admin/agents";
 

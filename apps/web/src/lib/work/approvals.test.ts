@@ -17,6 +17,7 @@ import {
   reduceCard,
   serverFieldErrors,
   splitAddresses,
+  withAssigneeName,
   type CardAction,
   type CardState,
   type EmailDraft,
@@ -103,6 +104,15 @@ describe("argument rows", () => {
       { label: "Team queue", value: "operations" },
     ]);
     expect(argumentRows("erp.update_stock", { sku: "A1" })).toBeNull();
+  });
+
+  it("names a proposed task's assignee from the colleague directory", () => {
+    const rows = argumentRows("create_task", { title: "Restock", assignee: "Wei.Zhang@acme.test" })!;
+    const people = [{ email: "wei.zhang@acme.test", display_name: "Wei Zhang" }];
+    expect(withAssigneeName(rows, people)).toContainEqual({ label: "Assignee", value: "Wei Zhang (Wei.Zhang@acme.test)" });
+    expect(withAssigneeName(rows, [])).toEqual(rows); // not in the directory (or a guest): the address as proposed
+    const nobody = argumentRows("create_task", { title: "Restock" })!;
+    expect(withAssigneeName(nobody, people)).toEqual(nobody);
   });
 });
 

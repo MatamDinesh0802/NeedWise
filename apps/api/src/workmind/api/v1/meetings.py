@@ -3,6 +3,7 @@ collection can view the meeting, and its editors can upload and correct it."""
 
 import asyncio
 import hashlib
+import re
 import uuid
 from datetime import UTC, date, datetime, time
 from pathlib import PurePath
@@ -42,6 +43,7 @@ MEDIA_TYPES = {
     ".aif": "audio/aiff",
     ".mov": "video/quicktime",
 }
+_RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 
 
 class MeetingSummary(BaseModel):
@@ -100,6 +102,31 @@ class Commitment(BaseModel):
     start: float | None
     task_id: str | None
     task_status: str | None
+
+
+class UnsatisfiableRangeError(ValueError):
+    pass
+
+
+def byte_range(header: str | None, size: int) -> tuple[int, int] | None:
+    """The one byte range a media player asked for (`Range: bytes=...`), as (first, last),
+    both inclusive. None means "send the whole file": no header, several ranges, or a range we
+    don't understand (RFC 9110 lets a server ignore those). Raises UnsatisfiableRangeError when the
+    range starts past the end."""
+    match = _RANGE.fullmatch((header or "").strip())
+    if match is None or match.groups() == ("", ""):
+        return None
+    first, last = match.groups()
+    if not first:  # a suffix: the last N bytes
+        if int(last) == 0 or size == 0:
+            raise UnsatisfiableRangeError(header)
+        return max(0, size - int(last)), size - 1
+    start = int(first)
+    if last and int(last) < start:
+        return None
+    if start >= size:
+        raise UnsatisfiableRangeError(header)
+    return start, min(int(last), size - 1) if last else size - 1
 
 
 def _summary(m: Meeting) -> MeetingSummary:
@@ -245,8 +272,8 @@ async def get_meeting(ctx: AskContext, request: Request, meeting_id: uuid.UUID) 
 
 @router.get("/meetings/{meeting_id}/media")
 async def meeting_media(ctx: AskContext, request: Request, meeting_id: uuid.UUID) -> Response:
-    """The original recording, for playback at a timestamp (players send Range requests;
-    the whole file is fine for meeting-sized media)."""
+    """The original recording, for playback at a timestamp. Answers Range requests with 206:
+    browsers only let a player seek (jump to a timestamp) in media served that way."""
     resources = resources_of(request)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         meeting, _ = await _meeting(session, ctx, meeting_id)
@@ -254,8 +281,21 @@ async def meeting_media(ctx: AskContext, request: Request, meeting_id: uuid.UUID
     if media_type is None:
         raise ApiError(404, "not_found", "This meeting has no recording")
     data = await resources.storage.get(meeting.media_key)
+    headers = {"Content-Security-Policy": "sandbox", "Accept-Ranges": "bytes"}
+    try:
+        span = byte_range(request.headers.get("range"), len(data))
+    except UnsatisfiableRangeError:
+        return Response(
+            status_code=416, headers={**headers, "Content-Range": f"bytes */{len(data)}"}
+        )
+    if span is None:
+        return Response(content=data, media_type=media_type, headers=headers)
+    first, last = span
     return Response(
-        content=data, media_type=media_type, headers={"Content-Security-Policy": "sandbox"}
+        content=data[first : last + 1],
+        status_code=206,
+        media_type=media_type,
+        headers={**headers, "Content-Range": f"bytes {first}-{last}/{len(data)}"},
     )
 
 
