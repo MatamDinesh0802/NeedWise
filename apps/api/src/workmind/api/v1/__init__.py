@@ -6,6 +6,7 @@ from workmind.api.ops import system
 from workmind.api.v1 import (
     admin,
     agents,
+    analytics,
     assistant,
     conversations,
     knowledge,
@@ -33,3 +34,5 @@ router.include_router(sources.oauth_router)
 router.include_router(work.router)
 router.include_router(work.admin_router)
 router.include_router(meetings.router)
+router.include_router(analytics.router)
+router.include_router(analytics.admin_router)
