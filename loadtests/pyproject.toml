@@ -1,0 +1,43 @@
+[project]
+name = "workmind-loadtests"
+version = "0.0.1"
+description = "Load tests for WorkMind AI (Locust), a stub model server and a report generator"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "locust==2.47.0",  # pinned: scenarios and the report read its CSV columns and events
+    "starlette>=1.10.0",  # the stub model server (same versions as apps/api)
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",  # Starlette's TestClient, for the stub's tests
+    "pyright>=1.1.414",
+    "ruff>=0.17.3",
+]
+
+[tool.uv]
+package = false  # scripts run from this directory; nothing to build or publish
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "S", "ASYNC", "RUF", "SIM", "PT", "N"]
+ignore = ["S104"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.pyright]
+include = ["workmind_load", "tests", "locustfile.py", "stub_llm.py"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -p no:locust"

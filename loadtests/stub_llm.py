@@ -65,15 +65,20 @@ _SOURCE = re.compile(r"<source\s+([^>]*)>(.*?)</source>", re.DOTALL)
 _ATTRIBUTE = re.compile(r'(\w+)="([^"]*)"')
 _AGENT_LINE = re.compile(r'^- "([^"]+)": (.*)$', re.MULTILINE)
 _RESULT = re.compile(r'<result query="(Q\d+)"[^>]*>\n(.*?)</result>', re.DOTALL)
-_TABLES = re.compile(r"^Tables \(use these names in run_sql\):\n- ([A-Za-z_][A-Za-z0-9_]*) \(", re.M)
+_TABLES = re.compile(
+    r"^Tables \(use these names in run_sql\):\n- ([A-Za-z_][A-Za-z0-9_]*) \(", re.M
+)
 _WORD = re.compile(r"[a-z0-9]+")
 _TOKEN = re.compile(r"\S+\s*")
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s")
 _MARKUP = re.compile(r"[#*_`|>\[\]]+")
 _STOPWORDS = frozenset(
-    "what when where which who whom whose why how does did do the and for with from that this "
-    "have has our are was were will your about into over under than then them they their there "
-    "is it its of on in to a an or be by at as we i my me can".split()
+    re.findall(
+        r"\w+",
+        "what when where which who whom whose why how does did do the and for with from that "
+        "this have has our are was were will your about into over under than then them they "
+        "their there is it its of on in to a an or be by at as we i my me can",
+    )
 )
 
 
@@ -211,7 +216,10 @@ def plan(messages: list[dict[str, Any]]) -> dict[str, Any]:
     agents = _AGENT_LINE.findall(system_of(messages))
     question = question_of(last_user(messages))
     asked = words(question)
-    scored = [(len(asked & words(f"{key} {description}")), i, key) for i, (key, description) in enumerate(agents)]
+    scored = [
+        (len(asked & words(f"{key} {description}")), i, key)
+        for i, (key, description) in enumerate(agents)
+    ]
     ranked = [key for score, _, key in sorted(scored, key=lambda s: (-s[0], s[1])) if score > 0]
     if not agents or (not ranked and asked <= {"hello", "thanks", "thank", "hey"}):
         return {"mode": "direct", "subtasks": []}
@@ -265,7 +273,11 @@ def composed(messages: list[dict[str, Any]]) -> dict[str, Any]:
         "y_format": "number",
     }
     # As the prompt asks: no chart for a single value (one column).
-    return {"narrative": narrative, "chart": chart if len(columns) > 1 else None, "main_query": query}
+    return {
+        "narrative": narrative,
+        "chart": chart if len(columns) > 1 else None,
+        "main_query": query,
+    }
 
 
 def instance(schema: dict[str, Any], root: dict[str, Any], depth: int = 0) -> Any:
@@ -331,7 +343,9 @@ def structured(body: dict[str, Any], messages: list[dict[str, Any]]) -> tuple[st
     return name or "schema", value if isinstance(value, dict) else {"value": value}
 
 
-def tool_turn(body: dict[str, Any], messages: list[dict[str, Any]], timing: Timing) -> dict[str, Any]:
+def tool_turn(
+    body: dict[str, Any], messages: list[dict[str, Any]], timing: Timing
+) -> dict[str, Any]:
     """The assistant message of one tool-loop turn."""
     offered = {
         str(t["function"]["name"])
@@ -345,7 +359,8 @@ def tool_turn(body: dict[str, Any], messages: list[dict[str, Any]], timing: Timi
         if "search_knowledge" in offered:
             call = ("search_knowledge", {"query": question[:500] or "company policy"})
         elif "run_sql" in offered and (table := _TABLES.search(system_of(messages))):
-            sql = f"SELECT COUNT(*) AS row_count FROM {table.group(1)}"
+            # A table name from WorkMind's own prompt; WorkMind's SQL guard checks the query.
+            sql = f"SELECT COUNT(*) AS row_count FROM {table.group(1)}"  # noqa: S608
             call = ("run_sql", {"sql": sql, "purpose": f"Count the rows of {table.group(1)}"})
     if call is None:
         results = [text_of(m.get("content")) for m in messages if m.get("role") == "tool"]
