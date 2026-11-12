@@ -361,6 +361,11 @@ grains `day`, `week`, `month`, `quarter`, `year` on the fact table's `time_colum
 `{dimension, op, values}` with `=`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `not_in`; inclusive
 `date_from` / `date_to`; `order_by` `{field, direction}`; `limit` 1 to 1,000 (default 100).
 Unknown fields are refused, so a model's tool call cannot smuggle in SQL.
+A metric's `filter` becomes a `FILTER (WHERE ...)` on its aggregates. When the query groups by
+something and every metric asked for has a filter, the filters (joined with OR) are also added
+as a `WHERE`: a row that passes none of them adds nothing to any metric, so the values are the
+same and groups with nothing to show are left out ("pipeline value by stage" lists the three
+open stages, not won and lost with no value). Found while building the evaluation.
 
 Errors are `AnalyticsError`, an `ApiError`, so an API route can let them through as problem
 details. `detail` is written for the person, or for the model to correct its query:

@@ -44,7 +44,7 @@ def test_a_metric_with_a_filter_and_a_time_grain() -> None:
     assert compiled(metrics=["revenue"], dimensions=["month"]) == (
         "SELECT CAST(DATE_TRUNC('MONTH', invoice_lines.invoice_date) AS DATE) AS month, "
         "SUM(invoice_lines.amount_eur) FILTER(WHERE invoice_lines.status <> 'void') AS revenue "
-        "FROM invoice_lines GROUP BY 1 ORDER BY 1 ASC"
+        "FROM invoice_lines WHERE invoice_lines.status <> 'void' GROUP BY 1 ORDER BY 1 ASC"
     )
 
 
@@ -61,8 +61,32 @@ def test_only_the_needed_tables_are_joined() -> None:
         "FROM invoice_lines "
         "INNER JOIN customers ON invoice_lines.customer_id = customers.customer_id "
         "INNER JOIN products ON invoice_lines.product_id = products.product_id "
-        "WHERE customers.region = 'DACH' GROUP BY 1 ORDER BY 2 DESC"
+        "WHERE invoice_lines.status <> 'void' AND customers.region = 'DACH' "
+        "GROUP BY 1 ORDER BY 2 DESC"
     )
+
+
+def test_groups_where_no_row_passes_the_metric_filters_are_left_out(acme: Path) -> None:
+    # Without the WHERE, won and lost would be listed with no value (NULL).
+    assert results(acme, metrics=["pipeline_value"], dimensions=["stage"]) == [
+        ["proposal", 1_870_000],
+        ["negotiation", 500_000],
+        ["qualified", 380_000],
+    ]
+    assert [r[0] for r in results(acme, metrics=["revenue"], dimensions=["invoice_status"])] == [
+        "paid",
+        "open",
+    ]
+    # Different filters: a row passing either one still counts.
+    either = compiled(metrics=["revenue", "open_receivables"], dimensions=["invoice_status"])
+    assert "WHERE invoice_lines.status <> 'void' OR invoice_lines.status = 'open' GROUP" in either
+    # No grouping, or a metric without a filter: nothing is added.
+    assert compiled(metrics=["revenue"]).endswith("FROM invoice_lines ORDER BY 1 DESC")
+    mixed = compiled(metrics=["won_value", "deals"], dimensions=["deal_owner"])
+    assert "FROM opportunities GROUP BY 1" in mixed
+    # The values are the same as without it.
+    by_owner = results(acme, metrics=["won_value"], dimensions=["deal_owner"])
+    assert by_owner == [["diego.alvarez@acme.test", 4_280_000], ["dan@acme.test", 1_062_500]]
 
 
 def test_dates_are_inclusive_literals() -> None:

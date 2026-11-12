@@ -122,6 +122,13 @@ def compile_query(model: SemanticModel, query: SemanticQuery) -> CompiledQuery:
         columns.append(OutputColumn(name, "metric", metric.format))
 
     conditions: list[exp.Expr] = []
+    filters = [model.metrics[name].filter for name in query.metrics]
+    if query.dimensions and all(filters):
+        # A row that passes no metric's filter adds nothing to any metric: leaving it out keeps
+        # every value and drops groups that would only show NULL ("pipeline value by stage"
+        # would otherwise list won and lost deals with no value).
+        unique = dict.fromkeys(" ".join(f.split()) for f in filters if f)
+        conditions.append(exp.or_(*(_qualified(expression(f), fact) for f in unique), copy=False))
     for item in query.filters:
         if item.dimension in GRAINS:
             raise CompileError("Filter dates with date_from and date_to, not a time grain.")
