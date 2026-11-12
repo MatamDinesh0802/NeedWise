@@ -32,15 +32,63 @@ Supply chain and releases ([docs/security/supply-chain.md](docs/security/supply-
   those images through the permission gate, and only then tags them
   ([docs/operations/releasing.md](docs/operations/releasing.md)).
 
+Security review ([docs/security/owasp-llm-top10.md](docs/security/owasp-llm-top10.md),
+[threat model](docs/security/threat-model.md)):
+
+- Eleven fixes, each with a regression test: the web crawler follows redirects only within its
+  site and checks every host against an outbound URL policy (SSRF); stored answers, research text
+  and MCP `ask` results carry no images; citation markers inside sources and tool results reach
+  the model neutralized; tool results, transcripts, workflow event fields and the conversation
+  summary are escaped or quoted as data; guests cannot send email or create tasks for others; at
+  most `MAX_INFLIGHT_PER_USER` (4) answers in progress per person; at most 12 tool calls per
+  research run; Slack syncs are always `discussion`; links in answers show their host.
+- The red team grows from 16 to 59 attacks on four surfaces (chat, agents, research, analytics),
+  scored for leaks (the gate) and violations (reported); three injection documents join the seed
+  corpus (47 documents).
+
+Multi-tenant hardening ([docs/multi-tenancy.md](docs/multi-tenancy.md)):
+
+- Every tenant's Valkey keys under `t:<tenant_id>:`; the tenant condition inside the Qdrant
+  client; suspended tenants' sessions end; Celery tasks refuse a missing tenant; stored file keys
+  checked against the reading tenant; grants to another tenant's people refused (422
+  `unknown_principal`).
+- `wm tenant list|create|delete|verify-empty`.
+- Request rate limits per person, per tenant and per sign-in address (429 `rate_limited`;
+  `RATE_LIMITS`, `RATE_LIMITS_ENABLED`).
+- A cross-tenant suite that calls every route with another tenant's ids.
+
+Operations: `make backup` and `make restore` with a measured restore drill
+([backup and restore](docs/operations/backup-restore.md)); an upgrade test from a release tag,
+passed from v0.1.0 ([upgrades](docs/operations/upgrade.md)); `wm authz sync`.
+
+Deployment and docs: a Helm chart in `deploy/helm/workmind`, validated but not yet installed on a
+cluster ([docs/deploy/kubernetes.md](docs/deploy/kubernetes.md)); the docs site (`make docs`,
+`make docs-serve`) with the configuration and HTTP API reference generated from the code.
+
+Tests: a browser end-to-end suite in `e2e/browser` (sign-in per role, every page, permissions,
+axe accessibility checks, phone layout), run in CI, and the UI fixes it found; a Locust load-test
+harness with a stub model server ([docs/load-testing.md](docs/load-testing.md)).
+
 Upgrade notes so far:
 
 - The next `make up` pulls the digest-pinned images. `postgres:18.6` resolves to a newer build of
   the same tag than older checkouts pulled; the data volume is unaffected.
 - The api image runs as `10001:10001` (the user ID is unchanged; the group is now 10001) and the
   web image as `1001:1001` (unchanged). Existing volumes keep working.
-
-The rest of Phase 12's scope (security review, load tests, multi-tenant hardening, backup and
-restore, the upgrade guide, the Helm chart, the docs site) is not listed here yet.
+- Valkey key names changed (run event streams, usage caches, Google OAuth flows moved under
+  `t:<tenant_id>:`): an answer streaming during the upgrade loses its event stream, usage caches
+  rebuild within 60 s, and a Google Drive connection started in the last 10 minutes must be
+  started again.
+- New limits apply: 429 `rate_limited` above the request rate limits and 429
+  `too_many_requests` above `MAX_INFLIGHT_PER_USER`. Scripts and load tests that share one login
+  may need `RATE_LIMITS` or `RATE_LIMITS_ENABLED=false`.
+- Behaviour changes: guests can no longer send email or create tasks for others; Slack sources
+  sync as `discussion` whatever the collection's default trust; the crawler no longer follows
+  redirects to other sites.
+- Re-seed demo deployments (`make seed`): three new documents and a renamed sheet in the
+  signature authority workbook.
+- After an upgrade or a restore, `wm authz sync` brings each tenant's OpenFGA store to the
+  current model.
 
 ## v0.11 — Phase 11: admin, governance and usage analytics (2026-11-12, not tagged)
 
