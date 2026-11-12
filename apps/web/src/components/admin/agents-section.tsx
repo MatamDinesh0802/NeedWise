@@ -3,6 +3,7 @@
 import { Bot, Info, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
+import { ConfirmDialog } from "@/components/data/confirm-dialog";
 import { Field, SimpleSelect } from "@/components/data/form";
 import { EmptyState, ErrorAlert, RefreshingHint, TableSkeleton } from "@/components/data/states";
 import { ScopeBadge } from "@/components/knowledge/badges";
@@ -27,6 +28,7 @@ import {
   AGENT_SAVED_TOAST,
   agentsApi,
   agentsKey,
+  deleteAgentText,
   emptyAgentForm,
   formFromAgent,
   toAgentFields,
@@ -48,6 +50,8 @@ export function AgentsSection() {
   const collections = useApiQuery(knowledgeKeys.adminCollections, knowledgeApi.listAllCollections);
   const [editing, setEditing] = useState<Agent | "new" | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Agent | null>(null);
+  const confirmText = deleting ? deleteAgentText(deleting) : null;
 
   const byKey = new Map<string, AdminCollection>(
     collections.state.status === "success" ? collections.state.data.items.map((c) => [c.key, c]) : [],
@@ -133,9 +137,15 @@ export function AgentsSection() {
                   {agent.examples.length} {agent.examples.length === 1 ? "example" : "examples"} · up to {agent.max_searches}{" "}
                   {agent.max_searches === 1 ? "search" : "searches"} · updated {formatRelative(agent.updated_at)}
                 </span>
-                <Button variant="outline" size="sm" onClick={() => setEditing(agent)}>
-                  Edit
-                </Button>
+                <div className="flex shrink-0 gap-1">
+                  <Button variant="ghost" size="sm" aria-label={`Delete ${agent.name}`} onClick={() => setDeleting(agent)}>
+                    <Trash2 data-icon="inline-start" aria-hidden="true" />
+                    Delete
+                  </Button>
+                  <Button variant="outline" size="sm" aria-label={`Edit ${agent.name}`} onClick={() => setEditing(agent)}>
+                    Edit
+                  </Button>
+                </div>
               </div>
             </li>
           ))}
@@ -155,6 +165,20 @@ export function AgentsSection() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title={confirmText?.title ?? "Delete agent?"}
+        description={confirmText?.description ?? ""}
+        confirmLabel={confirmText?.confirm ?? "Delete agent"}
+        onConfirm={async () => {
+          if (!deleting) return;
+          await agentsApi.remove(deleting.key);
+          await invalidateQueries(agentsKey);
+          toast({ title: `${deleting.name} deleted`, description: "The planner no longer sends questions to it." });
+        }}
+      />
     </section>
   );
 }
