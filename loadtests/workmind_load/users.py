@@ -361,9 +361,13 @@ class AskingUser(WorkMindUser):
 
     def on_stop(self) -> None:
         for conversation in self.created:
-            self.client.delete(
-                f"/api/v1/conversations/{conversation}", name="conversations: delete"
-            )
+            with self.client.delete(
+                f"/api/v1/conversations/{conversation}",
+                name="conversations: delete",
+                catch_response=True,
+            ) as response:
+                if response.status_code not in (204, 404):  # 404: already gone
+                    response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
         self.created.clear()
 
 
