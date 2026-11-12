@@ -37,7 +37,8 @@ from workmind.seed.company import load_company
 
 ADMIN_URL = os.environ.get("TEST_DATABASE_ADMIN_URL")
 API_DIR = Path(__file__).resolve().parents[2]
-TEST_DB = "workmind_test"
+# Override to run several test sessions side by side (each gets its own throwaway database).
+TEST_DB = os.environ.get("TEST_DATABASE_NAME", "workmind_test")
 OWNER_ROLE = "workmind_test_owner"
 APP_ROLE = "workmind_test_app"
 PASSWORD = "test-only-password"

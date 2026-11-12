@@ -1,0 +1,22 @@
+opportunity_id,customer_id,name,product_line,amount_eur,stage,owner,created_date,close_date,loss_reason
+OPP-001,C001,Bluefin heavy-duty expansion,AMR-500,1650000,won,diego.alvarez@acme.test,2026-02-10,2026-05-29,
+OPP-002,C002,Polaris hub automation,AMR-500,1320000,won,diego.alvarez@acme.test,2026-01-20,2026-06-12,
+OPP-003,C003,Meridian line-side delivery,AMR-500,940000,won,diego.alvarez@acme.test,2026-03-02,2026-06-25,
+OPP-004,C022,Nordlicht chilled DC (25 AMR-200),AMR-200,462500,won,dan@acme.test,2026-05-14,2026-08-21,
+OPP-005,C024,Harbor Logistics AMR-500 fleet,AMR-500,1480000,lost,diego.alvarez@acme.test,2026-04-08,2026-09-17,price
+OPP-006,C023,Kestrel Antwerp pilot and rollout (40 AMR-500),AMR-500,1100000,proposal,dan@acme.test,2026-08-04,2026-12-15,
+OPP-007,C001,Bluefin AMR-200 expansion,AMR-200,200000,qualified,diego.alvarez@acme.test,2026-02-06,2026-11-01,
+OPP-008,C002,Polaris AMR-500 expansion,AMR-500,180000,qualified,diego.alvarez@acme.test,2026-03-23,2026-10-03,
+OPP-009,C003,Meridian AMR-200 expansion,AMR-200,460000,negotiation,diego.alvarez@acme.test,2026-01-26,2026-12-07,
+OPP-010,C004,Ostara FleetOS upgrade,FleetOS,40000,lost,diego.alvarez@acme.test,2026-02-26,2026-03-28,competitor
+OPP-011,C006,Northgate AMR-200 expansion,AMR-200,310000,proposal,diego.alvarez@acme.test,2026-06-04,2026-12-05,
+OPP-012,C007,Rhine AMR-200 expansion,AMR-200,520000,lost,diego.alvarez@acme.test,2026-06-23,2026-06-28,timing
+OPP-013,C008,Atlas FleetOS upgrade,FleetOS,110000,won,diego.alvarez@acme.test,2026-04-02,2026-05-28,
+OPP-014,C010,Corvid AMR-200 expansion,AMR-200,260000,won,diego.alvarez@acme.test,2026-05-23,2026-06-28,
+OPP-015,C011,Fjordline AMR-200 expansion,AMR-200,240000,proposal,dan@acme.test,2026-04-14,2026-11-27,
+OPP-016,C014,Lumen FleetOS upgrade,FleetOS,180000,won,dan@acme.test,2026-03-09,2026-06-28,
+OPP-017,C015,Brightwater AMR-200 expansion,AMR-200,250000,won,dan@acme.test,2026-01-08,2026-05-28,
+OPP-018,C016,Pioneer FleetOS upgrade,FleetOS,40000,negotiation,dan@acme.test,2026-03-01,2026-11-19,
+OPP-019,C017,Orchard AMR-500 expansion,AMR-500,80000,lost,dan@acme.test,2026-04-02,2026-05-28,competitor
+OPP-020,C018,Calder AMR-200 expansion,AMR-200,220000,proposal,dan@acme.test,2026-05-15,2026-12-20,
+OPP-021,C019,Sable FleetOS upgrade,FleetOS,170000,won,dan@acme.test,2026-04-04,2026-04-28,

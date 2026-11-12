@@ -1,0 +1,5 @@
+product_id,name,product_line,list_price_eur,billing
+AMR-200,AMR-200 compact robot,AMR-200,18500,one-off
+AMR-500,AMR-500 heavy-duty robot,AMR-500,27500,one-off
+FLEETOS-STD,"FleetOS Standard (per robot, monthly)",FleetOS,95,monthly
+FLEETOS-PLUS,"FleetOS Plus (per robot, monthly)",FleetOS,140,monthly

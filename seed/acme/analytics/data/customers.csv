@@ -1,0 +1,25 @@
+customer_id,name,segment,region,country,account_owner,customer_since,status
+C001,Bluefin Freight,3PL,Benelux,NL,diego.alvarez@acme.test,2026-01-01,customer
+C002,Polaris Parcel,Parcel,DACH,DE,diego.alvarez@acme.test,2026-01-01,customer
+C003,Meridian Auto Parts,Manufacturing,DACH,DE,diego.alvarez@acme.test,2026-01-01,customer
+C004,Ostara Pharma Logistics,Healthcare,Benelux,BE,diego.alvarez@acme.test,2026-01-01,customer
+C005,Castell Home Retail,Retail,Iberia,ES,diego.alvarez@acme.test,2026-01-01,customer
+C006,Northgate 3PL,3PL,UK & Ireland,GB,diego.alvarez@acme.test,2026-01-01,customer
+C007,Rhine Valley Foods,Grocery,DACH,DE,diego.alvarez@acme.test,2026-01-01,customer
+C008,Atlas Parcel Hub,Parcel,France,FR,diego.alvarez@acme.test,2026-01-01,customer
+C009,Granite Home Improvement,Retail,UK & Ireland,GB,diego.alvarez@acme.test,2026-02-01,customer
+C010,Corvid Industrial,Manufacturing,Nordics,SE,diego.alvarez@acme.test,2026-01-01,customer
+C011,Fjordline Cold Chain,Grocery,Nordics,NO,dan@acme.test,2026-01-01,customer
+C012,Tagus Distribution,3PL,Iberia,PT,dan@acme.test,2026-01-01,customer
+C013,Alder & Finch Retail,Retail,UK & Ireland,GB,dan@acme.test,2026-01-01,customer
+C014,Lumen Electronics,Manufacturing,Benelux,NL,dan@acme.test,2026-01-01,customer
+C015,Brightwater Beverages,Grocery,France,FR,dan@acme.test,2026-01-01,customer
+C016,Pioneer Medical Supply,Healthcare,DACH,AT,dan@acme.test,2026-01-01,customer
+C017,Orchard Fresh,Grocery,Benelux,NL,dan@acme.test,2026-03-01,customer
+C018,Calder Fashion Logistics,Retail,UK & Ireland,GB,dan@acme.test,2026-01-01,customer
+C019,Sable Paper Products,Manufacturing,Nordics,FI,dan@acme.test,2026-02-01,customer
+C020,Juniper Books,Retail,DACH,DE,dan@acme.test,2026-04-01,customer
+C021,Vantage Spare Parts,Manufacturing,France,FR,dan@acme.test,2026-01-01,customer
+C022,Nordlicht Grocers,Grocery,Nordics,DK,dan@acme.test,2026-09-01,customer
+C023,Kestrel Retail,Retail,Benelux,BE,dan@acme.test,,prospect
+C024,Harbor Logistics,3PL,UK & Ireland,GB,diego.alvarez@acme.test,,prospect
