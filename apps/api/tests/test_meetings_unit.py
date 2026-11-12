@@ -9,7 +9,7 @@ from tests.fakes import FakeLLM
 from workmind.api.v1.meetings import UnsatisfiableRangeError, byte_range
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.extract import ActionItem, Decision, Extraction, clock, extract
-from workmind.modules.meetings.models import Meeting
+from workmind.modules.meetings.models import Meeting, held_on
 from workmind.modules.meetings.pipeline import document_title, transcript_markdown
 from workmind.providers.transcription import hint
 
@@ -199,3 +199,19 @@ def test_media_answers_one_byte_range(header: str | None, expected: tuple[int, i
 def test_a_range_past_the_end_is_not_satisfiable(header: str) -> None:
     with pytest.raises(UnsatisfiableRangeError):
         byte_range(header, 100)
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        ("weekly-ops-sync-2026-11-02.txt", date(2026, 11, 2)),
+        ("2026-11-04 customer call.m4a", date(2026, 11, 4)),
+        ("sync-2026-13-40-then-2026-10-30.vtt", date(2026, 10, 30)),  # not a date, then one
+        ("ops-sync.vtt", date(2026, 11, 12)),  # no date: the upload's day
+        ("build-20261102.vtt", date(2026, 11, 12)),
+    ],
+)
+def test_a_meeting_is_held_on_the_date_in_its_file_name(filename: str, expected: date) -> None:
+    meeting = Meeting(filename=filename, created_at=datetime(2026, 11, 12, 9, 30, tzinfo=UTC))
+
+    assert held_on(meeting) == expected

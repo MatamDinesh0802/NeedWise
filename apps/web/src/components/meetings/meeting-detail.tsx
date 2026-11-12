@@ -29,13 +29,14 @@ import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { usePeople } from "@/hooks/use-people";
 import { usePolling } from "@/hooks/use-polling";
 import { ApiError } from "@/lib/api";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import { meetingsApi, meetingsKeys, type ActionItem, type Decision, type Meeting } from "@/lib/meetings/api";
 import {
   actionEditPayload,
   actionForm,
   activeSegment,
   dueOf,
+  formatDay,
   formatDuration,
   formatTimestamp,
   isProcessing,
@@ -105,7 +106,7 @@ function MeetingDetail({ id, me, startAt }: { id: string; me: Me; startAt: numbe
         <div className="min-w-0">
           <h2 className="text-xl font-semibold tracking-tight break-words">{m.title}</h2>
           <p className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
-            <span title={formatDateTime(m.created_at)}>{formatDate(m.created_at)}</span>
+            <span title={`Uploaded ${formatDateTime(m.created_at)}`}>{formatDay(m.held_on)}</span>
             {formatDuration(m.duration_s) ? <span>{formatDuration(m.duration_s)}</span> : null}
             <span className="font-mono text-xs leading-5 break-all">{m.filename}</span>
           </p>
@@ -518,9 +519,11 @@ function ActionRow({
               label="Owner"
               hint={item.owner && !item.owner_user_id ? `Said in the meeting: “${item.owner}” (not linked to anyone).` : undefined}
             >
-              {({ id }) => (
+              {({ id, describedBy, invalid }) => (
                 <SimpleSelect
                   id={id}
+                  describedBy={describedBy}
+                  invalid={invalid}
                   value={form.ownerUserId}
                   disabled={pending !== null}
                   onChange={(ownerUserId) => setForm({ ...form, ownerUserId })}

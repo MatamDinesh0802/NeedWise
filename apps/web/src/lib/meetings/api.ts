@@ -16,6 +16,8 @@ export interface MeetingSummary {
   duration_s: number | null;
   decisions: number;
   action_items: number;
+  /** YYYY-MM-DD: the day of the meeting (a date in its file name), else of the upload. */
+  held_on: string;
   created_at: string;
 }
 
@@ -72,6 +74,8 @@ export interface Meeting {
   document_id: string | null;
   timings: Record<string, number>;
   can_edit: boolean;
+  /** YYYY-MM-DD: the day of the meeting (a date in its file name), else of the upload. */
+  held_on: string;
   created_at: string;
 }
 

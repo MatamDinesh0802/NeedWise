@@ -2,7 +2,9 @@
 and action items with timestamps, and a searchable transcript in the meeting's collection
 (whose access decides who can see the meeting)."""
 
+import re
 import uuid
+from datetime import date
 from typing import Any
 
 from sqlalchemy import (
@@ -21,6 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from workmind.core.db import Base, TenantScoped, Timestamps, uuid_primary_key
 
 STATUSES = ("pending", "transcribing", "extracting", "ready", "failed")
+_FILE_DATE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
 
 
 class Meeting(Base, TenantScoped, Timestamps):
@@ -64,3 +67,15 @@ class Meeting(Base, TenantScoped, Timestamps):
     )
     document_id: Mapped[uuid.UUID | None]  # the indexed transcript
     timings: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+
+
+def held_on(meeting: Meeting) -> date:
+    """The day the meeting took place: a date in its file name (weekly-sync-2026-11-02.vtt, as
+    recorders and exports name files), else the day it was uploaded. Relative dates in the
+    transcript ("by Thursday") are resolved against it, and the app shows it."""
+    for match in _FILE_DATE.finditer(meeting.filename):
+        try:
+            return date(*(int(part) for part in match.groups()))
+        except ValueError:
+            continue
+    return meeting.created_at.date()

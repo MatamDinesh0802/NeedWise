@@ -20,7 +20,7 @@ from workmind.modules.knowledge.models import Collection
 from workmind.modules.knowledge.storage import ObjectStorage
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.extract import clock, extract, speaker_name
-from workmind.modules.meetings.models import Meeting
+from workmind.modules.meetings.models import Meeting, held_on
 from workmind.modules.work.notifications import notify
 from workmind.providers.llm import LLMError, LLMProvider
 from workmind.providers.transcription import Transcriber, TranscriptionError
@@ -150,7 +150,7 @@ async def process_meeting(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: u
             deps.llm,
             segments,
             organization=tenant.name if tenant else "the company",
-            day=meeting.created_at.date(),
+            day=held_on(meeting),
             speakers=meeting.speakers,
             people=people,
         )

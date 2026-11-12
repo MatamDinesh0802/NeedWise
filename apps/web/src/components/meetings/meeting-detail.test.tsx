@@ -40,6 +40,7 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
   document_id: null,
   timings: {},
   can_edit: true,
+  held_on: "2026-11-02",
   created_at: "2026-11-04T09:00:00Z",
   ...overrides,
 });

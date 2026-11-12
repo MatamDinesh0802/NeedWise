@@ -13,13 +13,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { usePolling } from "@/hooks/use-polling";
-import { formatBytes, formatDate, formatDateTime } from "@/lib/format";
+import { formatBytes, formatDateTime } from "@/lib/format";
 import { knowledgeApi, knowledgeKeys, type Collection } from "@/lib/knowledge/api";
 import { meetingsApi, meetingsKeys, type MeetingStatus, type MeetingSummary } from "@/lib/meetings/api";
 import {
   ACCEPT,
   CONSENT_NOTICE,
   fileKind,
+  formatDay,
   formatDuration,
   isProcessing,
   meetingErrorMessage,
@@ -127,7 +128,7 @@ function MeetingRow({ meeting, collection }: { meeting: MeetingSummary; collecti
           <MeetingStatusBadge status={meeting.status} />
         </div>
         <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-          <span title={formatDateTime(meeting.created_at)}>{formatDate(meeting.created_at)}</span>
+          <span title={`Uploaded ${formatDateTime(meeting.created_at)}`}>{formatDay(meeting.held_on)}</span>
           {duration ? <span>{duration}</span> : null}
           {collection ? <span>{collection}</span> : null}
           {meeting.status === "ready" ? (
@@ -269,9 +270,11 @@ function UploadPanel({ collections }: { collections: Collection[] }) {
         hint="Everyone who can view it sees the meeting and finds the transcript in search."
         error={showErrors ? (errors.collection ?? null) : null}
       >
-        {({ id: selectId }) => (
+        {({ id: selectId, describedBy, invalid }) => (
           <SimpleSelect
             id={selectId}
+            describedBy={describedBy}
+            invalid={invalid}
             value={collection}
             disabled={pending}
             onChange={setCollection}
