@@ -34,6 +34,13 @@ x-app-env-file: &app-env-file
   - path: .env
     required: false
 
+# One image for the API, workers, beat, migrations and seeding. It includes the Enterprise
+# package from ee/ (named build context "ee"), which stays inactive without a license.
+x-api-build: &api-build
+  context: apps/api
+  additional_contexts:
+    ee: ./ee
+
 services:
   postgres:
     image: postgres:18.6
@@ -163,7 +170,7 @@ services:
     restart: unless-stopped
 
   migrate:
-    build: { context: apps/api }
+    build: *api-build
     image: workmind-api:dev
     command: ["alembic", "upgrade", "head"]
     environment:
@@ -173,7 +180,7 @@ services:
     restart: "no"
 
   api:
-    build: { context: apps/api }
+    build: *api-build
     image: workmind-api:dev
     env_file: *app-env-file
     environment:
@@ -182,6 +189,8 @@ services:
       FORWARDED_ALLOW_IPS: "*"
     volumes:
       - ./.data/objects:/data/objects
+      # License files from `make ee-dev-license` (docs/enterprise.md). Empty: Community.
+      - ./.workmind:/run/workmind:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -202,7 +211,7 @@ services:
 
   # Ingestion and other background jobs (Celery). Scale with: docker compose up --scale worker=3
   worker:
-    build: { context: apps/api }
+    build: *api-build
     image: workmind-api:dev
     command: ["celery", "-A", "workmind.workers.celery_app", "worker", "-Q", "ingest,default", "--concurrency", "2", "--loglevel", "INFO"]
     env_file: *app-env-file
@@ -211,6 +220,7 @@ services:
     volumes:
       - ./.data/objects:/data/objects
       - whisper-models:/models  # the speech-to-text model, downloaded on the first recording
+      - ./.workmind:/run/workmind:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -259,12 +269,14 @@ services:
   # Starts scheduled work: every minute it queues the connector syncs that are due. Run exactly
   # one of these, however many workers you scale to.
   beat:
-    build: { context: apps/api }
+    build: *api-build
     image: workmind-api:dev
     command: ["celery", "-A", "workmind.workers.celery_app", "beat", "--loglevel", "INFO", "--schedule", "/tmp/celerybeat-schedule"]
     env_file: *app-env-file
     environment:
       <<: *app-env
+    volumes:
+      - ./.workmind:/run/workmind:ro
     depends_on:
       migrate: { condition: service_completed_successfully }
       valkey: { condition: service_healthy }
@@ -273,7 +285,7 @@ services:
   # Development tool, not part of `up`:  make seed  (= docker compose --profile tools run --rm seed)
   seed:
     profiles: [tools]
-    build: { context: apps/api }
+    build: *api-build
     image: workmind-api:dev
     command: ["python", "-m", "workmind.seed", "/seed/acme/company.yaml"]
     volumes:
