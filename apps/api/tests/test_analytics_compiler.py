@@ -235,7 +235,7 @@ def test_revenue_by_quarter_and_product_matches_the_q3_financial_summary(acme: P
     sheet = list(workbook["Revenue by Product"].iter_rows(values_only=True))
     lines = {"AMR-200 hardware": "AMR-200", "AMR-500 hardware": "AMR-500"}
     lines["FleetOS subscriptions"] = "FleetOS"
-    summary = {lines[str(r[0])]: [float(v) for v in r[1:4]] for r in sheet if r[0] in lines}
+    summary = {lines[str(r[0])]: [float(str(v)) for v in r[1:4]] for r in sheet if r[0] in lines}
     rows = results(acme, metrics=["revenue"], dimensions=["quarter", "product_line"], limit=100)
 
     data: dict[str, list[float]] = defaultdict(list)
