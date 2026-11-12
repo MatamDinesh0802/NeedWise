@@ -39,6 +39,7 @@ describe("badge", () => {
   it("gives approval requests, problems and tasks their own tone", () => {
     expect(notificationTone("approval.requested")).toBe("approval");
     expect(notificationTone("approval.executed")).toBe("done");
+    expect(notificationTone("meeting.ready")).toBe("done");
     expect(notificationTone("approval.rejected")).toBe("problem");
     expect(notificationTone("workflow.failed")).toBe("problem");
     expect(notificationTone("task.assigned")).toBe("task");

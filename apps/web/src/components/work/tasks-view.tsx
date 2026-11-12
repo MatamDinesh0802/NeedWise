@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Commitments } from "@/components/work/commitments";
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { allUsersKey, fetchAllUsers } from "@/hooks/use-directory";
 import { adminApi, adminKeys, type AdminUser } from "@/lib/admin/api";
@@ -111,6 +112,8 @@ function TaskBoard({ me, focusId }: { me: Me; focusId: string | null }) {
           New task
         </Button>
       </header>
+
+      <Commitments />
 
       {focusId && allLoaded && !focusScope ? (
         <Alert>
