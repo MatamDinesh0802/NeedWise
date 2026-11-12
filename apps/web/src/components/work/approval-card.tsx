@@ -49,7 +49,7 @@ import {
   outcomeText,
   reduceCard,
   serverFieldErrors,
-  STATUS_LABELS,
+  statusLabel,
   subjectLink,
   toolTitle,
   withAssigneeName,
@@ -79,7 +79,7 @@ export function ApprovalStatusBadge({ approval }: { approval: Approval }) {
   return (
     <Badge variant="secondary" className={cn("shrink-0", STATUS_STYLE[status])}>
       {status === "running" ? <LoaderCircle className="animate-spin" data-icon="inline-start" aria-hidden="true" /> : null}
-      {STATUS_LABELS[status]}
+      {statusLabel(approval)}
     </Badge>
   );
 }
@@ -145,7 +145,7 @@ export function ApprovalCard({
 
   return (
     <article
-      aria-label={`${toolTitle(approval.tool)}: ${STATUS_LABELS[status]}`}
+      aria-label={`${toolTitle(approval.tool)}: ${statusLabel(approval)}`}
       className={cn(
         "flex flex-col gap-3 rounded-xl border bg-card text-card-foreground",
         compact ? "p-3.5" : "p-5",

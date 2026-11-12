@@ -41,7 +41,8 @@ export interface Approval {
   decided_at: string | null;
   decision_note: string | null;
   expires_at: string;
-  result: { content?: string; data?: unknown; error?: string } | null;
+  /** `reason`: why a copy was closed without a decision (e.g. the collection's owner changed). */
+  result: { content?: string; data?: unknown; error?: string; reason?: string } | null;
   origin: ApprovalOrigin;
   created_at: string;
 }

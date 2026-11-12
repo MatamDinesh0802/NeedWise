@@ -38,6 +38,13 @@ export const STATUS_LABELS: Record<DisplayStatus, string> = {
   superseded: "Decided by another approver",
 };
 
+/** The badge: a copy closed because the request went to someone else says so. */
+export function statusLabel(approval: Pick<Approval, "status" | "expires_at" | "result">, now?: number): string {
+  const status = displayStatus(approval, now);
+  if (status === "superseded" && approval.result?.reason) return "Reassigned";
+  return STATUS_LABELS[status];
+}
+
 const TERMINAL: ReadonlySet<DisplayStatus> = new Set(["executed", "failed", "rejected", "expired", "superseded"]);
 
 // --- Approval kinds the core carries out (not tool calls) ----------------------------------
@@ -60,10 +67,18 @@ export function decisionMeaning(tool: string): { approve: string; reject: string
   };
 }
 
+/**
+ * An official-status request about a collection the viewer can't open: the API leaves out the
+ * document's title and the requester's note (separation of duties, docs/governance.md).
+ */
+export function isWithheld(approval: Pick<Approval, "tool" | "arguments">): boolean {
+  return approval.tool === OFFICIAL_KIND && approval.arguments.withheld === true;
+}
+
 /** Where a kind's subject lives, e.g. the document an official-status request is about. */
 export function subjectLink(approval: Pick<Approval, "tool" | "arguments">): string | null {
   const documentId = approval.arguments.document_id;
-  return approval.tool === OFFICIAL_KIND && typeof documentId === "string"
+  return approval.tool === OFFICIAL_KIND && typeof documentId === "string" && !isWithheld(approval)
     ? `/knowledge/documents/${encodeURIComponent(documentId)}`
     : null;
 }
@@ -90,6 +105,7 @@ export function outcomeText(approval: Approval, now?: number): string | null {
     case "expired":
       return "No decision in time. Nothing ran.";
     case "superseded":
+      if (approval.result?.reason) return `${approval.result.reason} Nothing more to do.`;
       return approval.tool === OFFICIAL_KIND
         ? "Another approver decided this request first. Nothing more to do."
         : "Another approver decided this first.";
@@ -134,10 +150,14 @@ export function argumentRows(tool: string, args: Record<string, unknown>): Argum
     return rows;
   }
   if (tool === OFFICIAL_KIND) {
+    const document =
+      args.withheld === true ? `A document in ${text(args.collection) || "a collection"} you can't open` : text(args.title);
     const rows: ArgumentRow[] = [
-      { label: "Document", value: text(args.title) },
+      { label: "Document", value: document },
       { label: "Collection", value: text(args.collection) },
     ];
+    // The request is for this version: new content voids it (docs/governance.md).
+    if (typeof args.version === "number") rows.push({ label: "Version", value: `Version ${args.version}` });
     if (text(args.note)) rows.push({ label: "Why", value: text(args.note), multiline: true });
     return rows;
   }

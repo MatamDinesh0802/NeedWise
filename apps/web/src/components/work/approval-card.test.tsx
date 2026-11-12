@@ -111,6 +111,33 @@ describe("ApprovalCard", () => {
       expect(superseded).toContain("Decided by another approver");
       expect(superseded).toContain("Another approver decided this request first.");
     });
+
+    it("says when the request went to someone else because the collection's owner changed", () => {
+      const reason = "The collection's owner changed: the request went to whoever decides now.";
+      const html = renderToStaticMarkup(
+        <ApprovalCard approval={official({ status: "superseded", decided_at: "2026-11-05T10:00:00Z", result: { reason } })} meId="u-priya" />,
+      );
+      expect(html).toContain("Reassigned");
+      expect(html).not.toContain("Decided by another approver");
+      expect(html).toContain("owner changed: the request went to whoever decides now. Nothing more to do.");
+    });
+
+    it("shows the version, and withholds the title, the note and the link from an approver who can't open the collection", () => {
+      const pinned = renderToStaticMarkup(
+        <ApprovalCard approval={official({ arguments: { ...official().arguments, version: 2 } })} meId="u-priya" />,
+      );
+      expect(pinned).toContain("Version 2");
+
+      const withheld = official({
+        summary: "Make a document in “HR Guidance (internal)” official",
+        arguments: { document_id: "d-1", collection_id: "c-1", collection: "HR Guidance (internal)", version: 1, withheld: true },
+      });
+      const html = renderToStaticMarkup(<ApprovalCard approval={withheld} meId="u-priya" />);
+      expect(html).toContain("A document in HR Guidance (internal) you can&#x27;t open");
+      expect(html).not.toContain("Travel policy");
+      expect(html).not.toContain("Signed off by HR");
+      expect(html).not.toContain('href="/knowledge/documents/d-1"');
+    });
   });
 
   it("falls back to a JSON view for tools it doesn't know", () => {
