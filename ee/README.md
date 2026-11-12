@@ -21,9 +21,11 @@ imported. Get a development license with `make ee-dev-license` (accepted only wi
 `APP_ENV=dev`).
 
 **Status:** the boundary is built (license verification, the extension registry, the package,
-`GET /api/v1/edition`, 402 for unlicensed features). No Enterprise feature is implemented yet:
-`setup` registers nothing. Phase 11 adds retention policies, department budgets, chargeback
-reports and advanced audit export here. No official licenses are issued yet.
+`GET /api/v1/edition`, 402 for unlicensed features). Implemented here: department budgets
+(`budgets.py`, feature `department_budgets`) and the chargeback report (`chargeback.py`,
+`chargeback_reports`), both on the core's usage hooks ([docs/usage.md](../docs/usage.md)).
+Not built yet: retention policies and advanced audit export. No official licenses are issued
+yet.
 
 Rules that keep the boundary clean:
 
