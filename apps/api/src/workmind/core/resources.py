@@ -24,6 +24,8 @@ from workmind.modules.identity.sessions import SessionStore
 from workmind.modules.knowledge.dispatch import CeleryDispatcher, Dispatcher, InlineDispatcher
 from workmind.modules.knowledge.pipeline import IngestionDeps
 from workmind.modules.knowledge.storage import LocalObjectStorage, ObjectStorage
+from workmind.modules.model_catalog.resolver import LLMResolver
+from workmind.modules.model_catalog.secrets import KeyRing
 from workmind.modules.retrieval.qdrant import QdrantClient
 from workmind.modules.retrieval.service import Retriever
 from workmind.modules.tools.builtin import draft_email_tool, search_knowledge_tool, web_search_tool
@@ -57,8 +59,8 @@ class Resources:
     storage: ObjectStorage
     qdrant: QdrantClient
     embeddings: EmbeddingProvider
-    llm: LLMProvider
-    local_llm: LLMProvider | None
+    # Every model call resolves through here, per tenant (docs/models.md).
+    models: LLMResolver
     ingestion: Dispatcher
     collection_name: str
     retriever: Retriever
@@ -72,6 +74,26 @@ class Resources:
     # Community or Enterprise (ADR 0011); `edition.has(feature)` gates Enterprise features.
     edition: Edition
     extensions: ExtensionRegistry
+
+    @property
+    def llm(self) -> LLMProvider:
+        """The deployment's own provider. Call sites resolve per tenant instead
+        (`await resources.models.for_tenant(tenant_id)`), which uses this unless the tenant
+        chose otherwise. Assignable: tests put a scripted model here."""
+        return self.models.system
+
+    @llm.setter
+    def llm(self, value: LLMProvider) -> None:
+        self.models.system = value
+
+    @property
+    def local_llm(self) -> LLMProvider | None:
+        """The deployment's local model (LOCAL_LLM_*), if any."""
+        return self.models.system_local
+
+    @local_llm.setter
+    def local_llm(self, value: LLMProvider | None) -> None:
+        self.models.system_local = value
 
     @classmethod
     def create(cls, settings: Settings, *, extensions: ExtensionRegistry | None = None) -> Self:
@@ -153,8 +175,14 @@ class Resources:
             storage=storage,
             qdrant=qdrant,
             embeddings=embeddings,
-            llm=create_llm(settings, http),
-            local_llm=create_local_llm(settings, http),
+            models=LLMResolver(
+                db,
+                settings,
+                http,
+                KeyRing.from_settings(settings),
+                system=create_llm(settings, http),
+                system_local=create_local_llm(settings, http),
+            ),
             ingestion=InlineDispatcher(deps)
             if settings.ingestion_mode == "inline"
             else CeleryDispatcher(),

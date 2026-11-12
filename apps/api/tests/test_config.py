@@ -1,8 +1,9 @@
 import pytest
 
-from workmind.core.config import Settings
+from workmind.core.config import DEV_SECRETS_ENCRYPTION_KEY, Settings
 
 REAL_KEY = "c2VjcmV0LWtleS1mb3ItdGVzdHMtMzItYnl0ZXMtISE="  # 32 bytes, base64
+OTHER_KEY = "b3RoZXIta2V5LWZvci10ZXN0cy0zMi1ieXRlcy0hISE="  # 32 bytes, base64
 
 
 def test_environment_variables_override_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -10,6 +11,7 @@ def test_environment_variables_override_defaults(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("OIDC_CLIENT_SECRET", "a-real-secret")
     monkeypatch.setenv("OPENFGA_API_KEY", "a-real-key")
     monkeypatch.setenv("SECRETS_KEY", REAL_KEY)
+    monkeypatch.setenv("SECRETS_ENCRYPTION_KEY", OTHER_KEY)
     monkeypatch.setenv("QDRANT_URL", "http://qdrant:6333")
 
     settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
@@ -25,6 +27,7 @@ def test_api_docs_are_disabled_in_production() -> None:
         oidc_client_secret="s3cret",  # pyright: ignore[reportArgumentType]
         openfga_api_key="k3y",  # pyright: ignore[reportArgumentType]
         secrets_key=REAL_KEY,  # pyright: ignore[reportArgumentType]
+        secrets_encryption_key=OTHER_KEY,  # pyright: ignore[reportArgumentType]
     )
 
     assert Settings(_env_file=None, app_env="dev").docs_enabled  # pyright: ignore[reportCallIssue]
@@ -43,3 +46,38 @@ def test_production_refuses_development_secrets() -> None:
 def test_invalid_environment_is_rejected() -> None:
     with pytest.raises(ValueError, match="app_env"):
         Settings(_env_file=None, app_env="staging")  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+
+def test_the_encryption_key_is_required_outside_development() -> None:
+    real = {"oidc_client_secret": "s", "openfga_api_key": "k", "secrets_key": REAL_KEY}
+    for env in ("demo", "production"):
+        with pytest.raises(ValueError, match="SECRETS_ENCRYPTION_KEY must be set"):
+            Settings(_env_file=None, app_env=env, **real)  # pyright: ignore[reportCallIssue, reportArgumentType]
+        with pytest.raises(ValueError, match="SECRETS_ENCRYPTION_KEY must be set"):
+            Settings(  # pyright: ignore[reportCallIssue]
+                _env_file=None,  # pyright: ignore[reportCallIssue]
+                app_env=env,  # pyright: ignore[reportArgumentType]
+                secrets_encryption_key=DEV_SECRETS_ENCRYPTION_KEY,  # pyright: ignore[reportArgumentType]
+                **real,  # pyright: ignore[reportArgumentType]
+            )
+    # Development and tests fall back to the clearly marked development key.
+    dev = Settings(_env_file=None, app_env="dev")  # pyright: ignore[reportCallIssue]
+    assert dev.encryption_keys == (DEV_SECRETS_ENCRYPTION_KEY, [])
+
+
+def test_encryption_keys_must_be_32_bytes_of_base64() -> None:
+    with pytest.raises(ValueError, match="base64 encodings of 32 bytes"):
+        Settings(_env_file=None, app_env="dev", secrets_encryption_key="c2hvcnQ=")  # pyright: ignore[reportCallIssue, reportArgumentType]
+    with pytest.raises(ValueError, match="base64 encodings of 32 bytes"):
+        Settings(  # pyright: ignore[reportCallIssue]
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            app_env="dev",
+            secrets_encryption_previous_keys=f"{REAL_KEY},not base64",  # pyright: ignore[reportArgumentType]
+        )
+    rotated = Settings(  # pyright: ignore[reportCallIssue]
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+        app_env="dev",
+        secrets_encryption_key=OTHER_KEY,  # pyright: ignore[reportArgumentType]
+        secrets_encryption_previous_keys=f" {REAL_KEY} ,",  # pyright: ignore[reportArgumentType]
+    )
+    assert rotated.encryption_keys == (OTHER_KEY, [REAL_KEY])

@@ -53,8 +53,9 @@ from workmind.modules.identity.service import load_identity
 from workmind.modules.meetings.extract import extract as extract_meeting
 from workmind.modules.meetings.pipeline import Directory, load_directory
 from workmind.modules.meetings.transcripts import parse as parse_transcript
+from workmind.modules.model_catalog.resolver import LLMResolver, TenantLLM
 from workmind.modules.retrieval.service import Mode, Passage, RetrievalResult
-from workmind.providers.llm import LLMMessage, LLMRequest, LLMUsage
+from workmind.providers.llm import LLMMessage, LLMProvider, LLMRequest, LLMUsage
 from workmind.providers.pricing import cost_usd
 
 K_VALUES = (1, 3, 5, 8)
@@ -81,6 +82,7 @@ class Askers:
         self._slug = tenant_slug
         self._contexts: dict[str, RequestContext] = {}
         self.tenant: Tenant | None = None
+        self.models: TenantLLM | None = None  # the tenant's models (docs/models.md)
 
     async def load_tenant(self) -> Tenant:
         async with global_transaction(self._resources.db) as session:
@@ -88,10 +90,24 @@ class Askers:
         if tenant is None:
             raise SystemExit(f"tenant {self._slug!r} not found: run `make seed` first")
         self.tenant = tenant
+        # The evaluation uses the models the tenant would get. A partial Resources (some
+        # tests) has no resolver: then the deployment's model as given.
+        resolver: LLMResolver | None = getattr(self._resources, "models", None)
+        self.models = await resolver.for_tenant(tenant.id) if resolver is not None else None
         return tenant
 
     @property
+    def llm(self) -> LLMProvider:
+        return self.models if self.models is not None else self._resources.llm
+
+    @property
+    def local_llm(self) -> LLMProvider | None:
+        return self.models.local if self.models is not None else self._resources.local_llm
+
+    @property
     def policy(self) -> RestrictedPolicy:
+        if self.models is not None:
+            return self.models.max_external_sensitivity
         settings = self.tenant.settings if self.tenant else {}
         return "allow" if settings.get("restricted_data") == "allow" else "local_only"
 
@@ -297,12 +313,12 @@ class Judgement(BaseModel):
     followed_instructions_in_sources: bool
 
 
-async def judge(resources: Resources, result: Answer) -> Judgement:
+async def judge(llm: LLMProvider, result: Answer) -> Judgement:
     content = (
         f"<sources>\n{render_sources(result.passages)}\n</sources>\n\n"
         f"<answer>\n{result.text}\n</answer>"
     )
-    judgement, _ = await resources.llm.structured(
+    judgement, _ = await llm.structured(
         "judge", LLMRequest(system=JUDGE_SYSTEM, messages=[LLMMessage("user", content)]), Judgement
     )
     return judgement
@@ -344,7 +360,7 @@ class Evaluator:
             started = time.perf_counter()
             try:
                 plan = await plan_question(
-                    self.resources.llm, self.resources.agent_router, item.question, agents
+                    self.askers.llm, self.resources.agent_router, item.question, agents
                 )
             except Exception as exc:
                 return RoutingRecord(item.id, item.mode, item.agents, "error", [], "", 0, str(exc))
@@ -405,7 +421,7 @@ class Evaluator:
             ]
             started = time.perf_counter()
             outcome, _ = await extract_meeting(
-                self.resources.llm,
+                self.askers.llm,
                 segments,
                 organization=organization,
                 day=date.fromisoformat(item.date),
@@ -489,7 +505,7 @@ class Evaluator:
         """The BI agent, as each item's user, on the tenant's analytics data (text-to-SQL)."""
         tenant = self.askers.tenant or await self.askers.load_tenant()
         return await evaluate(
-            self.resources.llm,
+            self.askers.llm,
             self.resources.analytics,
             self.askers.context,
             items,
@@ -574,8 +590,8 @@ class Evaluator:
         if self.assistant in ("agents", "auto"):
             deps = OrchestratorDeps(
                 self.resources.db,
-                self.resources.llm,
-                self.resources.local_llm,
+                self.askers.llm,
+                self.askers.local_llm,
                 self.resources.retriever,
                 self.resources.agent_router,
             )
@@ -588,13 +604,13 @@ class Evaluator:
                 agents_only_for_fan_out=self.assistant == "auto",
             )
         return answer_stream(
-            self.resources.llm,
+            self.askers.llm,
             self.resources.retriever,
             ctx,
             question,
             organization=organization,
             policy=self.askers.policy,
-            local_llm=self.resources.local_llm,
+            local_llm=self.askers.local_llm,
         )
 
     async def _answer(self, suite: str, handle: str, question: str) -> tuple[AnswerRecord, Answer]:
@@ -674,7 +690,7 @@ class Evaluator:
 
     async def _judge(self, record: AnswerRecord, result: Answer) -> None:
         try:
-            judgement = await judge(self.resources, result)
+            judgement = await judge(self.askers.llm, result)
         except Exception as exc:
             record.error = f"judge failed: {exc}"[:300]
             return
