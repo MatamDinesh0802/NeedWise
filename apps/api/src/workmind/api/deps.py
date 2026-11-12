@@ -7,6 +7,7 @@ from fastapi import Depends, Request
 
 from workmind.core.config import Settings
 from workmind.core.context import RequestContext
+from workmind.core.edition import Feature, enterprise_feature_error
 from workmind.core.errors import ApiError, unauthenticated
 from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
@@ -100,6 +101,18 @@ def require_scope(scope: str):
     async def dependency(ctx: CurrentContext) -> RequestContext:
         if not ctx.has_scope(scope):
             raise ApiError(403, "scope_required", "Missing scope", f"Requires scope '{scope}'.")
+        return ctx
+
+    return Depends(dependency)
+
+
+def require_feature(feature: Feature):
+    """An Enterprise feature: sign-in first (401), then the license (402 "enterprise_feature").
+    Use as `dependencies=[require_feature("...")]` or `Annotated[RequestContext, ...]`."""
+
+    async def dependency(request: Request, ctx: CurrentContext) -> RequestContext:
+        if not resources_of(request).edition.has(feature):
+            raise enterprise_feature_error(feature)
         return ctx
 
     return Depends(dependency)
