@@ -1,0 +1,97 @@
+name: Load test
+
+# Manual only (docs/load-testing.md). The first job checks the harness itself (no stack). The
+# second, when a host is given, runs a short load test against a deployment the runner can reach
+# (for example the public demo) and uploads the report; it needs the demo logins' password in
+# the repository secret DEMO_PASSWORD. Model scenarios stay off unless that deployment answers
+# with the load-test stub: the preflight refuses them otherwise.
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "Base URL to load test (empty: only check the harness)"
+        required: false
+        default: ""
+      users:
+        description: "Locust users"
+        required: false
+        default: "5"
+      spawn_rate:
+        description: "Users started per second"
+        required: false
+        default: "1"
+      duration:
+        description: "Run time (60s, 5m)"
+        required: false
+        default: "60s"
+      no_model:
+        description: "Leave out everything that calls the model"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: loadtest
+  cancel-in-progress: false
+
+jobs:
+  harness:
+    name: Harness · lint, types, tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: loadtests
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: loadtests/uv.lock
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pyright
+      - run: uv run pytest -q
+
+  run:
+    name: Load test against ${{ inputs.host }}
+    if: inputs.host != ''
+    needs: harness
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: loadtests
+    env:
+      DEMO_PASSWORD: ${{ secrets.DEMO_PASSWORD }}
+      HOST: ${{ inputs.host }}
+      USERS: ${{ inputs.users }}
+      SPAWN_RATE: ${{ inputs.spawn_rate }}
+      DURATION: ${{ inputs.duration }}
+      NO_MODEL: ${{ inputs.no_model }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: loadtests/uv.lock
+      - run: uv sync --locked
+      - name: Run (tokens are created first and revoked at the end, even on failure)
+        run: |
+          options=()
+          if [ "$NO_MODEL" = "true" ]; then options+=(--no-model); fi
+          uv run python -m workmind_load.run --host "$HOST" --users "$USERS" \
+            --spawn-rate "$SPAWN_RATE" --duration "$DURATION" --label ci "${options[@]}" \
+            --note "Run from GitHub Actions (ubuntu-latest) against $HOST."
+      - name: Revoke anything left behind
+        if: always()
+        run: uv run python -m workmind_load.tokens sweep --host "$HOST"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: loadtest-report
+          path: |
+            loadtests/results/*.md
+            loadtests/results/raw/
+          retention-days: 30
