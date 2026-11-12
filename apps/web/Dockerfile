@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
+# Base images are pinned by digest (the tag is for people); Dependabot proposes new digests.
+# docs/security/supply-chain.md explains the scans this image goes through.
 
 # ---- base: Node LTS + pnpm via corepack (version pinned by package.json "packageManager")
-FROM node:24-alpine AS base
+FROM node:24.22.3-alpine3.24@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS base
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     NEXT_TELEMETRY_DISABLED=1
@@ -21,20 +23,28 @@ COPY . .
 RUN pnpm build
 
 # ---- runtime: minimal image, non-root, no package manager
-FROM node:24-alpine AS runner
+FROM node:24.22.3-alpine3.24@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
     PORT=3000
 
-RUN addgroup -S -g 1001 nodejs && adduser -S -u 1001 -G nodejs nextjs
+# Alpine security fixes published after the base image was built, then no package managers:
+# the standalone server needs only node, and npm's own dependencies were most of the image
+# scan's findings.
+RUN apk upgrade --no-cache \
+    && rm -rf /usr/local/lib/node_modules /opt/yarn-* \
+       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+       /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+    && addgroup -S -g 1001 nodejs && adduser -S -u 1001 -G nodejs nextjs
 
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-USER nextjs
+# Numeric, so Kubernetes' runAsNonRoot can verify it without reading /etc/passwd.
+USER 1001:1001
 EXPOSE 3000
 
 # No curl/wget needed: Node's built-in fetch checks the server.
