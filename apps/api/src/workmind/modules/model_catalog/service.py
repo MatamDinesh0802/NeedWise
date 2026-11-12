@@ -506,6 +506,8 @@ async def probe(target: Probe, *, transport: httpx.AsyncBaseTransport | None = N
                 error = await _probe_openai(target, transport)
     except TimeoutError:
         error = f"No answer within {TEST_TIMEOUT_S:.0f} seconds."
+    except Exception as exc:  # e.g. the SDK finds no credentials: the type, never the message
+        error = f"The request failed ({type(exc).__name__})."
     latency = round((time.perf_counter() - started) * 1000)
     if error is not None:
         return ProbeResult(False, latency, scrub(error, target.api_key), target.model)
