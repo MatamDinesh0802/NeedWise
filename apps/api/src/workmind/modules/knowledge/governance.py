@@ -7,9 +7,11 @@ and the "official" approval flow.
   after its last review. A daily task reminds the owner once per review cycle (a notification
   and a task); marking the document reviewed starts the next cycle and closes the task.
 - Trust "official" is reached only through an approval: an editor asks, the collection's owner
-  (or, when the owner is the one asking or there is none, the org admins) decides. Nobody ever
-  approves their own request. Demoting an official document is immediate, audited, and the
-  owner is told.
+  (or, when the owner is the one asking or there is none, the org admins who can open the
+  collection) decides. Nobody ever approves their own request, and nobody approves what they
+  cannot read. The request is pinned to the document's version: new content needs a new
+  approval, and a new version of an official document is no longer official. Demoting an
+  official document is immediate, audited, and the owner is told.
 
 Permissions are checked here and in the API, never by a model.
 """
@@ -31,9 +33,14 @@ from workmind.modules.governance.models import AuditEvent
 from workmind.modules.identity.models import User
 from workmind.modules.identity.service import load_identity
 from workmind.modules.knowledge.acl import acl_principals
-from workmind.modules.knowledge.models import Collection, CollectionGrant, Document
+from workmind.modules.knowledge.models import (
+    Collection,
+    CollectionGrant,
+    Document,
+    DocumentVersion,
+)
 from workmind.modules.work.approvals import ApprovalKind, propose
-from workmind.modules.work.links import document_link
+from workmind.modules.work.links import approval_link, document_link
 from workmind.modules.work.models import Approval, Task
 from workmind.modules.work.notifications import notify
 
@@ -131,6 +138,7 @@ async def set_owner(
     if before == owner_id:
         return owner
     document.owner_id = owner_id
+    review_task = await _hand_over_review_task(session, document, owner_id)
     await record_event(
         session,
         tenant_id=ctx.tenant_id,
@@ -142,6 +150,7 @@ async def set_owner(
             "before": str(before) if before else None,
             "after": str(owner_id),
             "collection_id": str(collection.id),
+            "review_task": str(review_task) if review_task else None,
         },
     )
     if owner_id != ctx.user_id:
@@ -151,10 +160,27 @@ async def set_owner(
             owner_id,
             kind="document.owner",
             title=f"You now own “{document.title[:150]}”",
-            body="You answer for its content and its reviews.",
+            body="You answer for its content and its reviews."
+            + (" Its review is due: the review task is now yours." if review_task else ""),
             link=document_link(document.id),
         )
     return owner
+
+
+async def _hand_over_review_task(
+    session: AsyncSession, document: Document, owner_id: uuid.UUID
+) -> uuid.UUID | None:
+    """The reminder of the current review cycle follows the document to its new owner: an open
+    task is reassigned (the former owner no longer answers for it). A cycle whose task was
+    closed without a review is forgotten, so the next daily run reminds the new owner."""
+    if document.review_task_id is None:
+        return None
+    task = await session.get(Task, document.review_task_id)
+    if task is None or task.status not in ("open", "in_progress"):
+        document.review_task_id = None
+        return None
+    task.assignee_id = owner_id
+    return task.id
 
 
 # --- Reviews -----------------------------------------------------------------------------------
@@ -356,17 +382,91 @@ async def _official_approvers(
     session: AsyncSession, collection: Collection, requester_id: uuid.UUID
 ) -> list[uuid.UUID]:
     """The collection's owner; when the owner is the one asking, or there is none (or they
-    left), every active org admin except the requester. Never the requester."""
-    if collection.owner_id is not None and collection.owner_id != requester_id:
-        owner = await session.get(User, collection.owner_id)
-        if owner is not None and owner.status == "active":
-            return [owner.id]
+    left), every active org admin who can open the collection, except the requester. Never the
+    requester, and never someone who cannot read the document they would approve."""
+    grants = await _grants(session, collection.id)
+    owner = collection.owner_id
+    if (
+        owner is not None
+        and owner != requester_id
+        and await can_view_as(session, owner, collection, grants)
+    ):
+        return [owner]
     admins = await session.scalars(
         select(User.id)
         .where(User.org_role.in_(ADMIN_ROLES), User.status == "active", User.id != requester_id)
         .order_by(User.display_name)
     )
-    return list(admins.all())
+    return [a for a in admins.all() if await can_view_as(session, a, collection, grants)]
+
+
+async def decider_problem(
+    session: AsyncSession, approval: Approval, decider: RequestContext
+) -> str | None:
+    """Why `decider` may not decide this official-status request now, or None. Checked before
+    any decision (approve or reject) is recorded, and again when approving runs: the approver
+    must still be the collection's owner or an org admin, must not be the requester, and must
+    be able to open the collection."""
+    document_id = uuid.UUID(str(approval.arguments["document_id"]))
+    document = await session.get(Document, document_id)
+    if document is None:
+        return None  # nothing to protect: approving fails with "the document was deleted"
+    collection = await session.get(Collection, document.collection_id)
+    if collection is None:
+        return None
+    if decider.user_id == approval.requested_by:
+        return "Nobody approves their own request."
+    approver = await session.get(User, decider.user_id)
+    if approver is None or not (
+        approver.id == collection.owner_id or approver.org_role in ADMIN_ROLES
+    ):
+        return "Only the collection's owner or an administrator decides this request."
+    if not await can_view_as(session, decider.user_id, collection):
+        return "You cannot open this collection, so you cannot decide on its documents."
+    return None
+
+
+async def unreadable_collections(
+    session: AsyncSession, ctx: RequestContext, collection_ids: set[uuid.UUID]
+) -> set[uuid.UUID]:
+    """The collections among `collection_ids` the caller cannot open: what is said about their
+    documents leaves out titles and notes (separation of duties, ARCHITECTURE 7.1)."""
+    if not collection_ids:
+        return set()
+    collections = (
+        await session.scalars(select(Collection).where(Collection.id.in_(collection_ids)))
+    ).all()
+    grants = (
+        await session.scalars(
+            select(CollectionGrant).where(CollectionGrant.collection_id.in_(collection_ids))
+        )
+    ).all()
+    readable = {
+        c.id
+        for c in collections
+        if set(acl_principals(c, [g for g in grants if g.collection_id == c.id])) & ctx.principals
+    }
+    return collection_ids - readable
+
+
+def withhold_official_request(arguments: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """An official-status request as shown to someone who cannot open its collection: which
+    collection, not which document or why. Returns the arguments and the summary."""
+    collection = str(arguments.get("collection") or "a collection")
+    keys = ("document_id", "collection_id", "collection", "version")
+    kept = {k: arguments[k] for k in keys if k in arguments}
+    return {**kept, "withheld": True}, f"Make a document in “{collection[:150]}” official"
+
+
+async def latest_version(session: AsyncSession, document_id: uuid.UUID) -> DocumentVersion | None:
+    return (
+        await session.scalars(
+            select(DocumentVersion)
+            .where(DocumentVersion.document_id == document_id)
+            .order_by(DocumentVersion.version_no.desc())
+            .limit(1)
+        )
+    ).first()
 
 
 async def request_official(
@@ -390,9 +490,14 @@ async def request_official(
             409,
             "no_approver",
             "Nobody else can approve this",
-            "The collection's owner or another administrator must approve official status, "
-            "and there is none.",
+            "The collection's owner, or another administrator who can open the collection, "
+            "must approve official status, and there is none. An administrator can make "
+            "someone else the collection's owner, or share the collection with an "
+            "administrator.",
         )
+    version = await latest_version(session, document.id)
+    if version is None:
+        raise ApiError(409, "no_version", "This document has no content to approve yet")
     request_id = str(uuid.uuid4())
     clean_note = note.strip()[:2000]
     summary = f"Make “{document.title[:150]}” official"
@@ -407,6 +512,9 @@ async def request_official(
                 "collection_id": str(collection.id),
                 "collection": collection.name,
                 "note": clean_note,
+                # What the approver reads is what becomes official: a new version voids this.
+                "version_id": str(version.id),
+                "version": version.version_no,
             },
             summary=summary,
             approver_id=approver,
@@ -431,6 +539,7 @@ async def request_official(
             "request_id": request_id,
             "approvers": [str(a) for a in approvers],
             "note": clean_note,
+            "version": version.version_no,
         },
     )
     return OfficialRequest(
@@ -447,7 +556,14 @@ def official_status_kind(
 ) -> ApprovalKind:
     """What approving an official-status request does: trust becomes official, and the approval
     counts as a review (ARCHITECTURE 7.3: official means approved, with a reviewer and a date).
-    Who may approve is checked again now, not only when the request was made."""
+    Who may decide is checked before the decision is recorded (`check`) and again when it runs,
+    not only when the request was made. The approved content is the version the request named:
+    if the document changed since, nothing happens and the editor asks again."""
+
+    async def check(
+        session: AsyncSession, approval: Approval, decider: RequestContext
+    ) -> str | None:
+        return await decider_problem(session, approval, decider)
 
     async def run(approval: Approval, decider: RequestContext) -> tuple[str, dict[str, Any]]:
         if approval.origin.get("kind") != "official_status":
@@ -459,12 +575,14 @@ def official_status_kind(
                 return "failed", {"error": "the document was deleted"}
             collection = await session.get(Collection, document.collection_id)
             assert collection is not None  # noqa: S101 (foreign key)
-            approver = await session.get(User, decider.user_id)
-            allowed = approver is not None and (
-                approver.id == collection.owner_id or approver.org_role in ADMIN_ROLES
-            )
-            if decider.user_id == approval.requested_by or not allowed:
+            if await decider_problem(session, approval, decider):
                 return "failed", {"error": "the approver may no longer approve this"}
+            current = await latest_version(session, document.id)
+            if current is None or str(current.id) != approval.arguments.get("version_id"):
+                return "failed", {
+                    "error": "the document changed after the request: ask again, so the "
+                    "approver sees the new content"
+                }
             before = document.trust
             now = utcnow()
             document.trust = "official"
@@ -483,12 +601,206 @@ def official_status_kind(
                     "approval_id": str(approval.id),
                     "requested_by": str(approval.requested_by),
                     "before": before,
+                    "version": current.version_no,
                 },
             )
         await on_trust_changed(approval.tenant_id, document_id, "official")
         return "executed", {"trust": "official", "document_id": str(document_id)}
 
-    return ApprovalKind(run=run)
+    return ApprovalKind(run=run, check=check)
+
+
+def _close_official_requests(
+    approvals: Sequence[Approval],
+    *,
+    status: Literal["failed", "superseded"],
+    reason: str,
+    actor: uuid.UUID | None,
+) -> None:
+    now = utcnow()
+    for approval in approvals:
+        approval.status, approval.decided_at, approval.decided_by = status, now, actor
+        approval.result = {"error" if status == "failed" else "reason": reason}
+
+
+async def _pending_official(session: AsyncSession, *conditions: Any) -> list[Approval]:
+    return list(
+        (
+            await session.scalars(
+                select(Approval)
+                .where(Approval.tool == OFFICIAL_KIND, Approval.status == "pending", *conditions)
+                .order_by(Approval.created_at)
+                .with_for_update()
+            )
+        ).all()
+    )
+
+
+async def new_version_stored(
+    session: AsyncSession,
+    ctx: RequestContext,
+    document: Document,
+    collection: Collection,
+    *,
+    version_no: int,
+) -> str | None:
+    """New content for an existing document (an upload with the same name, or a connector
+    sync). Official status and the last review were given to the old content, so:
+
+    - an official document drops to the collection's default trust (`reference` when that
+      default is official), its review record is cleared, and this is audited as a demotion
+      and told to the owner; making it official again needs a new approval;
+    - a pending official-status request is closed: its approver would approve content they
+      never saw. The requester is told to ask again.
+
+    Returns the trust the document had before, when it was demoted."""
+    pending = await _pending_official(
+        session, Approval.origin["document_id"].astext == str(document.id)
+    )
+    if pending:
+        _close_official_requests(
+            pending,
+            status="failed",
+            reason=f"version {version_no} was uploaded after the request: ask again, so the "
+            "approver sees the new content",
+            actor=None,
+        )
+        told: set[uuid.UUID] = set()
+        for approval in pending:
+            if approval.requested_by in told:
+                continue
+            told.add(approval.requested_by)
+            await notify(
+                session,
+                ctx.tenant_id,
+                approval.requested_by,
+                kind="approval.failed",
+                title=f"Ask again: {approval.summary[:120]}",
+                body=f"Version {version_no} of the document was uploaded after your request.",
+                link=document_link(document.id),
+            )
+    if document.trust != "official":
+        return None
+    after = collection.default_trust if collection.default_trust != "official" else "reference"
+    document.trust = after
+    document.reviewed_at, document.reviewed_by = None, None
+    note = (
+        f"Version {version_no} was uploaded. Official status and the last review were for "
+        "the earlier content: the new content needs a new approval."
+    )
+    await record_event(
+        session,
+        tenant_id=ctx.tenant_id,
+        actor=Actor(type="user", id=ctx.user_id),
+        action="knowledge.document.demoted",
+        resource_type="document",
+        resource_id=str(document.id),
+        details={
+            "collection_id": str(collection.id),
+            "title": document.title,
+            "before": "official",
+            "after": after,
+            "note": note,
+            "reason": "new_version",
+            "version": version_no,
+        },
+    )
+    if document.owner_id is not None and document.owner_id != ctx.user_id:
+        await notify(
+            session,
+            ctx.tenant_id,
+            document.owner_id,
+            kind="document.demoted",
+            title=f"No longer official: {document.title[:150]}",
+            body=note,
+            link=document_link(document.id),
+        )
+    return "official"
+
+
+async def reroute_official_requests(
+    session: AsyncSession, ctx: RequestContext, collection: Collection
+) -> int:
+    """After a collection's owner changed: each pending official-status request goes to whoever
+    decides it now (the new owner, or the admins who can open the collection). Copies held by
+    people who no longer decide are closed ("superseded", with the reason); new deciders get a
+    copy with the same deadline. With nobody left to decide, the request fails and the
+    requester is told. Returns the number of requests whose deciders changed."""
+    pending = await _pending_official(
+        session, Approval.origin["collection_id"].astext == str(collection.id)
+    )
+    by_request: dict[str, list[Approval]] = {}
+    for approval in pending:
+        by_request.setdefault(str(approval.origin.get("request_id") or approval.id), []).append(
+            approval
+        )
+    changed = 0
+    for request_id, copies in by_request.items():
+        first = copies[0]
+        deciders = await _official_approvers(session, collection, first.requested_by)
+        holders = {a.approver_id for a in copies}
+        if set(deciders) == holders:
+            continue
+        changed += 1
+        if not deciders:
+            _close_official_requests(
+                copies,
+                status="failed",
+                reason="nobody can decide this request any more: the collection's owner changed",
+                actor=ctx.user_id,
+            )
+            await notify(
+                session,
+                ctx.tenant_id,
+                first.requested_by,
+                kind="approval.failed",
+                title=f"Nobody can decide: {first.summary[:120]}",
+                body="The collection's owner changed and nobody else can approve it.",
+                link=document_link(uuid.UUID(str(first.arguments["document_id"]))),
+            )
+        else:
+            _close_official_requests(
+                [a for a in copies if a.approver_id not in deciders],
+                status="superseded",
+                reason="The collection's owner changed: the request went to whoever decides now.",
+                actor=ctx.user_id,
+            )
+            for approver in [d for d in deciders if d not in holders]:
+                copy = Approval(
+                    tenant_id=first.tenant_id,
+                    tool=first.tool,
+                    arguments=dict(first.arguments),
+                    summary=first.summary,
+                    requested_by=first.requested_by,
+                    approver_id=approver,
+                    expires_at=first.expires_at,
+                    origin=dict(first.origin),
+                )
+                session.add(copy)
+                await session.flush()
+                await notify(
+                    session,
+                    ctx.tenant_id,
+                    approver,
+                    kind="approval.requested",
+                    title=f"Approval needed: {first.summary[:120]}",
+                    link=approval_link(copy.id),
+                )
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="knowledge.document.official_rerouted",
+            resource_type="document",
+            resource_id=str(first.arguments.get("document_id")),
+            details={
+                "collection_id": str(collection.id),
+                "request_id": request_id,
+                "before": sorted(str(a) for a in holders),
+                "after": [str(a) for a in deciders],
+            },
+        )
+    return changed
 
 
 async def demote(

@@ -123,6 +123,9 @@ class UploadResult:
     document: Document
     version: DocumentVersion
     unchanged: bool  # same bytes as the current version: nothing to re-index
+    # The new content cost the document its official status (governance.new_version_stored):
+    # the search index should follow at once.
+    demoted: bool = False
 
 
 def _title_from(filename: str) -> str:
@@ -145,7 +148,9 @@ async def upload(
 ) -> UploadResult:
     """Stores the file and records a new version. A file with the same name in the same
     collection is a new version of the same document (a synced item: the same source item);
-    identical bytes change nothing."""
+    identical bytes change nothing. New content for an official document ends its official
+    status, and voids a pending request for it (docs/governance.md): approvals are for the
+    content the approver read."""
     filename = PurePath(filename).name  # never trust a client-supplied path
     try:
         mime = detect_mime(filename, declared_mime)
@@ -218,8 +223,16 @@ async def upload(
     )
     session.add(version)
     await session.flush()
+    demoted = False
     if is_new:
         enqueue(session, ctx.tenant_id, writes=[document_tuple(document)])
+    else:
+        demoted = (
+            await governance.new_version_stored(
+                session, ctx, document, collection, version_no=version_no
+            )
+            is not None
+        )
     await record_event(
         session,
         tenant_id=ctx.tenant_id,
@@ -234,7 +247,7 @@ async def upload(
             "collection": collection.key,
         },
     )
-    return UploadResult(document, version, unchanged=False)
+    return UploadResult(document, version, unchanged=False, demoted=demoted)
 
 
 async def delete_document(

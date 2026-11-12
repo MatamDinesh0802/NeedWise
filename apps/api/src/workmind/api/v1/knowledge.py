@@ -327,6 +327,14 @@ async def upload_document(
             data=bytes(data),
         )
         out = _document_out(result.document, result.version)
+    if result.demoted:  # the earlier content's chunks stop counting as official at once
+        await set_document_labels(
+            resources.qdrant,
+            resources.collection_name,
+            ctx.tenant_id,
+            result.document.id,
+            {"trust": result.document.trust},
+        )
     if not result.unchanged:
         await resources.ingestion.dispatch(ctx.tenant_id, result.document.id, result.version.id)
         out.status = "pending"
@@ -709,6 +717,7 @@ async def update_collection_governance(
             "review_interval_days": collection.review_interval_days,
         }
         owner_changed = "owner_id" in sent and body.owner_id != collection.owner_id
+        rerouted = 0
         if owner_changed:
             if body.owner_id is not None:
                 owner = await session.get(User, body.owner_id)
@@ -723,6 +732,9 @@ async def update_collection_governance(
                 writes=new_tuples - old_tuples,
                 deletes=old_tuples - new_tuples,
             )
+            await session.flush()
+            # Pending official-status requests go to whoever decides them now.
+            rerouted = await governance.reroute_official_requests(session, ctx, collection)
         rescheduled = 0
         if (
             "review_interval_days" in sent
@@ -746,6 +758,7 @@ async def update_collection_governance(
                     "review_interval_days": collection.review_interval_days,
                 },
                 "documents_rescheduled": rescheduled,
+                "official_requests_rerouted": rerouted,
             },
         )
         count = await session.scalar(

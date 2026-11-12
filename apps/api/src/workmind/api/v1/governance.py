@@ -49,7 +49,7 @@ class PendingOfficial(BaseModel):
     document: GovernedDocument
     requested_by: PersonRef | None
     requested_at: datetime
-    note: str | None
+    note: str | None  # None, like the title, when the caller cannot open the collection
     approvers: list[PersonRef]
 
 
@@ -111,7 +111,7 @@ async def get_overview(ctx: ReadContext, request: Request) -> OverviewOut:
                 by=_person(people, event.actor_id),
                 at=event.occurred_at,
                 to=str(event.details.get("after") or ""),
-                note=event.details.get("note"),
+                note=event.details.get("note") if collection_id in scope.viewable else None,
             )
         )
     return OverviewOut(
@@ -134,7 +134,9 @@ async def get_overview(ctx: ReadContext, request: Request) -> OverviewOut:
                 document=document_out(found.pending_documents[document_id]),
                 requested_by=_person(people, request.requested_by),
                 requested_at=request.requested_at,
-                note=request.note,
+                note=request.note
+                if found.pending_documents[document_id].collection_id in scope.viewable
+                else None,
                 approvers=[p for a in request.approvers if (p := _person(people, a))],
             )
             for document_id, request in found.pending.items()
