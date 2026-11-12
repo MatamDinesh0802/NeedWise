@@ -140,7 +140,7 @@ jobs:
     name: Stack starts healthy (docker compose)
     needs: [api, web]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Use deterministic hash embeddings (CI has no embedding model server)
@@ -170,6 +170,36 @@ jobs:
         env:
           E2E_BASE_URL: http://localhost:8480
         run: uv run pytest tests/e2e -v
+      # Browser suite (e2e/browser): Community edition, hash embeddings, no model key, so the
+      # @model tests are left out (they run with E2E_MODEL=1).
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: e2e/browser/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: e2e/browser/pnpm-lock.yaml
+      - name: Install the browser suite and Chromium (with its system libraries)
+        working-directory: e2e/browser
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm exec playwright install --with-deps chromium
+      - name: Browser end-to-end tests (Playwright, Chromium)
+        working-directory: e2e/browser
+        env:
+          E2E_BASE_URL: http://localhost:8480
+        run: pnpm exec playwright test
+      - name: Upload the browser test report and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            e2e/browser/playwright-report/
+            e2e/browser/test-results/
+          retention-days: 14
       - name: Diagnostics
         if: failure()
         run: docker compose ps -a && docker compose logs --no-color | tail -n 300

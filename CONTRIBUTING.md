@@ -9,7 +9,8 @@ See [Local development](README.md#local-development). In short: `make install`, 
 
 ## Before you open a pull request
 
-- `make lint test` passes.
+- `make lint test` passes. For UI changes, `make e2e-browser` passes too, against a running,
+  seeded stack (`make up seed`; see `e2e/browser/README.md`).
 - New behavior has tests. Permission-related changes need authorization tests: every role ×
   action that the change touches, including the "deny" cases.
 - Documentation and ADRs are updated when a design decision changes.

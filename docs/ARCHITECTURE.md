@@ -1289,7 +1289,9 @@ workmind/
 2. Integration tests (testcontainers).
 3. Adapter / connector contract tests.
 4. Authz matrix tests: every role × resource × action → expected allow/deny.
-5. End-to-end tests (Playwright + seed data).
+5. End-to-end tests on the seeded stack: HTTP flows with real Keycloak logins
+   (`apps/api/tests/e2e`, `make e2e`) and the browser suite (`e2e/browser`, Playwright and
+   axe-core, `make e2e-browser`), both in CI's `stack` job.
 6. Eval suites.
 
 ---
