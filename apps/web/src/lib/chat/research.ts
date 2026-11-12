@@ -38,8 +38,17 @@ function readable(tool: string): string {
   return tool.replace(/[._-]+/g, " ").trim() || "a tool";
 }
 
+/**
+ * A call that became an approval. The API reports it as not run (`ok: false`,
+ * `approval_required`): true, but for the person it is done, it waits in a card below.
+ */
+export function isProposal(step: ToolStep): boolean {
+  return !step.ok && step.error === "approval_required";
+}
+
 export function toolStepLabel(step: ToolStep): string {
   if (step.ok) return DONE[step.tool] ?? `Used ${readable(step.tool)}`;
+  if (isProposal(step)) return DONE[step.tool] ?? `Prepared ${readable(step.tool)} for your approval`;
   const base = FAILED[step.tool] ?? `${readable(step.tool).replace(/^./, (c) => c.toUpperCase())} failed`;
   const reason = step.error ? (ERRORS[step.error] ?? step.error.replace(/_/g, " ")) : null;
   return reason ? `${base} (${reason})` : base;
@@ -57,11 +66,12 @@ export function toolActivity(steps: readonly ToolStep[]): ToolActivityLine[] {
   const lines: ToolActivityLine[] = [];
   for (const step of steps) {
     const label = toolStepLabel(step);
+    const ok = step.ok || isProposal(step);
     const last = lines[lines.length - 1];
-    if (last && last.label === label && last.ok === step.ok) {
+    if (last && last.label === label && last.ok === ok) {
       last.count += 1;
     } else {
-      lines.push({ key: `${lines.length}-${step.tool}`, label, ok: step.ok, count: 1 });
+      lines.push({ key: `${lines.length}-${step.tool}`, label, ok, count: 1 });
     }
   }
   return lines;

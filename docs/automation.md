@@ -21,7 +21,8 @@ decision can come days later, from another device, after restarts (ADR 0009).
 - Every step is in the audit log: `approval.requested`, `approval.approved` (with `edited`),
   the tool call, `email.sent`, `approval.rejected`, `approval.expired`.
 
-API: `GET /api/v1/approvals`, `GET /api/v1/approvals/{id}`,
+API: `GET /api/v1/approvals?status=pending|all` (yours as approver or requester, newest 100;
+narrow it with `conversation_id=` or `workflow_run_id=`), `GET /api/v1/approvals/{id}`,
 `POST /api/v1/approvals/{id}/decision {decision, arguments?, note?}`.
 
 ## In chat: research mode
@@ -29,6 +30,12 @@ API: `GET /api/v1/approvals`, `GET /api/v1/approvals/{id}`,
 Send a message with `"mode": "research"` and the research agent may use tools. The run streams
 `tool.step` events, plus `approval.required {approval_id, tool, summary}` for each proposed
 action, which the chat shows as an inline card.
+
+The answer is stored with its steps (`tool_steps` on the message: each tool's name, whether it
+worked, the error code, and the approval it proposed; not the tools' inputs or results). After a
+reload the chat shows the same list of steps, and fetches the conversation's approvals
+(`GET /api/v1/approvals?status=all&conversation_id=…`) to put each card, pending or decided,
+back under the answer that proposed it.
 
 > *"Prepare this week's operations report and email it to leadership@acme.test."*
 > → four permission-aware searches → a drafted email → an approval card → Olivia adds her

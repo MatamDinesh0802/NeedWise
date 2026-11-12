@@ -47,6 +47,16 @@ export interface Usage {
 }
 
 export type MessageStatus = "complete" | "cancelled" | "failed";
+
+/** One tool call of a research answer, stored with it (names and outcomes, not the content). */
+export interface StoredToolStep {
+  tool: string;
+  ok: boolean;
+  error: string | null;
+  /** Set when the call became an approval. */
+  approval_id: string | null;
+  summary: string | null;
+}
 export type Rating = "up" | "down";
 
 export interface Message {
@@ -59,6 +69,8 @@ export interface Message {
   search_query: string | null;
   citations: Citation[];
   sources: Source[];
+  /** Research answers only; [] otherwise (and missing from older API versions). */
+  tool_steps?: StoredToolStep[];
   usage: Usage;
   abstained: boolean;
   withheld: number;

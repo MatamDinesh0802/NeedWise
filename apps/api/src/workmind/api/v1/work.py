@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, date, datetime, time
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,14 +82,27 @@ def _approval(a: Approval) -> ApprovalOut:
 
 @router.get("/approvals")
 async def list_approvals(
-    ctx: AskContext, request: Request, status: str = "pending"
+    ctx: AskContext,
+    request: Request,
+    status: str = "pending",
+    conversation_id: Annotated[
+        uuid.UUID | None, Query(description="only those proposed in this conversation")
+    ] = None,
+    workflow_run_id: Annotated[
+        uuid.UUID | None, Query(description="only those this workflow run proposed")
+    ] = None,
 ) -> list[ApprovalOut]:
-    """Waiting for me (as approver), plus what I asked for (as requester)."""
+    """Waiting for me (as approver), plus what I asked for (as requester), newest first (100).
+    The filters narrow that set; they never show anyone else's approvals."""
     query = select(Approval).where(
         or_(Approval.approver_id == ctx.user_id, Approval.requested_by == ctx.user_id)
     )
     if status != "all":
         query = query.where(Approval.status == status)
+    if conversation_id is not None:
+        query = query.where(Approval.origin["conversation_id"].astext == str(conversation_id))
+    if workflow_run_id is not None:
+        query = query.where(Approval.origin["workflow_run_id"].astext == str(workflow_run_id))
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         rows = (await session.scalars(query.order_by(Approval.created_at.desc()).limit(100))).all()
     return [_approval(a) for a in rows]
