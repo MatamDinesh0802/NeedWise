@@ -59,7 +59,7 @@ def test_json_rows_and_an_http_total_without_the_custom_metrics(tmp_path: Path) 
     assert (total.requests, total.failures, total.p50, total.max) == (14, 1, 10, 100)
 
 
-def test_csv_rows_skip_locusts_mixed_total(tmp_path: Path) -> None:
+def test_csv_rows_skip_locusts_mixed_total_and_replace_an_empty_json(tmp_path: Path) -> None:
     path = tmp_path / "locust_stats.csv"
     header = (
         "Type,Name,Request Count,Failure Count,Median Response Time,Average Response Time,"
@@ -75,8 +75,12 @@ def test_csv_rows_skip_locusts_mixed_total(tmp_path: Path) -> None:
         + "\n"
     )
 
-    rows = rows_from_csv(path)
+    (tmp_path / "locust.json").write_text("[]")  # what --processes leaves (Locust 2.47)
 
+    rows, source = load_rows(tmp_path / "locust")
+
+    assert source == "locust_stats.csv"
+    assert rows == rows_from_csv(path)
     assert [(r.type, r.name, r.p95) for r in rows] == [
         ("GET", "me", 20.0),
         ("SSE", "chat: answer complete", 0.0),

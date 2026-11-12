@@ -137,8 +137,9 @@ def failures_from_csv(path: Path) -> list[dict[str, str]]:
 
 def load_rows(prefix: Path, seconds: float | None = None) -> tuple[list[Row], str]:
     json_file = prefix.with_name(prefix.name + ".json")
-    if json_file.exists():
-        return rows_from_json(json_file, seconds), json_file.name
+    if json_file.exists() and (rows := rows_from_json(json_file, seconds)):
+        return rows, json_file.name
+    # With --processes, Locust 2.47 writes an empty JSON list: the CSV has the statistics.
     csv_file = prefix.with_name(prefix.name + "_stats.csv")
     if csv_file.exists():
         return rows_from_csv(csv_file), csv_file.name

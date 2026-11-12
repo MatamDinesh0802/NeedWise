@@ -118,7 +118,8 @@ loadtest: ## Load test (USERS SPAWN_RATE DURATION LABEL MIX NO_MODEL STUB_URL UP
 	cd loadtests && uv run python -m workmind_load.run --host $(LOADTEST_HOST) \
 		--users $(USERS) --spawn-rate $(SPAWN_RATE) --duration $(DURATION) --label $(LABEL) \
 		$(if $(MIX),--mix $(MIX)) $(if $(NO_MODEL),--no-model) $(if $(STUB_URL),--stub-url $(STUB_URL)) \
-		$(if $(UPLOAD_COLLECTION),--upload-collection $(UPLOAD_COLLECTION)) $(if $(THINK),--think $(THINK))
+		$(if $(UPLOAD_COLLECTION),--upload-collection $(UPLOAD_COLLECTION)) $(if $(THINK),--think $(THINK)) \
+		$(if $(PROCESSES),--processes $(PROCESSES))
 
 loadtest-stub: ## Run the stub model server for load tests (STUB_PORT TTFT_MS TPS ANSWER_TOKENS)
 	cd loadtests && uv run python stub_llm.py --port $(STUB_PORT) \

@@ -69,6 +69,12 @@ def commit() -> str:
     return result.stdout.strip()
 
 
+def processes(count: int) -> str:
+    if count == 1:
+        return "one process"
+    return "one worker process per CPU" if count < 0 else f"{count} worker processes"
+
+
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "run"
 
@@ -84,6 +90,8 @@ def locust_command(args: argparse.Namespace, prefix: Path) -> list[str]:
         "--wm-tokens", str(args.tokens), "--wm-think", args.think,
         "--wm-answer-timeout", str(args.answer_timeout),
     ]  # fmt: skip
+    if args.processes != 1:  # Locust forks workers; their statistics are added up
+        command += ["--processes", str(args.processes)]
     if args.mix:
         command += ["--wm-mix", args.mix]
     if args.no_model:
@@ -111,6 +119,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--think", default="3,10", help="seconds between actions: min,max")
     parser.add_argument("--answer-timeout", type=float, default=Settings.answer_timeout_s)
     parser.add_argument("--stop-timeout", type=int, default=60, help="let tasks finish (s)")
+    parser.add_argument(
+        "--processes", type=int, default=1, help="Locust processes; -1: one per CPU"
+    )
     parser.add_argument("--token-users", default=",".join(DEMO_USERS))
     parser.add_argument("--tokens", type=Path, default=TOKEN_FILE)
     parser.add_argument("--keep-tokens", action="store_true", help="do not revoke at the end")
@@ -161,8 +172,8 @@ def main(argv: list[str] | None = None) -> int:
         "weights": weights,
         "no_model": args.no_model,
         "upload_collection": args.upload_collection,
-        "generator": f"Locust {version('locust')}, one process, {platform.system()} "
-        f"{platform.machine()}, {os.cpu_count()} CPUs",
+        "generator": f"Locust {version('locust')}, {processes(args.processes)}, "
+        f"{platform.system()} {platform.machine()}, {os.cpu_count()} CPUs",
         "preflight": checked.lines,
         "notes": list(args.note),
     }
