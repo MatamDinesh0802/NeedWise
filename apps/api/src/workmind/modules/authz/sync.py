@@ -3,6 +3,8 @@
 - `ensure_store`: one store per tenant, with the current model.
 - `enqueue` / `process_outbox`: incremental changes, committed with the data that caused them.
 - `reconcile`: recomputes every identity tuple from PostgreSQL and repairs any drift.
+- `sync_tenants`: both of the above for every tenant (`wm authz sync`): after an upgrade that
+  changes the model, and after a restore (docs/operations/backup-restore.md).
 
 Both outbox processing and reconciliation hold a per-tenant advisory lock, so a reconcile
 can never delete a tuple that a concurrently committed change just added.
@@ -131,6 +133,34 @@ async def reconcile(
             "authz_reconciled", tenant_id=str(tenant_id), written=len(writes), deleted=len(deletes)
         )
     return ReconcileResult(written=len(writes), deleted=len(deletes))
+
+
+@dataclass(frozen=True)
+class TenantSync:
+    slug: str
+    store_id: str
+    written: int
+    deleted: int
+
+
+async def sync_tenants(
+    owner_sessions: SessionFactory, fga: OpenFgaClient, slug: str | None = None
+) -> list[TenantSync]:
+    """Every active tenant (or the one named): its store runs the current model, and its
+    identity tuples match PostgreSQL, the source of truth. Needed after an upgrade that changes
+    the model (only seeding writes it otherwise) and after a restore: the OpenFGA database is
+    dumped apart from WorkMind's, so changes made between the two dumps differ. Safe to repeat;
+    pending outbox rows stay and apply idempotently. Uses the owner role, like `ensure_store`."""
+    async with global_transaction(owner_sessions) as session:
+        query = select(Tenant.id, Tenant.slug).order_by(Tenant.slug)
+        query = query.where(Tenant.slug == slug) if slug else query.where(Tenant.status == "active")
+        tenants = list((await session.execute(query)).all())
+    synced: list[TenantSync] = []
+    for tenant_id, tenant_slug in tenants:
+        store_id = await ensure_store(owner_sessions, fga, tenant_id)
+        result = await reconcile(owner_sessions, fga, tenant_id, store_id)
+        synced.append(TenantSync(tenant_slug, store_id, result.written, result.deleted))
+    return synced
 
 
 def enqueue(

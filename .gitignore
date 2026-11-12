@@ -41,3 +41,6 @@ evals/results/*.tmp
 
 # Evaluation runs: the Markdown reports are committed, the per-item JSON stays local
 /evals/results/*.json
+
+# Backups (`make backup`): they hold every tenant's data
+/backups/

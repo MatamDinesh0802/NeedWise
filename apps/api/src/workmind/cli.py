@@ -4,6 +4,9 @@ wm eval [options]         run the evaluation suites (see `wm eval --help`)
 wm seed [options]         seed a demo company (see `wm seed --help`)
 wm license dev [options]  write a development Enterprise license (see `wm license dev --help`)
 wm reindex <tenant>       re-index a tenant's documents
+wm authz sync [<tenant>]  bring authorization stores up to date: the current model, and
+                          tuples recomputed from PostgreSQL (all active tenants by default);
+                          after an upgrade or a restore (docs/operations/)
 wm secrets rotate         re-encrypt stored model provider keys with SECRETS_ENCRYPTION_KEY
 wm usage backfill [<tenant>]
                           import usage stored before usage events existed (all active tenants
@@ -32,6 +35,10 @@ def main(argv: list[str] | None = None) -> int:
         import asyncio
 
         return asyncio.run(_reindex(rest[0]))
+    if command == "authz" and rest[:1] == ["sync"] and len(rest) <= 2:
+        import asyncio
+
+        return asyncio.run(_sync_authz(rest[1] if len(rest) == 2 else None))
     if command == "secrets" and rest == ["rotate"]:
         import asyncio
 
@@ -77,6 +84,36 @@ async def _backfill_usage(tenant_slug: str | None) -> int:
             )
     finally:
         await engine.dispose()
+    return 0
+
+
+async def _sync_authz(tenant_slug: str | None) -> int:
+    import httpx
+
+    from workmind.core.config import Settings
+    from workmind.core.db import create_engine, create_session_factory
+    from workmind.modules.authz.openfga import OpenFgaClient
+    from workmind.modules.authz.sync import sync_tenants
+
+    settings = Settings()
+    engine = create_engine(settings.migrations_database_url)  # owner role, as for seeding
+    try:
+        async with httpx.AsyncClient(timeout=30) as http:
+            fga = OpenFgaClient(
+                http, settings.openfga_api_url, settings.openfga_api_key.get_secret_value()
+            )
+            synced = await sync_tenants(create_session_factory(engine), fga, tenant_slug)
+    finally:
+        await engine.dispose()
+    if tenant_slug and not synced:
+        print(f"tenant {tenant_slug!r} not found", file=sys.stderr)
+        return 1
+    for tenant in synced:
+        print(
+            f"{tenant.slug}: store {tenant.store_id}, {tenant.written} tuples written, "
+            f"{tenant.deleted} removed",
+            file=sys.stderr,
+        )
     return 0
 
 

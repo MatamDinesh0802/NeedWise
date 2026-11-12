@@ -178,6 +178,10 @@ services:
     command: ["alembic", "upgrade", "head"]
     environment:
       MIGRATIONS_DATABASE_URL: postgresql+asyncpg://workmind_owner:${WORKMIND_OWNER_PASSWORD:-workmind_owner}@postgres:5432/workmind
+      # For `docker compose run --rm migrate wm authz sync` after an upgrade or a restore
+      # (docs/operations/upgrade.md). `alembic upgrade head` itself never calls OpenFGA.
+      OPENFGA_API_URL: http://openfga:8080
+      OPENFGA_API_KEY: ${OPENFGA_API_KEY:-dev-only-openfga-key}
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"

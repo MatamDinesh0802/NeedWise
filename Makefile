@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check backup restore upgrade-test helm-check
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -176,3 +176,15 @@ loadtest-sweep: ## Revoke leftover load-test tokens, delete leftover [load] conv
 loadtest-check: ## Lint, type-check and test the load-test harness (no stack needed)
 	cd loadtests && uv run ruff check . && uv run ruff format --check . && uv run pyright \
 		&& uv run pytest -q
+
+# Operations (docs/operations/). Options: OUTPUT=<dir>, BACKUP_FLAGS="--offline" (or --online),
+# RESTORE_FLAGS="--force --public-url https://workmind.example.com", FROM=<tag>.
+backup: ## Back up the databases, Qdrant, objects and license to ./backups/workmind-<time>
+	scripts/backup.sh $(if $(OUTPUT),--output "$(OUTPUT)") $(BACKUP_FLAGS)
+
+restore: ## Restore a backup into this stack: make restore BACKUP=backups/workmind-<time>
+	@test -n "$(BACKUP)" || { echo "usage: make restore BACKUP=<backup directory>"; exit 2; }
+	scripts/restore.sh "$(BACKUP)" $(RESTORE_FLAGS)
+
+upgrade-test: ## Upgrade a throwaway stack from an older release to this code: FROM=v0.1.0
+	scripts/upgrade-test.sh $(or $(FROM),v0.1.0)

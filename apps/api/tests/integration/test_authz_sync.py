@@ -12,10 +12,17 @@ import pytest
 from sqlalchemy import select, update
 
 from tests.integration.conftest import SessionFactory
-from workmind.core.tenancy import tenant_transaction
+from workmind.core.tenancy import global_transaction, tenant_transaction
 from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
-from workmind.modules.authz.sync import enqueue, ensure_store, org_object, process_outbox, reconcile
-from workmind.modules.identity.models import Group, GroupMember, User
+from workmind.modules.authz.sync import (
+    enqueue,
+    ensure_store,
+    org_object,
+    process_outbox,
+    reconcile,
+    sync_tenants,
+)
+from workmind.modules.identity.models import Group, GroupMember, Tenant, User
 from workmind.modules.identity.service import load_identity
 from workmind.modules.knowledge.acl import acl_principals
 from workmind.modules.knowledge.models import Collection, CollectionGrant
@@ -215,3 +222,29 @@ async def test_both_permission_locks_agree_for_every_person_and_collection(
                 disagreements.append(f"{name} / {c.key}: index={lock1} openfga={lock2}")
 
     assert disagreements == []
+
+
+async def test_wm_authz_sync_rewrites_an_outdated_model_and_repairs_drift(
+    owner_sessions: SessionFactory, fga: OpenFgaClient, acme: SyncedAcme
+) -> None:
+    # As after an upgrade that changed the model, or a restore whose OpenFGA dump is older.
+    async with global_transaction(owner_sessions) as session:
+        tenant = await session.get(Tenant, acme.tenant_id)
+        assert tenant is not None
+        tenant.settings = {**tenant.settings, "openfga_model_sha256": "outdated"}
+        slug = tenant.slug
+    org = org_object(acme.tenant_id)
+    lost = RelationTuple(acme.user("bob"), "member", org)
+    await fga.write(acme.store_id, deletes=[lost])
+
+    synced = await sync_tenants(owner_sessions, fga, slug)
+
+    assert [(t.slug, t.store_id, t.written, t.deleted) for t in synced] == [
+        (slug, acme.store_id, 1, 0)
+    ]
+    assert await _allowed(fga, acme, acme.user("bob"), "member", org)
+    async with global_transaction(owner_sessions) as session:
+        tenant = await session.get(Tenant, acme.tenant_id)
+        assert tenant is not None
+        assert tenant.settings["openfga_model_sha256"] != "outdated"
+    assert await sync_tenants(owner_sessions, fga, "no-such-tenant") == []

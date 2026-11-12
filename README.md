@@ -145,6 +145,8 @@ Celery workers (from Phase 2) ──► ingestion, connectors, long agent runs, 
 - [Architecture](docs/ARCHITECTURE.md): every component, flow and decision, end to end.
 - [Roadmap](docs/ROADMAP.md): 13 phases from foundation to v1.0, each a working release.
 - [Decision records](docs/adr/): why things are the way they are.
+- Operations: [backup and restore](docs/operations/backup-restore.md) (`make backup`,
+  `make restore`) and [upgrades](docs/operations/upgrade.md) (tested from v0.1.0).
 
 ## Repository layout
 
