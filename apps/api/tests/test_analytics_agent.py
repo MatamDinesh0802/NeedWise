@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from tests.analytics_support import DAN_POLICY, SALES, LocalAnalytics, build_acme, context
 from tests.fakes import FakeLLM, ToolTurn
@@ -13,6 +14,7 @@ from workmind.modules.analytics.agent import (
     MAX_QUERIES,
     MAX_STEPS,
     MODEL_DOWN,
+    UNUSABLE,
     AnswerQuery,
     ChartDraft,
     Composed,
@@ -129,6 +131,45 @@ async def test_a_question_is_answered_with_a_chart_and_verified_numbers(acme_fil
     assert stored["status"] == "done"
     assert stored["answer"]["narrative"] == narrative
     assert stored["answer"]["created_at"] == result.created_at.isoformat().replace("+00:00", "Z")
+
+
+@pytest.mark.parametrize(("named", "expected"), [("Q2", "Q2"), ("Q9", "Q1"), (None, "Q1")])
+async def test_the_main_query_is_the_one_the_model_names_even_when_another_is_charted(
+    acme_file: Path, named: str | None, expected: str
+) -> None:
+    # "What share of revenue came from FleetOS?": the share (Q2) answers; the chart shows the
+    # breakdown it comes from (Q1). A missing or unknown id falls back to the charted query.
+    analytics = LocalAnalytics(acme_file)
+    share = (
+        "SELECT round(100 * sum(amount_eur) FILTER (WHERE product_id LIKE 'FLEETOS%') "
+        "/ sum(amount_eur), 1) AS fleetos_share FROM invoice_lines WHERE status <> 'void'"
+    )
+    llm = model(
+        Composed(
+            narrative="FleetOS was a share of revenue [Q2].",
+            chart=ChartDraft(
+                type="bar",
+                query="Q1",
+                x="product_line",
+                y=["revenue"],
+                series=None,
+                title="Revenue by product line",
+                y_format="eur",
+            ),
+            main_query=named,
+        ),
+        turns=[
+            [
+                ("query_metrics", {"metrics": ["revenue"], "dimensions": ["product_line"]}),
+                ("run_sql", {"sql": share, "purpose": "FleetOS share"}),
+            ]
+        ],
+    )
+
+    result = await answer(llm, analytics, CTX, "What share of revenue came from FleetOS?")
+
+    assert result.chart is not None
+    assert (result.chart.query, result.main_query) == ("Q1", expected)
 
 
 async def test_the_prompts_carry_the_model_the_date_and_the_rules(acme_file: Path) -> None:
@@ -340,6 +381,24 @@ async def test_a_model_failure_is_a_failed_answer_with_the_queries_so_far(
     assert (result.status, result.error) == ("failed", MODEL_DOWN)
     assert [q.id for q in result.queries] == ["Q1"]
     assert analytics.runs[result.id]["status"] == "failed"
+
+
+async def test_an_unreadable_compose_reply_is_not_reported_as_the_model_being_down(
+    acme_file: Path,
+) -> None:
+    analytics = LocalAnalytics(acme_file)
+    try:
+        Composed.model_validate({"narrative": "x", "chart": {"type": "bar"}, "main_query": None})
+    except ValidationError as exc:
+        invalid = exc
+    else:
+        raise AssertionError("expected a validation error")
+    llm = model(invalid, turns=[[("query_metrics", {"metrics": ["revenue"]})]])
+
+    result = await answer(llm, analytics, CTX, "Revenue?")
+
+    assert (result.status, result.error) == ("failed", UNUSABLE)
+    assert [q.id for q in result.queries] == ["Q1"]
 
 
 async def test_the_query_budget_is_enforced(acme_file: Path) -> None:
