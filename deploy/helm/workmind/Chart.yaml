@@ -1,0 +1,20 @@
+apiVersion: v2
+name: workmind
+description: >-
+  WorkMind AI, a permission-aware enterprise AI workspace: the API, background workers, the
+  scheduler and the web app, with optional bundled Postgres, Valkey, Qdrant, OpenFGA, Keycloak
+  and an embedding server.
+type: application
+# The chart's own version (SemVer). Bump it on every change to the chart.
+version: 0.1.0
+# The WorkMind version the chart deploys by default (the image tag when none is set).
+appVersion: "0.0.1"
+# Validated against the Kubernetes 1.33 schemas (kubeconform); gRPC probes need 1.27 or later.
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - ai
+  - rag
+  - knowledge-base
+  - permissions
+annotations:
+  licenses: Apache-2.0

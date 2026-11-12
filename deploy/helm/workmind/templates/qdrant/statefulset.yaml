@@ -1,0 +1,121 @@
+{{- if .Values.qdrant.enabled }}
+{{- $c := .Values.qdrant -}}
+{{- $name := include "workmind.componentName" (list . "qdrant") -}}
+{{ include "workmind.service" (list . "qdrant" (dict "ports" (list (dict "name" "http" "port" 6333 "appProtocol" "http") (dict "name" "grpc" "port" 6334 "appProtocol" "grpc")))) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-headless
+  labels:
+    {{- include "workmind.labels" (list . "qdrant") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "workmind.selectorLabels" (list . "qdrant") | nindent 4 }}
+  ports:
+    - name: http
+      port: 6333
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "workmind.labels" (list . "qdrant") | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ $name }}-headless
+  selector:
+    matchLabels:
+      {{- include "workmind.selectorLabels" (list . "qdrant") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "workmind.selectorLabels" (list . "qdrant") | nindent 8 }}
+      {{- with $c.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "workmind.podCommon" (list . $c) | nindent 6 }}
+      securityContext:
+        {{- toYaml $c.podSecurityContext | nindent 8 }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: qdrant
+          image: {{ include "workmind.image" (list . $c.image "") }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
+          env:
+            - name: QDRANT__TELEMETRY_DISABLED
+              value: "true"
+            # Qdrant writes a marker file at start; keep it off the read-only root filesystem.
+            - name: QDRANT_INIT_FILE_PATH
+              value: /qdrant/init/.qdrant-initialized
+          ports:
+            - name: http
+              containerPort: 6333
+              protocol: TCP
+            - name: grpc
+              containerPort: 6334
+              protocol: TCP
+          # Same check as compose: GET /readyz.
+          startupProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /livez, port: http}
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          securityContext:
+            {{- include "workmind.infraSecurityContext" true | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /qdrant/storage
+            - name: snapshots
+              mountPath: /qdrant/snapshots
+            - name: init
+              mountPath: /qdrant/init
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Snapshots are written here before you copy them elsewhere (backups).
+        - name: snapshots
+          emptyDir:
+            sizeLimit: {{ $c.snapshotsSizeLimit }}
+        - name: init
+          emptyDir:
+            sizeLimit: 1Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "workmind.selectorLabels" (list . "qdrant") | nindent 10 }}
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with (default .Values.global.storageClass $c.persistence.storageClass) }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $c.persistence.size }}
+{{- include "workmind.pdb" (list . "qdrant" $c) }}
+{{- end }}

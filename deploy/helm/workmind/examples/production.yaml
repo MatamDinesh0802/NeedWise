@@ -1,0 +1,124 @@
+# An example production setup: a managed Postgres, the other dependencies bundled, TLS through
+# cert-manager, several API and web replicas on a ReadWriteMany volume, autoscaling, network
+# policies and every credential in a Secret you manage (e.g. synced by External Secrets).
+#   helm install workmind deploy/helm/workmind -n workmind -f deploy/helm/workmind/examples/production.yaml
+# Adjust the names marked "yours". Read docs/deploy/kubernetes.md first.
+
+images:
+  api:
+    repository: registry.example.com/workmind/workmind-api   # yours: no images are published yet
+    tag: "0.0.1"
+  web:
+    repository: registry.example.com/workmind/workmind-web
+    tag: "0.0.1"
+
+config:
+  publicUrl: https://workmind.example.com   # yours
+  appEnv: production
+  llm:
+    provider: anthropic
+    model: claude-sonnet-5-5
+  env:
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc:4318
+
+# A managed Postgres 16 or later. Create the roles and databases first (docs/deploy/kubernetes.md,
+# "External services"); the bundled Keycloak and OpenFGA use their own databases on it.
+database:
+  host: workmind-db.example.internal   # yours
+  urlParams: ssl=require
+postgresql:
+  enabled: false
+keycloak:
+  database:
+    jdbcParams: "?sslmode=require"
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "2", memory: 1536Mi}
+openfga:
+  replicas: 2
+  database:
+    sslmode: require
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+
+# Keys of the Secret: database-app-password, database-owner-password, keycloak-db-password,
+# openfga-db-password, valkey-password, openfga-api-key, oidc-client-secret, secrets-key,
+# secrets-encryption-key, keycloak-admin-password, anthropic-api-key (and the optional ones
+# listed in values.yaml).
+credentials:
+  existingSecret: workmind-credentials   # yours
+
+objectStorage:
+  storageClass: nfs-client   # yours: any ReadWriteMany class
+  accessModes: [ReadWriteMany]
+  colocatePods: false
+  size: 200Gi
+
+api:
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: workmind
+          app.kubernetes.io/component: api
+
+web:
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+
+worker:
+  replicas: 2
+  concurrency: 2
+  models:
+    persistence: true
+    storageClass: nfs-client
+    size: 5Gi
+  livenessProbe:
+    exec:
+      command: [sh, -c, "celery -A workmind.workers.celery_app inspect ping -d celery@$HOSTNAME --timeout 10"]
+    initialDelaySeconds: 60
+    periodSeconds: 60
+    timeoutSeconds: 30
+    failureThreshold: 3
+
+valkey:
+  persistence:
+    size: 5Gi
+qdrant:
+  persistence:
+    size: 100Gi
+  resources:
+    requests: {cpu: "1", memory: 2Gi}
+    limits: {cpu: "4", memory: 8Gi}
+
+embeddings:
+  persistence:
+    enabled: true
+    size: 2Gi
+
+ingress:
+  enabled: true
+  className: nginx   # yours
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt   # yours
+  tls:
+    enabled: true
+
+networkPolicy:
+  enabled: true
+  publicFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx   # yours: the namespace of your ingress controller

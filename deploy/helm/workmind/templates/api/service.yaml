@@ -1,0 +1,4 @@
+{{- $svc := .Values.api.service -}}
+{{ include "workmind.service" (list . "api" (dict "type" $svc.type "annotations" $svc.annotations "ports" (list (dict "name" "http" "port" $svc.port "appProtocol" "http")))) }}
+{{- include "workmind.hpa" (list . "api" .Values.api) }}
+{{- include "workmind.pdb" (list . "api" .Values.api) }}

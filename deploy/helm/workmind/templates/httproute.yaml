@@ -1,0 +1,54 @@
+{{- if .Values.httpRoute.enabled }}
+{{- $c := .Values.httpRoute -}}
+{{- $api := include "workmind.componentName" (list . "api") -}}
+{{- $web := include "workmind.componentName" (list . "web") -}}
+{{- $hostnames := $c.hostnames | default (list (include "workmind.publicHost" .)) -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "workmind.fullname" . }}
+  labels:
+    {{- include "workmind.labels" (list . "httproute") | nindent 4 }}
+  {{- with $c.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- toYaml $c.parentRefs | nindent 4 }}
+  hostnames:
+    {{- range $hostnames }}
+    - {{ . | quote }}
+    {{- end }}
+  # The routes of deploy/caddy/Caddyfile. An exact path match wins over a prefix.
+  rules:
+    # Keycloak calls back-channel logout on the cluster network; never from outside. The web
+    # app has no such page and answers 404 (Caddy responds 404 itself).
+    - matches:
+        - path: {type: Exact, value: /api/auth/backchannel-logout}
+      {{- include "workmind.httpRouteFilters" . | nindent 6 }}
+      backendRefs:
+        - name: {{ $web }}
+          port: {{ .Values.web.service.port }}
+    - matches:
+        - path: {type: PathPrefix, value: /api}
+        - path: {type: PathPrefix, value: /mcp}
+      {{- include "workmind.httpRouteFilters" . | nindent 6 }}
+      backendRefs:
+        - name: {{ $api }}
+          port: {{ .Values.api.service.port }}
+    {{- if .Values.keycloak.enabled }}
+    - matches:
+        - path: {type: PathPrefix, value: /auth}
+      {{- include "workmind.httpRouteFilters" . | nindent 6 }}
+      backendRefs:
+        - name: {{ include "workmind.componentName" (list . "keycloak") }}
+          port: 8080
+    {{- end }}
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      {{- include "workmind.httpRouteFilters" . | nindent 6 }}
+      backendRefs:
+        - name: {{ $web }}
+          port: {{ .Values.web.service.port }}
+{{- end }}

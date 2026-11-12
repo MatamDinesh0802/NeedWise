@@ -1,0 +1,106 @@
+{{- /*
+alembic upgrade head, with the owner role, as a Helm hook.
+- External database: pre-install,pre-upgrade. The schema is current before any pod of the
+  release starts.
+- Bundled Postgres: post-install,pre-upgrade. Pre-install hooks run before the release's own
+  resources exist, so the database would not be there yet. On that first install the API and
+  workers start before the schema exists and log errors until this Job has finished.
+Hook resources are created before the release's Secret and ServiceAccount (on pre-install), so
+the Job brings its own: a hook ServiceAccount and, when the chart holds the owner password, a
+hook Secret with just that password. Both are deleted when the hooks succeed.
+*/ -}}
+{{- $c := .Values.migrate -}}
+{{- $hook := ternary "post-install,pre-upgrade" "pre-install,pre-upgrade" .Values.postgresql.enabled -}}
+{{- $name := include "workmind.componentName" (list . "migrate") -}}
+{{- $owner := include "workmind.credentialRef" (list . "databaseOwnerPassword") | fromYaml -}}
+{{- $ownerInChart := include "workmind.credentialInChartSecret" (list . "databaseOwnerPassword") -}}
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "workmind.labels" (list . "migrate") | nindent 4 }}
+  annotations:
+    helm.sh/hook: {{ $hook }}
+    helm.sh/hook-weight: "-20"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+automountServiceAccountToken: false
+---
+{{- end }}
+{{- if $ownerInChart }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "workmind.labels" (list . "migrate") | nindent 4 }}
+  annotations:
+    helm.sh/hook: {{ $hook }}
+    helm.sh/hook-weight: "-20"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+type: Opaque
+data:
+  {{ $owner.key }}: {{ include "workmind.credentialValue" (list . "databaseOwnerPassword") | b64enc | quote }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "workmind.labels" (list . "migrate") | nindent 4 }}
+  annotations:
+    helm.sh/hook: {{ $hook }}
+    helm.sh/hook-weight: "-10"
+    # Kept after it ran (its logs), replaced by the next upgrade's run.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ $c.backoffLimit }}
+  activeDeadlineSeconds: {{ $c.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "workmind.selectorLabels" (list . "migrate") | nindent 8 }}
+      {{- with $c.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      {{- include "workmind.podCommon" (list . $c (ternary $name (include "workmind.serviceAccountName" .) .Values.serviceAccount.create)) | nindent 6 }}
+      securityContext:
+        {{- include "workmind.podSecurityContext" (list . (dict)) | nindent 8 }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        {{- include "workmind.waitContainer" (list . $c.waitTimeoutSeconds (printf "tcp://%s:%s" (include "workmind.postgresHost" .) (include "workmind.postgresPort" .))) | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "workmind.apiImage" . }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          env:
+            # Only what the migrations read: the owner's URL and the runtime role to grant to.
+            - name: WM_DATABASE_OWNER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ ternary $name $owner.secret (ne $ownerInChart "") }}
+                  key: {{ $owner.key }}
+            - name: MIGRATIONS_DATABASE_URL
+              value: {{ include "workmind.databaseUrl" (list . .Values.database.ownerUser "WM_DATABASE_OWNER_PASSWORD") | quote }}
+            - name: DB_APP_ROLE
+              value: {{ .Values.database.appUser | quote }}
+          securityContext:
+            {{- include "workmind.securityContext" (list . (dict)) | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

@@ -1,0 +1,105 @@
+{{- $c := .Values.api -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "workmind.componentName" (list . "api") }}
+  labels:
+    {{- include "workmind.labels" (list . "api") | nindent 4 }}
+spec:
+  {{- if not $c.autoscaling.enabled }}
+  replicas: {{ $c.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "workmind.selectorLabels" (list . "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "workmind.selectorLabels" (list . "api") | nindent 8 }}
+        workmind.io/object-storage: "true"
+        {{- with $c.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- include "workmind.checksums" . | nindent 8 }}
+        {{- with $c.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "workmind.podCommon" (list . $c) | nindent 6 }}
+      securityContext:
+        {{- include "workmind.podSecurityContext" (list . $c.podSecurityContext) | nindent 8 }}
+      terminationGracePeriodSeconds: {{ $c.terminationGracePeriodSeconds }}
+      {{- with include "workmind.objectStorageAffinity" (list . $c.affinity) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "workmind.apiImage" . }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          {{- with $c.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "workmind.componentName" (list . "config") }}
+            {{- with $c.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- include "workmind.appEnv" . | nindent 12 }}
+            - name: FORWARDED_ALLOW_IPS
+              value: {{ $c.forwardedAllowIps | quote }}
+            {{- with $c.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with $c.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $c.preStopSleepSeconds }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", {{ $c.preStopSleepSeconds | quote }}]
+          {{- end }}
+          securityContext:
+            {{- include "workmind.securityContext" (list . $c.securityContext) | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: objects
+              mountPath: /data/objects
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: objects
+          persistentVolumeClaim:
+            claimName: {{ include "workmind.objectStorageClaim" . }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ $c.tmpSizeLimit }}

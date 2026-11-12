@@ -1,0 +1,54 @@
+WorkMind {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}) is installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Open it at: {{ include "workmind.publicUrl" . }}
+{{- if not (or .Values.ingress.enabled .Values.httpRoute.enabled) }}
+  No Ingress or HTTPRoute is enabled: route {{ include "workmind.publicUrl" . }} to the Services yourself
+  (/api and /mcp -> {{ include "workmind.componentName" (list . "api") }}:{{ .Values.api.service.port }}{{ if .Values.keycloak.enabled }}, /auth -> {{ include "workmind.componentName" (list . "keycloak") }}:8080{{ end }}, the rest -> {{ include "workmind.componentName" (list . "web") }}:{{ .Values.web.service.port }}).
+{{- end }}
+
+Watch it start:
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -w
+Check every dependency from inside the cluster:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- if .Values.postgresql.enabled }}
+
+Database migrations run in the hook Job {{ include "workmind.componentName" (list . "migrate") }} after this first install
+(the bundled Postgres has to exist first), and before every upgrade. Until it has finished, the API
+and the workers log database errors:
+  kubectl logs -n {{ .Release.Namespace }} job/{{ include "workmind.componentName" (list . "migrate") }}
+{{- end }}
+{{- $secret := include "workmind.credentialsSecretName" . }}
+{{- if .Values.keycloak.enabled }}
+
+Keycloak admin console: {{ include "workmind.publicUrl" . }}/auth/admin  (user "{{ .Values.keycloak.adminUser }}", a temporary
+bootstrap admin: create a permanent one and delete it). Its password:
+{{- $kc := include "workmind.credentialRef" (list . "keycloakAdminPassword") | fromYaml }}
+  kubectl get secret -n {{ .Release.Namespace }} {{ $kc.secret }} -o jsonpath='{.data.{{ $kc.key }}}' | base64 -d; echo
+{{- end }}
+{{- if include "workmind.credentialInChartSecret" (list . "secretsEncryptionKey") }}
+
+IMPORTANT: the Secret {{ $secret }} holds generated encryption keys and database passwords.
+Back it up now. Losing SECRETS_ENCRYPTION_KEY or SECRETS_KEY makes the stored provider keys and
+connector credentials unreadable. The Secret is kept when the release is uninstalled.
+{{- end }}
+{{- if and (not .Values.objectStorage.existingClaim) (not (has "ReadWriteMany" .Values.objectStorage.accessModes)) }}
+
+Object storage uses a ReadWriteOnce volume: {{ if .Values.objectStorage.colocatePods }}every pod that mounts it (API, worker, seed)
+is scheduled onto the same node.{{ else }}pods that mount it on different nodes will not start (colocatePods is false).{{ end }} For replicas on several nodes, use a ReadWriteMany
+storage class (objectStorage.accessModes).
+{{- end }}
+{{- if .Values.seed.enabled }}
+
+The demo seed Job ({{ include "workmind.componentName" (list . "seed") }}) runs after install and after every upgrade. Its logins
+use the password in credentials.demoPassword (default "workmind-demo"); erin@acme.test is the org admin.
+  kubectl logs -n {{ .Release.Namespace }} job/{{ include "workmind.componentName" (list . "seed") }}
+{{- end }}
+{{- if not (or .Values.credentials.anthropicApiKey.value .Values.credentials.anthropicApiKey.existingSecret .Values.credentials.existingSecret (ne .Values.config.llm.provider "anthropic")) }}
+
+No model API key is set (credentials.anthropicApiKey): search works, answers need a model.
+Organizations can also add their own provider keys in Admin > Models.
+{{- end }}
+{{- if ne .Values.config.appEnv "production" }}
+
+config.appEnv is "{{ .Values.config.appEnv }}": use production for real data.
+{{- end }}
