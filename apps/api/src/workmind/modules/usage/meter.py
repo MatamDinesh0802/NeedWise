@@ -254,12 +254,19 @@ class UsageMeter:
         tenant_id: uuid.UUID,
         bindings: Sequence[Binding],
         now: datetime | None = None,
+        *,
+        pending_usd: float = 0.0,
     ) -> list[BudgetStatus]:
         now = now or self.clock()
         spent = await self.spent(tenant_id, [b.key for b in bindings], now)
         names = await self._names(session, bindings)
         return [
-            status_of(b, spent[b.key], names.get(b.subject_id) if b.subject_id else None, now)
+            status_of(
+                b,
+                spent[b.key] + pending_usd,
+                names.get(b.subject_id) if b.subject_id else None,
+                now,
+            )
             for b in bindings
         ]
 
@@ -286,8 +293,12 @@ class UsageMeter:
 
     # --- Enforcement --------------------------------------------------------------------------
 
-    async def admit(self, tenant_id: uuid.UUID, attribution: Attribution | None) -> None:
-        """Raises BudgetExceededError when a blocking budget that limits this call is used up."""
+    async def admit(
+        self, tenant_id: uuid.UUID, attribution: Attribution | None, *, pending_usd: float = 0.0
+    ) -> None:
+        """Raises BudgetExceededError when a blocking budget that limits this call is used up.
+        `pending_usd` is what the call in progress has used so far and not yet recorded (a tool
+        loop, before its next turn)."""
         if attribution is not None and not attribution.enforce:
             return
         rules = await self.rules(tenant_id)
@@ -301,13 +312,15 @@ class UsageMeter:
             return
         now = self.clock()
         spent = await self.spent(tenant_id, [b.key for b in blocking], now)
-        over = [b for b in blocking if spent[b.key] >= b.rule.limit_usd]
+        over = [b for b in blocking if spent[b.key] + pending_usd >= b.rule.limit_usd]
         if not over:
             return
         # The one that resets last: model requests resume only then.
         chosen = max(over, key=lambda b: (period_window(b.rule.period, now)[1], b.rule.scope))
         async with tenant_transaction(self.sessions, tenant_id) as session:
-            (status,) = await self.statuses(session, tenant_id, [chosen], now)
+            (status,) = await self.statuses(
+                session, tenant_id, [chosen], now, pending_usd=pending_usd
+            )
         raise BudgetExceededError(status)
 
     async def check(self, ctx: RequestContext) -> None:

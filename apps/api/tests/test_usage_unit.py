@@ -36,6 +36,7 @@ from workmind.providers.llm import (
     RoleConfig,
     StreamEvent,
     TextDelta,
+    ToolCall,
     ToolExecutor,
     ToolLoopResult,
     ToolSpec,
@@ -198,14 +199,19 @@ def test_an_evaluation_run_is_attributed_to_eval_and_never_blocked(
 
 
 class RecordingMeter:
-    def __init__(self, refuse: BudgetExceededError | None = None) -> None:
+    def __init__(self, refuse: BudgetExceededError | None = None, refuse_at: float = 0.0) -> None:
         self.refuse = refuse
+        self.refuse_at = refuse_at  # refuse once the call in progress has used this much
         self.admitted: list[Attribution | None] = []
+        self.pending: list[float] = []
         self.calls: list[tuple[Attribution | None, ModelCall]] = []
 
-    async def admit(self, tenant_id: uuid.UUID, attribution: Attribution | None) -> None:
+    async def admit(
+        self, tenant_id: uuid.UUID, attribution: Attribution | None, *, pending_usd: float = 0.0
+    ) -> None:
         self.admitted.append(attribution)
-        if self.refuse is not None:
+        self.pending.append(pending_usd)
+        if self.refuse is not None and pending_usd >= self.refuse_at:
             raise self.refuse
 
     async def record(
@@ -362,6 +368,68 @@ async def test_a_refused_call_never_reaches_the_model_and_is_not_recorded() -> N
     assert fake.requests == []
     assert meter.calls == []
     assert meter.admitted[0] == Attribution(feature="analytics", user_id=ALICE)
+
+
+class LoopClient:
+    """A tool loop like the real adapters run it: each model turn reports its usage to the
+    probe, then the turn's tools run, then the next turn."""
+
+    external = True
+
+    def __init__(self, turns: int) -> None:
+        self.turns = turns
+        self.model_turns = 0
+
+    async def run_tools(
+        self,
+        role: Role,
+        request: LLMRequest,
+        tools: Sequence[ToolSpec],
+        execute: ToolExecutor,
+        *,
+        max_steps: int = 6,
+    ) -> ToolLoopResult:
+        assert request.probe is not None
+        result = ToolLoopResult(text="")
+        for number in range(self.turns):
+            self.model_turns += 1
+            usage = LLMUsage(model="claude-test", input_tokens=40_000, output_tokens=8_000)
+            request.probe.add(usage)
+            result.usage.append(usage)
+            if number < self.turns - 1:
+                await execute(ToolCall(f"c{number}", "search_knowledge", {}))
+        result.text = "done"
+        return result
+
+
+async def test_a_tool_loop_is_checked_before_every_further_turn_counting_its_own_usage() -> None:
+    """docs/usage.md: the budget test runs before every model call, including each turn of a
+    tool loop (research, Insights, department agents), with the loop's own usage counted."""
+    status = status_of(Binding(_rule(), None), 600, None, datetime(2026, 11, 12, tzinfo=UTC))
+    # $1 in / $5 out per MTok: a turn of 40,000 in and 8,000 out costs $0.08.
+    meter = RecordingMeter(refuse=BudgetExceededError(status), refuse_at=0.15)
+    client = LoopClient(turns=6)
+    llm = metered(client, meter, price=(1.0, 5.0))
+    ran: list[str] = []
+
+    async def execute(call: Any) -> tuple[str, bool]:
+        ran.append(call.id)
+        return "", False
+
+    with attribute("research", user_id=ALICE), pytest.raises(BudgetExceededError):
+        await llm.run_tools("agent", REQUEST, [], execute)
+
+    assert meter.pending == [0.0, pytest.approx(0.08), pytest.approx(0.16)]
+    assert client.model_turns == 2  # the third turn was never made
+    assert ran == ["c0"]  # the second turn's tools did not run either
+    ((_, call),) = meter.calls  # still one event for the loop, with both turns
+    assert (call.status, call.input_tokens, call.output_tokens) == ("failed", 80_000, 16_000)
+
+    within = RecordingMeter()
+    whole = LoopClient(turns=3)
+    await metered(whole, within, price=(1.0, 5.0)).run_tools("agent", REQUEST, [], execute)
+    assert within.pending == [0.0, pytest.approx(0.08), pytest.approx(0.16)]
+    assert whole.model_turns == 3
 
 
 async def test_a_structured_reply_that_fails_validation_is_still_counted() -> None:

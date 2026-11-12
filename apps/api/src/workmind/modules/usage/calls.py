@@ -138,8 +138,12 @@ class ModelCall:
 class CallMeter(Protocol):
     """What the tenant resolver needs from usage accounting (modules/usage/meter.py)."""
 
-    async def admit(self, tenant_id: uuid.UUID, attribution: Attribution | None) -> None:
-        """Raises BudgetExceededError (an LLMError) when a blocking budget is used up."""
+    async def admit(
+        self, tenant_id: uuid.UUID, attribution: Attribution | None, *, pending_usd: float = 0.0
+    ) -> None:
+        """Raises BudgetExceededError (an LLMError) when a blocking budget is used up.
+        `pending_usd`: what the call in progress has used and not yet recorded (a tool loop
+        between turns), counted as spent."""
         ...
 
     async def record(

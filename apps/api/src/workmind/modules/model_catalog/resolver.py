@@ -65,12 +65,14 @@ from workmind.providers.llm import (
     PinnedModel,
     Role,
     StreamEvent,
+    ToolCall,
     ToolExecutor,
     ToolLoopResult,
     ToolSpec,
     UsageProbe,
     tenant_client,
 )
+from workmind.providers.pricing import cost_usd
 
 log = structlog.get_logger("workmind.models")
 
@@ -182,8 +184,13 @@ class Target:
         return type(exc)(scrub(str(exc), self.secret))
 
     def raise_from(self, exc: BaseException) -> NoReturn:
-        """Re-raises `exc`, with the tenant's key cut out of a provider error."""
-        if isinstance(exc, LLMError) and self.secret is not None:
+        """Re-raises `exc`, with the tenant's key cut out of a provider error. An error that does
+        not hold the key is re-raised as it is (a BudgetExceededError keeps its budget)."""
+        if (
+            isinstance(exc, LLMError)
+            and self.secret is not None
+            and scrub(str(exc), self.secret) != str(exc)
+        ):
             raise self.error(exc) from None
         raise exc
 
@@ -275,6 +282,14 @@ class TenantLLM:
             attribution,
             time.perf_counter(),
         )
+
+    async def _admit_more(self, call: _Call) -> None:
+        """Before another model turn of the same call: the budgets, with what the call has used
+        so far counted as spent (it is recorded only when the call ends)."""
+        if self._meter is None or self.tenant_id is None:
+            return
+        used = sum(cost_usd(call.target.stamp(u)) or 0.0 for u in call.probe.seen)
+        await self._meter.admit(self.tenant_id, call.attribution, pending_usd=used)
 
     async def _end(
         self,
@@ -369,12 +384,27 @@ class TenantLLM:
         *,
         max_steps: int = 6,
     ) -> ToolLoopResult:
-        """One event for the whole loop, with the usage of every model turn."""
+        """One event for the whole loop, with the usage of every model turn. The budgets are
+        checked before the loop and again before each further turn, counting what the loop
+        has used so far: a loop that crosses a blocking budget stops there (its tools do not
+        run and no further model turn is made) with BudgetExceededError."""
         call = await self._start(role, "run_tools", request)
         target = call.target
+        turns_checked = 0
+
+        async def execute_within_budget(tool_call: ToolCall) -> tuple[str, bool]:
+            # Tools run between two model turns: the first tool of a turn is the moment to
+            # check before the loop makes the next model call.
+            nonlocal turns_checked
+            turns = len(call.probe.responses)
+            if turns > turns_checked:
+                turns_checked = turns
+                await self._admit_more(call)
+            return await execute(tool_call)
+
         try:
             result = await target.client.run_tools(
-                role, call.request, tools, execute, max_steps=max_steps
+                role, call.request, tools, execute_within_budget, max_steps=max_steps
             )
         except BaseException as exc:
             await self._end(call, error=exc)
