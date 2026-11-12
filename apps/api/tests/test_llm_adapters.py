@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from pydantic import BaseModel
 
 from workmind.providers.llm import (
     AnthropicLLM,
@@ -15,6 +16,7 @@ from workmind.providers.llm import (
     RoleConfig,
     ToolCall,
     ToolSpec,
+    _strict_schema,  # pyright: ignore[reportPrivateUsage]
 )
 
 ROLES = {
@@ -164,3 +166,27 @@ async def test_the_openai_compatible_tool_loop_uses_tool_messages() -> None:
         "tool_call_id": "c1",
         "content": "ERROR: not allowed",
     }
+
+
+class _Chart(BaseModel):
+    title: str
+    default: str | None = None
+
+
+class _Answer(BaseModel):
+    narrative: str
+    chart: _Chart | None
+
+
+def test_a_strict_schema_keeps_fields_named_title_or_default() -> None:
+    # The schema annotations "title" and "default" are dropped; fields with those names are not.
+    # Dropping the field once left a chart's title out of the schema, and every answer failed.
+    schema = _strict_schema(_Answer)
+
+    chart = schema["$defs"]["_Chart"]
+    assert chart["required"] == ["title", "default"]
+    assert set(chart["properties"]) == {"title", "default"}
+    assert chart["additionalProperties"] is False
+    assert "title" not in chart["properties"]["title"]
+    assert "default" not in chart["properties"]["default"]
+    assert schema["required"] == ["narrative", "chart"]

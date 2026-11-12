@@ -418,10 +418,17 @@ def _strict_schema(schema: type[BaseModel]) -> dict[str, Any]:
     structured outputs expect. Optional fields become nullable instead of omittable."""
     raw = schema.model_json_schema()
 
-    def tighten(node: Any) -> Any:  # pyright: ignore[reportUnknownParameterType]
+    def tighten(node: Any, *, names: bool = False) -> Any:  # pyright: ignore[reportUnknownParameterType]
+        if isinstance(node, dict) and names:
+            # The keys of "properties" and "$defs" are names: a field may be called "title".
+            return {k: tighten(v) for k, v in node.items()}  # pyright: ignore[reportUnknownVariableType]
         if isinstance(node, dict):
-            skip = ("title", "default")
-            node = {k: tighten(v) for k, v in node.items() if k not in skip}  # pyright: ignore[reportUnknownVariableType]
+            skip = ("title", "default")  # annotations, not constraints
+            node = {
+                k: tighten(v, names=k in ("properties", "$defs"))
+                for k, v in node.items()  # pyright: ignore[reportUnknownVariableType]
+                if k not in skip
+            }
             if node.get("type") == "object" and "properties" in node:
                 node["additionalProperties"] = False
                 node["required"] = list(node["properties"])
