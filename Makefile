@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -113,3 +113,25 @@ scan-images: ## Build the api and web images under :scan tags, scan them, remove
 	scripts/security-scan.sh image workmind-api:scan
 	scripts/security-scan.sh image workmind-web:scan
 	docker image rm workmind-api:scan workmind-web:scan
+
+# Documentation site (mkdocs.yml, docs/): MkDocs with Material, run by uv from the pinned
+# docs/requirements.txt, so nothing is installed globally.
+DOCS_PYTHON := 3.13
+DOCS_PORT ?= 8490
+# docs-lock pins only packages released on or before this date: move it on purpose.
+DOCS_LOCK_DATE ?= 2026-10-29
+MKDOCS := uvx --python $(DOCS_PYTHON) --with-requirements docs/requirements.txt mkdocs
+
+docs: ## Build the documentation site into site/ (strict: a broken link or anchor fails)
+	$(MKDOCS) build --strict
+
+docs-serve: ## Serve the documentation with live reload on http://127.0.0.1:8490
+	$(MKDOCS) serve --dev-addr 127.0.0.1:$(DOCS_PORT)
+
+docs-gen: ## Regenerate docs/reference/ (settings, OpenAPI) from the code; a test checks it
+	cd apps/api && uv run python -m workmind.docs_gen
+
+docs-lock: ## Re-pin docs/requirements.txt (with hashes) from docs/requirements.in
+	uv pip compile docs/requirements.in --python-version $(DOCS_PYTHON) --generate-hashes \
+		--exclude-newer $(DOCS_LOCK_DATE) --custom-compile-command "make docs-lock" \
+		-o docs/requirements.txt

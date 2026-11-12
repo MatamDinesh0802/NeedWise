@@ -1,0 +1,175 @@
+# The documentation site, built from docs/ with MkDocs and Material for MkDocs.
+#   make docs         build into site/ with --strict (what CI runs: .github/workflows/docs.yml)
+#   make docs-serve   serve on http://127.0.0.1:8490 with live reload
+#   make docs-gen     regenerate docs/reference/ from the code (a unit test fails when stale)
+# Dependencies are pinned with hashes in docs/requirements.txt (make docs-lock). MkDocs 1.6 and
+# Material 9 are pinned on purpose: MkDocs 2.0 does not run Material, and Material is maintained
+# until 2027-05-05 (the build prints a notice); its successor is Zensical.
+
+site_name: WorkMind AI
+site_description: >-
+  The open-source enterprise AI assistant that is permission-safe, cited, measured and
+  self-hosted.
+site_author: WorkMind AI contributors
+copyright: Apache License 2.0, except ee/ (commercial license). All demo data is fictional.
+# Both are set by the docs workflow (GitHub Pages URL, repository URL); unset in local builds.
+site_url: !ENV [DOCS_SITE_URL]
+repo_url: !ENV [DOCS_REPO_URL]
+# Edit links stay off until the repository is public. To turn them on, set e.g.
+#   edit_uri: edit/main/docs/
+edit_uri: ""
+
+docs_dir: docs
+site_dir: site
+# Not pages: the build dependencies of this site.
+exclude_docs: |
+  requirements.in
+  requirements.txt
+
+# scripts/mkdocs_hooks.py: links that leave docs/ (the evaluation reports are published too)
+# and GitHub-style lists.
+hooks:
+  - scripts/mkdocs_hooks.py
+
+theme:
+  name: material
+  language: en
+  # System fonts: the site makes no requests to Google Fonts. (Pages with diagrams load Mermaid
+  # from unpkg.com in the browser, as Material does by default.)
+  font: false
+  # The product mark, as in the web app (apps/web/src/app/icon.svg).
+  logo: assets/favicon.svg
+  favicon: assets/favicon.svg
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Use the system setting
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      # GitHub's heading anchors, so links written for GitHub work here too.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.magiclink
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+plugins:
+  - search
+  # The HTTP API reference: Swagger UI (bundled with the plugin) over docs/reference/openapi.json.
+  # Read-only: a static site has no API to send requests to.
+  - swagger-ui-tag:
+      supportedSubmitMethods: []
+      docExpansion: none
+      filter: true
+
+validation:
+  omitted_files: info
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+not_in_nav: |
+  /evals/results/*.md
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Quickstart: getting-started/quickstart.md
+      - Configuration: getting-started/configuration.md
+      - Local models: getting-started/local-models.md
+  - User guide:
+      - Assistant and citations: user-guide/assistant.md
+      - Knowledge and uploads: user-guide/knowledge.md
+      - Insights (BI): analytics.md
+      - Meetings: meetings.md
+      - Approvals and tasks: user-guide/approvals-and-tasks.md
+      - MCP in Claude, Cursor and IDEs: mcp.md
+  - Admin guide:
+      - Agents: agents.md
+      - Models and keys: models.md
+      - Usage and budgets: usage.md
+      - Knowledge governance: governance.md
+      - Connectors: connectors.md
+      - Automation and workflows: automation.md
+      - Enterprise edition: enterprise.md
+  # Deploy and operate (to come: deploy/kubernetes.md, operations/*, multi-tenancy.md)
+  - Reference:
+      - Configuration: reference/configuration.md
+      - HTTP API: reference/api.md
+  - Architecture:
+      - Overview: ARCHITECTURE.md
+      - Decision records:
+          - adr/README.md
+          - 0001 Record architecture decisions: adr/0001-record-architecture-decisions.md
+          - 0002 Modular monolith: adr/0002-modular-monolith.md
+          - 0003 BFF authentication with Keycloak: adr/0003-bff-authentication-with-keycloak.md
+          - 0004 Apache-2.0 open core and DCO: adr/0004-apache-2-open-core-and-dco.md
+          - 0005 Postgres roles and RLS: adr/0005-postgres-roles-and-rls.md
+          - 0006 Two-lock retrieval: adr/0006-two-lock-permission-aware-retrieval.md
+          - 0007 Model providers and parsing: adr/0007-model-providers-and-lightweight-parsing.md
+          - 0008 Rank fusion and sensitivity routing: adr/0008-retrieval-fusion-and-sensitivity-routing.md
+          - 0009 Orchestration without a graph framework: adr/0009-orchestration-without-a-graph-framework.md
+          - 0010 Analytics semantic layer: adr/0010-analytics-semantic-layer-duckdb-sqlglot.md
+          - 0011 Open-core boundary and license keys: adr/0011-open-core-boundary-and-license-keys.md
+  - Evaluation:
+      - evals/README.md
+  - Roadmap: ROADMAP.md
+  - Devlog:
+      - devlog/index.md
+      - "#1 Building in public": devlog/post-01-building-in-public.md
+      - "#2 Who can see what": devlog/post-02-who-can-see-what.md
+      - "#3 Upload to answer": devlog/post-03-upload-to-answer.md
+      - "#4 Hybrid search, measured": devlog/post-04-hybrid-search-measured.md
+      - "#5 Same question, two people": devlog/post-05-same-question-two-people.md
+      - "#6 Multi-agent, measured": devlog/post-06-multi-agent-measured.md

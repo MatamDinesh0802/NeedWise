@@ -1,0 +1,11 @@
+/* Configuration reference: a setting's name stays on one line (its cell starts with an anchor). */
+.md-typeset td:first-child:has(> a[id]:first-child) > code {
+  white-space: nowrap;
+}
+
+/* A link to a repository file that the site cannot open (scripts/mkdocs_hooks.py). */
+.md-typeset .repo-path {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+  cursor: help;
+}

@@ -15,6 +15,16 @@ See [Local development](README.md#local-development). In short: `make install`, 
 - Documentation and ADRs are updated when a design decision changes.
 - The PR does one thing. Large changes start as an issue or discussion first.
 
+## Documentation
+
+The documentation site is built from `docs/` with MkDocs (`mkdocs.yml`). `make docs-serve`
+serves it on http://127.0.0.1:8490 while you write; `make docs` builds it with `--strict`, as CI
+does, so a broken link or anchor fails. Write Markdown that also reads well on GitHub, and add a
+new page to `nav` in `mkdocs.yml`.
+
+`docs/reference/` is generated from the code. After changing a setting (`core/config.py`) or an
+API route, run `make docs-gen` and commit the result; a unit test fails until you do.
+
 ## Commit messages
 
 We use [Conventional Commits](https://www.conventionalcommits.org): `feat:`, `fix:`, `perf:`,
