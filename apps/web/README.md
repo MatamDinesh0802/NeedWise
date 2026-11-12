@@ -51,12 +51,23 @@ download and Refresh (`POST /api/v1/analytics/query`). Saved answers open at `/i
   three chart types did not justify one. The categorical palette (`--viz-1…8` in
   `globals.css`) was checked with the dataviz validator against the card surfaces: adjacent
   pairs pass the colour-blindness and normal-vision checks in light and dark. Three light slots
-  are under 3:1 contrast on white, so every chart has a table view. More than 8 series fold
-  into "Other". Hover or the arrow keys read one x at a time (with a live region).
-- **Formats.** Tables show exact values (`€5,020,000`, `€1,234.56`); axes and labels are
-  compact from 10,000 up (`€5.02M`, `€152K`). The contract does not say whether a `percent`
-  value is a ratio or points, so a column whose values all lie within ±1 is read as ratios
-  (0.42 → 42%), anything else as points.
+  are under 3:1 contrast on white, so every chart has a table view, and line charts with 2 to 4
+  series name each line at its end (identity never rests on colour alone). More than 8 series
+  fold into "Other". Bar labels that would overlap turn to an angle (shortened to 20
+  characters) instead of being thinned out. A chart draws only the measures in its first
+  measure's unit (a count beside euros is left to the table, with a note), and a truncated
+  query is flagged next to the chart. Hover or the arrow keys read one x at a time (with a live
+  region).
+- **Formats.** Tables show exact values (`€5,020,000`, `€1,234.56`); labels are compact from
+  10,000 up (`€5.02M`, `€152K`), and an axis uses one notation for all its ticks (compact as
+  soon as one reaches 10,000). A `percent` value is points (42.0 is 42%), as the semantic layer
+  and the agent's SQL write it; guessing ratios from values within ±1 drew a 0.6-point growth
+  as 60%. List, map and struct values (from `array_agg`, `histogram`, struct literals) are
+  written as text in the table ("C001, C002") and as one JSON field in the CSV.
+- **No images from markdown.** The narrative (and chat answers) render a markdown image as its
+  alt text: text a model wrote after reading data could otherwise make the browser fetch
+  `https://host/?d=<data>`. Production builds also send a Content-Security-Policy that keeps
+  images, scripts, fonts, media and fetches on the app's origin (`next.config.ts`).
 - **Not covered by tests here:** the page against the real API. Unit tests mock `fetch`; the
   page was looked at in a browser against a local mock of the contract only.
 

@@ -23,7 +23,10 @@ upload (recording or transcript) ──► transcribe ──► extract ──�
   `/v1/audio/transcriptions` server instead, and `none` accepts transcripts only.
 - **Extraction:** one structured-output call (the `generator` role) returns a summary,
   decisions and action items with owner and due date. Relative dates ("by Friday next week")
-  are resolved against the meeting day. The transcript is shown to the model as numbered
+  are resolved against the meeting day: the date in the file name
+  (`weekly-ops-sync-2026-11-02.txt`, as recorders and exports name files), or the upload day if
+  the name has none. The app shows that day (`held_on`) for the meeting and its commitments;
+  the upload time is in the tooltip. There is no field to enter it yet. The transcript is shown to the model as numbered
   segments `[T12] (04:31) Wei Zhang: …`. Each item must name the segment where it was said.
   That pointer is checked like an answer citation: an item pointing at a segment that does not
   exist keeps its text but gets no timestamp, rather than a made-up one.
@@ -51,7 +54,7 @@ Permissions follow the collection instead, so meetings never need a second permi
 | `GET /meetings` | Meetings in collections you can view |
 | `GET /meetings/{id}` | Segments, speakers, summary, decisions, action items, timings |
 | `GET /meetings/{id}/media` | The original recording, for playback from a timestamp. Answers `Range` requests with 206: Chromium only lets a player seek in media served that way |
-| `PUT /meetings/{id}/speakers` | Map speaker labels to colleagues. Action items owned by that label are re-linked |
+| `PUT /meetings/{id}/speakers` | Map speaker labels to colleagues. Action items owned by that label are re-linked, and name the colleague as their owner (mapping back to nobody restores the label) |
 | `PATCH /meetings/{id}/actions/{index}` | Correct an action item: `text`, `owner_user_id`, `due` (before it becomes a task) |
 | `POST /meetings/{id}/actions/{index}/task` | Turn an action item into a task for its owner (who is notified). Once per item |
 | `GET /me/commitments` | Action items assigned to you, with their task's status |

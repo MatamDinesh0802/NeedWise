@@ -148,33 +148,40 @@ row policies all apply ([docs/analytics.md](../docs/analytics.md#evaluation)):
   stack (`OBJECT_STORAGE_PATH` defaults to its `.data/objects`). `--today` (default 2026-11-12)
   fixes "this year". Answers are not stored in the people's history.
 
-**Results** with Claude Sonnet 5.5 for the tool loop and compose, 3 questions at a time
-([`results/2026-11-12-analytics.md`](results/2026-11-12-analytics.md)):
+**Results** with Claude Sonnet 5.5 for the tool loop and compose, 3 questions at a time, after
+the fixes from a security and correctness review (row-policy fences, query workers, LEFT
+JOINs, verification and scoring fixes)
+([`results/2026-11-12-analytics-after-review.md`](results/2026-11-12-analytics-after-review.md)):
 
 | | Value |
 |---|---|
 | Execution accuracy | **33/36 (91.7%)**: 28/29 with full access, 5/7 as Dan |
-| Gold result in any query the agent ran | 34/36 |
+| Gold result in any query the agent ran | 33/36 |
 | No access: refused with no model call and no query | 5/5 |
 | Attacks without a leak | 10/10 |
 | **Permission leaks** | **0** |
-| Narrative numbers matched to a result (at the precision shown) | 159/159 |
-| Answers that needed the repair pass | 4/46 |
-| Latency p50 / p95 | 6.9 s / 10.2 s |
-| Tokens per answer; cost | 9,952 in / 617 out; $0.026 per answer, $1.20 per run |
+| Narrative numbers matched to a result (at the precision shown) | 172/172 (at least 2 by coincidence) |
+| Answers that needed the repair pass | 5/46 |
+| Latency p50 / p95 | 7.1 s / 10.5 s |
+| Tokens per answer; cost | 9,843 in / 639 out; $0.026 per answer, $1.20 per run |
 
 - The misses: a "top three" question answered with five rows (the narrative names the right
   three); Dan asking for Diego's accounts got a list of his own 13 (nothing leaked, but the gold
   is no rows); Dan's open pipeline given by stage, with a total the model added up itself.
 - That total ("about €1.6M" for €1,560,000 + €40,000) counts as matched because €1,560,000
   rounds to €1.6M: the number check compares at the precision written, so a coarse figure can
-  match the wrong cell.
-- "Gold result in any query" counts an empty gold as found whenever the agent answers, which is
-  why Dan's "Diego's accounts" counts there although its only query returned his own rows.
+  match the wrong cell. So does a threshold the model wrote ("each below €2M", matched by
+  €1,954,600). Re-running the 31 single-query answers' SQL found these two among their 159
+  numbers; the other 13 numbers were not checked that way.
+- The run before the fixes ([`results/2026-11-12-analytics.md`](results/2026-11-12-analytics.md))
+  scored the same 33/36 with the same misses. It reported 34/36 for "gold result in any
+  query" because the scoring counted an empty gold as found whenever the agent answered (Dan's
+  "Diego's accounts", whose only query returned his own 13 rows); an empty gold now needs a
+  query that returned no rows, also to pass.
 - The first run ([`results/2026-11-12-analytics-first-run.md`](results/2026-11-12-analytics-first-run.md))
   scored 32/36. Three of its misses were the agent overriding the model's main query with the
   charted one, now fixed; between the runs two other items flipped, so one run does not
-  separate small differences. Only this one model has been measured.
+  separate small differences. Only this one model has been measured, in three runs.
 
 Without a model, the tests check the dataset (every gold query runs as its person and returns
 rows; Dan's results differ from Diego's; revenue by month and product line equals the finance

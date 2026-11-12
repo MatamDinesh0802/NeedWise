@@ -45,9 +45,14 @@ one code path for permissions.
 One read-only query (SELECT or a set operation, with CTEs); table references only to model
 tables or visible CTEs (DuckDB's scoping rules); no table functions, file paths, other schemas
 or catalogs; a deny-list of file, network, configuration and catalog functions. Each row policy
-is applied by replacing every reference to a restricted table with a filtered subquery under the
+is applied as a fence: the permitted rows of a restricted table are copied into a temporary
+table in a statement of its own, and every reference to the table reads the fence under the
 same alias, so joins, subqueries, set operations, recursive CTEs and window functions only see
-permitted rows. The person's values (`{user.email}`, read from the users table) are literal
+permitted rows, and no condition of the query is evaluated on a hidden row. (The first version
+replaced each reference with a filtered subquery in the same statement. DuckDB's optimizer was
+free to reorder that: for a selective condition it ran the query's own `WHERE` on rows outside
+the policy, and a failing `CAST` or `error()` quoted them. A review found it; see
+[docs/analytics.md](../analytics.md#who-sees-what).) The person's values (`{user.email}`, read from the users table) are literal
 nodes. A `LIMIT` of the row cap + 1 is added. The executed SQL is regenerated from the checked
 tree and must parse back to itself; the text that was sent never runs.
 
@@ -56,7 +61,10 @@ Uploaded tables become a versioned DuckDB file per tenant. Each query opens its 
 read-only, with external access off (no files, no network), extension autoinstall and autoload
 off, Python replacement scans off, the configuration locked, 2 threads, 512 MB and a timeout.
 Even SQL that skipped the guard cannot read `/etc/passwd`, write a file or change a setting
-(tests call the engine directly with each of these).
+(tests call the engine directly with each of these). DuckDB's memory limit and interrupt do not
+cover everything (values built by scalar functions, a long call inside one function), so the
+service runs queries in worker processes that are stopped above a memory limit or killed
+after the timeout plus a grace period, a bounded number at once and one per person.
 
 ### 5. Numbers in the narrative are checked in code
 Every number the model writes is matched against the result cells at the precision shown; one
@@ -96,9 +104,10 @@ and rely on its row-level security). Rejected because:
   gives atomic switches and simple cleanup.
 
 ## Consequences
-- **Row policies are a SQL rewrite we own.** They rely on DuckDB evaluating the policy
-  condition before the person's own conditions on the same rows; tests probe this with error
-  oracles and must pass again after every DuckDB upgrade.
+- **Row policies are a SQL rewrite we own.** Fences do not depend on the order in which DuckDB
+  evaluates conditions, but they copy the permitted rows of each restricted table per query,
+  in memory: cheap for Acme, not measured on large tables. Tests run selective error oracles
+  on every hidden row and must keep passing after every DuckDB upgrade.
 - **Columns are not allow-listed.** Every column of a model table can be queried; data nobody
   may see must stay out of the dataset.
 - **The function list is a deny-list.** The engine settings stop file and network access
