@@ -20,7 +20,7 @@ Permissions are checked in code on every request (`api/v1/knowledge.py`,
 | Change a document's owner | Collection editors; org owners and admins | `PUT /api/v1/documents/{id}/owner` |
 | Mark a document reviewed | The document's owner; collection editors | `POST /api/v1/documents/{id}/review` |
 | Ask for official status | Collection editors | `POST /api/v1/documents/{id}/official` |
-| Approve or reject official status | The collection's owner; org owners and admins when the owner is the one asking or there is none. Never the person who asked. | `POST /api/v1/approvals/{id}/decision` |
+| Approve or reject official status | The collection's owner; org owners and admins who can open the collection when the owner is the one asking or there is none. Never the person who asked. In a browser session only (an access token gets `403 session_required`). | `POST /api/v1/approvals/{id}/decision` |
 | Remove official status | Collection editors (immediate) | `PATCH /api/v1/documents/{id}` |
 | Set a collection's owner and review interval | Org owners and admins | `PATCH /api/v1/admin/collections/{id}` |
 | See the governance overview | Org owners and admins: every collection. Anyone else: the collections they own. | `GET /api/v1/governance/overview` |
@@ -39,9 +39,16 @@ must be an active person who can open the collection: an owner who cannot read t
 cannot review it, so the API refuses with `422 owner_cannot_view`. An admin may change owners
 in a collection they cannot read (separation of duties); the answer then holds no content. The
 new owner gets a notification, and the change is audited (`knowledge.document.owner_changed`).
+If the document's review reminder is open, its task moves to the new owner (the notification
+says so); a cycle whose task was closed without a review is forgotten, so the next daily run
+reminds the new owner.
 
 A collection also has an owner (set in **Admin > Collections**). It approves official status for
-the collection's documents and sees the collection in its governance overview. Like an editor,
+the collection's documents and sees the collection in its governance overview. When the owner
+changes, pending official-status requests move to whoever decides now: the former owner's copy
+becomes `superseded` (shown as **Reassigned**, with the reason), the new owner gets a copy with
+the same deadline, and the move is audited (`knowledge.document.official_rerouted`). If nobody
+can decide any more, the request fails and the requester is told. Like an editor,
 the collection's owner can view and edit the collection; changing it updates both permission
 locks (OpenFGA and the search index) like a sharing change does.
 
@@ -85,34 +92,58 @@ and show nothing.
 `official` is the highest trust level: answers rank official documents first and prefer them when
 sources disagree. So it is reached only through an approval.
 
-1. A collection editor chooses **Request official status** and says why (a required note).
+1. A collection editor chooses **Request official status** and says why (a required note). The
+   request names the document's current version: that content is what gets approved.
 2. The request goes to the collection's owner. When the owner is the one asking, or the
-   collection has no active owner, it goes to every active org owner and admin except the
-   person asking. Nobody ever approves their own request. With no possible approver the API
-   answers `409 no_approver`.
+   collection has no active owner, it goes to every active org owner and admin who can open the
+   collection, except the person asking. Nobody ever approves their own request, and nobody
+   approves a document they cannot read. With no possible approver the API answers
+   `409 no_approver` (an admin can then make someone else the collection's owner, or share the
+   collection with an admin).
 3. The approver sees it in **Approvals** with what deciding means: approving makes the document
    official (and counts as a review); rejecting keeps its trust level. The arguments of this kind
    of approval cannot be edited (`422 not_editable`), and no agent or workflow can propose one:
    its name, `knowledge.official_status`, is not a tool name.
-4. **Approve:** the API checks again, at that moment, that the approver is still the collection's
-   owner or an org admin and is not the requester. Then the trust becomes `official`, the
-   search index is updated at once, `reviewed_at`/`reviewed_by` are set, and the next review is
-   scheduled. Audited as `approval.approved` and `knowledge.document.official_approved`; the
-   requester is notified.
-5. **Reject:** the trust stays as it was. Audited as `approval.rejected`; the requester is
-   notified with the approver's note.
+4. **Approve:** before anything is recorded, the API checks again that the approver is still the
+   collection's owner or an org admin, can open the collection, and is not the requester (a
+   refusal, `403 not_allowed`, changes nothing: the other approvers' copies stay valid). When it
+   runs, it also checks that the document still has the version the request named; if new
+   content arrived, nothing happens and the approval ends `failed` ("ask again"). Then the trust
+   becomes `official`, the search index is updated at once, `reviewed_at`/`reviewed_by` are set,
+   and the next review is scheduled. Audited as `approval.approved` and
+   `knowledge.document.official_approved` (with the version); the requester is notified.
+5. **Reject:** the same check of the approver comes first. The trust stays as it was. Audited as
+   `approval.rejected`; the requester is notified with the approver's note. (Rejections recorded
+   before 2026-11-12 carry the misspelled action `approval.rejectd`; the log is append-only, so
+   they keep it. Filter on `approval.reject` to find both.)
 
 When a request went to several admins, the first decision answers it; the other copies become
 `superseded` ("Decided by another approver"). A request expires after 14 days. While one is
 pending, the document page shows **Official status requested** with who asked, who decides and
-why, and a second request is refused (`409 official_pending`).
+why, and a second request is refused (`409 official_pending`). The approval shows the version it
+is for.
+
+Someone who cannot open the collection (a request made before these checks, or an approver
+who lost access since) sees the approval without the document's title, the requester's note or
+a link: "A document in <collection> you can't open". They cannot decide it.
+
+**New content ends official status.** A new version of an official document (an upload with
+the same file name, or a connector sync of an item that changed) drops it to the collection's
+default trust, or to `reference` when that default is `official`. Its `reviewed_at`/`reviewed_by`
+are cleared, the search index follows at once, the owner is told, and it is audited as a
+demotion (`knowledge.document.demoted` with `reason: new_version`; it appears under "No longer
+official"). A pending request for the document fails ("ask again"), so nobody approves content
+they never saw. Identical bytes change nothing.
 
 **No other path sets official.** `PATCH /api/v1/documents/{id}` with `trust: "official"` answers
 `403 official_requires_approval`. The one standing exception is the collection's
 `default_trust`: a new document takes it, whether it is seeded, synced by a connector or
 uploaded. An administrator sets it when creating the collection, as a decision for everything
-that lands there; the seeded Legal & Contracts collection uses it. Changing an existing
-document to official always goes through the approval.
+that lands there. Three seeded collections use it: Company Handbook, Operations SOPs and Legal &
+Contracts. So their editors (HR managers such as Alice, operations managers such as Olivia, and
+the management department's managers) create official documents just by uploading a new file.
+Changing an existing document to official, or giving an official document new content, always
+goes through the approval.
 
 **Demotion is immediate.** A collection editor chooses **Remove official status**, picks
 `reference` or `discussion` and may add a note. No approval is needed to lower trust. It is
@@ -133,8 +164,9 @@ overview if they own none. It lists:
 - **No longer official (30 days):** demotions, with who did it and their note.
 
 Each list holds at most 200 documents. An admin who cannot open a collection sees that its
-documents need attention, never their titles (separation of duties, ARCHITECTURE 7.1); the web
-app says "A document in <collection> you can't open" instead of a link.
+documents need attention, never their titles or the notes about them (the request's reason, the
+demotion note; separation of duties, ARCHITECTURE 7.1); the web app says "A document in
+<collection> you can't open" instead of a link.
 
 ## The audit explorer
 
@@ -169,9 +201,10 @@ The complete chain with its hashes, as JSON lines for a SIEM, is the Enterprise 
 | `knowledge.document.review_reminded` | The daily task reminded an owner (actor: system) |
 | `knowledge.document.reviewed` | Someone marked a document reviewed |
 | `knowledge.document.official_requested` | An editor asked for official status |
-| `approval.approved`, `approval.rejected` | The approver decided |
+| `knowledge.document.official_rerouted` | The collection's owner changed and a pending request went to whoever decides now |
+| `approval.approved`, `approval.rejected` | The approver decided (`approval.rejectd` before 2026-11-12) |
 | `knowledge.document.official_approved` | The document became official |
-| `knowledge.document.demoted` | An editor removed official status |
+| `knowledge.document.demoted` | An editor removed official status, or new content ended it (`reason: new_version`) |
 | `admin.collection.governance_changed` | An admin changed a collection's owner or review interval |
 | `audit.export` | Someone exported the audit log (CSV or JSON lines) |
 
@@ -208,9 +241,12 @@ and never undoes a review or an owner chosen in the app.
 ## Tests
 
 `tests/integration/test_governance.py` (owners and defaults, reminders once per cycle and
-idempotent, reviews closing the task, interval changes, official requests: approvers, no
-self-approval, editors cannot set official directly, rejection, demotion, overview scoping,
-`review_overdue` in sources, the seeded dates), `tests/integration/test_audit_explorer.py`
+idempotent, reviews closing the task, the reminder following a new owner, interval changes,
+official requests: approvers who can read the collection, no self-approval, editors cannot set
+official directly, new content ending official status and voiding a pending request, the
+version an approval is for, requests following a new collection owner, a refused decider
+changing nothing, no decisions with access tokens, titles and notes withheld, rejection,
+demotion, overview scoping, `review_overdue` in sources, the seeded dates), `tests/integration/test_audit_explorer.py`
 (filters, cursor paging, CSV of the filtered view, tenant isolation, admins and auditors only),
 and the web tests next to the components (`*.test.ts(x)` under `apps/web/src`).
 
@@ -229,5 +265,21 @@ Checked through the API on the running stack (2026-11-12, after `make seed`), no
   CSV and JSON-lines exports, and the retention policy and previews answered with the shapes the
   web app expects; members got `403` on the admin routes.
 
-Not checked yet: the screens themselves against the running stack, and a reminder sent by the
-daily task (it first runs a day after beat starts).
+After the fixes of 2026-11-12 (evening), checked on the rebuilt stack through the API:
+
+- Alice uploaded a file to the Company Handbook (official by default), marked it reviewed, then
+  uploaded different content under the same name: the document became `reference`, its review
+  was cleared, its chunks held only the new text, and it was audited as a demotion. (Before the
+  fix it stayed official with the old reviewer.) The probe was deleted afterwards.
+- Alice's request for official status on a reference document in HR Guidance answered
+  `409 no_approver`: she owns it, and neither Erin nor Priya can open it.
+- Erin's two earlier official-status approvals (both about HR Guidance) are listed as "Make a
+  document in “HR Guidance (internal)” official", without title or note.
+- The filter `approval.reject` finds the one earlier rejection, recorded as `approval.rejectd`.
+
+Before the fix, the browser walkthrough had Erin approve official status for "Performance
+Review Process" in HR Guidance, a collection she cannot open; that document has since been set
+back to `reference` (it still names Erin as its last reviewer).
+
+Not checked yet: a reminder sent by the daily task on the running stack (it first runs a day
+after beat starts).

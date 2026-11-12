@@ -44,7 +44,10 @@ Each event (table `usage_events`) holds:
 - A streamed answer stopped by the person (or by a server shutdown) is recorded as `cancelled`.
   Claude reports input tokens when the stream starts and output tokens as it goes, so the event
   has them; OpenAI-compatible servers report usage only at the end of a stream, so a stopped
-  stream from them is recorded with 0 tokens.
+  stream from them is recorded with 0 tokens. For budgets this means: with a priced
+  OpenAI-compatible provider, an answer stopped after its text arrived but before the final
+  usage chunk adds nothing to any budget, although the provider billed it. Claude answers are
+  not affected.
 - A call that fails before the provider reports anything (connection refused, HTTP 5xx) is
   recorded with 0 tokens, so the number of requests stays true.
 - A call refused by a budget is **not** recorded: no model was called.
@@ -103,6 +106,11 @@ counts, never the history. People in no department, and evaluations, have none.
 | Department manager (browser session) | `departments` | the usage of the people in the departments they manage (all of their usage), the organization's budgets, the budgets of their departments, their own cap |
 | Anyone else, and every access token | `self` | their own usage, the organization's budgets, their departments' budgets, their own cap |
 
+Each budget in the summary carries `applies_to_me`: whether it limits the caller's own
+requests. An admin's summary lists everyone's caps (they do not limit the admin), and a person
+in two departments sees both departments' budgets, of which only the one their usage counts for
+limits them; the web app's "Your usage this month" shows only those that apply.
+
 Grouped by person or department, a `self` summary shows only the caller. `GET /usage/events`
 (every recorded call, newest first, with filters) and the chargeback report are for owners and
 admins only. Days are UTC calendar days.
@@ -121,8 +129,10 @@ Every budget warns once per period when `warn_at` (default 80%) of it is spent. 
 at 00:00 UTC (day) and on the first of the month at 00:00 UTC; each status carries `resets_at`.
 
 Owners and admins set them in Admin › Budgets (`GET` / `PUT /api/v1/admin/budgets`; `PUT`
-replaces every budget and the default cap; a budget keeps its id while its scope, subject and
-period stay the same). Changes are audited (`budgets.updated`).
+replaces every budget and the default cap, including the default cap's `warn_at`, which `GET`
+returns and the page shows as "Warn at"; a budget keeps its id while its scope, subject and
+period stay the same). Limits are stored with four decimals, so the smallest is $0.0001 (a
+smaller one answers 422). Changes are audited (`budgets.updated`).
 
 ### Enforcement
 
@@ -144,9 +154,14 @@ budget of the department their usage counts for. When a blocking one is used up:
   }
   ```
 
-- The same test runs before **every model call**, so a chat answer that crosses the limit half
-  way ends with its usual `run.failed` event carrying `code: "budget_exceeded"`, the same detail
-  (as `message` and `detail`) and the `budget`. The partial answer is stored as failed.
+- The same test runs before **every model call**, including each further turn of a tool loop
+  (research, Insights, department agents with tools), where the turns the loop has already made
+  count as spent: a loop that crosses a blocking budget stops before its next turn and before
+  that turn's tools. A chat answer that crosses the limit half way ends with its usual
+  `run.failed` event carrying `code: "budget_exceeded"`, the same detail (as `message` and
+  `detail`) and the `budget`. The partial answer is stored as failed, with that reason
+  (`error` on the message), so the thread still shows which budget is used up and when it
+  resets after the run ends or the page reloads.
 - The MCP `ask` tool returns a tool error with the same detail, also before doing anything.
 - Meeting extraction fails the meeting with that detail as its error; a workflow run fails its
   research step and ends `failed` with it (the owner is notified as for any failed run). Neither
@@ -172,10 +187,18 @@ seconds (the process that saves them drops its copy at once).
 Cost is known only after a call, so **a budget can be overshot**:
 
 - by the calls let in while it was still below its limit: each request in flight can finish
-  the model call it is making. With Claude Sonnet 5.5 and 16,000 output tokens (the largest
-  limit a call asks for), one call costs at most $0.16 plus its input tokens. Department agents
-  run in parallel (up to 4 per question), so a question in agents mode can have 4 calls in
-  flight;
+  the model call (or the tool-loop turn) it is making. With Claude Sonnet 5.5 and 16,000 output
+  tokens (the largest limit a call asks for), one call costs at most $0.16 plus its input
+  tokens. Department agents run in parallel (up to 4 per question), so a question in agents
+  mode can have 4 calls in flight, about $0.64 of output. Before 2026-11-12 a tool loop was
+  checked only once, so one admitted loop could run all its turns (research 6 × 8,000 output
+  tokens, about $0.48; a department agent with tools up to 6 × 16,000, about $0.96, times 4 in
+  parallel); it is now checked before every turn;
+- by stopped streams of OpenAI-compatible providers, which are recorded with 0 tokens (see
+  above);
+- by how many requests one person has in flight: one answer at a time per conversation, but
+  nothing limits the number of conversations answering at once, so the bound above applies per
+  busy conversation;
 - by events recorded in the moment between a cached value being summed from the database and
   that value being stored (they are counted at the next refresh, within 60 seconds);
 - by usage written straight to the table (the backfill) until the cached values refresh;
@@ -257,7 +280,7 @@ delete conversations, Insights runs and recordings but never usage events: an ev
 
 With scripted models (`tests/fakes.py`, no real provider): `tests/test_usage_unit.py` (periods,
 costs, attribution, one event per call of each kind, partial usage of failed and stopped calls,
-refused calls), `tests/integration/test_usage_features.py` (one event per call for chat, agents
+refused calls, a tool loop checked before every further turn), `tests/integration/test_usage_features.py` (one event per call for chat, agents
 mode, research, the test console, workflows and meetings, with person, department, agent and
 record; a chat run stopped half way by a budget), `test_usage_analytics.py` (Insights),
 `test_usage_budgets.py` (saving and validating budgets, 429 on every entry point and the MCP
@@ -271,6 +294,15 @@ message ref) with the tokens Anthropic reported (2,773 in, 301 out) and $0.00855
 tokens at $2 / $10 per million. The usage summary, the event list, the chargeback CSV and
 saving budgets (with a department budget) were called live as an admin, a department manager and
 an employee, and their responses match the web app's types.
+
+After the fixes of 2026-11-12 (evening): Carol's daily cap was set $0.002 above what she had
+already spent that day, and she asked one question in `auto` mode. The planner call ($0.0031)
+was admitted and took her over the cap; the answer was refused before its model call, the run
+ended with `budget_exceeded`, and the stored message kept that error with the budget (so the
+thread can show it after the run) and the planner's 1,227 input and 65 output tokens in its
+usage (before, a failed run's message left the planner out). The cap was removed and the
+conversation deleted afterwards; two `budgets.updated` audit events remain. The per-turn check
+of tool loops is tested with scripted models only (`test_usage_unit.py`).
 
 Not measured: the time recording adds to a model call against a loaded database; a stopped or
 failed call against a real provider (those paths are tested with scripted models only); an

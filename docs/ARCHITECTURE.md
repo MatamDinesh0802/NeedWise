@@ -396,6 +396,8 @@ Every document carries two labels that change how it is used:
 
 The sensitivity label is suggested automatically at ingestion (Presidio PII scan + rules) and can be overridden by the collection owner.
 
+`official` covers one version of a document: the approval names the version the approver could read, and new content (an upload with the same name, a connector sync) drops the document back to the collection's non-official default until it is approved again. Only people who can open the collection approve. A collection's `default_trust` is the one standing exception: a new document takes it. Details: [docs/governance.md](governance.md#official-status).
+
 ### 7.4 OpenFGA model
 
 ```

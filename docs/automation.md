@@ -18,8 +18,10 @@ decision can come days later, from another device, after restarts (ADR 0009).
 - A double click or two devices can never run an action twice: the decision claims the
   approval atomically.
 - If the requester has been disabled in the meantime, their action does not run.
-- Every step is in the audit log: `approval.requested`, `approval.approved` (with `edited`),
-  the tool call, `email.sent`, `approval.rejected`, `approval.expired`.
+- Every decision is in the audit log: `approval.requested`, `approval.approved` (with
+  `edited`), the tool call, `email.sent`, `approval.rejected` (recorded as `approval.rejectd`
+  before 2026-11-12; the log is append-only, so older rejections keep that name). An approval
+  that expires is not audited: the requester gets an `approval.expired` notification.
 
 API: `GET /api/v1/approvals?status=pending|all` (yours as approver or requester, newest 100;
 narrow it with `conversation_id=` or `workflow_run_id=`), `GET /api/v1/approvals/{id}`,
