@@ -15,7 +15,7 @@ Ingress rules only. Public entry points (web, API, Keycloak) accept networkPolic
 {{- $policies = append $policies (dict "component" "keycloak" "ports" (list 8080) "public" true "from" (list "api" "seed")) }}
 {{- end }}
 {{- if .Values.postgresql.enabled }}
-{{- $policies = append $policies (dict "component" "postgresql" "ports" (list 5432) "from" (list "api" "worker" "beat" "migrate" "seed" "keycloak" "openfga" "openfga-migrate")) }}
+{{- $policies = append $policies (dict "component" "postgresql" "ports" (list 5432) "from" (list "api" "worker" "beat" "migrate" "authz-sync" "seed" "keycloak" "openfga" "openfga-migrate")) }}
 {{- end }}
 {{- if .Values.valkey.enabled }}
 {{- $policies = append $policies (dict "component" "valkey" "ports" (list 6379) "from" (list "api" "worker" "beat" "seed")) }}
@@ -24,7 +24,7 @@ Ingress rules only. Public entry points (web, API, Keycloak) accept networkPolic
 {{- $policies = append $policies (dict "component" "qdrant" "ports" (list 6333 6334) "from" (list "api" "worker" "seed")) }}
 {{- end }}
 {{- if .Values.openfga.enabled }}
-{{- $policies = append $policies (dict "component" "openfga" "ports" (list 8080 8081) "from" (list "api" "worker" "beat" "seed")) }}
+{{- $policies = append $policies (dict "component" "openfga" "ports" (list 8080 8081) "from" (list "api" "worker" "beat" "authz-sync" "seed")) }}
 {{- end }}
 {{- if .Values.embeddings.enabled }}
 {{- $policies = append $policies (dict "component" "embeddings" "ports" (list 8080) "from" (list "api" "worker" "seed")) }}

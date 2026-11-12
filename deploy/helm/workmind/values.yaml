@@ -498,6 +498,10 @@ web:
 # the database exists); every upgrade is still pre-upgrade.
 # ---------------------------------------------------------------------------------------------
 migrate:
+  # After every install and upgrade, a second hook Job runs `wm authz sync` (each tenant's
+  # OpenFGA store gets the current model and its tuples from Postgres), as the Compose upgrade
+  # procedure does by hand (docs/operations/upgrade.md). It uses the settings below as well.
+  authzSync: true
   backoffLimit: 3
   activeDeadlineSeconds: 1800
   # Seconds the init container waits for Postgres to accept connections.
@@ -511,7 +515,7 @@ migrate:
   affinity: {}
 
 # ---------------------------------------------------------------------------------------------
-# Demo data (Acme Robotics: people, logins, 34 documents, a meeting, analytics), loaded by
+# Demo data (Acme Robotics: people, logins, 47 documents, analytics), loaded by
 # `python -m workmind.seed` in a post-install/post-upgrade hook Job. Development and demos
 # only: it refuses config.appEnv production. Re-running is safe.
 # ---------------------------------------------------------------------------------------------

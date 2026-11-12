@@ -6,10 +6,11 @@
 #   2. ingress-nginx (pinned manifest, checked by SHA-256) on the control plane, published on
 #      127.0.0.1:$HTTP_PORT;
 #   3. helm install with ci/kind-values.yaml, --wait, into a namespace that enforces the
-#      "restricted" Pod Security Standard: the migrate and seed hook Jobs must succeed;
+#      "restricted" Pod Security Standard: the migrate, authz-sync and seed hook Jobs must
+#      succeed;
 #   4. helm test, the API end-to-end tests and the browser suite through the ingress;
 #   5. helm upgrade to two API replicas while the app is polled through the ingress: the migrate
-#      hook must run again and every request must succeed;
+#      and authz-sync hooks must run again and every request must succeed;
 #   6. helm uninstall, then what is left on purpose (the kept Secret and volumes).
 # The cluster and the images are deleted at the end, unless KEEP=1.
 #
@@ -85,13 +86,22 @@ $KUBECTL apply -f "$WORK/ingress-nginx.yaml" >/dev/null
 $KUBECTL -n ingress-nginx patch deployment ingress-nginx-controller --type merge \
   -p '{"spec":{"template":{"spec":{"nodeSelector":{"ingress-ready":"true","kubernetes.io/os":"linux"}}}}}'
 $KUBECTL -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout 5m
+# Its admission webhook answers a little after the controller is ready (the chart's Ingress was
+# once refused with "connection refused"): wait until it validates an Ingress.
+webhook_check=(create ingress webhook-check -n default --class nginx --rule "check.invalid/*=check:80"
+  --dry-run=server -o name)
+for _ in $(seq 1 60); do
+  $KUBECTL "${webhook_check[@]}" >/dev/null 2>&1 && break
+  sleep 2
+done
+$KUBECTL "${webhook_check[@]}" >/dev/null || fail "the ingress-nginx admission webhook does not answer"
 
 step "A namespace that enforces the restricted Pod Security Standard"
 $KUBECTL create namespace $NS
 $KUBECTL label namespace $NS pod-security.kubernetes.io/enforce=restricted \
   pod-security.kubernetes.io/enforce-version=latest pod-security.kubernetes.io/warn=restricted
 
-step "helm install (then the hooks: migrate, seed)"
+step "helm install (then the hooks: migrate, authz-sync, seed)"
 values=(-f "$CHART/ci/kind-values.yaml" --set "config.publicUrl=$BASE_URL")
 $HELM install $RELEASE $CHART -n $NS "${values[@]}" --wait --timeout 20m >"$WORK/install.txt" ||
   {
@@ -100,6 +110,7 @@ $HELM install $RELEASE $CHART -n $NS "${values[@]}" --wait --timeout 20m >"$WORK
   }
 head -6 "$WORK/install.txt"
 job_succeeded $RELEASE-migrate || fail "the migrate hook did not succeed"
+job_succeeded $RELEASE-authz-sync || fail "the authz-sync hook did not succeed"
 job_succeeded $RELEASE-seed || fail "the seed hook did not succeed"
 $KUBECTL -n $NS logs job/$RELEASE-migrate -c migrate | grep -c "Running upgrade" |
   xargs printf 'migrate: %s migrations applied\n'
@@ -119,6 +130,7 @@ fi
 
 step "helm upgrade to two API replicas, polled through the ingress"
 migrate_before=$($KUBECTL -n $NS get job $RELEASE-migrate -o jsonpath='{.metadata.uid}')
+authz_before=$($KUBECTL -n $NS get job $RELEASE-authz-sync -o jsonpath='{.metadata.uid}')
 # Every request must answer 200, and the status page must report every component "ok".
 $PYTHON - "$BASE_URL" "$WORK/stop" >"$WORK/poll.txt" <<'EOF' &
 import json, sys, time, urllib.request
@@ -155,6 +167,12 @@ echo "requests during the upgrade: $(cat "$WORK/poll.txt")"
 [ "$($KUBECTL -n $NS get job $RELEASE-migrate -o jsonpath='{.metadata.uid}')" != "$migrate_before" ] ||
   fail "the migrate hook did not run again"
 job_succeeded $RELEASE-migrate || fail "the migrate hook did not succeed on upgrade"
+[ "$($KUBECTL -n $NS get job $RELEASE-authz-sync -o jsonpath='{.metadata.uid}')" != "$authz_before" ] ||
+  fail "the authz-sync hook did not run again"
+job_succeeded $RELEASE-authz-sync || fail "the authz-sync hook did not succeed on upgrade"
+# The seeded tenant exists now: its store must have been brought up to date.
+$KUBECTL -n $NS logs job/$RELEASE-authz-sync -c authz-sync | grep -E '^acme: store ' ||
+  fail "the authz-sync hook did not sync the seeded tenant"
 job_succeeded $RELEASE-seed || fail "the seed hook did not succeed on upgrade"
 [ "$($KUBECTL -n $NS get deployment $RELEASE-api -o jsonpath='{.status.readyReplicas}')" = 2 ] ||
   fail "two API replicas are not ready"

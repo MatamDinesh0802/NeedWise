@@ -942,6 +942,9 @@
     "migrate": {
       "type": "object",
       "properties": {
+        "authzSync": {
+          "type": "boolean"
+        },
         "backoffLimit": {
           "type": "integer",
           "minimum": 0
