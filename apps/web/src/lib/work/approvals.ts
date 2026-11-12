@@ -109,6 +109,19 @@ export function argumentRows(tool: string, args: Record<string, unknown>): Argum
   return null;
 }
 
+/**
+ * The assignee row of a proposed task with the colleague's name: the tool takes an email
+ * address, which says less than "Wei Zhang (wei.zhang@acme.test)". Unknown addresses stay as they are.
+ */
+export function withAssigneeName(rows: ArgumentRow[], people: readonly { email: string; display_name: string }[]): ArgumentRow[] {
+  const byEmail = new Map(people.map((p) => [p.email.toLowerCase(), p.display_name]));
+  return rows.map((row) => {
+    if (row.label !== "Assignee" || typeof row.value !== "string") return row;
+    const name = byEmail.get(row.value.trim().toLowerCase());
+    return name ? { ...row, value: `${name} (${row.value.trim()})` } : row;
+  });
+}
+
 // --- Editing ------------------------------------------------------------------------------
 
 export interface EmailDraft {

@@ -15,14 +15,24 @@ export interface Person {
   departments: string[];
 }
 
+/** The API's maximum page (`limit` le=500). Beyond that, names fall back to `personName`'s fallback. */
 export const PEOPLE_LIMIT = 500;
+export const SEARCH_LIMIT = 8;
+
+export function peoplePath(q = "", limit = PEOPLE_LIMIT): string {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (q.trim()) params.set("q", q.trim());
+  return `/api/v1/people?${params.toString()}`;
+}
 
 export const peopleApi = {
-  list: (q = "", limit = PEOPLE_LIMIT) =>
-    apiJson<Person[]>(`/api/v1/people?limit=${limit}${q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ""}`),
+  list: (q = "", limit = PEOPLE_LIMIT) => apiJson<Person[]>(peoplePath(q, limit)),
 };
 
-export const peopleKeys = { all: "people/all" };
+export const peopleKeys = {
+  all: "people/all",
+  search: (q: string) => `people/search?q=${q.trim().toLowerCase()}`,
+};
 
 /** Guests never see the directory (the API answers 403); don't ask. */
 export function canUseDirectory(role: OrgRole | null | undefined): boolean {
@@ -37,4 +47,9 @@ export function personName(
   if (!userId) return fallback;
   if (userId === meId) return "You";
   return people.get(userId)?.display_name ?? fallback;
+}
+
+/** One line under a name in a picker: "Engineer · Engineering, Operations". */
+export function personDetail(person: Pick<Person, "title" | "departments">): string {
+  return [person.title, person.departments.join(", ")].filter(Boolean).join(" · ");
 }

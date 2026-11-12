@@ -17,7 +17,7 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
 
 export const TASK_STATUSES: readonly TaskStatus[] = ["open", "in_progress", "done", "cancelled"];
 
-/** Who a task is for, from the viewer's point of view. Names need the admin directory. */
+/** Who a task is for, from the viewer's point of view. Names come from the colleague directory (guests don't get it). */
 export function assigneeText(
   task: Pick<Task, "assignee_id" | "department_id">,
   {
@@ -63,7 +63,7 @@ export interface TaskForm {
   assignTo: AssignTo;
   /** Department slug, for "queue". */
   department: string;
-  /** User id, for "person" (admins pick from the directory). */
+  /** User id, for "person" (picked from the colleague directory). */
   personId: string;
   due: string;
 }
@@ -93,6 +93,43 @@ export function toTaskCreate(form: TaskForm, meId: string): TaskCreate {
   if (form.assignTo === "queue" && form.department) body.department = form.department;
   if (form.due) body.due = form.due;
   return body;
+}
+
+export interface TaskOrigin {
+  kind: "assistant" | "workflow" | "meeting" | "research";
+  label: string;
+  /** Where it came from, when the viewer can go there. */
+  href: `/${string}` | null;
+}
+
+/** Where a task came from (`origin.via`); null for tasks people created here. */
+export function taskOrigin(task: Pick<Task, "origin">): TaskOrigin | null {
+  const { via, meeting_id: meetingId } = task.origin;
+  if (via === "meeting") {
+    return { kind: "meeting", label: "From a meeting", href: typeof meetingId === "string" ? `/meetings/${encodeURIComponent(meetingId)}` : null };
+  }
+  if (via === "assistant") return { kind: "assistant", label: "From the assistant", href: null };
+  if (via === "research") return { kind: "research", label: "From the assistant", href: null };
+  if (via === "workflow") return { kind: "workflow", label: "From a workflow", href: null };
+  return null;
+}
+
+/**
+ * Whether the viewer can still open a task (the API's rule in work.py `_visible_task`: assignee,
+ * creator, or a member of its team queue). Handing a task over can take it out of view.
+ */
+export function canSeeTask(
+  task: Pick<Task, "assignee_id" | "created_by" | "department_id">,
+  me: { id: string; departments: readonly { id: string }[] },
+): boolean {
+  if (task.assignee_id === me.id || task.created_by === me.id) return true;
+  return task.department_id !== null && me.departments.some((d) => d.id === task.department_id);
+}
+
+/** Claiming takes an unassigned task from a team queue the viewer is in. */
+export function canClaim(task: Pick<Task, "assignee_id" | "department_id" | "status">, me: { departments: readonly { id: string }[] }): boolean {
+  const open = task.status === "open" || task.status === "in_progress";
+  return open && task.assignee_id === null && task.department_id !== null && me.departments.some((d) => d.id === task.department_id);
 }
 
 /** Open tasks first (by due date, then newest), finished ones last. */
