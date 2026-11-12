@@ -1,0 +1,5 @@
+# Top-level dependencies of the documentation site. docs/requirements.txt pins them and
+# everything they need, with hashes. After changing this file, regenerate it: make docs-lock
+mkdocs==1.6.1
+mkdocs-material==9.8.0
+mkdocs-swagger-ui-tag==0.8.1

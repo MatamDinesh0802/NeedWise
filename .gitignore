@@ -28,6 +28,9 @@ out/
 .playwright-mcp/
 graphify-out/
 
+# The built documentation site (`make docs`)
+/site/
+
 # Data produced at runtime
 /data/
 /.data/
