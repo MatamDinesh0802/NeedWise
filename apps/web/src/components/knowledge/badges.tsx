@@ -46,7 +46,8 @@ export function ScopeBadge({ scope }: { scope: CollectionScope }) {
     <Explained tip={SCOPE_DESCRIPTIONS[scope]}>
       <Badge
         variant={scope === "restricted" ? "default" : "secondary"}
-        className={cn(scope === "restricted" && "bg-amber-600 text-white dark:bg-amber-500 dark:text-black")}
+        // Design tokens (globals.css): at least 4.5:1 in both themes.
+        className={cn(scope === "restricted" && "bg-warning text-warning-foreground")}
       >
         {scope === "restricted" ? <Lock data-icon="inline-start" aria-hidden="true" /> : null}
         {SCOPE_LABELS[scope] ?? scope}
