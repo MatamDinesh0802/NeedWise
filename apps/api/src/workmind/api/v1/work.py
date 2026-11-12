@@ -17,6 +17,7 @@ from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN, Department, DepartmentMember, User
 from workmind.modules.work.approvals import decide
+from workmind.modules.work.links import task_link
 from workmind.modules.work.models import Approval, Notification, Task, Workflow, WorkflowRun
 from workmind.modules.work.notifications import notify
 from workmind.modules.work.workflows import (
@@ -242,7 +243,7 @@ async def create_task(ctx: AskContext, request: Request, body: TaskCreate) -> Ta
                 body.assignee_id,
                 kind="task.assigned",
                 title=f"New task: {body.title}",
-                link=f"/tasks/{task.id}",
+                link=task_link(task.id),
             )
         return _task(task)
 
@@ -285,7 +286,7 @@ async def update_task(
                     body.assignee_id,
                     kind="task.assigned",
                     title=f"Handed over to you: {task.title}",
-                    link=f"/tasks/{task.id}",
+                    link=task_link(task.id),
                 )
         await record_event(
             session,

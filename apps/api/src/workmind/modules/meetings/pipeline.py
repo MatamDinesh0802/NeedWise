@@ -21,6 +21,7 @@ from workmind.modules.knowledge.storage import ObjectStorage
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.extract import clock, extract, speaker_name
 from workmind.modules.meetings.models import Meeting, held_on
+from workmind.modules.work.links import meeting_link
 from workmind.modules.work.notifications import notify
 from workmind.providers.llm import LLMError, LLMProvider
 from workmind.providers.transcription import Transcriber, TranscriptionError
@@ -171,7 +172,7 @@ async def process_meeting(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: u
                 stored.owner_id,
                 kind="meeting.ready",
                 title=f"Meeting notes ready: {stored.title}",
-                link=f"/meetings/{stored.id}",
+                link=meeting_link(stored.id),
             )
             await record_event(
                 session,

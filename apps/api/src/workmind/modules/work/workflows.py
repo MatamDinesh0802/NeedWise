@@ -35,6 +35,7 @@ from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError, ToolRegistry
 from workmind.modules.work.approvals import propose
 from workmind.modules.work.cron import Cron, CronError
+from workmind.modules.work.links import workflow_link
 from workmind.modules.work.models import Approval, Workflow, WorkflowRun
 from workmind.modules.work.notifications import notify
 from workmind.providers.llm import LLMProvider
@@ -262,7 +263,12 @@ async def _pause(
             arguments=arguments,
             summary=f"{workflow.name}: {summary}",
             approver_id=approver_id,
-            origin={"via": "workflow", "workflow_run_id": str(run.id), "step": step.id},
+            origin={
+                "via": "workflow",
+                "workflow": workflow.key,
+                "workflow_run_id": str(run.id),
+                "step": step.id,
+            },
         )
         outputs[step.id] = {"status": "waiting_approval", "approval_id": str(approval.id)}
         stored = await session.get(WorkflowRun, run.id)
@@ -338,7 +344,7 @@ async def _finish(
                     kind=f"workflow.{status}",
                     title=f"{workflow.name}: {status}",
                     body=error or "",
-                    link=f"/workflows/{workflow.key}",
+                    link=workflow_link(workflow.key, run.id),
                 )
             await record_event(
                 session,

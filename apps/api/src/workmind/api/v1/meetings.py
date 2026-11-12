@@ -26,6 +26,7 @@ from workmind.modules.knowledge.storage import object_key
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.models import Meeting, held_on
 from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
+from workmind.modules.work.links import task_link
 from workmind.modules.work.models import Task
 from workmind.modules.work.notifications import notify
 
@@ -430,7 +431,7 @@ async def action_to_task(
                 assignee,
                 kind="task.assigned",
                 title=f"New task from {meeting.title}: {item['text'][:120]}",
-                link=f"/tasks/{task.id}",
+                link=task_link(task.id),
             )
         await record_event(
             session,
