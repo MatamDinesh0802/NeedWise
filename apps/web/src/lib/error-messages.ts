@@ -60,6 +60,14 @@ const MESSAGES: Record<string, Omit<ErrorMessage, "code">> = {
     title: "Choose who can view",
     description: "A restricted collection needs at least one person or group who can view it.",
   },
+  unknown_principal: {
+    title: "Unknown person, group or department",
+    description: "Someone you chose isn't in this organization (any more). Refresh the page and choose again.",
+  },
+  unknown_department: {
+    title: "Unknown department",
+    description: "The chosen department isn't in this organization (any more). Refresh the page and choose again.",
+  },
   unknown_collection: {
     title: "Unknown collection",
     description: "One of the chosen collections no longer exists. Refresh the page and choose again.",
