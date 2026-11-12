@@ -236,19 +236,24 @@ jobs:
             echo "WORKMIND_API_IMAGE=$REGISTRY/workmind-api@$(cat "$RUNNER_TEMP/release/digest-api")"
             echo "WORKMIND_WEB_IMAGE=$REGISTRY/workmind-web@$(cat "$RUNNER_TEMP/release/digest-web")"
           } >>"$GITHUB_ENV"
-          # As in ci.yml: deterministic hash embeddings (no embedding model server here), and no
-          # relevance floor, so the permission gate checks every candidate a search can return.
-          printf 'EMBEDDING_PROVIDER=hash\nEMBEDDING_MODEL=hash-ci\nRETRIEVAL_MIN_SIMILARITY=0\n' >.env
+          # As in ci.yml: deterministic hash embeddings (no embedding model server here).
+          printf 'EMBEDDING_PROVIDER=hash\nEMBEDDING_MODEL=hash-ci\n' >.env
       - run: docker compose --profile tools pull --quiet
+      - name: Object storage writable by the containers (uid 10001)
+        # A fresh checkout has no .data/objects: the Docker daemon would create it as root,
+        # and every upload, dataset and seed write would fail with "Permission denied".
+        run: make objects-dir
       - run: docker compose up -d --no-build --wait
       - name: Seed the demo company through the real ingestion pipeline
         run: docker compose --profile tools run --rm seed
       - name: Permission gate - every red-team attack, every retrieval mode, zero leaks
         run: |
-          # The container runs as uid 10001 and writes the report here.
+          # The container runs as uid 10001 and writes the report here. As in ci.yml, no
+          # relevance floor: the gate checks every candidate a search can return.
           mkdir -p "$RUNNER_TEMP/gate-out" && chmod a+rwx "$RUNNER_TEMP/gate-out"
           docker compose --profile tools run --rm -v "$PWD/evals:/evals:ro" \
-            -v "$RUNNER_TEMP/gate-out:/gate-out" -e WORKMIND_EVALS_DIR=/evals seed \
+            -v "$RUNNER_TEMP/gate-out:/gate-out" -e WORKMIND_EVALS_DIR=/evals \
+            -e RETRIEVAL_MIN_SIMILARITY=0 seed \
             python -m workmind.evals --retrieval-only --out /gate-out --label "permission-gate-$TAG"
       # The image has no git, so the report says "commit: unknown": record what was tested.
       - name: Add the release and the image digests to the report

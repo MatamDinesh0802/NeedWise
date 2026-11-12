@@ -1,6 +1,9 @@
 """Chat through Caddy: a run's events must stream (not buffer) to the browser.
 
-The guest's question needs no model (nothing she may read matches), so it runs anywhere.
+The guest's question needs no model: nothing she may read matches it, so it stays under the
+default relevance floor (RETRIEVAL_MIN_SIMILARITY=0.25) with EmbeddingGemma and with CI's hash
+embeddings alike (no word in common with her collection), and it runs without a model key. With
+the floor off (0) her one collection always matches and the question goes to the model.
 Set E2E_MODEL=1 to also ask a real question of the configured model (costs a few cents).
 """
 
@@ -46,7 +49,7 @@ def _events(client: httpx.Client, run_id: str) -> list[tuple[str, dict[str, obje
 
 def test_a_guest_question_streams_through_the_proxy(browser: httpx.Client) -> None:
     sign_in(browser, "mallory@acme.test")
-    _, run_id = _ask(browser, "What is the salary band for an L3 engineer?")
+    _, run_id = _ask(browser, "L3 salary bands")
 
     received = _events(browser, run_id)
 

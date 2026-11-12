@@ -12,9 +12,10 @@ config:
   embedding:
     provider: hash
     model: hash-ci
-  # RETRIEVAL_MIN_SIMILARITY stays at its default here. CI's compose stack sets it to 0 (for the
-  # permission-gate eval); then the guest's one collection always matches, her chat question
-  # goes to the model, and without a key the API end-to-end test that expects "not found" fails.
+  # RETRIEVAL_MIN_SIMILARITY stays at its default here, as on CI's compose stack (CI turns it
+  # off only for the permission-gate eval). At 0 the guest's one collection always matches, her
+  # chat question goes to the model, and without a key the end-to-end test that expects "not
+  # found" fails.
 embeddings:
   enabled: false
 seed:

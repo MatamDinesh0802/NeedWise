@@ -129,6 +129,11 @@ before `make infra` so the ports don't clash.
 
 - **A port is taken.** Set another one in `.env` (`HTTP_PORT` and `PUBLIC_URL` together), then
   `make up`.
+- **Seeding or uploads fail with `Permission denied: '/data/objects/...'` (Linux).** The
+  containers run as uid 10001, and a Linux Docker daemon creates a missing bind-mount directory
+  as root. `make up` and `make quickstart` run `make objects-dir`, which creates `.data/objects`
+  and gives it to uid 10001; run it yourself before a plain `docker compose up`. Docker Desktop
+  ignores ownership, so macOS and Windows never see this.
 - **The stack is slow on a Mac.** Run the embedding model on the Apple GPU instead of in Docker:
   `make embeddings` (needs llama.cpp on the host) and
   `EMBEDDING_BASE_URL=http://host.docker.internal:8091/v1` in `.env`. Both produce the same

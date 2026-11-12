@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e e2e-browser seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check backup restore upgrade-test helm-check helm-kind-test
+.PHONY: help objects-dir up down reset logs ps status infra api-dev web-dev install lint fmt test e2e e2e-browser seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check backup restore upgrade-test helm-check helm-kind-test
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -13,14 +13,21 @@ quickstart: ## First run on any OS: embeddings in Docker, the full stack, the Ac
 	@test -f .env || cp .env.example .env
 	@grep -q '^EMBEDDING_BASE_URL=' .env || echo 'EMBEDDING_BASE_URL=http://embeddings:8080/v1' >> .env
 	@grep -q '^COMPOSE_PROFILES=' .env || echo 'COMPOSE_PROFILES=embeddings' >> .env
-	@mkdir -p .data/objects .workmind
+	@$(MAKE) --no-print-directory objects-dir
 	$(COMPOSE) up -d --build --wait
 	$(MAKE) seed
 	@grep -qE '^(ANTHROPIC_API_KEY|LLM_PROVIDER)=' .env || \
 		echo "\nSearch works now. For answers, add ANTHROPIC_API_KEY=... (or a local model) to .env, then: make up"
 
-up: ## Build and start the full stack, wait until every service is healthy
+objects-dir: ## Create the bind-mounted directories; on Linux, object storage owned by uid 10001
 	@mkdir -p .data/objects .workmind
+	@# The containers run as uid 10001. Docker Desktop ignores ownership; a Linux daemon does not.
+	@if [ "$$(uname -s)" = Linux ] && [ "$$(stat -c %u .data/objects)" != 10001 ]; then \
+		docker run --rm -v "$(CURDIR)/.data/objects:/objects" alpine:3.22 chown -R 10001 /objects; \
+	fi
+
+up: ## Build and start the full stack, wait until every service is healthy
+	@$(MAKE) --no-print-directory objects-dir
 	$(COMPOSE) up -d --build --wait
 	@echo ""
 	@echo "  WorkMind is running at http://localhost:$(HTTP_PORT)"
@@ -42,7 +49,7 @@ status: ## Show component health as reported by the API
 	@curl -fsS http://localhost:$(HTTP_PORT)/api/v1/system/status | python3 -m json.tool
 
 infra: ## Start infrastructure only; http://localhost:8480 then serves api-dev and web-dev
-	@mkdir -p .data/objects
+	@$(MAKE) --no-print-directory objects-dir
 	API_UPSTREAM=host.docker.internal:8400 WEB_UPSTREAM=host.docker.internal:3400 \
 		$(COMPOSE) up -d --wait $(INFRA)
 

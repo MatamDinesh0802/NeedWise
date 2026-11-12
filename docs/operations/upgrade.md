@@ -78,7 +78,7 @@ meetings, BI, governance, usage, editions) arrives with the upgrade. What you ch
 | An embedding server: `EMBEDDING_BASE_URL` (+ `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS` if not EmbeddingGemma 768) | Uploads are embedded, searches too. Default: `http://host.docker.internal:8091/v1` (`make embeddings` on a Mac); or `COMPOSE_PROFILES=embeddings` with `EMBEDDING_BASE_URL=http://embeddings:8080/v1` for the CPU container. | Documents and search |
 | A language model: `ANTHROPIC_API_KEY`, or `LLM_PROVIDER=openai_compatible` and `LLM_BASE_URL` ([docs/models.md](../models.md)) | Answers, agents, meeting summaries, BI. Search works without it. | Answers |
 | Outgoing mail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, ... | Compose sends development mail to Mailpit; set a real server in production. | Email |
-| Directories `.data/objects` and `.workmind` | New bind mounts: object storage, and license files (read-only). `make up` creates them. On Linux, `.data/objects` must be writable by uid 10001, the containers' user (`sudo chown -R 10001 .data/objects`). | Uploads; Enterprise |
+| Directories `.data/objects` and `.workmind` | New bind mounts: object storage, and license files (read-only). `make up` creates them (`make objects-dir`). On Linux, `.data/objects` must be writable by uid 10001, the containers' user: `make objects-dir` hands it over when it is not. | Uploads; Enterprise |
 
 Nothing else needs doing by hand on this path:
 

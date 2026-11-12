@@ -148,9 +148,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Use deterministic hash embeddings (CI has no embedding model server)
-        # The relevance floor is calibrated for real embeddings; off here, so the permission
-        # gate checks every candidate a search can return.
-        run: printf 'EMBEDDING_PROVIDER=hash\nEMBEDDING_MODEL=hash-ci\nRETRIEVAL_MIN_SIMILARITY=0\n' > .env
+        # The stack keeps the default relevance floor: the end-to-end tests expect a guest's
+        # unrelated question to find nothing without calling a model (CI has no model key).
+        run: printf 'EMBEDDING_PROVIDER=hash\nEMBEDDING_MODEL=hash-ci\n' > .env
+      - name: Object storage writable by the containers (uid 10001)
+        # A fresh checkout has no .data/objects: the Docker daemon would create it as root,
+        # and every upload, dataset and seed write would fail with "Permission denied".
+        run: make objects-dir
       - run: docker compose up -d --build --wait
       - name: All components report ok through Caddy
         run: |
@@ -161,9 +165,11 @@ jobs:
       - name: Seed the demo company and its 47 documents through the real ingestion pipeline
         run: docker compose --profile tools run --rm seed
       - name: Permission gate - every red-team attack, every retrieval mode, zero leaks
+        # No relevance floor for the gate (it is calibrated for real embeddings), so it checks
+        # every candidate a search can return.
         run: >-
           docker compose --profile tools run --rm -v "$PWD/evals:/evals:ro"
-          -e WORKMIND_EVALS_DIR=/evals seed
+          -e WORKMIND_EVALS_DIR=/evals -e RETRIEVAL_MIN_SIMILARITY=0 seed
           python -m workmind.evals --retrieval-only --out /tmp/eval-results --label ci
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
