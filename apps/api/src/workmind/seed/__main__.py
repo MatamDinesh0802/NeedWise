@@ -20,7 +20,7 @@ from workmind.modules.knowledge.pipeline import IngestionDeps
 from workmind.modules.knowledge.storage import LocalObjectStorage
 from workmind.modules.retrieval.qdrant import QdrantClient
 from workmind.providers.embeddings import EmbeddingUnavailableError
-from workmind.providers.factory import create_embeddings
+from workmind.providers.factory import create_embeddings, secret
 from workmind.seed.analytics_load import seed_analytics
 from workmind.seed.apply import SeedResult, seed_database, seed_keycloak
 from workmind.seed.company import CompanySpec, load_company
@@ -100,7 +100,7 @@ async def _load_corpus(
             sessions=sessions,
             storage=LocalObjectStorage(settings.object_storage_path),
             embeddings=create_embeddings(settings, http),
-            qdrant=QdrantClient(http, settings.qdrant_url),
+            qdrant=QdrantClient(http, settings.qdrant_url, secret(settings.qdrant_api_key)),
             collection_name=settings.qdrant_collection,
         )
         try:

@@ -157,6 +157,12 @@ credentials:
     value: ""
     existingSecret: ""
     key: openfga-api-key
+  # Qdrant's API key (QDRANT__SERVICE__API_KEY), sent by the API, worker and seed. Generated when
+  # qdrant.enabled; for an external Qdrant, set the key it was started with.
+  qdrantApiKey:
+    value: ""
+    existingSecret: ""
+    key: qdrant-api-key
   # Secret of the confidential OIDC client "workmind-api". Generated when keycloak.enabled
   # (and written into the imported realm); required with an external Keycloak.
   oidcClientSecret:
@@ -300,7 +306,7 @@ api:
   # max_connections, with room for Keycloak, OpenFGA and the workers.
   workers: 2
   # Uvicorn trusts X-Forwarded-* from these addresses. Only the Service (and, with
-  # networkPolicy.enabled, only the listed sources) can reach the pod.
+  # networkPolicy.publicFrom set, only the listed sources) can reach the pod.
   forwardedAllowIps: "*"
   # Empty: the image's command (uvicorn on :8000 with --proxy-headers).
   command: []
@@ -586,11 +592,15 @@ httpRoute:
 # Optional NetworkPolicies (ingress only; egress stays open: model APIs, connectors and model
 # downloads need it). Bundled services accept connections only from the WorkMind pods that use
 # them; the worker and beat accept none.
+# On by default: without them, any pod in the cluster can reach the bundled Postgres, Valkey,
+# Qdrant (every tenant's chunk text) and OpenFGA. The policies only restrict ingress, and only
+# where the cluster's network plugin enforces NetworkPolicies.
 networkPolicy:
-  enabled: false
+  enabled: true
   # Who may reach the web app, the API and Keycloak: your ingress controller or gateway, e.g.
   # [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-system}}}].
-  # Empty: any source.
+  # Empty: any source, so any pod can call the API directly and, with api.forwardedAllowIps
+  # "*", choose the client address that sign-in rate limits count. Set it in production.
   publicFrom: []
 
 # ---------------------------------------------------------------------------------------------
@@ -669,8 +679,8 @@ valkey:
 
 qdrant:
   enabled: true
-  # Used when enabled is false, e.g. http://qdrant.vector.svc:6333. The API has no Qdrant API
-  # key setting: restrict access to it on the network.
+  # Used when enabled is false, e.g. http://qdrant.vector.svc:6333, with its API key in
+  # credentials.qdrantApiKey. The bundled Qdrant gets a generated key.
   external:
     url: ""
   image:

@@ -54,6 +54,9 @@ spec:
           env:
             - name: QDRANT__TELEMETRY_DISABLED
               value: "true"
+            # Every call but the health checks (/readyz, /livez) needs this key: the index holds
+            # every tenant's chunk text.
+            {{- include "workmind.credentialEnv" (list . "qdrantApiKey" "QDRANT__SERVICE__API_KEY") | nindent 12 }}
             # Qdrant writes a marker file at start; keep it off the read-only root filesystem.
             - name: QDRANT_INIT_FILE_PATH
               value: /qdrant/init/.qdrant-initialized

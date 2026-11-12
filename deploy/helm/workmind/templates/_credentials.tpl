@@ -21,6 +21,7 @@ openfgaDbPassword: {generate: {{ ternary "password" "" $v.openfga.enabled | quot
 reference to a missing key would leave "$(WM_VALKEY_PASSWORD)" in them). */}}
 valkeyPassword: {generate: {{ ternary "password" "" (and $v.valkey.enabled $v.valkey.auth.enabled) | quote }}, required: {{ $v.valkey.auth.enabled }}, fromShared: {{ $v.valkey.auth.enabled }}}
 openfgaApiKey: {generate: {{ ternary "password" "" $v.openfga.enabled | quote }}, required: true}
+qdrantApiKey: {generate: {{ ternary "password" "" $v.qdrant.enabled | quote }}, required: false}
 oidcClientSecret: {generate: {{ ternary "password" "" $v.keycloak.enabled | quote }}, required: true}
 secretsKey: {generate: aes, required: true}
 secretsEncryptionKey: {generate: aes, required: true}
@@ -121,5 +122,5 @@ render, so every template (and the migrate hook's own Secret) gets the same valu
 {{- end -}}
 
 {{- define "workmind.credentialNames" -}}
-{{- list "databaseAppPassword" "databaseOwnerPassword" "postgresPassword" "keycloakDbPassword" "openfgaDbPassword" "valkeyPassword" "openfgaApiKey" "oidcClientSecret" "secretsKey" "secretsEncryptionKey" "secretsEncryptionPreviousKeys" "keycloakAdminPassword" "demoPassword" "anthropicApiKey" "llmApiKey" "localLlmApiKey" "embeddingApiKey" "transcriptionApiKey" "smtpPassword" "googleClientSecret" "licenseKey" "mcpServers" | toJson -}}
+{{- list "databaseAppPassword" "databaseOwnerPassword" "postgresPassword" "keycloakDbPassword" "openfgaDbPassword" "valkeyPassword" "openfgaApiKey" "qdrantApiKey" "oidcClientSecret" "secretsKey" "secretsEncryptionKey" "secretsEncryptionPreviousKeys" "keycloakAdminPassword" "demoPassword" "anthropicApiKey" "llmApiKey" "localLlmApiKey" "embeddingApiKey" "transcriptionApiKey" "smtpPassword" "googleClientSecret" "licenseKey" "mcpServers" | toJson -}}
 {{- end -}}

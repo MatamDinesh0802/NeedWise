@@ -161,7 +161,10 @@ internal network content pulled in through a connector (fix 1).
 sources do not bring their per-file sharing. A person keeps earlier answers (and the
 conversation summary built from them) after losing access. Run event streams hold passage text
 in Valkey for an hour, unencrypted. Qdrant holds chunk text in its payloads and has no API key
-in the Compose file (it listens on 127.0.0.1 only): it is not an authorization boundary. Secrets
+in the Compose file (it listens on 127.0.0.1 only): it is not an authorization boundary. The
+Helm chart gives the bundled Qdrant a generated API key and turns its NetworkPolicies on by
+default (before chart 0.1.5 neither was the default, so any pod in the cluster could read every
+tenant's chunks). Secrets
 use one deployment key, not per-tenant keys or a KMS. An org admin can grant themselves a
 restricted collection (audited as `admin.collection.grants_replaced`).
 

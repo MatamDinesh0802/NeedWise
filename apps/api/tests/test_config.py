@@ -128,6 +128,31 @@ async def test_the_analytics_workers_are_split_across_the_api_processes(
         await resources.aclose()
 
 
+async def test_every_qdrant_call_carries_the_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The Helm chart gives Qdrant an API key (any pod could otherwise read every tenant's chunk
+    # text); the API must send it, and nothing when it is unset (compose).
+    import httpx
+
+    from workmind.core.resources import Resources
+
+    seen: list[str | None] = []
+
+    def qdrant(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("api-key"))
+        return httpx.Response(200, json={"result": {"collections": []}})
+
+    for key in ("k-123", ""):
+        monkeypatch.setenv("QDRANT_API_KEY", key)
+        resources = Resources.create(Settings(_env_file=None))  # pyright: ignore[reportCallIssue]
+        try:
+            resources.qdrant._http = httpx.AsyncClient(transport=httpx.MockTransport(qdrant))  # pyright: ignore[reportPrivateUsage]
+            assert await resources.qdrant.list_collections() == []
+        finally:
+            await resources.aclose()
+
+    assert seen == ["k-123", None]
+
+
 def test_the_database_pool_settings_are_bounded() -> None:
     with pytest.raises(ValueError, match="db_pool_size"):
         Settings(_env_file=None, db_pool_size=0)  # pyright: ignore[reportCallIssue]

@@ -36,6 +36,7 @@ from workmind.modules.identity.lifecycle import (
 from workmind.modules.identity.models import Tenant, User
 from workmind.modules.knowledge.storage import LocalObjectStorage
 from workmind.modules.retrieval.qdrant import QdrantClient
+from workmind.providers.factory import secret
 from workmind.seed.keycloak_admin import KeycloakAdmin
 
 
@@ -79,7 +80,7 @@ async def _stores(settings: Settings, *, keycloak: bool) -> AsyncGenerator[Store
                 fga=OpenFgaClient(
                     http, settings.openfga_api_url, settings.openfga_api_key.get_secret_value()
                 ),
-                qdrant=QdrantClient(http, settings.qdrant_url),
+                qdrant=QdrantClient(http, settings.qdrant_url, secret(settings.qdrant_api_key)),
                 storage=LocalObjectStorage(settings.object_storage_path),
                 analytics_root=Path(settings.analytics_path),
                 valkey=valkey,

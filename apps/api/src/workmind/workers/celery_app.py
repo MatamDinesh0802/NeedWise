@@ -129,7 +129,7 @@ async def _run_ingest(tenant_id: str, document_id: str, version_id: str) -> dict
             sessions=create_session_factory(engine),
             storage=LocalObjectStorage(settings.object_storage_path),
             embeddings=create_embeddings(settings, http),
-            qdrant=QdrantClient(http, settings.qdrant_url),
+            qdrant=QdrantClient(http, settings.qdrant_url, secret(settings.qdrant_api_key)),
             collection_name=settings.qdrant_collection,
         )
         try:
@@ -167,7 +167,7 @@ async def _run_sync(tenant_id: str, source_id: str) -> dict[str, Any]:
             sessions=create_session_factory(engine),
             storage=LocalObjectStorage(settings.object_storage_path),
             ingestion=CeleryDispatcher(),  # each new version is ingested as its own task
-            qdrant=QdrantClient(http, settings.qdrant_url),
+            qdrant=QdrantClient(http, settings.qdrant_url, secret(settings.qdrant_api_key)),
             collection_name=settings.qdrant_collection,
             secrets=SecretBox(settings.secrets_key.get_secret_value()),
             connectors=lambda source, credentials: build_connector(

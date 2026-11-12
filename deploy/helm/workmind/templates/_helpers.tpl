@@ -318,7 +318,7 @@ in the pod from the password variables (Kubernetes expands $(VAR) from earlier e
   value: {{ include "workmind.valkeyUrl" (list $root (ne $valkeyAuth "") 0) | quote }}
 - name: CELERY_BROKER_URL
   value: {{ include "workmind.valkeyUrl" (list $root (ne $valkeyAuth "") 1) | quote }}
-{{- range $name, $env := dict "openfgaApiKey" "OPENFGA_API_KEY" "oidcClientSecret" "OIDC_CLIENT_SECRET" "secretsKey" "SECRETS_KEY" "secretsEncryptionKey" "SECRETS_ENCRYPTION_KEY" "secretsEncryptionPreviousKeys" "SECRETS_ENCRYPTION_PREVIOUS_KEYS" "anthropicApiKey" "ANTHROPIC_API_KEY" "llmApiKey" "LLM_API_KEY" "localLlmApiKey" "LOCAL_LLM_API_KEY" "embeddingApiKey" "EMBEDDING_API_KEY" "transcriptionApiKey" "TRANSCRIPTION_API_KEY" "smtpPassword" "SMTP_PASSWORD" "googleClientSecret" "GOOGLE_CLIENT_SECRET" "licenseKey" "LICENSE_KEY" "mcpServers" "MCP_SERVERS" }}
+{{- range $name, $env := dict "openfgaApiKey" "OPENFGA_API_KEY" "qdrantApiKey" "QDRANT_API_KEY" "oidcClientSecret" "OIDC_CLIENT_SECRET" "secretsKey" "SECRETS_KEY" "secretsEncryptionKey" "SECRETS_ENCRYPTION_KEY" "secretsEncryptionPreviousKeys" "SECRETS_ENCRYPTION_PREVIOUS_KEYS" "anthropicApiKey" "ANTHROPIC_API_KEY" "llmApiKey" "LLM_API_KEY" "localLlmApiKey" "LOCAL_LLM_API_KEY" "embeddingApiKey" "EMBEDDING_API_KEY" "transcriptionApiKey" "TRANSCRIPTION_API_KEY" "smtpPassword" "SMTP_PASSWORD" "googleClientSecret" "GOOGLE_CLIENT_SECRET" "licenseKey" "LICENSE_KEY" "mcpServers" "MCP_SERVERS" }}
 {{- with include "workmind.credentialEnv" (list $root $name $env) }}
 {{ . }}
 {{- end }}

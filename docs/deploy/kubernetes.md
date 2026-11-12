@@ -183,7 +183,7 @@ wrong types. The ones you will most likely set:
 | `*.resources` | see values.yaml | Requests and limits of every container. The API runs the analytics query workers, split across its `api.workers` processes (at least one each): raise its memory with `ANALYTICS_WORKERS`, `ANALYTICS_WORKER_MEMORY_MB` and `api.workers` |
 | `*.startupProbe`, `*.livenessProbe`, `*.readinessProbe` | the compose healthchecks | Any probe object; `{}` removes one |
 | `ingress.*`, `httpRoute.*` | Ingress on | [Routing](#routing-ingress-or-gateway-api) |
-| `networkPolicy.enabled`, `networkPolicy.publicFrom` | off, any source | [Security settings](#security-settings) |
+| `networkPolicy.enabled`, `networkPolicy.publicFrom` | on, any source | [Security settings](#security-settings) |
 | `seed.*` | off | [Demo data](#demo-data) |
 | `global.imageRegistry`, `global.imagePullSecrets`, `global.storageClass` | | A registry mirror, pull secrets and a storage class for everything |
 
@@ -336,8 +336,9 @@ event streams) and database 1 (`CELERY_BROKER_URL`: the task queue). With
 `valkey.auth.enabled` (the default) the chart requires `credentials.valkeyPassword`; set
 `valkey.auth.enabled: false` for a server without a password.
 
-**Qdrant.** `qdrant.external.url`. The API has no setting for a Qdrant API key, so protect the
-server on the network.
+**Qdrant.** `qdrant.external.url`, and `credentials.qdrantApiKey` with the key the server was
+started with (`QDRANT__SERVICE__API_KEY`); the API, worker and seed send it as `api-key`. The
+index holds every tenant's chunk text, so do not leave the server open on the network.
 
 **OpenFGA.** `openfga.external.url` (the HTTP API) and `credentials.openfgaApiKey`, one of the
 server's pre-shared keys. WorkMind creates one store per tenant and writes the model itself.
@@ -435,7 +436,9 @@ together:
 - **The object storage volume** (`<fullname>-objects`): uploaded files, recordings and
   analytics datasets. Postgres refers to these files.
 - **Qdrant:** its snapshots API writes to `/qdrant/snapshots` (an emptyDir in the bundled pod:
-  copy the files out). The index can also be rebuilt from the documents by re-indexing.
+  copy the files out). Every call but the health checks needs the `api-key` header with the
+  key in the credentials Secret (`qdrant-api-key`). The index can also be rebuilt from the
+  documents by re-indexing.
 - **The credentials Secret** (`<fullname>-credentials`) or your own Secret: without
   `SECRETS_ENCRYPTION_KEY` and `SECRETS_KEY`, a restored database has unreadable provider keys
   and connector credentials.
@@ -460,13 +463,19 @@ together:
 - Credentials are only in Secrets and reach containers as `secretKeyRef` variables; the
   ConfigMap holds no credential (checked in CI). Valkey reads its password from a file on a
   memory volume, not from its command line.
-- `networkPolicy.enabled: true` adds ingress NetworkPolicies: the web app, the API and
-  Keycloak accept `networkPolicy.publicFrom` (set it to your ingress controller's or
-  gateway's namespace; empty means any source) plus the WorkMind pods that call them; each
-  bundled service accepts only the WorkMind pods that use it; the worker and beat accept
-  nothing. Egress is not restricted.
+- `networkPolicy.enabled` (on by default since chart 0.1.5) adds ingress NetworkPolicies: the
+  web app, the API and Keycloak accept `networkPolicy.publicFrom` (set it to your ingress
+  controller's or gateway's namespace; empty means any source) plus the WorkMind pods that
+  call them; each bundled service accepts only the WorkMind pods that use it; the worker and
+  beat accept nothing. Egress is not restricted. They take effect only where the cluster's
+  network plugin enforces NetworkPolicies. Before 0.1.5 they were off by default, so any pod
+  in the cluster could read and write the bundled Qdrant, which had no API key.
+- The bundled Qdrant requires an API key (generated into the credentials Secret), so a pod
+  that can reach it still needs the key.
 - The API trusts `X-Forwarded-*` headers from any address (`api.forwardedAllowIps: "*"`, as
-  in compose). Only the Service reaches the pod; with NetworkPolicies, only the listed sources.
+  in compose). Only the Service reaches the pod; with `networkPolicy.publicFrom` set, only the
+  listed sources. Left empty, any pod can call the API directly and choose the client address
+  that the per-address sign-in limit counts: set it in production.
 - Permission checks, tenant isolation and the database roles are the application's, and do
   not change with the deployment: the runtime role has no `BYPASSRLS`, the owner role is used
   only by the migrate and seed Jobs.
@@ -570,7 +579,8 @@ it writes its kubeconfig to a temporary directory, never to `~/.kube/config`.
   CPU only: no queue-length autoscaling (KEDA).
 - **No metrics scraping** (ServiceMonitor), dashboards or alerts. Tracing works through
   `config.env.OTEL_EXPORTER_OTLP_ENDPOINT`.
-- **No egress NetworkPolicies**, and no Qdrant authentication (the API has no setting for it).
+- **No egress NetworkPolicies.** The ingress policies (on by default) are not tested on a
+  cloud provider's network plugin; on kind they were enforced (run 1).
 - **Object storage is a volume**, not S3-compatible storage.
 - **Not included:** Mailpit, Caddy (replaced by the Ingress or HTTPRoute), an Ollama or vLLM
   server for local models (point `config.llm.baseUrl` or `config.localLlm.baseUrl` at yours).

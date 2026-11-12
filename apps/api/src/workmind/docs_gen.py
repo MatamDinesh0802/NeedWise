@@ -109,6 +109,10 @@ NOTES: dict[str, str] = {
     "valkey_url": "Valkey (or Redis): sessions, caches and the event streams of answers.",
     "celery_broker_url": "The Celery broker (a Valkey database) for background jobs.",
     "qdrant_url": "Qdrant, which holds the search index of document chunks.",
+    "qdrant_api_key": (
+        "Qdrant's API key (its `QDRANT__SERVICE__API_KEY`), sent with every call. Compose "
+        "leaves it unset (Qdrant listens on 127.0.0.1); the Helm chart generates one."
+    ),
     "openfga_api_url": "OpenFGA, which answers permission checks (the second lock).",
     "openfga_api_key": ("Pre-shared key for OpenFGA. Production refuses the development value."),
     "authz_outbox_worker": (

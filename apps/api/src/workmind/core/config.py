@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     web_concurrency: int = Field(default=1, ge=1, le=64)
     valkey_url: str = "redis://localhost:6379/0"
     qdrant_url: str = "http://localhost:6333"
+    # Sent as `api-key` on every Qdrant call (Qdrant's QDRANT__SERVICE__API_KEY). Unset in
+    # compose, where Qdrant listens on 127.0.0.1 only; the Helm chart generates one.
+    qdrant_api_key: SecretStr | None = None
     openfga_api_url: str = "http://localhost:8401"
     openfga_api_key: SecretStr = SecretStr(DEV_OPENFGA_API_KEY)
     # Encrypts connector credentials at rest (AES-256-GCM): 32 random bytes, base64.

@@ -121,7 +121,7 @@ class Resources:
         http = httpx.AsyncClient(timeout=10)
         db = create_session_factory(engine)
         storage = LocalObjectStorage(settings.object_storage_path)
-        qdrant = QdrantClient(http, settings.qdrant_url)
+        qdrant = QdrantClient(http, settings.qdrant_url, secret(settings.qdrant_api_key))
         embeddings = create_embeddings(settings, http)
         deps = IngestionDeps(db, storage, embeddings, qdrant, settings.qdrant_collection)
         fga = OpenFgaClient(
