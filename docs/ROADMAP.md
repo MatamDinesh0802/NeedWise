@@ -334,6 +334,13 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **DoD:** an admin creates a new "Legal agent" from the UI without code, and it routes correctly in the routing eval.
 
+> **Agent configuration, as built ([docs/agents.md](agents.md)):** tools (read-level only, run as
+> the asker), a model catalog id per agent, limits, numbered versions with diff and restore, and a
+> test console that routes and answers with an unsaved draft. A Legal & Contracts collection (10
+> documents) and 15 legal routing questions are seeded; the Legal agent itself is created in the
+> UI, and its routing questions are reported as skipped until it exists. Not yet measured: the
+> routing eval with the Legal agent and a real model.
+
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
 ### Phase 12 — Production hardening (v1.0)
