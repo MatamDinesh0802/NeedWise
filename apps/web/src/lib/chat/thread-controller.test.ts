@@ -146,7 +146,7 @@ describe("thread controller", () => {
       .fn()
       .mockResolvedValueOnce({ id: "empty-1", title: "", created_at: "", last_message_at: "" })
       .mockResolvedValueOnce({ id: "empty-2", title: "", created_at: "", last_message_at: "" });
-    const sendMessage = vi.fn(async (_id: string) => Promise.reject(refused));
+    const sendMessage = vi.fn<(id: string) => Promise<never>>(async () => Promise.reject(refused));
     const deleteConversation = vi.fn(async () => undefined);
     const { deps } = harness({ createConversation, sendMessage, deleteConversation });
     const onConversationCreated = vi.fn();
