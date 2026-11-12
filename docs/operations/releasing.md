@@ -107,7 +107,10 @@ say `0.0.1`. Left alone, the first release PR would propose 0.2.0. For v1.0.0:
    release-please then proposes 1.0.0 and bumps all the version files from 0.0.1.
 3. In the release PR, replace the hand-written "Unreleased (Phase 12)" section of `CHANGELOG.md`
    with the generated entry (release-please inserts its entry below that section, above v0.11),
-   keeping what the generated list lacks: upgrade notes and the measured numbers.
+   keeping what the generated list lacks: upgrade notes and the measured numbers. Every commit
+   on the PR needs a `Signed-off-by:` line (CI's DCO job): release-please's own commit gets one
+   from `signoff` in `release-please-config.json`; an edit in GitHub's web editor gets one only
+   with the repository setting below, so otherwise make the edit locally with `git commit -s`.
 4. Close and reopen the PR so CI runs, then merge.
 
 `bootstrap-sha` in `release-please-config.json` points at the last Phase 11 commit, so the first
@@ -134,4 +137,9 @@ Set once, when the GitHub repository exists:
   link them to the repository, so anyone can pull them.
 - A ruleset that protects `v*` tags, and branch protection on `main` that requires the CI,
   Security and CodeQL checks.
-- No secrets: every workflow uses the built-in `GITHUB_TOKEN`.
+- Settings > General > "Require contributors to sign off on web-based commits", so commits made
+  in the web editor (the changelog edit in step 3) carry the `Signed-off-by:` line the DCO job
+  checks.
+- No secrets for building, testing and releasing: those workflows use the built-in
+  `GITHUB_TOKEN`. The optional load test against a deployment (`loadtest.yml`) reads the
+  repository secret `DEMO_PASSWORD`.

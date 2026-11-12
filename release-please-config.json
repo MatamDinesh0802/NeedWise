@@ -6,6 +6,7 @@
   "bump-minor-pre-major": true,
   "bootstrap-sha": "d849c13310479ccd95e577c87452ee1c5c648509",
   "pull-request-title-pattern": "chore: release ${version}",
+  "signoff": "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
     { "type": "fix", "section": "Bug Fixes" },
