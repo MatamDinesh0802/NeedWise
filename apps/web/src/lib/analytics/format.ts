@@ -11,6 +11,12 @@ import type { Cell, ColumnFormat, ValueFormat } from "@/lib/analytics/api";
 export type NumberStyle = "full" | "compact";
 
 /**
+ * What a chart's value axis is in: the Insights formats, plus "usd" for model costs (usage
+ * analytics). The Insights API never sends "usd".
+ */
+export type ChartFormat = ValueFormat | "usd";
+
+/**
  * How a percent value is written: points (42.0 for 42%) is the API's contract: the semantic
  * layer's percent metrics and the agent's SQL ("as percentages, times 100") both use it.
  * "fraction" (0.42) is kept for callers that know their data is a ratio.
@@ -30,6 +36,19 @@ const eurCents = new Intl.NumberFormat(LOCALE, {
 const eurCompact = new Intl.NumberFormat(LOCALE, {
   style: "currency",
   currency: "EUR",
+  notation: "compact",
+  maximumSignificantDigits: 3,
+});
+const usdFull = new Intl.NumberFormat(LOCALE, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const usdCents = new Intl.NumberFormat(LOCALE, {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const usdCompact = new Intl.NumberFormat(LOCALE, {
+  style: "currency",
+  currency: "USD",
   notation: "compact",
   maximumSignificantDigits: 3,
 });
@@ -56,6 +75,22 @@ export function formatEur(value: number, style: NumberStyle = "full"): string {
   return eurFull.format(value);
 }
 
+/**
+ * Model costs in US dollars: "$1,234", "$12.34", and two significant digits under a cent
+ * ("$0.0042"), because one request often costs less than a cent. Compact from $10,000 ("$12.3K").
+ */
+export function formatUsd(value: number, style: NumberStyle = "full"): string {
+  if (!Number.isFinite(value)) return "—";
+  const abs = Math.abs(value);
+  if (style === "compact" && abs >= COMPACT_FROM) return usdCompact.format(value);
+  if (abs === 0) return usdFull.format(0);
+  if (abs < 0.0001) return value < 0 ? "-<$0.0001" : "<$0.0001";
+  if (abs < 0.01) return `${value < 0 ? "-" : ""}$${Number(abs.toPrecision(2))}`;
+  // Cents matter in a table; a rounded-away fraction like 12.0000001 doesn't.
+  if (abs >= 1e12 || Math.abs(value - Math.round(value)) < 0.005) return usdFull.format(value);
+  return usdCents.format(value);
+}
+
 export function formatNumber(value: number, style: NumberStyle = "full"): string {
   if (style === "compact" && Math.abs(value) >= COMPACT_FROM) return numCompact.format(value);
   return numFull.format(value);
@@ -75,8 +110,9 @@ export function formatPercent(value: number, scale: PercentScale = "points"): st
   return `${pctFormat.format(points)}%`;
 }
 
-export function formatValue(value: number, format: ValueFormat, style: NumberStyle = "full", scale: PercentScale = "points"): string {
+export function formatValue(value: number, format: ChartFormat, style: NumberStyle = "full", scale: PercentScale = "points"): string {
   if (format === "eur") return formatEur(value, style);
+  if (format === "usd") return formatUsd(value, style);
   if (format === "percent") return formatPercent(value, scale);
   return formatNumber(value, style);
 }
@@ -86,11 +122,12 @@ export function formatValue(value: number, format: ValueFormat, style: NumberSty
  * €5K) as soon as the largest tick reaches 10,000, exact otherwise. Deciding per tick mixed
  * "€5,000" and "€10K" on one axis.
  */
-export function axisLabels(ticks: readonly number[], format: ValueFormat, scale: PercentScale = "points"): string[] {
+export function axisLabels(ticks: readonly number[], format: ChartFormat, scale: PercentScale = "points"): string[] {
   const compact = format !== "percent" && ticks.some((t) => Math.abs(t) >= COMPACT_FROM);
   return ticks.map((t) => {
     if (!compact) return formatValue(t, format, "full", scale);
-    return format === "eur" ? eurCompact.format(t) : numCompact.format(t);
+    if (format === "eur") return eurCompact.format(t);
+    return format === "usd" ? usdCompact.format(t) : numCompact.format(t);
   });
 }
 
