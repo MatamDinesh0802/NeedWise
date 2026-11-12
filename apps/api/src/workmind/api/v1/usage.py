@@ -41,7 +41,7 @@ MAX_RANGE_DAYS = 400
 MAX_LIMIT_USD = 1_000_000_000.0
 ReaderContext = Annotated[RequestContext, require_scope("profile:read")]
 From = Annotated[date, Query(alias="from", description="first UTC day, YYYY-MM-DD")]
-To = Annotated[date, Query(description="last UTC day, YYYY-MM-DD (included)")]
+To = Annotated[date, Query(alias="to", description="last UTC day, YYYY-MM-DD (included)")]
 
 
 def _range(first: date, last: date) -> None:

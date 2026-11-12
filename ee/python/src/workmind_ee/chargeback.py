@@ -51,7 +51,7 @@ async def chargeback_csv(session: AsyncSession, query: ChargebackQuery) -> str:
             .where(UsageEvent.occurred_at >= query.start, UsageEvent.occurred_at < query.end)
             .group_by(UsageEvent.department_id)
         )
-    ).tuples()
+    ).all()
     totals = list(rows)
     ids = [row[0] for row in totals if row[0] is not None]
     names: dict[uuid.UUID, str] = {}
@@ -59,7 +59,7 @@ async def chargeback_csv(session: AsyncSession, query: ChargebackQuery) -> str:
         found = await session.execute(
             select(Department.id, Department.name).where(Department.id.in_(ids))
         )
-        names = {department_id: name for department_id, name in found.tuples()}
+        names = {department_id: name for department_id, name in found}
     totals.sort(
         key=lambda row: (
             row[0] is None,

@@ -275,7 +275,7 @@ class UsageMeter:
             rows = await session.execute(
                 select(User.id, User.display_name).where(User.id.in_(users))
             )
-            names |= {uid: NamedRef(uid, name) for uid, name in rows.tuples()}
+            names |= {uid: NamedRef(uid, name) for uid, name in rows}
         provider = self.department_provider()
         if departments and provider is not None:
             found = await provider.names(session, departments)

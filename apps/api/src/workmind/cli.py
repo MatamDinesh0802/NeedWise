@@ -64,7 +64,7 @@ async def _backfill_usage(tenant_slug: str | None) -> int:
                 if tenant_slug
                 else query.where(Tenant.status == "active")
             )
-            tenants = list((await session.execute(query)).tuples())
+            tenants = list((await session.execute(query)).all())
         if tenant_slug and not tenants:
             print(f"tenant {tenant_slug!r} not found", file=sys.stderr)
             return 1

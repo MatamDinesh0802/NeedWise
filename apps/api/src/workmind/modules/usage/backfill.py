@@ -153,7 +153,7 @@ async def backfill_tenant(
             .where(Message.role == "assistant", ~_live("message", Message.id))
             .order_by(Message.created_at)
         )
-        for message, user_id in answers.tuples():
+        for message, user_id in answers:
             usage = message.usage or {}
             used = (_tokens(usage, "input_tokens"), _tokens(usage, "output_tokens"))
             if not any(used):

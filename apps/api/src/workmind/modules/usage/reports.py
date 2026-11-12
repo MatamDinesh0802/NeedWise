@@ -62,7 +62,7 @@ async def scope_for(session: AsyncSession, ctx: RequestContext) -> UsageScope:
                 .where(DepartmentMember.user_id == ctx.user_id, DepartmentMember.role == "manager")
                 .order_by(Department.name)
             )
-        ).tuples()
+        ).all()
         departments = [NamedRef(did, name) for did, name in managed]
         if departments:
             members = await session.scalars(
@@ -246,7 +246,7 @@ async def events_page(
         query = query.where(UsageEvent.feature == filters.feature)
     if cursor:
         query = query.where(tuple_(UsageEvent.occurred_at, UsageEvent.id) < parse_cursor(cursor))
-    rows = (await session.execute(query)).tuples().all()
+    rows = (await session.execute(query)).all()
     page, more = rows[:limit], len(rows) > limit
     items = [
         {

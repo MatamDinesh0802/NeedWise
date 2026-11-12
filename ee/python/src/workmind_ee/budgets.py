@@ -33,7 +33,7 @@ class DepartmentBudgets:
         rows = await session.execute(
             select(Department.id, Department.name).where(Department.id.in_(list(ids)))
         )
-        return {department_id: name for department_id, name in rows.tuples()}
+        return {department_id: name for department_id, name in rows}
 
     async def binding(self, session: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
         department = await primary_department(session, user_id)
