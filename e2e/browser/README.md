@@ -30,9 +30,9 @@ pnpm report                                                            # the HTM
 ## How it works
 
 - **Sign-in** (`tests/support/auth.ts`): the header's "Sign in" link, Keycloak's email page, its
-  password page, back to the app. Each user's storage state is cached in `.auth/<user>.json`
-  (git-ignored: it holds session cookies) and reused while `GET /api/v1/me` still answers for
-  that user; otherwise the user signs in again. `auth.spec.ts` always signs in from scratch, in
+  password page, back to the app. Each user's storage state is cached in
+  `.auth/<host>/<user>.json` (git-ignored: it holds session cookies; one folder per stack) and
+  reused while `GET /api/v1/me` still answers for that user; otherwise the user signs in again. `auth.spec.ts` always signs in from scratch, in
   a fresh context, so its sign-outs never end a cached session.
 - **Page guard** (`tests/support/fixtures.ts`): every test fails on a console error, an
   uncaught exception, a network failure, a 5xx, or a 4xx other than 401, 402 and 403 on the

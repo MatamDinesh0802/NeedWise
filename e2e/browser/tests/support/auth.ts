@@ -56,11 +56,12 @@ async function stillSignedIn(file: string, user: DemoUser, baseURL: string): Pro
  * in at the same time: each gets its own valid session, and the file is replaced atomically.
  */
 export async function storageStateFor(browser: Browser, user: DemoUser, baseURL: string): Promise<string> {
-  const file = path.join(AUTH_DIR, `${user.key}.json`);
+  // One folder per stack: a session from one is unknown to another.
+  const file = path.join(AUTH_DIR, new URL(baseURL).host.replace(/[^\w.-]/g, "_"), `${user.key}.json`);
   const checked = validated.get(file);
   if (checked !== undefined && Date.now() - checked < REVALIDATE_MS) return file;
   if (!(await stillSignedIn(file, user, baseURL))) {
-    await fs.mkdir(AUTH_DIR, { recursive: true });
+    await fs.mkdir(path.dirname(file), { recursive: true });
     const context = await browser.newContext({ baseURL });
     try {
       await signInThroughKeycloak(await context.newPage(), user);
