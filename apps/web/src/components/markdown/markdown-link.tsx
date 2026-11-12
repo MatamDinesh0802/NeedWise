@@ -1,14 +1,33 @@
 import type { ComponentProps } from "react";
 
+// Links are resolved as the browser would, against a page on an origin no link can name.
+const PAGE = "https://workmind.invalid/page";
+
 /**
- * The host an absolute http(s) link leads to, or null (relative links, anchors, mailto:).
+ * The host a link leads to when it leaves the app, or null (relative links, anchors, mailto:).
+ * Resolved like the browser resolves it, so `//attacker.example/x` (which the browser opens as
+ * https://attacker.example/x) counts as leaving.
  */
 export function linkHost(href: string | undefined): string | null {
-  if (!href || !/^https?:\/\//i.test(href)) return null;
+  if (!href) return null;
   try {
-    return new URL(href).host;
+    const url = new URL(href, PAGE);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.origin === new URL(PAGE).origin ? null : url.host;
   } catch {
     return null;
+  }
+}
+
+/** True when the link's whole text is that host, or a URL on it (an autolink, for example). */
+function textNamesHost(text: string, host: string): boolean {
+  const shown = text.trim();
+  if (!shown || /\s/.test(shown)) return false;
+  const candidate = /^[a-z][a-z0-9+.-]*:/i.test(shown) || shown.startsWith("//") ? shown : `https://${shown}`;
+  try {
+    return new URL(candidate, PAGE).host === host;
+  } catch {
+    return false;
   }
 }
 
@@ -25,7 +44,8 @@ export function MarkdownLink(props: ComponentProps<"a"> & { node?: unknown }) {
   delete rest.node;
   const host = linkHost(href);
   const text = typeof children === "string" ? children : "";
-  const showHost = host !== null && !text.includes(host);
+  // Not a substring test: "the policy on intranet.com" contains "t.co".
+  const showHost = host !== null && !textNamesHost(text, host);
   return (
     <>
       <a {...rest} href={href} target="_blank" rel="noopener noreferrer nofollow" className="underline underline-offset-2">

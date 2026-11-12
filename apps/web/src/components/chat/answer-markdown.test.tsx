@@ -73,6 +73,20 @@ describe("AnswerMarkdown", () => {
 
   it("does not repeat a host the link text already shows, nor add one to relative links", () => {
     expect(render("<https://intranet.example/leave>")).not.toContain("(intranet.example)");
+    expect(render("[intranet.example/leave](https://intranet.example/leave)")).not.toContain("(intranet.example)");
     expect(render("[the document](/knowledge/documents/42)")).not.toMatch(/\([^)]*\)<\/span>/);
+  });
+
+  it("shows the host of a protocol-relative link, which the browser opens on another site", () => {
+    // Regression: only ^https?:// counted, so //attacker.example/... had no host label.
+    expect(render("[the policy](//attacker.example/?d=SECRET)")).toContain("(attacker.example)");
+    // A backslash (/\\attacker.example) is percent-encoded by the markdown parser: a path, not a host.
+    expect(render("[the policy](/\\attacker.example/?d=SECRET)")).toContain('href="/%5Cattacker.example');
+  });
+
+  it("shows the host even when the text happens to contain it", () => {
+    // Regression: a substring test hid t.co behind "the policy on intranet.com".
+    const html = render("[the policy on intranet.com](https://t.co/x?d=SECRET)");
+    expect(html).toContain("(t.co)");
   });
 });
