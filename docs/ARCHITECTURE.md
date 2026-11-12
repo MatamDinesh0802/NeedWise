@@ -928,6 +928,8 @@ Clicking a decision or action item jumps to that moment in the recording. Privac
 | Verification | Every number in the narrative must appear in the query results. The validator checks this. |
 | Evaluation | A text-to-SQL gold set scored by execution accuracy (§22) |
 
+> **As built so far (v0.10 core, [docs/analytics.md](analytics.md)):** the semantic layer, the sqlglot guard, the DuckDB sandbox, the semantic-query compiler and versioned per-tenant datasets (CSV/XLSX), behind one service interface. Row policies are applied by rewriting every reference to a restricted table into a filtered subquery; the DuckDB connection is read-only, with external access off and its configuration locked, as the second lock. The agent, the API, charts, narrative verification, the evaluation set and Postgres/MySQL sources are not built yet.
+
 ---
 
 ## 17. Conversation memory and context engineering

@@ -16,6 +16,7 @@ from workmind.core.context import RequestContext
 from workmind.core.tenancy import global_transaction, tenant_transaction
 from workmind.modules.analytics import dataset
 from workmind.modules.analytics.compiler import SemanticQuery
+from workmind.modules.analytics.guard import check
 from workmind.modules.analytics.models import AnalyticsModel
 from workmind.modules.analytics.service import Analytics, AnalyticsError, load_model
 from workmind.modules.governance.models import AuditEvent
@@ -247,6 +248,8 @@ async def test_every_query_is_audited_without_its_rows(acme: AcmeAnalytics) -> N
         await acme.service.run_sql(dan, "DROP TABLE customers")
     with pytest.raises(AnalyticsError):
         await acme.service.run_sql(await acme.ctx("bob"), "SELECT 1")
+    with pytest.raises(AnalyticsError):
+        await acme.service.run_semantic(dan, SemanticQuery(metrics=["revenue", "deals"]))
 
     async with tenant_transaction(acme.sessions, acme.tenant_id) as session:
         events = (
@@ -258,7 +261,8 @@ async def test_every_query_is_audited_without_its_rows(acme: AcmeAnalytics) -> N
         ).all()
 
     details = [e.details for e in events]
-    assert [d["status"] for d in details] == ["ok", "rejected", "denied"]
+    assert [d["status"] for d in details] == ["ok", "rejected", "denied", "invalid"]
+    assert details[3]["kind"] == "semantic"
     ok = details[0]
     assert ok["tables"] == ["customers"]
     assert ok["row_policies"] == ["Own accounts only"]
@@ -315,6 +319,22 @@ async def test_admins_load_tables_and_versions_switch_atomically(acme: AcmeAnaly
     assert not_admin.value.status == 403
     assert (bad_file.value.status, bad_file.value.code) == (422, "invalid_table")
     assert missing.value.status == 404
+
+
+async def test_a_query_racing_a_version_switch_opens_the_new_version(
+    acme: AcmeAnalytics,
+) -> None:
+    carol = await acme.ctx("carol")
+    stale = await acme.service._prepare(carol)  # read the model row: the current version
+    await acme.service.put_table(await acme.ctx("erin"), "targets", b"a\n1\n", "text/csv")
+    old = stale.loaded.dataset_path(acme.root, acme.tenant_id)
+    assert old is not None
+    assert not old.exists()  # the version this reader picked is gone
+    checked = check("SELECT count(*) FROM customers", tables=stale.model.tables.keys())
+
+    result = await acme.service._execute(carol, stale, checked, 10)
+
+    assert result.rows == [[24]]
 
 
 async def test_admins_set_the_model_and_bad_models_are_refused(acme: AcmeAnalytics) -> None:

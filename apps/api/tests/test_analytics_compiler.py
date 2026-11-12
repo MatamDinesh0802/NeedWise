@@ -205,6 +205,21 @@ def test_bluefin_is_the_largest_customer(acme: Path) -> None:
     assert rows[0][0] == "Bluefin Freight"
 
 
+def test_bluefin_fleetos_annual_recurring_revenue(acme: Path) -> None:
+    rows = results(
+        acme,
+        metrics=["revenue"],
+        filters=[
+            {"dimension": "customer", "values": ["Bluefin Freight"]},
+            {"dimension": "product_line", "values": ["FleetOS"]},
+        ],
+        date_from="2026-09-01",
+        date_to="2026-09-30",
+    )
+
+    assert 12 * rows[0][0] == 2_300_040
+
+
 def test_q3_closed_exactly_two_deals_one_lost_on_price(acme: Path) -> None:
     rows = results(
         acme,

@@ -14,11 +14,11 @@ Permissions are decided here, in code, never by a model:
 - Who may query: the model's `access` principals, checked against the request's principals.
 - Which rows: the row policies that apply to the user become filters the SQL guard injects
   into every table reference. {user.email} is read from the users table, never the request.
-- Every query that reaches the guard is audited (`analytics.query`): a hash of the SQL, the
-  tables, the policies applied, the row count and the outcome. Never the rows.
+- Every query that reaches the access check is audited (`analytics.query`): a hash of the SQL,
+  the tables, the policies applied, the row count and the outcome. Never the rows.
 
 Errors are AnalyticsError (an ApiError: the API returns them as problem+json as they are, and
-the agent can show `detail` to the model so it can correct its query).
+the agent can show `detail` to the model so it can correct its query). See docs/analytics.md.
 """
 
 import asyncio
@@ -490,6 +490,8 @@ class Analytics:
             try:
                 compiled = compile_query(prepared.model, query)
             except CompileError as exc:
+                audit.status, audit.reason = "invalid", str(exc)[:300]
+                await self._audit(ctx, audit)
                 raise AnalyticsError(
                     400, "invalid_query", "The query does not fit the data model", str(exc)
                 ) from exc
