@@ -91,6 +91,9 @@ class Message(Base, TenantScoped, Timestamps):
         JSONB, server_default=text("'[]'::jsonb")
     )
     usage: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    # A failed answer: why, as its `run.failed` event said it ({"code", "message"}, and for a
+    # used-up budget "detail" and "budget"), so a reload says it too.
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     abstained: Mapped[bool] = mapped_column(server_default=sa_false())
     withheld: Mapped[int] = mapped_column(Integer, server_default="0")
     feedback: Mapped[str | None] = mapped_column(String(8))

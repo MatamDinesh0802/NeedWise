@@ -310,7 +310,7 @@ async def test_a_department_agent_with_a_model_runs_on_it() -> None:
 
     assert [r.model for _, r in llm.requests] == ["claude-y"]
     assert failed.error is not None
-    assert failed.error.startswith("model unavailable")
+    assert failed.error == "the language model is unavailable"  # the details stay in the log
 
 
 # --- Snapshots ----------------------------------------------------------------------------------

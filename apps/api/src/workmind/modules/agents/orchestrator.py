@@ -72,6 +72,9 @@ class AgentStepEvent:
     findings: int = 0
     sources: int = 0
     seconds: float = 0.0
+    # The agent's model calls, once it finished or failed: a run that fails later still
+    # accounts for them on the stored message.
+    usage: tuple[LLMUsage, ...] = ()
 
 
 OrchestratorEvent = StreamEvent | PlanEvent | AgentStepEvent
@@ -234,7 +237,14 @@ async def orchestrate(
         results.append(result)
         name = agents[result.agent].name
         if result.error:
-            yield AgentStepEvent(result.agent, "failed", result.error, name, seconds=result.seconds)
+            yield AgentStepEvent(
+                result.agent,
+                "failed",
+                result.error,
+                name,
+                seconds=result.seconds,
+                usage=tuple(result.usage),
+            )
         else:
             yield AgentStepEvent(
                 result.agent,
@@ -244,6 +254,7 @@ async def orchestrate(
                 findings=len(result.findings),
                 sources=len(result.passages),
                 seconds=result.seconds,
+                usage=tuple(result.usage),
             )
 
     usable = [r for r in results if not r.error]
@@ -332,8 +343,10 @@ async def run_agent_bounded(
     except BudgetExceededError as exc:  # the answer that follows is refused the same way
         return AgentResult(agent=agent.key, goal=goal, error=str(exc)[:300])
     except LLMError as exc:
+        # The person asking sees a plain label; the provider's message (hosts, response
+        # bodies, admin details) stays in the log and the admin's provider test.
         log.warning("agent_model_failed", agent=agent.key, error=str(exc)[:300])
-        return AgentResult(agent=agent.key, goal=goal, error=f"model unavailable: {exc}"[:300])
+        return AgentResult(agent=agent.key, goal=goal, error="the language model is unavailable")
     except Exception as exc:
         log.warning("agent_failed", agent=agent.key, error=str(exc)[:300])
         return AgentResult(agent=agent.key, goal=goal, error="failed")

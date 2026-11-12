@@ -333,6 +333,50 @@ async def test_in_agents_mode_the_plan_and_each_agent_are_streamed(
     assert detail["messages"][-1]["usage"]["input_tokens"] == 30 + 30 + 100  # every call counted
 
 
+class BrokenAnswerLLM(FakeLLM):
+    """Plans, then the model server goes away: the agent and the answer both fail."""
+
+    async def stream(self, role: Any, request: Any) -> AsyncIterator[Any]:
+        from workmind.providers.llm import LLMError
+
+        self.requests.append((role, request))
+        raise LLMError("model server unreachable at http://10.1.2.3:9000/v1/chat/completions")
+        yield  # pragma: no cover
+
+
+async def test_a_failed_agent_shows_a_plain_label_and_the_failed_answer_counts_the_plan(
+    api: TestClient, acme: Acme
+) -> None:
+    from workmind.modules.agents.planning import PlanOut, Subtask
+    from workmind.providers.llm import LLMError
+
+    leak = "model server unreachable at http://10.1.2.3:9000/v1/chat/completions: ConnectError"
+    use_model(
+        api,
+        BrokenAnswerLLM(
+            structured=[
+                PlanOut(mode="single", subtasks=[Subtask(agent="hr", goal="Leave length?")]),
+                LLMError(leak),
+            ]
+        ),
+    )
+    app: Any = api.app
+    app.state.resources.assistant_mode = "agents"
+    app.state.resources.agent_router = None
+    conversation = start(api, acme, "alice")
+
+    received = events(api, acme, "alice", ask(api, acme, "alice", conversation, "Parental leave?"))
+    detail = api.get(f"/api/v1/conversations/{conversation}", headers=acme.as_("alice")).json()
+
+    failed_step = next(d for n, d in received if n == "agent.step" and d["status"] == "failed")
+    assert failed_step["label"] == "the language model is unavailable"
+    assert "10.1.2.3" not in json.dumps(received)
+    assert received[-1][0] == "run.failed"
+    answer = detail["messages"][-1]
+    assert (answer["status"], answer["error"]["code"]) == ("failed", "model_unavailable")
+    assert answer["usage"]["input_tokens"] == 30  # the plan was made and paid for
+
+
 async def test_a_cancelled_exchange_does_not_steer_the_next_answer(
     api: TestClient, acme: Acme
 ) -> None:

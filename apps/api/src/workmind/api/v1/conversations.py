@@ -56,6 +56,8 @@ class MessageOut(BaseModel):
     # Research answers: each tool call, and the approval it proposed (if any), in order.
     tool_steps: list[dict[str, Any]] = []
     usage: dict[str, Any]
+    # Why a failed answer failed (as its run.failed event said), else None.
+    error: dict[str, Any] | None = None
     abstained: bool
     withheld: int
     feedback: str | None
@@ -115,6 +117,7 @@ def _message_out(m: Message) -> MessageOut:
         sources=m.sources,
         tool_steps=m.tool_steps,
         usage=m.usage,
+        error=m.error,
         abstained=m.abstained,
         withheld=m.withheld,
         feedback=m.feedback,

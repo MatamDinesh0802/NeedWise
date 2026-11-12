@@ -303,6 +303,14 @@ async def test_a_budget_used_up_half_way_ends_the_chat_run_with_budget_exceeded(
     assert failed["budget"]["spent_usd"] == 6.4
     recorded = await usage(app_sessions, acme)
     assert [e.output_tokens for e in recorded] == [30_000, 50_000]  # the refused call: none
+    # The stored failed answer says why too, so a reload (or the refetch when the run ends)
+    # shows the budget, not just "This answer failed".
+    stored = api.get(f"/api/v1/conversations/{conversation}", headers=acme.as_("alice")).json()
+    last = stored["messages"][-1]
+    assert (last["status"], last["error"]["code"]) == ("failed", "budget_exceeded")
+    assert last["error"]["detail"] == failed["detail"]
+    assert last["error"]["budget"] == failed["budget"]
+    assert stored["messages"][1]["error"] is None  # the first answer, complete
     third = api.post(
         f"/api/v1/conversations/{conversation}/messages",
         json={"content": "Anything else?"},

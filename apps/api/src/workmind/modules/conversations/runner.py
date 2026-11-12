@@ -251,6 +251,8 @@ async def execute_run(
     search_query = question
     status, error = "complete", None
     budget: BudgetExceededError | None = None
+    # Planning and agent calls: part of the answer's usage, and still spent if it fails.
+    spent: list[LLMUsage] = []
     try:
         history = await load_history(
             deps.sessions, ctx, meta.conversation_id, before=user_message_id
@@ -271,6 +273,7 @@ async def execute_run(
         )
         async for event in stream:
             if isinstance(event, PlanEvent):
+                spent.append(event.plan.usage)
                 await events.emit(
                     run_id,
                     "plan",
@@ -284,6 +287,7 @@ async def execute_run(
                     },
                 )
             elif isinstance(event, AgentStepEvent):
+                spent.extend(event.usage)
                 await events.emit(
                     run_id,
                     "agent.step",
@@ -350,6 +354,9 @@ async def execute_run(
                 },
             )
         await events.emit(run_id, "verification", {"unknown_markers": final.unknown_markers})
+    else:
+        for extra in spent:  # no answer to carry them: the run still paid for them
+            usage.add(extra, keep_model=True)
 
     message_id = await _store(
         deps,
@@ -361,6 +368,7 @@ async def execute_run(
         search_query,
         usage.as_dict(),
         message_id=answer_id,
+        error=_failure(error, budget) if status == "failed" else None,
     )
     if status == "complete":
         await events.emit(
@@ -380,6 +388,15 @@ async def execute_run(
         await _emit_failure(deps, run_id, message_id, error, budget)
 
 
+def _failure(error: tuple[str, str] | None, budget: BudgetExceededError | None) -> dict[str, Any]:
+    """Why a run failed, as `run.failed` says it and as the stored message keeps it: for a
+    used-up budget, code budget_exceeded and the budget's status."""
+    if budget is not None:
+        return budget.event()
+    code, message = error or ("internal", "Something went wrong.")
+    return {"code": code, "message": message}
+
+
 async def _emit_failure(
     deps: RunDeps,
     run_id: uuid.UUID,
@@ -387,15 +404,8 @@ async def _emit_failure(
     error: tuple[str, str] | None,
     budget: BudgetExceededError | None,
 ) -> None:
-    """`run.failed`; for a used-up budget, with code budget_exceeded and the budget's status."""
-    if budget is not None:
-        await deps.events.emit(
-            run_id, "run.failed", {**budget.event(), "message_id": str(message_id)}
-        )
-        return
-    code, message = error or ("internal", "Something went wrong.")
     await deps.events.emit(
-        run_id, "run.failed", {"code": code, "message": message, "message_id": str(message_id)}
+        run_id, "run.failed", {**_failure(error, budget), "message_id": str(message_id)}
     )
 
 
@@ -484,6 +494,7 @@ async def execute_research_run(
         usage.as_dict(),
         tool_steps=steps,
         message_id=answer_id,
+        error=_failure(error, budget) if status == "failed" else None,
     )
     if status == "complete":
         await events.emit(
@@ -507,6 +518,7 @@ async def _store(
     *,
     tool_steps: list[dict[str, Any]] | None = None,
     message_id: uuid.UUID | None = None,
+    error: dict[str, Any] | None = None,
 ) -> uuid.UUID:
     content = final.text if final and status == "complete" else partial  # research: the text
     async with tenant_transaction(deps.sessions, ctx.tenant_id) as session:
@@ -537,6 +549,7 @@ async def _store(
             abstained=final.abstained if final else False,
             withheld=final.withheld if final else 0,
             tool_steps=tool_steps or [],
+            error=error,
         )
         session.add(message)
         conversation = await session.get(Conversation, meta.conversation_id)
