@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import sqlglot
 import yaml
@@ -97,6 +97,10 @@ class SemanticModel(_Strict):
     name: str
     description: str
     data_through: date | None = None  # the last closed period, told to the model
+    # Example questions shown to people who may query (GET /analytics/model).
+    examples: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
+        default=[], max_length=12
+    )
     access: list[str] = Field(min_length=1)
     tables: dict[str, Table] = Field(min_length=1)
     joins: list[Join] = []

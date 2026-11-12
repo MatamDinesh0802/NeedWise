@@ -13,6 +13,14 @@ description: >
   Amounts are in euros. Revenue is invoiced revenue: void invoice lines are not revenue.
 data_through: 2026-09-30  # the last closed month; October is not closed yet
 
+# Shown to people who may query, as questions to start from.
+examples:
+  - Monthly revenue trend this year and the top 3 drivers
+  - Revenue by product line per quarter
+  - Which customers grew the most from Q1 to Q3?
+  - What is the open pipeline by stage?
+  - What was the win rate in Q3, and why were deals lost?
+
 # Who may query this model at all.
 access:
   - department:finance

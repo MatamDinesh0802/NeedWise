@@ -160,6 +160,9 @@ class FieldDescription(BaseModel):
     format: Format
     table: str | None = None  # metrics: the fact table
     tables: list[str] = []  # dimensions: the tables they read
+    # The SQL behind it, for the agent writing its own SQL: "sum(amount_eur) WHERE status <>
+    # 'void'" for a metric, "customers.region" for a dimension.
+    definition: str | None = None
 
 
 class ModelDescription(BaseModel):
@@ -174,9 +177,25 @@ class ModelDescription(BaseModel):
     access: AccessInfo
     dataset_version: str | None
     updated_at: datetime
+    examples: list[str] = []  # example questions, from the model
     # Admins only:
     yaml: str | None = None
     problems: list[str] = []
+
+
+class DatasetTable(BaseModel):
+    name: str
+    rows: int
+    columns: list[dict[str, str]]  # [{"name", "type"}]
+
+
+class AdminState(BaseModel):
+    """What an admin manages: the model's YAML (as stored, even if it no longer validates)
+    and the loaded dataset."""
+
+    yaml: str | None
+    dataset_version: str | None
+    tables: list[DatasetTable]
 
 
 class RunSummary(BaseModel):
@@ -184,6 +203,10 @@ class RunSummary(BaseModel):
     question: str
     status: RunStatus
     created_at: datetime
+    # From the stored answer, when the agent stored one in this shape (agent.AnalyticsAnswer):
+    outcome: str | None = None  # answered | no_access | failed
+    verified: int = 0  # numbers in the narrative backed by a query result
+    total: int = 0  # numbers in the narrative
 
 
 class RunOut(RunSummary):
@@ -349,8 +372,11 @@ class Analytics:
 
     # --- The BI agent's questions and answers (each person sees their own) ---
 
-    async def start_run(self, ctx: RequestContext, question: str) -> uuid.UUID:
-        """Record a question before answering it. The answer is stored by finish_run."""
+    async def start_run(
+        self, ctx: RequestContext, question: str, *, created_at: datetime | None = None
+    ) -> uuid.UUID:
+        """Record a question before answering it. The answer is stored by finish_run.
+        `created_at` lets the caller put the same time in the answer it builds."""
         text = question.strip()
         if not text or len(text) > MAX_QUESTION_CHARS:
             raise AnalyticsError(
@@ -358,6 +384,8 @@ class Analytics:
             )
         async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
             run = AnalyticsRun(tenant_id=ctx.tenant_id, user_id=ctx.user_id, question=text)
+            if created_at is not None:
+                run.created_at = created_at
             session.add(run)
             await session.flush()
             return run.id
@@ -376,20 +404,74 @@ class Analytics:
             run.status = status
             run.answer = answer
 
-    async def runs(self, ctx: RequestContext, *, limit: int = 20) -> list[RunSummary]:
-        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
-            rows = await session.scalars(
-                select(AnalyticsRun)
-                .where(AnalyticsRun.user_id == ctx.user_id)
-                .order_by(AnalyticsRun.created_at.desc(), AnalyticsRun.id.desc())
-                .limit(max(1, min(limit, 100)))
+    async def runs(
+        self, ctx: RequestContext, *, limit: int = 20, finished_only: bool = False
+    ) -> list[RunSummary]:
+        """This user's runs, newest first, without the answers (only their outcome and
+        verification counts, read from the stored JSON)."""
+        answer = AnalyticsRun.answer
+        query = (
+            select(
+                AnalyticsRun.id,
+                AnalyticsRun.question,
+                AnalyticsRun.status,
+                AnalyticsRun.created_at,
+                answer["status"].astext,
+                answer[("verification", "verified")].astext,
+                answer[("verification", "total")].astext,
             )
-            return [RunSummary.model_validate(r, from_attributes=True) for r in rows]
+            .where(AnalyticsRun.user_id == ctx.user_id)
+            .order_by(AnalyticsRun.created_at.desc(), AnalyticsRun.id.desc())
+            .limit(max(1, min(limit, 100)))
+        )
+        if finished_only:
+            query = query.where(AnalyticsRun.status != "running")
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            rows = (await session.execute(query)).all()
+        return [
+            RunSummary(
+                id=run_id,
+                question=question,
+                status=cast(RunStatus, status),
+                created_at=created_at,
+                outcome=outcome,
+                verified=_count(verified),
+                total=_count(total),
+            )
+            for run_id, question, status, created_at, outcome, verified, total in rows
+        ]
 
     async def run(self, ctx: RequestContext, run_id: uuid.UUID) -> RunOut:
         async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
             run = await _own_run(session, ctx, run_id)
             return RunOut.model_validate(run, from_attributes=True)
+
+    async def audit_denied(self, ctx: RequestContext, kind: str) -> None:
+        """Audit a refused request that never reached a query (e.g. a question to the agent
+        from someone without access), like a refused query."""
+        await self._audit(ctx, _Audit(kind=kind, status="denied"))
+
+    async def admin_state(self, ctx: RequestContext) -> AdminState:
+        """The stored YAML and the loaded tables, for org owners and admins. Works when no
+        model is set, or when the stored one no longer validates."""
+        if not ctx.has_role(*MANAGER_ROLES):
+            raise _not_manager()
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            loaded = await load_model(session, ctx.tenant_id)
+        if loaded is None:
+            return AdminState(yaml=None, dataset_version=None, tables=[])
+        return AdminState(
+            yaml=loaded.yaml,
+            dataset_version=loaded.dataset_version,
+            tables=[
+                DatasetTable(
+                    name=name,
+                    rows=_rows(loaded.dataset_tables, name) or 0,
+                    columns=_columns(loaded.dataset_tables, name),
+                )
+                for name in sorted(loaded.dataset_tables)
+            ],
+        )
 
     # --- Without a request (seeding, admin internals) ---
 
@@ -791,12 +873,18 @@ def _describe(loaded: LoadedModel, model: SemanticModel, access: AccessInfo) -> 
                 description=d.description.strip(),
                 format=d.format,
                 tables=sorted(model.dimension_tables(name)),
+                definition=d.sql.strip(),
             )
             for name, d in model.dimensions.items()
         ],
         metrics=[
             FieldDescription(
-                name=name, description=m.description.strip(), format=m.format, table=m.table
+                name=name,
+                description=m.description.strip(),
+                format=m.format,
+                table=m.table,
+                definition=" ".join(m.sql.split())
+                + (f" WHERE {' '.join(m.filter.split())}" if m.filter else ""),
             )
             for name, m in model.metrics.items()
         ],
@@ -804,6 +892,7 @@ def _describe(loaded: LoadedModel, model: SemanticModel, access: AccessInfo) -> 
         access=access,
         dataset_version=loaded.dataset_version,
         updated_at=loaded.updated_at,
+        examples=list(model.examples),
     )
 
 
@@ -813,6 +902,28 @@ def _rows(tables: dict[str, Any], name: str) -> int | None:
         return None
     rows = cast(dict[str, Any], info).get("rows")
     return rows if isinstance(rows, int) else None
+
+
+def _columns(tables: dict[str, Any], name: str) -> list[dict[str, str]]:
+    info: Any = tables.get(name)
+    if not isinstance(info, dict):
+        return []
+    columns: Any = cast(dict[str, Any], info).get("columns")
+    if not isinstance(columns, list):
+        return []
+    return [
+        {"name": str(column.get("name", "")), "type": str(column.get("type", ""))}
+        for column in cast(list[Any], columns)
+        if isinstance(column, dict)
+        for column in [cast(dict[str, Any], column)]
+    ]
+
+
+def _count(value: str | None) -> int:
+    try:
+        return int(value) if value is not None else 0
+    except ValueError:
+        return 0
 
 
 def _format(model: SemanticModel, name: str, duckdb_type: str) -> Format:
