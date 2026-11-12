@@ -135,7 +135,7 @@ def test_a_license_signed_by_an_unknown_key_is_rejected() -> None:
 
 @pytest.mark.parametrize(
     "bad",
-    ["", "abc", "a.b.c", ".abc", "abc.", "not base64!.abc", "a" * 20_000 + ".b"],
+    ["", "abc", "a.b.c", ".abc", "abc.", "not base64!.abc", "ab+c.ab/c", "a" * 20_000 + ".b"],
 )
 def test_malformed_tokens_are_rejected(bad: str) -> None:
     with pytest.raises(LicenseError):

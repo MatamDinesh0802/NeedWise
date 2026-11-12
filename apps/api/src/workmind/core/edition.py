@@ -16,6 +16,7 @@ Enterprise code (workmind_ee) is loaded by workmind.core.extensions, never impor
 import base64
 import binascii
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -54,6 +55,7 @@ MAX_TOKEN_BYTES: Final = 16_384
 CLOCK_SKEW: Final = timedelta(minutes=5)
 
 EditionName = Literal["community", "enterprise"]
+_BASE64URL = re.compile(r"[A-Za-z0-9_-]*")
 
 
 class LicenseError(ValueError):
@@ -92,6 +94,8 @@ def b64url_encode(data: bytes) -> str:
 
 def b64url_decode(text: str) -> bytes:
     """Strict base64url: anything outside the alphabet is an error, not silently dropped."""
+    if not _BASE64URL.fullmatch(text):
+        raise LicenseError("not base64url")
     try:
         return base64.b64decode(text + "=" * (-len(text) % 4), altchars=b"-_", validate=True)
     except (binascii.Error, ValueError) as exc:
