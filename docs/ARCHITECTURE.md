@@ -190,7 +190,7 @@ flowchart LR
 | Process | Image | Role | Scales with |
 |---|---|---|---|
 | `web` | `workmind-web` | Next.js UI (server rendering + static assets) | Requests |
-| `api` | `workmind-api` (slim) | REST + SSE, interactive chat runs, auth BFF, MCP server at `/mcp` | Concurrent users |
+| `api` | `workmind-api` (slim) | REST + SSE, interactive chat runs, auth BFF, MCP server at `/mcp`. Uvicorn worker processes: `API_WORKERS` (compose) or `api.workers` (Helm), 2 by default; one process uses at most one core ([load benchmarks](benchmarks/load.md)) | Concurrent users |
 | `worker-ingest` | `workmind-worker` (heavy: Docling, torch) | Parsing, OCR, chunking, embedding | `ingest` / `embed` queue depth |
 | `worker` | `workmind-api` | Long agent runs, workflows, connector sync, notifications, evals | Queue depth |
 | `scheduler` | `workmind-api` | Celery beat | Always exactly one instance |
@@ -630,7 +630,7 @@ flowchart TD
 | Step | What happens |
 |---|---|
 | 1. Query understanding | Rewrite the message into a standalone question using conversation context. Extract filters (department, dates, document type) with structured output. |
-| 2. Principal resolution | Load the user's principal set (cached) |
+| 2. Principal resolution | Load the user's principal set (as built: from Postgres on every request, not cached, so a disabled account or a changed role applies at once) |
 | 3. Hybrid search | One Qdrant query: dense top-50 + BM25 top-50, both filtered by tenant, ACL, active status and extracted filters, fused with Reciprocal Rank Fusion |
 | 4. Rerank | A cross-encoder reranks the ~40 fused candidates down to the top ~8. Trust and freshness boosts are applied. |
 | 5. Recheck | OpenFGA `BatchCheck` on the final documents (Lock 2) |
@@ -719,7 +719,7 @@ bring-your-own keys: see [docs/models.md](models.md).
 ### 11.7 Caching and performance targets
 
 - Caches: query embeddings, and the principal set.
-- Answer cache, keyed by `(tenant, principal-set hash, normalized question, index version)` so it can never serve content across permission boundaries. *As built:* there is no answer cache.
+- Answer cache, keyed by `(tenant, principal-set hash, normalized question, index version)` so it can never serve content across permission boundaries. *As built:* there is no answer cache, no query-embedding cache and no principal-set cache. The load test found no need for them yet: the embedding server answered a query in about 7 ms and served about 500 per second, and the principal set costs three small queries per request ([load benchmarks](benchmarks/load.md)). Any cache added later must be keyed by tenant and by the caller's permissions.
 - **Initial targets** (to be validated in Phase 3):
 
 | Target | Value |
@@ -1039,7 +1039,7 @@ Ops         /healthz · /readyz · /metrics
 event: run.started          data: {"run_id": "…"}
 event: agent.step           data: {"agent": "finance", "status": "running", "label": "Querying revenue"}
 event: retrieval            data: {"agent": "hr", "sources": [{"document_id": "…", "title": "Leave Policy 2026"}]}
-event: token                data: {"text": "Our parental "}
+event: token                data: {"text": "Our parental "}   (the first piece at once, then at most one event per 50 ms)
 event: citation             data: {"marker": "S1", "document_id": "…", "title": "…", "page": 4}
 event: approval.required    data: {"approval_id": "…", "action": {…}}
 event: verification         data: {"unverified_sentences": []}

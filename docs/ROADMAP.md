@@ -421,7 +421,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
-### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged; load tuning, benchmarks, a cluster install, the case study and the final review remain
+### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged, and the load test is run and tuned; the v1.0 benchmarks, a cluster install, the case study and the final review remain
 
 **Goal:** a release companies can trust in production.
 
@@ -438,9 +438,13 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   osv-scanner, Trivy (repository, images, the rendered Helm chart), hadolint, actionlint, zizmor,
   SBOMs, CodeQL, Dependabot; images, actions and scanners pinned. `make scan` passes locally;
   the workflows have never run on GitHub (no repository yet).
-- [ ] **Load tests and performance tuning.** The Locust harness and a stub model are built and
-  checked on small runs (0 failures; [load testing](load-testing.md)). Not done: a run at
-  increasing load on the main stack, and any tuning. No performance numbers yet.
+- [x] **Load tests and performance tuning** ([load benchmarks](benchmarks/load.md)): 10 to 800
+  simulated users on the main stack with a stub model, on one laptop. Up to 200 users nothing
+  was saturated; at 400 the API's one process was (search p95 46 to 420 ms). Batched token
+  events and two API processes brought 400 users back to unloaded latencies (chat first token
+  p95 2.5 s, search p95 130 ms). At 800 users both processes, the database pools and the audit
+  log's per-tenant lock are the limits. Not measured: a real model, a large corpus, many
+  tenants. The sizing for 50, 200 and 1,000 employees is an extrapolation.
 - [x] **Multi-tenant hardening** ([multi-tenancy](multi-tenancy.md)): tenant-prefixed Valkey
   keys, the tenant scope inside the Qdrant client, rate limits, `wm tenant`, and a test that
   sends every route another tenant's ids. Load with many tenants is not measured.

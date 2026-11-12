@@ -10,8 +10,9 @@ Code: `loadtests/`, its own uv project with Locust pinned (2.47.0). The stub is
 `apps/api/tests/test_stub_llm.py`. Reports go to `loadtests/results/`.
 
 This page says how to run it, what each scenario does, how the stub behaves, how to read a
-report, what a run leaves behind, and what has been measured so far. Performance tuning is not
-part of it yet: the runs below validate the harness, they are not benchmarks.
+report, what a run leaves behind, and what has been measured so far. The benchmark (10 to 800
+users on the main stack, before and after tuning) and what it changed are in
+[load benchmarks](benchmarks/load.md).
 
 ## Quick start
 
@@ -331,8 +332,14 @@ seconds of headless Locust against a fake WorkMind API that checks the token use
 their custom metrics and that each user deletes its conversations. `--processes 2` was checked
 against the throwaway stack.
 
-Not done yet: a performance run against the full stack (real embeddings, stub model) at
-increasing load, and tuning from what it shows.
+The benchmark on the main stack (Enterprise dev license, real embeddings, `ASSISTANT_MODE=auto`,
+the stub model) ran 10, 25, 50, 100, 200 and 400 users before tuning and the same steps plus 800
+after, 3 minutes each, with `MONITOR=workmind`: [load benchmarks](benchmarks/load.md). It found
+the API's single process saturated at 400 users and led to batched token events and two API
+processes by default. It also found three harness bugs, now fixed: readers opened documents the
+uploader had deleted (a correct 404 counted as a failure), Locust's worker processes outlived a
+multi-process run and reported to the next run's master, and the monitor read Qdrant's average
+gauge instead of its histogram sum.
 
 ## CI
 
