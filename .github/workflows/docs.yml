@@ -1,0 +1,67 @@
+name: Docs
+
+# Builds the documentation site (mkdocs.yml) with --strict on every pull request and every push
+# to main: a broken link, a missing anchor or a page missing from the build fails it. Pushes to
+# main also publish it to GitHub Pages, but only while the repository is public. (The reference
+# pages in docs/reference/ are checked against the code by the API tests in ci.yml.)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Docs · strict build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: docs/requirements.txt
+      - name: Build (strict)
+        env:
+          # Links from the docs to files outside docs/ point to this repository.
+          DOCS_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          DOCS_SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+        run: make docs
+      - name: Upload the site for GitHub Pages
+        if: >-
+          github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+          github.event.repository.private == false
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    name: Docs · deploy to GitHub Pages
+    needs: build
+    # Only from main, and only while the repository is public: a site built from a private
+    # repository would publish private work.
+    if: >-
+      github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
