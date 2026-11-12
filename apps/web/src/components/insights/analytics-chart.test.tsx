@@ -40,10 +40,14 @@ describe("AnalyticsChart", () => {
     expect(html).toContain("€2M");
   });
 
-  it("draws one path per line series with markers", () => {
+  it("draws one path per line series with markers, and names each line at its end", () => {
     const html = renderToStaticMarkup(<AnalyticsChart data={line} />);
     expect(html.match(/style="stroke:var\(--viz-\d\)"/g)).toHaveLength(2);
     expect(html.match(/<circle/g)).toHaveLength(6);
+    // Identity never rests on colour alone: each line carries its name.
+    expect(html.match(/data-series-name=""/g)).toHaveLength(2);
+    expect(html).toMatch(/data-series-name="">AMR-200</);
+    expect(html).toMatch(/data-series-name="">AMR-500</);
   });
 
   it("needs no legend for one series and labels only the largest bar", () => {

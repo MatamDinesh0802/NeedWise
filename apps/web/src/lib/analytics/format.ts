@@ -11,8 +11,9 @@ import type { Cell, ColumnFormat, ValueFormat } from "@/lib/analytics/api";
 export type NumberStyle = "full" | "compact";
 
 /**
- * How a percent column is written. The contract only says "percent", and SQL writes it both
- * ways: a ratio (0.42) or points (42.0). See percentScale().
+ * How a percent value is written: points (42.0 for 42%) is the API's contract: the semantic
+ * layer's percent metrics and the agent's SQL ("as percentages, times 100") both use it.
+ * "fraction" (0.42) is kept for callers that know their data is a ratio.
  */
 export type PercentScale = "fraction" | "points";
 
@@ -60,21 +61,37 @@ export function formatNumber(value: number, style: NumberStyle = "full"): string
   return numFull.format(value);
 }
 
-/** Whether a percent column holds ratios (all within ±1) or points (anything larger). */
-export function percentScale(values: readonly (number | null)[]): PercentScale {
-  const present = values.filter((v): v is number => v !== null);
-  return present.length > 0 && present.every((v) => Math.abs(v) <= 1) ? "fraction" : "points";
+/**
+ * How a percent column's values are written. Always points: guessing from the values (all
+ * within ±1 → ratios) drew a growth of 0.6 points as 60%. The values are not used any more.
+ */
+export function percentScale(values?: readonly (number | null)[]): PercentScale {
+  void values;
+  return "points";
 }
 
-export function formatPercent(value: number, scale: PercentScale = "fraction"): string {
+export function formatPercent(value: number, scale: PercentScale = "points"): string {
   const points = scale === "fraction" ? value * 100 : value;
   return `${pctFormat.format(points)}%`;
 }
 
-export function formatValue(value: number, format: ValueFormat, style: NumberStyle = "full", scale: PercentScale = "fraction"): string {
+export function formatValue(value: number, format: ValueFormat, style: NumberStyle = "full", scale: PercentScale = "points"): string {
   if (format === "eur") return formatEur(value, style);
   if (format === "percent") return formatPercent(value, scale);
   return formatNumber(value, style);
+}
+
+/**
+ * Labels for an axis's ticks, in one notation for the whole axis: compact (€10K, €15K and also
+ * €5K) as soon as the largest tick reaches 10,000, exact otherwise. Deciding per tick mixed
+ * "€5,000" and "€10K" on one axis.
+ */
+export function axisLabels(ticks: readonly number[], format: ValueFormat, scale: PercentScale = "points"): string[] {
+  const compact = format !== "percent" && ticks.some((t) => Math.abs(t) >= COMPACT_FROM);
+  return ticks.map((t) => {
+    if (!compact) return formatValue(t, format, "full", scale);
+    return format === "eur" ? eurCompact.format(t) : numCompact.format(t);
+  });
 }
 
 /** True for formats whose cells are right-aligned numbers. */
@@ -85,10 +102,29 @@ export function isNumericFormat(format: ColumnFormat): format is ValueFormat {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 const MIDNIGHT = /^\d{4}-\d{2}-\d{2}(?:[T ]00:00(?::00(?:\.0+)?)?(?:Z|[+-]00:?00)?)?$/;
 
+/**
+ * A list, map or struct value as text: "C001, C002" and "open: 1, paid: 139"; nested ones in
+ * brackets and braces. Strings are not quoted.
+ */
+export function cellText(value: Cell, nested = false): string {
+  if (value === null || value === undefined) return nested ? "null" : "—";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number" || typeof value === "string") return String(value);
+  if (Array.isArray(value)) {
+    const text = value.map((v) => cellText(v, true)).join(", ");
+    return nested ? `[${text}]` : text;
+  }
+  const text = Object.entries(value)
+    .map(([k, v]) => `${k}: ${cellText(v, true)}`)
+    .join(", ");
+  return nested ? `{${text}}` : text;
+}
+
 /** A table cell, as text. Dates stay ISO (unambiguous and sortable); null is an em dash. */
-export function formatCell(value: Cell, format: ColumnFormat, scale: PercentScale = "fraction"): string {
+export function formatCell(value: Cell, format: ColumnFormat, scale: PercentScale = "points"): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "object") return cellText(value);
   if (isNumericFormat(format)) {
     const number = toNumber(value);
     return number === null ? String(value) : formatValue(number, format, "full", scale);
@@ -96,7 +132,7 @@ export function formatCell(value: Cell, format: ColumnFormat, scale: PercentScal
   // Midnight timestamps are dates; anything else keeps its time.
   if (format === "date" && typeof value === "string" && MIDNIGHT.test(value)) return value.slice(0, 10);
   if (typeof value === "number") return formatNumber(value);
-  return value;
+  return String(value);
 }
 
 const MONTH = new Intl.DateTimeFormat(LOCALE, { month: "short", year: "numeric", timeZone: "UTC" });
@@ -131,7 +167,7 @@ export function categoryLabels(values: readonly Cell[], column: string): string[
     if (all.every((d) => d.getUTCDate() === 1)) return all.map((d) => MONTH.format(d));
     return all.map((d) => DAY.format(d));
   }
-  return values.map((v) => (v === null ? "(none)" : typeof v === "boolean" ? (v ? "Yes" : "No") : String(v)));
+  return values.map((v) => (v === null ? "(none)" : typeof v === "boolean" ? (v ? "Yes" : "No") : cellText(v)));
 }
 
 /** "revenue_eur" → "Revenue eur". Column names are identifiers; this only makes them readable. */

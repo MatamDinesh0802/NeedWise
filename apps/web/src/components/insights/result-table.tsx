@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { Cell, ResultColumn } from "@/lib/analytics/api";
-import { formatCell, isNumericFormat, percentScale, toNumber, type PercentScale } from "@/lib/analytics/format";
+import { formatCell, isNumericFormat } from "@/lib/analytics/format";
 import { ariaSort, nextSort, sortRows, type SortState } from "@/lib/analytics/table";
 import { cn } from "@/lib/utils";
 
@@ -12,11 +12,6 @@ import { cn } from "@/lib/utils";
 export function ResultTable({ columns, rows, caption }: { columns: readonly ResultColumn[]; rows: readonly Cell[][]; caption: string }) {
   const [sort, setSort] = useState<SortState | null>(null);
   const sorted = useMemo(() => sortRows(rows, columns, sort), [rows, columns, sort]);
-  // Percent columns are read as ratios or points per column (see percentScale).
-  const scales = useMemo<PercentScale[]>(
-    () => columns.map((c, i) => (c.format === "percent" ? percentScale(rows.map((r) => toNumber(r[i] ?? null))) : "fraction")),
-    [columns, rows],
-  );
 
   if (columns.length === 0) return <p className="text-sm text-muted-foreground">No columns.</p>;
 
@@ -68,7 +63,7 @@ export function ResultTable({ columns, rows, caption }: { columns: readonly Resu
                       (row[c] ?? null) === null && "text-muted-foreground",
                     )}
                   >
-                    {formatCell(row[c] ?? null, column.format, scales[c])}
+                    {formatCell(row[c] ?? null, column.format)}
                   </td>
                 ))}
               </tr>

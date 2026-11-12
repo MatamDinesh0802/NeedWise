@@ -1,7 +1,7 @@
 /** Sorting for result tables. Framework-free and unit-tested. */
 
 import type { Cell, ResultColumn } from "@/lib/analytics/api";
-import { isNumericFormat, toNumber } from "@/lib/analytics/format";
+import { cellText, isNumericFormat, toNumber } from "@/lib/analytics/format";
 
 export type SortDirection = "asc" | "desc";
 export interface SortState {
@@ -20,7 +20,7 @@ function compareCells(a: Cell, b: Cell, numeric: boolean): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
   if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);
   // ISO dates sort correctly as text.
-  return collator.compare(String(a), String(b));
+  return collator.compare(cellText(a), cellText(b));
 }
 
 /**

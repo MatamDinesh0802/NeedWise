@@ -21,7 +21,8 @@ export function csvField(value: Cell): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
   if (typeof value === "boolean") return value ? "true" : "false";
-  const text = neutralize(value);
+  // A list, map or struct as JSON, so it re-imports as one value.
+  const text = neutralize(typeof value === "string" ? value : JSON.stringify(value));
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

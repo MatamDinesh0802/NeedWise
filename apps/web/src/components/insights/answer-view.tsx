@@ -7,7 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AnalyticsAnswer, AnswerStatus, Verification } from "@/lib/analytics/api";
-import { STATUS_LABELS } from "@/lib/analytics/ask";
+import { failureAdvice, STATUS_LABELS } from "@/lib/analytics/ask";
 import { shapeChart } from "@/lib/analytics/chart-data";
 import { formatCost, formatCount } from "@/lib/analytics/format";
 import { UNVERIFIED_EXPLANATION, verificationSummary } from "@/lib/analytics/narrative";
@@ -58,6 +58,7 @@ export function AnswerView({
   const chartQuery = answer.chart ? (refreshed[answer.chart.query] ?? answer.queries.find((q) => q.id === answer.chart!.query)) : undefined;
   const shaped = answer.chart && chartQuery ? shapeChart(answer.chart, chartQuery) : null;
   const chartRefreshed = answer.chart ? refreshed[answer.chart.query] !== undefined : false;
+  const advice = answer.status === "failed" ? failureAdvice(answer.error) : null;
 
   return (
     <article aria-labelledby={headingId} className="flex min-w-0 flex-col gap-4">
@@ -95,7 +96,7 @@ export function AnswerView({
           <AlertTitle>This question couldn&apos;t be answered</AlertTitle>
           <AlertDescription>
             <p>{answer.error ?? "Something went wrong while answering."}</p>
-            <p>Try rephrasing it, or name the metric and period you mean (for example “revenue by month in 2026”).</p>
+            {advice ? <p>{advice}</p> : null}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -103,6 +104,13 @@ export function AnswerView({
       {shaped?.kind === "chart" ? (
         <div className="rounded-xl border bg-card p-4">
           <AnalyticsChart data={shaped.data} />
+          {chartQuery?.truncated ? (
+            <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-900 dark:text-amber-200">
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              The chart shows only the first {formatCount(chartQuery.rows.length)} rows of {answer.chart?.query}: the query had more than the row limit, so the
+              chart is incomplete.
+            </p>
+          ) : null}
           {chartRefreshed ? (
             <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
               <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />

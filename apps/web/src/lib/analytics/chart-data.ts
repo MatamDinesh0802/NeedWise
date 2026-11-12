@@ -3,14 +3,15 @@
  * along x and one numeric series per line / bar colour. Framework-free and unit-tested.
  *
  * - `series` set: long format (one row per x and series value) is pivoted to one series each.
- * - otherwise: every `y` column is a series.
+ * - otherwise: every `y` column in the first one's unit is a series. There is one value axis, so
+ *   a measure in another unit (a count beside euros) is left to the table (`omitted`).
  * - Date categories are sorted by date; other categories keep the query's ORDER BY.
  * - More than 8 series: the 7 largest keep their colour and the rest fold into "Other", so a
  *   colour is never generated or reused (dataviz rule: no 9th hue).
  */
 
 import type { Cell, ChartSpec, ResultColumn, ValueFormat } from "@/lib/analytics/api";
-import { categoryLabels, humanize, measureLabel, parseIsoDate, percentScale, toNumber, type PercentScale } from "@/lib/analytics/format";
+import { categoryLabels, cellText, humanize, measureLabel, parseIsoDate, percentScale, toNumber, type PercentScale } from "@/lib/analytics/format";
 
 export const MAX_SERIES = 8;
 /** Bars past this many categories can't be read; the table shows them instead. */
@@ -37,6 +38,8 @@ export interface ChartData {
   percentScale: PercentScale;
   /** How many series were folded into "Other" (0 when none). */
   folded: number;
+  /** Measures the spec asked for that are in another unit than the first, so not drawn. */
+  omitted: string[];
 }
 
 export type ShapedChart =
@@ -52,7 +55,7 @@ interface Rows {
 }
 
 function keyOf(value: Cell): string {
-  return value === null ? "\u0000null" : `${typeof value}:${String(value)}`;
+  return value === null ? "\u0000null" : `${typeof value}:${typeof value === "object" ? JSON.stringify(value) : String(value)}`;
 }
 
 export function shapeChart(spec: ChartSpec, result: Rows): ShapedChart {
@@ -70,6 +73,9 @@ export function shapeChart(spec: ChartSpec, result: Rows): ShapedChart {
     return { kind: "unavailable", reason: `The chart refers to ${missing.map((m) => `“${m}”`).join(", ")}, which ${missing.length === 1 ? "isn't a column" : "aren't columns"} of ${spec.query}.` };
   }
   if (yis.length === 0) return { kind: "unavailable", reason: "The chart doesn't say which column to plot." };
+  const unit = result.columns[yis[0]].format;
+  const measures = spec.y.map((name, i) => ({ name, index: yis[i] })).filter((m, i) => i === 0 || result.columns[m.index].format === unit);
+  const omitted = spec.y.filter((name) => !measures.some((m) => m.name === name)).map(measureLabel);
   if (result.rows.length === 0) return { kind: "unavailable", reason: `${spec.query} returned no rows, so there is nothing to chart.` };
 
   // Categories in first-appearance order (dates sorted below).
@@ -107,16 +113,16 @@ export function shapeChart(spec: ChartSpec, result: Rows): ShapedChart {
       const key = keyOf(raw);
       let entry = byKey.get(key);
       if (!entry) {
-        entry = { key, label: raw === null ? "(none)" : String(raw), values: blank() };
+        entry = { key, label: raw === null ? "(none)" : cellText(raw), values: blank() };
         byKey.set(key, entry);
       }
       add(entry.values, categoryIndex.get(keyOf(row[xi] ?? null))!, numeric(row[yi], spec.y[0]));
     }
     series = [...byKey.values()];
   } else {
-    series = spec.y.map((name, i) => {
+    series = measures.map(({ name, index }) => {
       const values = blank();
-      for (const row of result.rows) add(values, categoryIndex.get(keyOf(row[xi] ?? null))!, numeric(row[yis[i]], name));
+      for (const row of result.rows) add(values, categoryIndex.get(keyOf(row[xi] ?? null))!, numeric(row[index], name));
       return { key: name, label: measureLabel(name), values };
     });
   }
@@ -170,6 +176,7 @@ export function shapeChart(spec: ChartSpec, result: Rows): ShapedChart {
       yFormat: spec.y_format,
       percentScale: percentScale(all),
       folded,
+      omitted: si >= 0 ? [] : omitted,
     },
   };
 }

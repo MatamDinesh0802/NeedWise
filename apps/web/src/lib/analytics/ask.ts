@@ -73,3 +73,15 @@ export const STATUS_LABELS: Record<AnswerStatus, string> = {
 export function verifiedLabel(verified: number, total: number): string | null {
   return total === 0 ? null : `${verified}/${total} figures verified`;
 }
+
+/**
+ * What to suggest under a failed answer's error. The API's errors already say what to do when
+ * the cause is not the question (the model is unavailable: "Try again later"; too slow; an
+ * unusable reply): then nothing is added. Only an error that names no remedy gets the hint to
+ * rephrase.
+ */
+export function failureAdvice(error: string | null | undefined): string | null {
+  const text = (error ?? "").toLowerCase();
+  if (/\bunavailable\b|\btry (again|asking again|a narrower)\b|\btoo long\b|\bbusy\b/.test(text)) return null;
+  return "Try rephrasing it, or name the metric and period you mean (for example “revenue by month in 2026”).";
+}

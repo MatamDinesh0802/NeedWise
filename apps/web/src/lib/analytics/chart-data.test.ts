@@ -35,6 +35,21 @@ describe("shapeChart", () => {
     expect(data.folded).toBe(0);
   });
 
+  it("draws only the measures in the first one's unit, and says which it left out", () => {
+    const columns: ResultColumn[] = [
+      { name: "month", type: "DATE", format: "date" },
+      { name: "revenue", type: "DOUBLE", format: "eur" },
+      { name: "customers_billed", type: "BIGINT", format: "number" },
+    ];
+    const rows = [
+      ["2026-01-01", 3720000, 18],
+      ["2026-02-01", 3860000, 19],
+    ];
+    const data = chart(shapeChart(spec({ type: "line", y: ["revenue", "customers_billed"], series: null }), { columns, rows }));
+    expect(data.series.map((s) => s.label)).toEqual(["Revenue"]);
+    expect(data.omitted).toEqual(["Customers billed"]);
+  });
+
   it("uses each y column as a series when there is no series column, keeping query order", () => {
     const data = chart(shapeChart(spec({ type: "bar", x: "name", y: ["growth_eur"], series: null, query: "Q2" }), topDrivers));
     expect(data.categories.map((c) => c.label)).toEqual(["Bluefin Freight", "Polaris Parcel", "Nordlicht \"Logistik\", GmbH"]);

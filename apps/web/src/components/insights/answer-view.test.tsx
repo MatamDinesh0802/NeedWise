@@ -59,9 +59,21 @@ describe("AnswerView", () => {
     expect(html).not.toContain("<figure");
   });
 
-  it("notes truncated results", () => {
+  it("notes truncated results, next to the chart too", () => {
     const truncated = answer({ queries: [{ ...answer().queries[0], truncated: true }] });
-    expect(renderToStaticMarkup(<AnswerView answer={truncated} />)).toContain("Only the first 6 rows are shown and in the CSV");
+    const html = renderToStaticMarkup(<AnswerView answer={truncated} />);
+    expect(html).toContain("Only the first 6 rows are shown and in the CSV");
+    expect(html).toContain("The chart shows only the first 6 rows of Q1");
+    expect(renderToStaticMarkup(<AnswerView answer={answer()} />)).not.toContain("The chart shows only the first");
+  });
+
+  it("does not tell people to rephrase when the model was down", () => {
+    const failed = (error: string) =>
+      renderToStaticMarkup(<AnswerView answer={answer({ status: "failed", error, narrative: "", chart: null, queries: [] })} />);
+    const down = failed("The language model is unavailable. Try again later.");
+    expect(down).toContain("Try again later.");
+    expect(down).not.toContain("Try rephrasing");
+    expect(failed("Something went wrong while answering this question.")).toContain("Try rephrasing");
   });
 });
 

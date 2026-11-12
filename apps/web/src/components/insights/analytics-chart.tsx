@@ -11,11 +11,13 @@ import {
   GAP,
   groupedBars,
   indexAt,
+  LABEL_ANGLE,
   lastIndex,
   linePath,
   MAX_BAR,
   maxIndex,
   PLOT_HEIGHT,
+  shortLabel,
   type Geometry,
 } from "@/lib/analytics/chart-geometry";
 import { formatValue } from "@/lib/analytics/format";
@@ -24,6 +26,10 @@ import { cn } from "@/lib/utils";
 const color = (slot: number) => `var(--viz-${slot})`;
 /** Points on a line get a marker each while they are few enough to read. */
 const MAX_MARKERS = 16;
+/** Up to this many lines are named at their end, so no line is identified by colour alone. */
+const MAX_DIRECT_LABELS = 4;
+/** Closest two end labels may be, vertically, in pixels. */
+const LABEL_SPACING = 13;
 
 /**
  * A chart from the answer's chart spec: line, grouped bar or stacked bar, drawn as SVG.
@@ -45,6 +51,11 @@ export function AnalyticsChart({ data }: { data: ChartData }) {
       {data.folded > 0 ? (
         <p className="text-xs text-muted-foreground">
           The {data.folded} smallest series are combined as “Other”; the query&apos;s table lists each one.
+        </p>
+      ) : null}
+      {data.omitted.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Not drawn: {data.omitted.join(", ")}, in another unit than {data.series[0]?.label ?? "the chart"}. The query&apos;s table has the values.
         </p>
       ) : null}
     </figure>
@@ -123,7 +134,10 @@ function Plot({ data }: { data: ChartData }) {
   const single = data.series.length === 1 ? data.series[0] : null;
   const end = data.type === "line" && single ? lastIndex(single.values) : -1;
   const endLabel = single && end >= 0 ? fmt(single.values[end]!) : null;
-  const g = chartGeometry(data, width, endLabel);
+  const named = data.type === "line" && data.series.length > 1 && data.series.length <= MAX_DIRECT_LABELS;
+  const names = named ? data.series.map((s) => shortLabel(s.label)) : [];
+  const longestName = names.reduce<string | null>((a, b) => (a === null || b.length > a.length ? b : a), null);
+  const g = chartGeometry(data, width, endLabel ?? longestName);
 
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -182,7 +196,7 @@ function Plot({ data }: { data: ChartData }) {
           <rect x={g.x(active) - g.band / 2} y={g.margin.top} width={g.band} height={PLOT_HEIGHT} className="fill-muted" />
         ) : null}
         {data.type === "line" ? (
-          <LineMarks data={data} g={g} active={active} end={end} endLabel={endLabel} />
+          <LineMarks data={data} g={g} active={active} end={end} endLabel={endLabel} names={names} />
         ) : data.type === "bar" ? (
           <BarMarks data={data} g={g} fmt={fmt} />
         ) : (
@@ -245,6 +259,26 @@ function Grid({ g }: { g: Geometry }) {
 
 function XLabels({ data, g }: { data: ChartData; g: Geometry }) {
   const y = g.margin.top + PLOT_HEIGHT + 18;
+  if (g.rotateLabels) {
+    const top = g.margin.top + PLOT_HEIGHT + 10;
+    return (
+      <g>
+        {data.categories.map((category, i) => (
+          <text
+            key={category.key}
+            x={g.x(i)}
+            y={top}
+            dy="0.32em"
+            textAnchor="end"
+            transform={`rotate(-${LABEL_ANGLE} ${g.x(i)} ${top})`}
+            className="fill-muted-foreground text-[11px]"
+          >
+            {shortLabel(category.label)}
+          </text>
+        ))}
+      </g>
+    );
+  }
   return (
     <g>
       {data.categories.map((category, i) =>
@@ -258,18 +292,36 @@ function XLabels({ data, g }: { data: ChartData; g: Geometry }) {
   );
 }
 
+/** Where each line's name goes at its end: at its last value, pushed apart so none overlap. */
+function nameSlots(data: ChartData, g: Geometry): { key: string; x: number; y: number; index: number }[] {
+  const slots = data.series
+    .map((s, index) => {
+      const last = lastIndex(s.values);
+      return last < 0 ? null : { key: s.key, x: g.x(last), y: g.y(s.values[last]!), index };
+    })
+    .filter((slot): slot is { key: string; x: number; y: number; index: number } => slot !== null)
+    .sort((a, b) => a.y - b.y);
+  for (let i = 1; i < slots.length; i++) {
+    if (slots[i].y - slots[i - 1].y < LABEL_SPACING) slots[i].y = slots[i - 1].y + LABEL_SPACING;
+  }
+  return slots;
+}
+
 function LineMarks({
   data,
   g,
   active,
   end,
   endLabel,
+  names,
 }: {
   data: ChartData;
   g: Geometry;
   active: number | null;
   end: number;
   endLabel: string | null;
+  /** Each series' name, drawn at the end of its line (2 to 4 series); empty otherwise. */
+  names: readonly string[];
 }) {
   const showAll = data.categories.length <= MAX_MARKERS;
   return (
@@ -317,6 +369,13 @@ function LineMarks({
           {endLabel}
         </text>
       ) : null}
+      {names.length > 0
+        ? nameSlots(data, g).map((slot) => (
+            <text key={`name-${slot.key}`} x={slot.x + 9} y={slot.y} dy="0.32em" className="fill-foreground text-[11px] font-medium" data-series-name="">
+              {names[slot.index]}
+            </text>
+          ))
+        : null}
     </g>
   );
 }

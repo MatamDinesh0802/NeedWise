@@ -7,7 +7,7 @@
  */
 
 import { valueExtent, type ChartData } from "@/lib/analytics/chart-data";
-import { formatValue, niceTicks } from "@/lib/analytics/format";
+import { axisLabels, niceTicks } from "@/lib/analytics/format";
 
 export const PLOT_HEIGHT = 240;
 export const MAX_BAR = 24;
@@ -15,6 +15,10 @@ export const GAP = 2;
 export const RADIUS = 4;
 const CHAR_WIDTH = 6.4; // ~11-12px system sans
 const AXIS_FONT_GAP = 8;
+/** Rotated category labels (bars that would otherwise lose labels): angle, and longest text. */
+export const LABEL_ANGLE = 35;
+export const MAX_LABEL_CHARS = 20;
+const LINE_HEIGHT = 14;
 
 export interface Geometry {
   width: number;
@@ -31,6 +35,13 @@ export interface Geometry {
   band: number;
   /** Show every n-th category label so labels never overlap. */
   labelStep: number;
+  /** Bar labels are drawn at an angle (and shortened), so every category keeps its label. */
+  rotateLabels: boolean;
+}
+
+/** A category label as drawn under a rotated axis: at most MAX_LABEL_CHARS characters. */
+export function shortLabel(label: string): string {
+  return label.length > MAX_LABEL_CHARS ? `${label.slice(0, MAX_LABEL_CHARS - 1).trimEnd()}…` : label;
 }
 
 export function estimateTextWidth(text: string): number {
@@ -47,7 +58,7 @@ export function labelStep(labels: readonly string[], slot: number): number {
 export function chartGeometry(data: ChartData, width: number, endLabel: string | null = null): Geometry {
   const { min, max } = valueExtent(data);
   const ticks = niceTicks(min, max);
-  const tickLabels = ticks.map((t) => formatValue(t, data.yFormat, "compact", data.percentScale));
+  const tickLabels = axisLabels(ticks, data.yFormat, data.percentScale);
   let left = Math.ceil(Math.max(...tickLabels.map(estimateTextWidth)) + AXIS_FONT_GAP + 4);
   let right = endLabel ? Math.ceil(estimateTextWidth(endLabel) + 12) : 12;
   if (data.type === "line" && data.categories.length > 1) {
@@ -57,6 +68,15 @@ export function chartGeometry(data: ChartData, width: number, endLabel: string |
   }
   const margin = { top: 12, right, bottom: 28, left };
   const plotWidth = Math.max(40, width - margin.left - margin.right);
+  const labels = data.categories.map((c) => c.label);
+  // Bars name categories (customers, countries): thinning their labels leaves bars nobody can
+  // name, so they turn to an angle instead, as long as one line of text fits per bar.
+  const slot = plotWidth / Math.max(1, data.categories.length);
+  const rotateLabels = data.type !== "line" && labelStep(labels, slot) > 1 && slot >= LINE_HEIGHT;
+  if (rotateLabels) {
+    const longest = Math.max(...labels.map((l) => estimateTextWidth(shortLabel(l))));
+    margin.bottom = Math.ceil(Math.min(130, longest * Math.sin((LABEL_ANGLE * Math.PI) / 180) + 22));
+  }
   const t0 = ticks[0];
   const t1 = ticks[ticks.length - 1];
   const y = (value: number) => margin.top + (1 - (value - t0) / (t1 - t0 || 1)) * PLOT_HEIGHT;
@@ -80,10 +100,8 @@ export function chartGeometry(data: ChartData, width: number, endLabel: string |
     y,
     x,
     band,
-    labelStep: labelStep(
-      data.categories.map((c) => c.label),
-      band,
-    ),
+    labelStep: rotateLabels ? 1 : labelStep(labels, band),
+    rotateLabels,
   };
 }
 

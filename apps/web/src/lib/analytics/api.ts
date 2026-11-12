@@ -65,8 +65,11 @@ export type AnalyticsModel = AnalyticsModelAvailable | AnalyticsModelUnavailable
 export type AnswerStatus = "answered" | "no_access" | "failed";
 export type ChartType = "line" | "bar" | "stacked_bar" | "table";
 
-/** A row value: JSON number, string, boolean or null. Dates arrive as ISO strings. */
-export type Cell = number | string | boolean | null;
+/**
+ * A row value: JSON number, string, boolean or null. Dates arrive as ISO strings. A LIST column
+ * (array_agg, list) arrives as an array, a MAP or STRUCT as an object.
+ */
+export type Cell = number | string | boolean | null | Cell[] | { [key: string]: Cell };
 
 export interface ChartSpec {
   type: ChartType;

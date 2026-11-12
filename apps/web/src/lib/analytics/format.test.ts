@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  axisLabels,
   categoryLabels,
   formatCell,
   formatCost,
@@ -49,23 +50,30 @@ describe("formatNumber and formatPercent", () => {
     expect(formatNumber(9999, "compact")).toBe("9,999");
   });
 
-  it("writes ratios and points as percentages", () => {
-    expect(formatPercent(0.425)).toBe("42.5%");
+  it("writes points as percentages, and ratios when asked", () => {
+    expect(formatPercent(42.5)).toBe("42.5%");
     expect(formatPercent(0.4, "fraction")).toBe("40%");
     expect(formatPercent(42.5, "points")).toBe("42.5%");
   });
 
-  it("detects whether a percent column holds ratios or points", () => {
-    expect(percentScale([0.2, 0.45, null, 1])).toBe("fraction");
-    expect(percentScale([12.5, 40])).toBe("points");
-    expect(percentScale([null])).toBe("points");
+  it("never guesses ratios from the values: growth of 0.6 points is 0.6%", () => {
+    expect(percentScale([0.6, 0.9, -0.4])).toBe("points");
+    expect(percentScale([0.42, 1.5])).toBe("points");
+    expect(formatValue(0.6, "percent")).toBe("0.6%");
   });
 
   it("dispatches on the format", () => {
     expect(formatValue(5020000, "eur", "compact")).toBe("€5.02M");
-    expect(formatValue(0.12, "percent")).toBe("12%");
-    expect(formatValue(12, "percent", "full", "points")).toBe("12%");
+    expect(formatValue(12, "percent")).toBe("12%");
+    expect(formatValue(0.12, "percent", "full", "fraction")).toBe("12%");
     expect(formatValue(21, "number")).toBe("21");
+  });
+
+  it("labels one axis in one notation", () => {
+    expect(axisLabels([0, 5000, 10000, 15000, 20000], "eur")).toEqual(["€0", "€5K", "€10K", "€15K", "€20K"]);
+    expect(axisLabels([0, 5000, 10000], "number")).toEqual(["0", "5K", "10K"]);
+    expect(axisLabels([0, 2000, 4000, 6000], "eur")).toEqual(["€0", "€2,000", "€4,000", "€6,000"]);
+    expect(axisLabels([0, 20, 40], "percent")).toEqual(["0%", "20%", "40%"]);
   });
 });
 
@@ -86,11 +94,19 @@ describe("formatCell", () => {
   it("formats by column format", () => {
     expect(formatCell(5020000, "eur")).toBe("€5,020,000");
     expect(formatCell("5020000.10", "eur")).toBe("€5,020,000.10");
-    expect(formatCell(0.25, "percent")).toBe("25%");
-    expect(formatCell(25, "percent", "points")).toBe("25%");
+    expect(formatCell(25, "percent")).toBe("25%");
+    expect(formatCell(0.25, "percent", "fraction")).toBe("25%");
     expect(formatCell(null, "eur")).toBe("—");
     expect(formatCell(true, "text")).toBe("Yes");
     expect(formatCell("Bluefin Freight", "text")).toBe("Bluefin Freight");
+  });
+
+  it("writes lists, maps and structs as text, never as objects", () => {
+    expect(formatCell(["C001", "C002", "C003"], "text")).toBe("C001, C002, C003");
+    expect(formatCell({ open: 1, paid: 139, void: 3 }, "text")).toBe("open: 1, paid: 139, void: 3");
+    expect(formatCell({ top: 213238 }, "number")).toBe("top: 213238");
+    expect(formatCell([[1, 2], { a: null }], "text")).toBe("[1, 2], {a: null}");
+    expect(formatCell([], "text")).toBe("");
   });
 
   it("shows midnight timestamps as dates and keeps real times", () => {

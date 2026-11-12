@@ -15,6 +15,12 @@ describe("csvField", () => {
     expect(csvField("two\nlines")).toBe('"two\nlines"');
   });
 
+  it("writes lists, maps and structs as one JSON field", () => {
+    expect(csvField(["C001", "C002"])).toBe('"[""C001"",""C002""]"');
+    expect(csvField({ open: 1, paid: 139 })).toBe('"{""open"":1,""paid"":139}"');
+    expect(toCsv(["line", "customers"], [["AMR-200", ["C001", "C002"]]]).slice(1)).toBe('line,customers\r\nAMR-200,"[""C001"",""C002""]"\r\n');
+  });
+
   it("neutralizes text that spreadsheets would run as a formula", () => {
     expect(csvField("=HYPERLINK(\"http://evil\")")).toBe('"\'=HYPERLINK(""http://evil"")"');
     expect(csvField("+1")).toBe("'+1");

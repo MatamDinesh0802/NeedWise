@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { monthlyRevenue } from "@/test/analytics-fixtures";
 
 import { shapeChart, type ChartData } from "./chart-data";
-import { barPath, chartGeometry, groupedBars, indexAt, labelStep, lastIndex, linePath, MAX_BAR, maxIndex, PLOT_HEIGHT } from "./chart-geometry";
+import { barPath, chartGeometry, groupedBars, indexAt, labelStep, lastIndex, linePath, MAX_BAR, maxIndex, PLOT_HEIGHT, shortLabel } from "./chart-geometry";
 
 function data(type: ChartData["type"]): ChartData {
   const shaped = shapeChart({ type, query: "Q1", x: "month", y: ["revenue_eur"], series: "product_line", title: "t", y_format: "eur" }, monthlyRevenue);
@@ -19,6 +19,38 @@ describe("chartGeometry", () => {
     expect(g.y(g.ticks.at(-1)!)).toBe(g.margin.top);
     expect(g.tickLabels.at(-1)).toBe("€2M");
     expect(g.height).toBe(g.margin.top + PLOT_HEIGHT + g.margin.bottom); // the x-axis band is inside the height
+  });
+
+  it("labels a whole axis in one notation", () => {
+    const columns = [
+      { name: "name", type: "VARCHAR", format: "text" as const },
+      { name: "n", type: "BIGINT", format: "number" as const },
+    ];
+    const shaped = shapeChart(
+      { type: "bar", query: "Q1", x: "name", y: ["n"], series: null, title: "t", y_format: "number" },
+      { columns, rows: [["a", 2000], ["b", 18000]] },
+    );
+    if (shaped.kind !== "chart") throw new Error("expected a chart");
+    expect(chartGeometry(shaped.data, 600).tickLabels).toEqual(["0", "5K", "10K", "15K", "20K"]);
+  });
+
+  it("turns bar labels to an angle instead of dropping them when they do not fit", () => {
+    const columns = [
+      { name: "customer", type: "VARCHAR", format: "text" as const },
+      { name: "revenue", type: "DOUBLE", format: "eur" as const },
+    ];
+    const names = ["Tagus Distribution", "Brightwater Beverages", "Juniper Books", "Alder Home Goods", "Cobalt Couriers", "Duna Pharma", "Elm Street Grocers", "Fjordline Cold Chain", "Granite Tools", "Harbor Logistics", "Iris Textiles", "Juniper Two"];
+    const shaped = shapeChart(
+      { type: "bar", query: "Q1", x: "customer", y: ["revenue"], series: null, title: "t", y_format: "eur" },
+      { columns, rows: names.map((n, i) => [n, 100000 * (i + 1)]) },
+    );
+    if (shaped.kind !== "chart") throw new Error("expected a chart");
+    const g = chartGeometry(shaped.data, 560);
+    expect(g.rotateLabels).toBe(true);
+    expect(g.labelStep).toBe(1); // every bar keeps its label
+    expect(g.margin.bottom).toBeGreaterThan(28);
+    expect(shortLabel("Brightwater Beverages and Sons")).toBe("Brightwater Beverag…");
+    expect(chartGeometry(data("stacked_bar"), 600).rotateLabels).toBe(false); // three months fit
   });
 
   it("centres bars in equal slots and spreads line points edge to edge", () => {
