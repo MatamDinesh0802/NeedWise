@@ -235,7 +235,7 @@ Uncommon ports were chosen on purpose: 8080, 8000 and 3000 are often taken by ot
 |---|---|---|---|
 | Dev | Laptop, Docker Compose | Local (Ollama) | Synthetic "Acme Robotics" corpus |
 | Public demo | One cloud VM, Docker Compose | A low-cost paid API through the adapter (avoids GPU hosting cost) | Acme corpus, reset nightly, demo logins per role |
-| Self-hosted customer | Their servers: Compose, later Helm | Local or bring-your-own API keys | Theirs |
+| Self-hosted customer | Their servers: Compose, or Kubernetes with the Helm chart ([deploy/kubernetes.md](deploy/kubernetes.md); validated, not yet installed on a cluster) | Local or bring-your-own API keys | Theirs |
 | WorkMind Cloud (paid, later) | Kubernetes, managed Postgres/Qdrant | Per-tenant policy | Multi-tenant |
 
 ---
@@ -1301,7 +1301,7 @@ workmind/
 │   ├── postgres/                     # first-start init: databases and roles
 │   ├── keycloak/                     # realm configuration (no passwords)
 │   ├── caddy/
-│   └── helm/                         # v1.0
+│   └── helm/                         # the Helm chart (docs/deploy/kubernetes.md)
 ├── seed/                             # Acme Robotics synthetic company generator + corpus
 ├── evals/                            # datasets, runners, results, reports
 ├── ee/                               # Enterprise features (separate license, see ROADMAP §4)
@@ -1318,8 +1318,8 @@ workmind/
 | Module boundaries | Modules talk through their public service interfaces only; enforced with import-linter |
 | Commits / releases | Conventional Commits → release-please (changelog, version tags) |
 | CI (GitHub Actions) | Lint → typecheck → unit → integration → authz matrix + tenant-isolation tests → eval smoke + red team → build images → Trivy scan |
-| Dependencies | Dependabot (uv, npm, Docker, GitHub Actions), weekly and grouped. Lockfiles committed. Image versions pinned. |
-| Docs | ADRs in `docs/adr/`. Docs site (Starlight) from v0.4. |
+| Dependencies | Dependabot (uv, npm, Docker, Compose, GitHub Actions), weekly and grouped. Lockfiles committed. Images pinned by digest, actions by commit SHA ([supply chain](security/supply-chain.md)). |
+| Docs | ADRs in `docs/adr/`. *As built:* the docs site is MkDocs Material (`mkdocs.yml`, `make docs`, a strict build in CI), with the configuration and HTTP API reference generated from the code. |
 | Security | gitleaks pre-commit + CI, DCO sign-off check, `SECURITY.md` with a private disclosure process |
 
 **Test pyramid:**
