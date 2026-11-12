@@ -1,0 +1,33 @@
+name: Upgrade test
+
+# Run by hand (Actions > Upgrade test > Run workflow), before a release: starts the given older
+# release as a throwaway stack, seeds it, creates data through its API, backs it up, upgrades it
+# in place to this commit and checks that the data survived and the new features work
+# (scripts/upgrade-test.sh, docs/operations/upgrade.md). It builds both releases' images.
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: Release tag to upgrade from
+        required: true
+        default: v0.1.0
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade:
+    name: Upgrade from ${{ inputs.from }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the release tags
+      - name: Upgrade test
+        env:
+          # No embedding server on the runner: the compose `embeddings` profile (CPU llama.cpp).
+          EMBEDDINGS: container
+          FROM_TAG: ${{ inputs.from }}
+          UPGRADE_WORK_DIR: ${{ runner.temp }}/wm-upgrade
+        run: scripts/upgrade-test.sh "$FROM_TAG"

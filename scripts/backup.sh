@@ -198,6 +198,7 @@ if [[ -d $OBJECTS_DIR ]]; then
   info "$OBJECT_FILES files"
 else
   warn "no object storage at $OBJECTS_DIR"
+  : >"$TARGET/objects.sha256"
 fi
 LICENSE_FILES=""
 for name in license.key dev-public.key; do # never dev-signing.key: a private key

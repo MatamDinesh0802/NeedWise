@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from http.cookiejar import Cookie, CookieJar, DefaultCookiePolicy
 from pathlib import Path
 from typing import Any
@@ -70,8 +71,14 @@ class Client:
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read()
 
+    @staticmethod
+    def request(url: str, **kwargs: Any) -> urllib.request.Request:
+        if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+            raise Failed(f"not an http(s) URL: {url}")
+        return urllib.request.Request(url, **kwargs)  # noqa: S310 (checked just above)
+
     def sign_in(self, email: str) -> None:
-        status, page = self._open(urllib.request.Request(f"{self.base}/api/auth/login?return_to=/"))
+        status, page = self._open(self.request(f"{self.base}/api/auth/login?return_to=/"))
         for _ in range(3):  # Organizations: the email first, then the password
             text = page.decode(errors="replace")
             form = re.search(r'<form[^>]*\bid="kc-form-login"[^>]*>', text)
@@ -82,9 +89,7 @@ class Client:
                 words = " ".join(re.sub(r"<[^>]+>", " ", text).split())[:200]
                 raise Failed(f"sign-in of {email}: HTTP {status}: {words}")
             data = urllib.parse.urlencode({"username": email, "password": PASSWORD}).encode()
-            status, page = self._open(
-                urllib.request.Request(html.unescape(action.group(1)), data=data)
-            )
+            status, page = self._open(self.request(html.unescape(action.group(1)), data=data))
             if self.signed_in:
                 return
         raise Failed(f"sign-in of {email}: still on Keycloak (HTTP {status})")
@@ -109,9 +114,7 @@ class Client:
             headers["Content-Type"] = content_type
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-        request = urllib.request.Request(
-            f"{self.base}{path}", data=data, method=method, headers=headers
-        )
+        request = self.request(f"{self.base}{path}", data=data, method=method, headers=headers)
         status, payload = self._open(request)
         if status not in expect:
             raise Failed(f"{method} {path}: HTTP {status} {payload[:300].decode(errors='replace')}")
@@ -185,7 +188,11 @@ def upgrade_before(base: str, state_file: str) -> int:
     group = erin.call(
         "POST",
         "/api/v1/admin/groups",
-        {"slug": "upgrade-testers", "name": "Upgrade testers", "description": "kept across versions"},
+        {
+            "slug": "upgrade-testers",
+            "name": "Upgrade testers",
+            "description": "kept across versions",
+        },
     )
     erin.call("PUT", f"/api/v1/admin/groups/{group['id']}/members/users/{bob_id}")
     bob = signed_in(base, "bob@acme.test")
@@ -255,8 +262,9 @@ def upgrade_after(base: str, state_file: str) -> int:
     )
     edition = erin.call("GET", "/api/v1/edition")
     report.check("edition endpoint (new)", edition["edition"] == "community", edition["edition"])
-    usage = erin.call("GET", "/api/v1/usage/summary")
-    report.check("usage summary (new)", isinstance(usage, dict), ", ".join(sorted(usage)[:4]))
+    today = datetime.now(timezone.utc).date()
+    usage = erin.call("GET", f"/api/v1/usage/summary?from={today - timedelta(days=30)}&to={today}")
+    report.check("usage summary (new)", "budgets" in usage, ", ".join(sorted(usage)))
 
     # Knowledge, new since v0.1: a collection for the department made in the old version.
     collection = erin.call(

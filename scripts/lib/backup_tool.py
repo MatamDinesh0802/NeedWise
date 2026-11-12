@@ -205,6 +205,13 @@ def qdrant_restore(args: argparse.Namespace) -> None:
             f"qdrant {name}: {points} points restored, {info['points']} in the manifest "
             f"{'OK' if ok else 'MISMATCH'} ({time.monotonic() - started:.1f}s)"
         )
+    if args.prune:
+        # The target becomes the backup: a WorkMind collection the backup does not have (an
+        # older embedding model's, another deployment's) would only hold stale chunks.
+        for name in collections(base, args.include, args.exclude):
+            if name not in manifest["qdrant"]["collections"]:
+                call("DELETE", f"{base}/collections/{name}")
+                log(f"qdrant {name}: not in the backup, deleted")
     if failed:
         raise SystemExit(1)
 
@@ -240,10 +247,9 @@ def hash_tree(args: argparse.Namespace) -> None:
 
 def verify_tree(args: argparse.Namespace) -> None:
     expected = {}
-    for line in Path(args.list).read_text().splitlines():
-        if line.strip():
-            digest, relative = line.split("  ", 1)
-            expected[relative] = digest
+    for line in _read_lines(Path(args.list)):  # no list: the backup had no objects
+        digest, relative = line.split("  ", 1)
+        expected[relative] = digest
     actual = {relative: digest for relative, _size, digest in tree(Path(args.dir))}
     missing = sorted(set(expected) - set(actual))
     changed = sorted(r for r in expected if r in actual and actual[r] != expected[r])
@@ -460,6 +466,9 @@ def main() -> None:
     sub = commands.add_parser("qdrant-restore")
     sub.add_argument("--url", required=True)
     sub.add_argument("--backup", required=True)
+    sub.add_argument("--prune", action="store_true", help="delete collections not in the backup")
+    sub.add_argument("--include", default=os.environ.get("QDRANT_INCLUDE", DEFAULT_INCLUDE))
+    sub.add_argument("--exclude", default=os.environ.get("QDRANT_EXCLUDE", DEFAULT_EXCLUDE))
     sub.set_defaults(handler=qdrant_restore)
     sub = commands.add_parser("hash-tree")
     sub.add_argument("dir")

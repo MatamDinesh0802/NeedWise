@@ -69,6 +69,15 @@ running_services() { compose ps --status running --services 2>/dev/null || true;
 
 is_running() { running_services | grep -qx "$1"; }
 
+# The api and worker containers run as uid 10001 and write new objects into the bind-mounted
+# object storage. On Linux a bind mount keeps the host's owners, so a tree created or extracted
+# by another user must be handed to that uid (Docker Desktop on macOS maps owners itself).
+own_objects() {
+  if [[ $(uname -s) == Linux ]]; then
+    docker run --rm -v "$1:/objects" "${ALPINE_IMAGE:-alpine:3.22}" chown -R "${OBJECTS_UID:-10001}" /objects
+  fi
+}
+
 # Elapsed seconds since $1 (a `date +%s` value).
 since() { echo $(($(date +%s) - $1)); }
 

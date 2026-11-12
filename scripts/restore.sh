@@ -121,7 +121,7 @@ T_POSTGRES=$(since "$step")
 # --- 5. Qdrant ---------------------------------------------------------------------------------
 step=$(date +%s)
 say "Qdrant ($QDRANT_URL)"
-tool qdrant-restore --url "$QDRANT_URL" --backup "$BACKUP" || MISMATCH="$MISMATCH points"
+tool qdrant-restore --url "$QDRANT_URL" --backup "$BACKUP" --prune || MISMATCH="$MISMATCH points"
 T_QDRANT=$(since "$step")
 
 # --- 6. Objects and license --------------------------------------------------------------------
@@ -136,6 +136,7 @@ if [[ -f "$BACKUP/objects.tar.gz" ]]; then
   tar -C "$OBJECTS_DIR" -xzf "$BACKUP/objects.tar.gz"
 fi
 tool verify-tree "$OBJECTS_DIR" "$BACKUP/objects.sha256" || MISMATCH="$MISMATCH objects"
+own_objects "$OBJECTS_DIR"
 if [[ -d "$BACKUP/license" ]]; then
   mkdir -p "$LICENSE_DIR"
   for file in "$BACKUP"/license/*; do
