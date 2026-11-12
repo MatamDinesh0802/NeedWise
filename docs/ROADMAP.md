@@ -421,7 +421,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
-### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged, and the load test is run and tuned; the v1.0 benchmarks, a cluster install, the case study and the final review remain
+### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged, the load test is run and tuned, and the v1.0 benchmarks and the case study are written; a cluster install, the final review and the release remain
 
 **Goal:** a release companies can trust in production.
 
@@ -460,9 +460,16 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - [x] **Browser end-to-end suite** in CI (`e2e/browser`): 162 tests pass on the rebuilt stack,
   including the 3 that call the model; the API end-to-end tests pass too (16, model tests
   included).
-- [ ] **Benchmarks for v1.0** (quality, latency, cost, leak rate) and the v1.0 release itself
-  ([releasing](operations/releasing.md)).
-- [ ] **A case study write-up.**
+- [x] **Benchmarks for v1.0** ([v1.0 benchmarks](benchmarks/v1.0.md)): every suite at commit
+  `1b62d52` with Claude Sonnet 5.5, one run each. 0 leaks in 312 retrieval checks, 118 red-team
+  answers (59 attacks in `single` and `auto` mode) and 51 analytics answers; 0 violations;
+  81/82 correct, faithfulness 99.5%; cross-department 14/15 with one search, 15/15 with agents;
+  routing 53/56; text-to-SQL 33/36; chat time to first token p50 0.8 s (`single`), 2.6 s
+  (`auto`); $0.0071 per chat answer (`single`), $0.0114 (`auto`); the whole run $8.74. Synthetic
+  company, small datasets, the judge from the same model family.
+- [x] **A case study** ([case study](case-study.md)) of the build for the synthetic Acme Robotics:
+  choices, phases, results, what went wrong, costs, lessons.
+- [ ] **The v1.0 release** itself ([releasing](operations/releasing.md)): no public repository yet.
 - [ ] **A final review** of the merged code.
 
 **Scope:**

@@ -173,8 +173,10 @@ nav:
           - 0011 Open-core boundary and license keys: adr/0011-open-core-boundary-and-license-keys.md
   - Evaluation:
       - evals/README.md
+      - v1.0 benchmarks: benchmarks/v1.0.md
       - Load testing: load-testing.md
       - Load benchmarks: benchmarks/load.md
+  - Case study: case-study.md
   - Roadmap: ROADMAP.md
   - Devlog:
       - devlog/index.md

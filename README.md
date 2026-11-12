@@ -18,9 +18,9 @@ Engineering…) handle department work. Actions that leave the system need human
 - **Permission-safe by construction.** Search filters every chunk by its access list (lock 1),
   then re-checks each source with OpenFGA (lock 2). The answer model only ever sees what the
   asking person may read. A red-team suite with canary tokens must show **zero leaks** in CI.
-- **Measured.** `wm eval` asks 104 questions as 11 different employees: 0 leaks, 81/82
-  correct, 99.4% faithfulness, 1.2 s to the first token, $0.007 per answer with Claude Sonnet 5.5
-  ([evaluation](evals/README.md)).
+- **Measured.** `wm eval` asks every question as a specific employee, on every surface: 0 leaks
+  in 59 attacks, 81/82 correct, 99.5% faithfulness, 0.8 s to the first token, $0.007 per answer
+  with Claude Sonnet 5.5 ([benchmarks](#benchmarks-v10), [evaluation](evals/README.md)).
 - **Inside your IDE or desktop assistant, permissions intact.** WorkMind is an MCP server:
   connect Claude Code, Cursor or Claude Desktop with a personal access token ([docs/mcp.md](docs/mcp.md)).
 - **Department agents when a question spans teams**, measured against a single search, which
@@ -70,6 +70,26 @@ Engineering…) handle department work. Actions that leave the system need human
   and cost numbers.
 - **Open source and model-agnostic.** Runs fully local (Ollama/vLLM) or with paid providers
   through swappable adapters. Sensitive data can be pinned to local models.
+
+## Benchmarks (v1.0)
+
+Measured on 2026-11-12 at commit `1b62d52`, on one laptop, against the fictional company Acme
+Robotics (49 documents, 82 questions, 59 attacks), with Claude Sonnet 5.5 in every role. One run
+per configuration: small datasets, non-deterministic models. Method, every report and the
+limitations: [docs/benchmarks/v1.0.md](docs/benchmarks/v1.0.md).
+
+| | Result |
+|---|---|
+| Permission leaks | **0** in 312 retrieval checks, 118 red-team answers on four surfaces, 51 analytics answers |
+| Answers with every required fact / faithfulness / abstention | 81/82 / 99.5% / 6/6 |
+| Cross-department questions: one search / department agents | 14/15 / 15/15 |
+| Routing to department agents / text-to-SQL execution accuracy | 53/56 / 33/36 |
+| Time to first token, p50 / p95 (one search; `auto` mode) | 0.8 / 1.5 s; 2.6 / 6.0 s |
+| Cost per answer (one search; `auto`; BI agent) | $0.0071; $0.0114; $0.026 |
+| Load, stub model | up to 400 simulated users at unloaded chat latency on one laptop ([load](docs/benchmarks/load.md)) |
+
+A [case study](docs/case-study.md) tells how it was built for Acme, what went wrong and what it
+costs.
 
 ## Quick start
 
@@ -158,8 +178,9 @@ Not yet: v1.0 is not released. What exists for it so far, and what has been chec
 - **Releases.** release-please and a release workflow for multi-arch images with SBOM and
   provenance attestations ([releasing](docs/operations/releasing.md), [CHANGELOG](CHANGELOG.md)).
   These workflows have not run yet: there is no public repository.
-- **Load tests.** A Locust harness with a stub model server ([docs/load-testing.md](docs/load-testing.md)).
-  No performance numbers under load have been published yet.
+- **Load tests.** A Locust harness with a stub model server ([docs/load-testing.md](docs/load-testing.md)),
+  run from 10 to 800 simulated users on one laptop, and tuned: up to 400 users at unloaded chat
+  latency; a sizing table that is an extrapolation ([load benchmarks](docs/benchmarks/load.md)).
 - **Docs site.** `make docs-serve` serves every page on http://127.0.0.1:8495, with the
   configuration and HTTP API reference generated from the code.
 
