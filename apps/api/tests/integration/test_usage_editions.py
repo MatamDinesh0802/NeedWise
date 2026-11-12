@@ -25,7 +25,7 @@ from workmind.core.extensions import ExtensionRegistry, enable_extensions
 from workmind.core.tenancy import tenant_transaction
 from workmind.main import create_app
 from workmind.modules.governance.models import AuditEvent
-from workmind.modules.identity.models import Department
+from workmind.modules.identity.models import Department, DepartmentMember
 from workmind.modules.usage.calls import Attribution, ModelCall
 from workmind.modules.usage.departments import primary_department_query
 from workmind.modules.usage.extensions import CHARGEBACK_REPORT, DEPARTMENT_BUDGETS
@@ -184,6 +184,37 @@ async def test_a_department_budget_limits_and_warns_its_department_only(
     assert [b["scope"] for b in summary_budgets(api, acme, "tom.becker")] == ["department"]
     assert summary_budgets(api, acme, "bob") == []
     assert [b["scope"] for b in summary_budgets(api, acme, "erin")] == ["department"]
+
+
+async def test_only_the_department_a_persons_usage_counts_for_limits_them(
+    api: TestClient, acme: Acme, meter: UsageMeter, app_sessions: SessionFactory
+) -> None:
+    """Someone in two departments sees both budgets, and is told which one limits them."""
+    hr = await department(app_sessions, acme, "hr")
+    engineering = await department(app_sessions, acme, "engineering")
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        session.add(  # Tom (HR since the seed) also joins Engineering, later
+            DepartmentMember(
+                tenant_id=acme.tenant_id,
+                department_id=engineering,
+                user_id=acme.users["tom.becker"],
+                role="member",
+            )
+        )
+    engineering_budget = {**hr_budget(engineering, 0.5), "subject_id": str(engineering)}
+    assert put(api, acme, [hr_budget(hr, 5.0), engineering_budget]).status_code == 200
+    await meter.record(
+        acme.tenant_id, Attribution("chat", user_id=acme.users["bob"]), sonnet(300_000)
+    )  # Engineering: $0.60 of $0.50
+
+    budgets = {b["subject"]["id"]: b for b in summary_budgets(api, acme, "tom.becker")}
+    admitted = ask(api, acme, "tom.becker")
+
+    assert set(budgets) == {str(hr), str(engineering)}
+    assert budgets[str(engineering)]["status"] == "exceeded"
+    assert budgets[str(engineering)]["applies_to_me"] is False  # shown, not limiting him
+    assert budgets[str(hr)]["applies_to_me"] is True
+    assert admitted.status_code == 202, admitted.text  # his usage counts for HR
 
 
 async def test_the_chargeback_report_lists_cost_per_department(

@@ -65,15 +65,21 @@ async def usage_summary(
     group_by: reports.GroupBy = "feature",
     interval: reports.Interval = "day",
 ) -> dict[str, Any]:
-    """Usage at the caller's scope; `budgets` lists the budgets they may see, with status."""
+    """Usage at the caller's scope; `budgets` lists the budgets they may see, with status, and
+    `applies_to_me`: whether it limits the caller's own requests (an admin sees others' caps; a
+    person in two departments sees both departments' budgets, but only the department their
+    usage counts for limits them)."""
     _range(first, last)
     resources = resources_of(request)
+    meter = resources.usage
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         scope = await reports.scope_for(session, ctx)
         body = await reports.summary(session, scope, first, last, group_by, interval)
-        bindings = await reports.visible_bindings(resources.usage, session, ctx, scope)
-        statuses = await resources.usage.statuses(session, ctx.tenant_id, bindings)
-    body["budgets"] = [s.as_dict() for s in statuses]
+        bindings = await reports.visible_bindings(meter, session, ctx, scope)
+        statuses = await meter.statuses(session, ctx.tenant_id, bindings)
+    mine = await meter.bindings(ctx.tenant_id, ctx.user_id, await meter.rules(ctx.tenant_id))
+    limits_me = {b.rule.id for b in mine}
+    body["budgets"] = [{**s.as_dict(), "applies_to_me": s.id in limits_me} for s in statuses]
     return body
 
 
