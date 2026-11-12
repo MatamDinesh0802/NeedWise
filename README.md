@@ -145,6 +145,8 @@ Celery workers (from Phase 2) ──► ingestion, connectors, long agent runs, 
 - [Architecture](docs/ARCHITECTURE.md): every component, flow and decision, end to end.
 - [Roadmap](docs/ROADMAP.md): 13 phases from foundation to v1.0, each a working release.
 - [Decision records](docs/adr/): why things are the way they are.
+- [Security](docs/security/threat-model.md): the threat model and the
+  [OWASP Top 10 for LLM Applications review](docs/security/owasp-llm-top10.md).
 
 ## Repository layout
 

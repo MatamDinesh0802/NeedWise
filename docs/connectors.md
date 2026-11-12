@@ -57,6 +57,14 @@ Or use **Admin → Sources** in the app.
 - Production refuses to start with the development `SECRETS_KEY`.
 - Synced content is untrusted like any document: it is parsed, chunked and shown to models as
   data, never as instructions.
+- Slack messages are always stored with trust `discussion`, whatever the collection's default:
+  anyone in a synced channel writes them, so they never become official policy. Other
+  connectors take the collection's default trust.
+- The web crawler checks every host against the outbound URL policy (`core/urls.py`: no cloud
+  metadata, link-local or reserved addresses, also after DNS) before its first request, and
+  follows redirects itself, only within the site: a page that redirects elsewhere is skipped,
+  a start URL that does is a sync error. Private and loopback addresses are allowed
+  (intranets). Start URLs are checked when the source is saved.
 
 ## Writing a connector
 
