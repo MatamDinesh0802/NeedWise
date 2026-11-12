@@ -21,8 +21,10 @@ from sqlalchemy import select
 from workmind.core.context import RequestContext
 from workmind.core.resources import Resources
 from workmind.core.tenancy import global_transaction, tenant_transaction
+from workmind.evals.analytics import AnalyticsRecord, AnalyticsRun, evaluate
 from workmind.evals.datasets import (
     AbstentionItem,
+    AnalyticsItem,
     CrossItem,
     MeetingItem,
     QAItem,
@@ -228,11 +230,20 @@ class EvalRun:
     context_checks: list[ContextLeakRecord] = field(default_factory=list[ContextLeakRecord])
     routing: list[RoutingRecord] = field(default_factory=list[RoutingRecord])
     meetings: list[MeetingRecord] = field(default_factory=list[MeetingRecord])
+    analytics: list[AnalyticsRecord] = field(default_factory=list[AnalyticsRecord])
+    # The analytics suite itself: data changed during the run, a gold query failed, ...
+    analytics_problems: list[str] = field(default_factory=list[str])
 
     @property
     def leaks(self) -> list[str]:
         found = [f"{c.id} ({c.mode}): {leak}" for c in self.context_checks for leak in c.leaks]
         found += [f"{a.id} (answer): {leak}" for a in self.answers for leak in a.leaks]
+        found += [
+            f"{r.id} (analytics, {r.user}): {leak}" for r in self.analytics for leak in r.leaks
+        ]
+        found += [
+            f"analytics: {p}" for p in self.analytics_problems if p.startswith("data changed")
+        ]
         return found
 
 
@@ -466,6 +477,26 @@ class Evaluator:
             extract_s,
             transcript.duration,
             missed=missed,
+        )
+
+    async def analytics(
+        self,
+        items: Sequence[AnalyticsItem],
+        *,
+        today: date,
+        reference_users: Sequence[str] = (),
+    ) -> AnalyticsRun:
+        """The BI agent, as each item's user, on the tenant's analytics data (text-to-SQL)."""
+        tenant = self.askers.tenant or await self.askers.load_tenant()
+        return await evaluate(
+            self.resources.llm,
+            self.resources.analytics,
+            self.askers.context,
+            items,
+            organization=tenant.name,
+            today=today,
+            reference_users=reference_users,
+            concurrency=self.concurrency,
         )
 
     async def cross(self, items: Sequence[CrossItem], *, with_judge: bool) -> list[AnswerRecord]:

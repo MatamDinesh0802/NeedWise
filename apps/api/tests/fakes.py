@@ -1,7 +1,7 @@
 """A scripted language model for tests: no network, records every request."""
 
 import asyncio
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -42,6 +42,8 @@ class FakeLLM:
         structured: Sequence[Any] = (),
         tool_turns: Sequence[ToolTurn] | None = None,
         tool_text: str = "Done.",
+        tool_script: Callable[[LLMRequest], Sequence[ToolTurn]] | None = None,
+        structured_script: Callable[[LLMRequest], Any] | None = None,
     ) -> None:
         self.tokens = [reply] if isinstance(reply, str) else list(reply)
         self.rewrite = rewrite
@@ -52,6 +54,10 @@ class FakeLLM:
         # run_tools replays these turns through the caller's executor (None: not scripted).
         self.tool_turns = None if tool_turns is None else [list(t) for t in tool_turns]
         self.tool_text = tool_text
+        # Per request (e.g. per question, for an eval): the turns, and the structured replies
+        # once the scripted `structured` list is used up.
+        self.tool_script = tool_script
+        self.structured_script = structured_script
         self.offered: list[ToolSpec] = []
         self.tool_replies: list[ToolReply] = []
 
@@ -70,7 +76,10 @@ class FakeLLM:
 
     async def structured(self, role: Role, request: LLMRequest, schema: Any) -> Any:
         self.requests.append((role, request))
-        reply = self.structured_replies.pop(0)
+        if self.structured_replies or self.structured_script is None:
+            reply = self.structured_replies.pop(0)
+        else:
+            reply = self.structured_script(request)
         if isinstance(reply, Exception):
             raise reply
         return reply, LLMUsage(model="fake", input_tokens=30, output_tokens=8)
@@ -86,12 +95,16 @@ class FakeLLM:
     ) -> ToolLoopResult:
         """Replays the scripted turns: each call goes through `execute` (the real executor),
         and its reply is kept in `tool_replies`. One usage entry per model turn."""
-        if self.tool_turns is None:
+        if self.tool_script is not None:
+            turns = [list(t) for t in self.tool_script(request)]
+        elif self.tool_turns is not None:
+            turns = self.tool_turns
+        else:
             raise NotImplementedError("script the tool loop with tool_turns=[...]")
         self.requests.append((role, request))
         self.offered = list(tools)
         result = ToolLoopResult(text="")
-        for number, turn in enumerate(self.tool_turns):
+        for number, turn in enumerate(turns):
             if number >= max_steps:
                 result.stopped = "max_steps"
                 return result
