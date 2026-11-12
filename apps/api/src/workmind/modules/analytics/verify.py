@@ -12,16 +12,19 @@ thousands separators (1,520,000; thin spaces), decimals, percentages (12.5%, 12.
 
 What is ignored: years (1900 to 2100 written without separators, units or decimals), ISO dates
 (2026-09-30, 2026-09), days next to a month name (30 September, Sep 30), quarter and half-year
-labels (Q3, Q3 2026, 2026-Q3, H1, FY2026), query markers ([Q1]), numbers inside identifiers
+labels (Q3, Q3 2026, Q3/26, 2026-Q3, H1, FY2026: a number after a label with a space, as in
+"Q3 45%" or "Q3 14.2M", is still checked), query markers ([Q1]), numbers inside identifiers
 (AMR-200, C001, OPP-001), ordinals (3rd), numbered-list markers, inline code, links, and
 integers below 13 without a unit or a currency ("top 3", "9 months"). European separators
 (5.020.000,00) are not recognised: such a number is skipped, not checked.
 
 A number is verified when some numeric result cell equals it at the precision shown: the cell,
 divided by the unit's scale, is within half a unit of the last digit shown (€5.02M matches
-5,018,700; €2M matches anything from 1.5 M to 2.5 M). Percentages also match fractions (12.5%
-matches 0.125). Without an explicit sign, absolute values are compared, since "fell 4%" is
-usually computed as -4; with one (+4%), the sign must agree too.
+5,018,700; €2M matches anything from 1.5 M to 2.5 M). A percentage is only backed by a
+non-integer cell or a cell of a column whose format is percent, so a count of 1 does not back
+"100%", nor a count of 13 "13%"; it also matches a fraction (12.5% matches 0.125). Without an
+explicit sign, absolute values are compared, since "fell 4%" is usually computed as -4; with
+one (+4%), the sign must agree too.
 
 This checks that numbers were copied from the results, not that the narrative reads them
 right: a correct value attached to the wrong label still verifies.
@@ -49,7 +52,7 @@ _IGNORED = re.compile(
     r"|\b\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+Z?)?\b"  # ISO dates and timestamps
     r"|\b\d{4}-\d{2}\b"  # 2026-09
     r"|\b(?:FY\s?)?\d{4}[-/ ]?[QH][1-4]\b"  # 2026-Q3, FY2026 Q3
-    r"|\b[QH][1-4](?:[-/ ]\d{2,4})?\b"  # Q3, H1, Q3 2026, Q3/26
+    r"|\b[QH][1-4](?:[-/](?:\d{4}|\d{2})(?![\d.,%]))?\b"  # Q3, H1, Q3/26, Q3-2026 (Q3 2026: a year)
     r"|\bFY\s?\d{2,4}\b"  # FY2026
     r"|https?://\S+"  # links
     r"|^[ \t]*\d+[.)][ \t]",  # numbered list items
@@ -108,6 +111,13 @@ class Verification(BaseModel):
 
 
 @dataclass(frozen=True)
+class Cell:
+    value: float
+    integer: bool  # an integer in the results (a count, an id, an amount in whole euros)
+    percent: bool  # from a column whose display format is percent
+
+
+@dataclass(frozen=True)
 class Mention:
     text: str
     start: int
@@ -121,10 +131,15 @@ class Mention:
     def value(self) -> float:
         return (self.sign or 1) * self.shown * self.scale
 
-    def matches(self, cell: float) -> bool:
-        candidates = [cell]
-        if self.kind == "percent" and -1 <= cell <= 1:
-            candidates.append(cell * 100)  # a fraction shown as a percentage
+    def matches(self, cell: Cell | float) -> bool:
+        if not isinstance(cell, Cell):
+            cell = Cell(cell, integer=False, percent=False)
+        candidates = [cell.value]
+        if self.kind == "percent":
+            if cell.integer and not cell.percent:
+                return False  # a count, not a share: 1 does not back "100%"
+            if not cell.integer and -1 <= cell.value <= 1:
+                candidates.append(cell.value * 100)  # a fraction shown as a percentage
         tolerance = 0.5 * 10 ** (-self.decimals) + 1e-9
         for candidate in candidates:
             if self.sign and candidate != 0 and math.copysign(1, candidate) != self.sign:
@@ -210,22 +225,34 @@ def _next_to_month(text: str, start: int, end: int) -> bool:
     )
 
 
-def numeric_cells(rows: Sequence[Sequence[JsonValue]]) -> list[float]:
-    cells: list[float] = []
+def numeric_cells(
+    rows: Sequence[Sequence[JsonValue]], formats: Sequence[str | None] = ()
+) -> list[Cell]:
+    """The numeric cells of `rows`; `formats` are the columns' display formats, when known."""
+    cells: list[Cell] = []
     for row in rows:
-        for value in row:
+        for index, value in enumerate(row):
             if isinstance(value, bool):
                 continue
             if isinstance(value, int | float) and math.isfinite(value):
-                cells.append(float(value))
+                percent = index < len(formats) and formats[index] == "percent"
+                cells.append(Cell(float(value), integer=isinstance(value, int), percent=percent))
     return cells
 
 
-def verify(text: str, results: Mapping[str, Sequence[Sequence[JsonValue]]]) -> Verification:
-    """Check every number in `text` against the numeric cells of `results` (query id -> rows).
-    A number on the same line as a query marker is looked up in that query first. A number
-    written twice the same way is listed once."""
-    cells = {query: numeric_cells(rows) for query, rows in results.items()}
+def verify(
+    text: str,
+    results: Mapping[str, Sequence[Sequence[JsonValue]]],
+    formats: Mapping[str, Sequence[str | None]] | None = None,
+) -> Verification:
+    """Check every number in `text` against the numeric cells of `results` (query id -> rows;
+    `formats`: query id -> its columns' display formats). A number on the same line as a query
+    marker is looked up in that query first. A number written twice the same way is listed
+    once."""
+    cells = {
+        query: numeric_cells(rows, (formats or {}).get(query, ()))
+        for query, rows in results.items()
+    }
     lines = _line_markers(text)
     numbers: list[VerifiedNumber] = []
     seen: set[str] = set()

@@ -93,6 +93,22 @@ def test_labels_dates_markers_and_identifiers_are_not_numbers(text: str) -> None
     assert found(text) == []
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("In Q3 45% of revenue came from FleetOS.", [("45%", 45)]),
+        ("Revenue in Q3 99.2M.", [("99.2M", 99.2e6)]),
+        ("Q1 11.8M, Q2 12.9M, Q3 14.2M", [("11.8M", 11.8e6), ("12.9M", 12.9e6), ("14.2M", 14.2e6)]),
+        ("FleetOS share: Q3 30.3%", [("30.3%", 30.3)]),
+        ("H1 1,520,000 and Q3/26 and Q3-2026 €5M", [("1,520,000", 1_520_000), ("€5M", 5e6)]),
+    ],
+)
+def test_a_number_after_a_quarter_label_is_still_a_number(
+    text: str, expected: list[tuple[str, float]]
+) -> None:
+    assert same(found(text), expected)
+
+
 def test_years_with_a_currency_or_separator_are_amounts() -> None:
     assert found("€2026 and 2,026 units") == [("€2026", 2026), ("2,026", 2026)]
 
@@ -140,6 +156,24 @@ def test_percentages_match_fractions() -> None:
     assert verify("a 50% win rate", {"Q1": [[5.0]]}).verified == 0
     # Fractions only: 1.12 is a ratio, not 12%.
     assert verify("grew 12%", {"Q1": [[1.12]]}).verified == 0
+
+
+def test_a_count_does_not_back_a_percentage() -> None:
+    won = {"Q1": [["won", 1], ["lost", 1]], "Q2": [[50.0]]}
+    assert not verify("We won 100% of the deals that closed in Q3 [Q1].", won).numbers[0].verified
+    assert verify("We won 50% of them [Q2].", won).verified == 1
+    assert verify("FleetOS churn was 0% [Q1].", {"Q1": [["Acme", 0, 120_000]]}).verified == 0
+    growth = {"Q1": [["2026-07-01", 13, 4_560_000]], "Q2": [[10.08]]}
+    assert verify("Revenue grew 13% from Q2 to Q3 [Q1].", growth).verified == 0
+    assert verify("Revenue grew 10.1% from Q2 to Q3 [Q2].", growth).verified == 1
+
+
+def test_an_integer_in_a_percent_column_backs_a_percentage() -> None:
+    results = {"Q1": [["AMR-200", 13]]}
+
+    assert verify("a 13% discount", results).verified == 0
+    assert verify("a 13% discount", results, {"Q1": ["text", "percent"]}).verified == 1
+    assert verify("a 13% discount", results, {"Q1": ["text", "number"]}).verified == 0
 
 
 def test_signs_must_agree_when_written() -> None:

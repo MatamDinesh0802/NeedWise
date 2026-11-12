@@ -369,7 +369,8 @@ async def _answer(
         return _failed(base, state, UNUSABLE if isinstance(exc, ValidationError) else MODEL_DOWN)
     state.usage.append(usage)
     results = {q.id: q.rows for q in state.queries}
-    verification = verify(composed.narrative, results)
+    formats = {q.id: [c.format for c in q.columns] for q in state.queries}
+    verification = verify(composed.narrative, results, formats)
 
     unbacked = verification.unverified()
     if unbacked:
@@ -385,7 +386,7 @@ async def _answer(
         try:
             composed, usage = await llm.structured("answer", repair, Composed)
             state.usage.append(usage)
-            verification = verify(composed.narrative, results)
+            verification = verify(composed.narrative, results, formats)
         except (LLMError, ValidationError) as exc:  # keep the first draft, as verified
             log.warning("analytics_repair_failed", error=str(exc)[:300])
 
