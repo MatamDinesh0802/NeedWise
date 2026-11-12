@@ -12,6 +12,7 @@ from workmind.core.config import Settings
 from workmind.core.db import create_engine, create_session_factory
 from workmind.modules.agents.planning import FastRouter
 from workmind.modules.analytics.service import Analytics
+from workmind.modules.analytics.tools import describe_data_tool, query_data_tool
 from workmind.modules.authz.openfga import OpenFgaClient
 from workmind.modules.conversations.events import RunEvents
 from workmind.modules.conversations.registry import RunRegistry
@@ -90,9 +91,17 @@ class Resources:
             rrf_k=settings.retrieval_rrf_k,
             min_similarity=settings.retrieval_min_similarity,
         )
+        analytics = Analytics(
+            db,
+            settings.analytics_path,
+            max_rows=settings.analytics_max_rows,
+            timeout_s=settings.analytics_timeout_s,
+        )
         tools = ToolRegistry()
         tools.register(search_knowledge_tool(retriever))
         tools.register(draft_email_tool())
+        tools.register(describe_data_tool(analytics))  # offered only to people with access
+        tools.register(query_data_tool(analytics))
         mailer = (
             SmtpMailer(
                 settings.smtp_host,
@@ -151,12 +160,7 @@ class Resources:
             remote_servers=[
                 RemoteServer(RemoteServerConfig.model_validate(c)) for c in settings.mcp_servers
             ],
-            analytics=Analytics(
-                db,
-                settings.analytics_path,
-                max_rows=settings.analytics_max_rows,
-                timeout_s=settings.analytics_timeout_s,
-            ),
+            analytics=analytics,
         )
 
     async def load_remote_tools(self) -> None:

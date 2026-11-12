@@ -12,7 +12,7 @@ and handed to models inside a delimited element.
 """
 
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -55,6 +55,10 @@ class Tool:
     json_schema: dict[str, Any] | None = None
     # Plain-words description of one call, shown on its approval card.
     summarize: Callable[[dict[str, Any]], str] | None = None
+    # Whether this person may use the tool at all (e.g. analytics access), beyond the scope.
+    # A tool that is not available is not offered to models or listed to MCP clients. Its
+    # handler still enforces permissions itself: this only hides what would be refused.
+    available: Callable[[RequestContext], Awaitable[bool]] | None = None
 
     def describe(self, arguments: dict[str, Any]) -> str:
         if self.summarize is not None:
@@ -111,3 +115,16 @@ class ToolRegistry:
 
     def all(self) -> list[Tool]:
         return sorted(self._tools.values(), key=lambda t: t.name)
+
+    async def usable(self, ctx: RequestContext, names: Collection[str] | None = None) -> list[Tool]:
+        """The tools this person may use (scope, then availability), optionally only `names`."""
+        usable: list[Tool] = []
+        for tool in self.all():
+            if names is not None and tool.name not in names:
+                continue
+            if not ctx.has_scope(tool.scope):
+                continue
+            if tool.available is not None and not await tool.available(ctx):
+                continue
+            usable.append(tool)
+        return usable

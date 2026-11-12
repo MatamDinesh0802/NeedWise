@@ -522,16 +522,28 @@ def render_model(model: ModelDescription) -> str:
 
 def render_result(query: AnswerQuery, limit: int, *, more: bool = False) -> str:
     """A result as compact text for a model: columns, then up to `limit` rows."""
-    shown = query.rows[:limit]
     count = f"{query.row_count} rows" + (", more exist" if more else "")
     header = f'<result query="{query.id}" purpose="{html.escape(query.purpose)}" ({count})>'
-    columns = " | ".join(f"{c.name} ({c.format})" for c in query.columns)
-    body = [header, f"columns: {columns}"]
-    body += [" | ".join(_cell(v) for v in row) for row in shown]
-    if len(query.rows) > len(shown):
-        body.append(f"({len(query.rows) - len(shown)} more rows not shown)")
-    body.append("</result>")
-    return "\n".join(body)
+    return "\n".join([header, *render_table(query.columns, query.rows, limit), "</result>"])
+
+
+class _Column(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def format(self) -> Format: ...
+
+
+def render_table(
+    columns: Sequence[_Column], rows: Sequence[Sequence[JsonValue]], limit: int
+) -> list[str]:
+    """Columns with their display formats, then up to `limit` rows, one per line."""
+    lines = ["columns: " + " | ".join(f"{c.name} ({c.format})" for c in columns)]
+    lines += [" | ".join(_cell(v) for v in row) for row in rows[:limit]]
+    if len(rows) > limit:
+        lines.append(f"({len(rows) - limit} more rows not shown)")
+    return lines
 
 
 def _cell(value: JsonValue) -> str:
