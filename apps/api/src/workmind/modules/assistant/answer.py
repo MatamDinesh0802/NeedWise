@@ -11,7 +11,7 @@ from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field, replace
 
 from workmind.core.context import RequestContext
-from workmind.modules.assistant.safety import quote_markers, without_images
+from workmind.modules.assistant.safety import escape_tags, quote_markers, without_images
 from workmind.modules.model_catalog.policy import LEVELS, RoutingPolicy, above, threshold
 from workmind.modules.retrieval.service import Passage, Retriever
 from workmind.providers.llm import LLMMessage, LLMProvider, LLMRequest, LLMUsage, TextDelta
@@ -129,7 +129,9 @@ def build_request(
         # Context for follow-ups only: facts must still come from the sources (rule 1).
         system += (
             "\n\nEarlier in this conversation (a summary, not a source):\n"
-            f"<conversation_summary>\n{summary}\n</conversation_summary>"
+            # Model text over earlier answers, which documents may have steered: it cannot
+            # close the element and speak as the system prompt (safety.py).
+            f"<conversation_summary>\n{escape_tags(summary)}\n</conversation_summary>"
         )
     content = f"<sources>\n{render_sources(passages)}\n</sources>\n\nQuestion: {question}"
     return LLMRequest(system=system, messages=[*history, LLMMessage("user", content)])

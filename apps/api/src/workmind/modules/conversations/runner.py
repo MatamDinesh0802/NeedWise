@@ -36,6 +36,7 @@ from workmind.modules.assistant.answer import (
     TokenEvent,
     answer_stream,
 )
+from workmind.modules.assistant.safety import escape_tags
 from workmind.modules.conversations.events import RunEvents, RunMeta
 from workmind.modules.conversations.models import Conversation, Message
 from workmind.modules.governance.audit import Actor, record_event
@@ -169,7 +170,7 @@ async def rewrite_question(
     """A follow-up such as "and for contractors?" cannot be searched on its own."""
     if not history:
         return question, LLMUsage()
-    transcript = "\n".join(f"{m.role}: {m.content[:1500]}" for m in history)
+    transcript = "\n".join(f"{m.role}: {escape_tags(m.content[:1500])}" for m in history)
     request = LLMRequest(
         system=REWRITE_SYSTEM,
         messages=[
@@ -603,7 +604,9 @@ async def _maybe_summarize(deps: RunDeps, ctx: RequestContext, conversation_id: 
                 )
             ).all()
             previous = conversation.summary
-        transcript = "\n".join(f"{m.role}: {strip_markers(m.content)[:2000]}" for m in older)
+        transcript = "\n".join(
+            f"{m.role}: {escape_tags(strip_markers(m.content)[:2000])}" for m in older
+        )
         text, _ = await deps.llm.complete(
             "router",
             LLMRequest(
@@ -611,7 +614,7 @@ async def _maybe_summarize(deps: RunDeps, ctx: RequestContext, conversation_id: 
                 messages=[
                     LLMMessage(
                         "user",
-                        f"<summary_so_far>\n{previous}\n</summary_so_far>\n\n"
+                        f"<summary_so_far>\n{escape_tags(previous)}\n</summary_so_far>\n\n"
                         f"<new_messages>\n{transcript}\n</new_messages>",
                     )
                 ],
