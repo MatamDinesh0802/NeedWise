@@ -56,6 +56,8 @@ export function SimpleSelect<V extends string>({
   disabled,
   id,
   ariaLabel,
+  describedBy,
+  invalid,
   className,
   size,
 }: {
@@ -65,6 +67,9 @@ export function SimpleSelect<V extends string>({
   disabled?: boolean;
   id?: string;
   ariaLabel?: string;
+  /** From Field: its hint and error, so a screen reader announces them with the select. */
+  describedBy?: string;
+  invalid?: boolean;
   className?: string;
   size?: "sm" | "default";
 }) {
@@ -77,7 +82,14 @@ export function SimpleSelect<V extends string>({
       }}
       disabled={disabled}
     >
-      <SelectTrigger id={id} aria-label={ariaLabel} size={size} className={cn("min-w-32", className)}>
+      <SelectTrigger
+        id={id}
+        aria-label={ariaLabel}
+        aria-describedby={describedBy}
+        aria-invalid={invalid || undefined}
+        size={size}
+        className={cn("min-w-32", className)}
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

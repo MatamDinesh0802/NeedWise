@@ -30,6 +30,7 @@ import {
   dueText,
   emptyTaskForm,
   sortTasks,
+  TASK_CHANGE_KEYS,
   TASK_LIMITS,
   TASK_SCOPES,
   TASK_STATUS_LABELS,
@@ -188,7 +189,7 @@ function TaskRow({ task, scope, names }: { task: Task; scope: TaskScope; names: 
     setSaving(true);
     try {
       await workApi.updateTask(task.id, body);
-      await invalidateQueries(workKeys.tasks);
+      await Promise.all(TASK_CHANGE_KEYS.map(invalidateQueries));
       toast({ title: done, description: task.title });
     } catch (error) {
       const message = errorMessage(error);

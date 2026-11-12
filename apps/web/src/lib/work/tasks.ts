@@ -1,6 +1,14 @@
 /** Tasks: labels, the create form and its payload. Pure; components/work/tasks-view.tsx renders it. */
 
-import type { Task, TaskCreate, TaskScope, TaskStatus } from "@/lib/work/api";
+import { meetingsKeys } from "@/lib/meetings/api";
+import { workKeys, type Task, type TaskCreate, type TaskScope, type TaskStatus } from "@/lib/work/api";
+
+/**
+ * Cached lists a change to a task makes stale: the task lists, and "My commitments" (a meeting's
+ * action item shows its task's status). Both are on /tasks, and the cache does not refetch on
+ * focus, so a list that changes a task must refresh both.
+ */
+export const TASK_CHANGE_KEYS: readonly string[] = [workKeys.tasks, meetingsKeys.commitments];
 
 export const TASK_SCOPES: readonly { value: TaskScope; label: string; empty: string }[] = [
   { value: "mine", label: "Mine", empty: "Nothing assigned to you is open." },

@@ -17,14 +17,13 @@ import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/error-messages";
 import { formatDateTime, formatRelative } from "@/lib/format";
-import { meetingsKeys } from "@/lib/meetings/api";
 import { canUseDirectory, personName, type Person } from "@/lib/people";
 import type { Me } from "@/lib/session";
 import { getQueryCache } from "@/lib/stores/query-cache";
 import { toast } from "@/lib/stores/toasts";
 import { cn } from "@/lib/utils";
 import { workApi, workKeys, type Task, type TaskStatus, type TaskUpdate } from "@/lib/work/api";
-import { assigneeText, canClaim, canSeeTask, dueText, TASK_STATUS_LABELS, TASK_STATUSES } from "@/lib/work/tasks";
+import { assigneeText, canClaim, canSeeTask, dueText, TASK_CHANGE_KEYS, TASK_STATUS_LABELS, TASK_STATUSES } from "@/lib/work/tasks";
 
 /** /tasks/[id] (notification and meeting links): one task, read with GET /tasks/{id}. */
 export function TaskRoute() {
@@ -92,7 +91,7 @@ function TaskCard({ task, me, names, refreshing }: { task: Task; me: Me; names: 
         return;
       }
       getQueryCache().setData<Task>(workKeys.task(task.id), () => updated);
-      await Promise.all([invalidateQueries(workKeys.tasks), invalidateQueries(meetingsKeys.commitments)]);
+      await Promise.all(TASK_CHANGE_KEYS.map(invalidateQueries));
       setHandingOver(false);
     } catch (error) {
       const message = errorMessage(error);

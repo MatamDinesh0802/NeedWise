@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { Task } from "@/lib/work/api";
+import { meetingsKeys } from "@/lib/meetings/api";
+import { workKeys, type Task } from "@/lib/work/api";
 
-import { assigneeText, canClaim, canSeeTask, dueText, emptyTaskForm, sortTasks, taskOrigin, toTaskCreate, validateTaskForm } from "./tasks";
+import { assigneeText, canClaim, canSeeTask, dueText, emptyTaskForm, sortTasks, TASK_CHANGE_KEYS, taskOrigin, toTaskCreate, validateTaskForm } from "./tasks";
 
 const task = (overrides: Partial<Task> = {}): Task => ({
   id: "t1",
@@ -19,6 +20,10 @@ const task = (overrides: Partial<Task> = {}): Task => ({
 });
 
 describe("tasks", () => {
+  it("refreshes My commitments, not only the task lists, after a task changes", () => {
+    expect(TASK_CHANGE_KEYS).toEqual([workKeys.tasks, meetingsKeys.commitments]);
+  });
+
   it("says who a task is for", () => {
     const ctx = { meId: "u-me", departments: new Map([["d-ops", { name: "Operations" }]]) };
     expect(assigneeText(task({ assignee_id: "u-me" }), ctx)).toBe("You");
