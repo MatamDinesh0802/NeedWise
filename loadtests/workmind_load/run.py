@@ -88,18 +88,21 @@ def stop_group(group: int, grace_s: float) -> None:
     """SIGTERM to every process of the group, SIGKILL to those still there after grace_s."""
     if not hasattr(os, "killpg"):  # not POSIX: nothing to clean up this way
         return
+    # PermissionError: on macOS a member that already died but is not reaped yet (a zombie
+    # adopted by launchd) can no longer be signalled. It is gone, which is what we want.
+    gone = (ProcessLookupError, PermissionError)
     try:
         os.killpg(group, signal.SIGTERM)
-    except ProcessLookupError:
+    except gone:
         return
     deadline = time.monotonic() + grace_s
     while time.monotonic() < deadline:
         try:
             os.killpg(group, 0)
-        except ProcessLookupError:
+        except gone:
             return
         time.sleep(0.1)
-    with contextlib.suppress(ProcessLookupError):
+    with contextlib.suppress(*gone):
         os.killpg(group, signal.SIGKILL)
 
 
