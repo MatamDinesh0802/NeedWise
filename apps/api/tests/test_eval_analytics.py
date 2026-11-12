@@ -215,6 +215,15 @@ def test_rows_must_pair_up_across_columns() -> None:
     assert match_rows(expected, None).reason == "no main query"
 
 
+def test_an_empty_gold_needs_a_main_query_that_returned_no_rows() -> None:
+    empty = table(["name"], [])
+
+    assert match_rows(empty, table(["name"], [])).ok
+    # An answer that names no main query has not shown "no rows" (it passed before).
+    assert not match_rows(empty, None).ok
+    assert not match_rows(empty, table(["name"], [["Bluefin Freight"]])).ok
+
+
 def test_numbers_compare_at_the_precision_the_agent_shows() -> None:
     expected = table(["rate"], [[69.23076923076923], [50.0]], ["DOUBLE"])
 
@@ -226,14 +235,6 @@ def test_numbers_compare_at_the_precision_the_agent_shows() -> None:
     # Amounts (integer columns) are not rescaled: 1,520,000 is not 15,200.
     amounts = table(["v"], [[1_520_000]], ["HUGEINT"])
     assert not match_rows(amounts, table(["v"], [[15_200.0]], ["DOUBLE"])).ok
-
-
-def test_an_empty_gold_needs_an_empty_result_or_none() -> None:
-    expected = table(["customer"], [])
-
-    assert match_rows(expected, None).ok
-    assert match_rows(expected, table(["name"], [])).ok
-    assert not match_rows(expected, table(["name"], [["Tagus Distribution"]])).ok
 
 
 def test_a_value_must_be_among_the_result_cells() -> None:

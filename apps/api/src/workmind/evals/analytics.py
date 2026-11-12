@@ -241,7 +241,8 @@ def _assignments(
 
 def match_rows(gold: Table, predicted: Table | None, *, ordered: bool = False) -> Match:
     if predicted is None:
-        return Match(not gold.rows, "" if not gold.rows else "no main query")
+        # Also for an empty gold: an answer that names no query has not shown "no rows".
+        return Match(False, "no main query")
     if len(predicted.rows) != len(gold.rows):
         return Match(False, f"{len(predicted.rows)} rows, expected {len(gold.rows)}")
     if not gold.rows:
@@ -587,7 +588,7 @@ def _record(
         record.reason = outcome.reason if result.status == "answered" else f"{result.status}"
         record.found_in_any_query = any(
             match(item, gold, Table.from_result(q)).ok for q in result.queries
-        ) or (not gold.rows and result.status == "answered")
+        )
     return record
 
 
