@@ -71,6 +71,48 @@ describe("ApprovalCard", () => {
     );
   });
 
+  describe("an official-status request (knowledge governance)", () => {
+    const official = (overrides: Partial<Approval> = {}) =>
+      approval({
+        tool: "knowledge.official_status",
+        summary: "Make “Travel policy” official",
+        arguments: { document_id: "d-1", title: "Travel policy", collection_id: "c-1", collection: "HR Policies", note: "Signed off by HR" },
+        requested_by: "u-erin",
+        approver_id: "u-priya",
+        origin: { via: "governance", kind: "official_status", request_id: "r-1", document_id: "d-1" },
+        ...overrides,
+      });
+
+    it("says what approving and rejecting mean, shows the reason, and can't be edited", () => {
+      const html = renderToStaticMarkup(<ApprovalCard approval={official()} meId="u-priya" />);
+      expect(html).toContain("Official status for a document");
+      expect(html).toContain("Approving makes the document official");
+      expect(html).toContain("Rejecting keeps its current trust level");
+      expect(html).toContain("Travel policy");
+      expect(html).toContain("HR Policies");
+      expect(html).toContain("Signed off by HR");
+      expect(html).toContain("Approve: make it official");
+      expect(html).toContain('href="/knowledge/documents/d-1"');
+      expect(html).toContain("Requested in the Knowledge Hub");
+      expect(html).not.toContain("Edit &amp; approve");
+    });
+
+    it("tells the requester who decides, and offers no buttons", () => {
+      const html = renderToStaticMarkup(<ApprovalCard approval={official()} meId="u-erin" />);
+      expect(html).not.toContain("Approve: make it official");
+      expect(html).toContain("It only runs once");
+    });
+
+    it("reports the outcome, including when another approver decided first", () => {
+      expect(renderToStaticMarkup(<ApprovalCard approval={official({ status: "executed", decided_at: "2026-11-05T10:00:00Z" })} meId="u-priya" />)).toContain(
+        "The document is now official.",
+      );
+      const superseded = renderToStaticMarkup(<ApprovalCard approval={official({ status: "superseded", decided_at: "2026-11-05T10:00:00Z" })} meId="u-priya" />);
+      expect(superseded).toContain("Decided by another approver");
+      expect(superseded).toContain("Another approver decided this request first.");
+    });
+  });
+
   it("falls back to a JSON view for tools it doesn't know", () => {
     const html = renderToStaticMarkup(<ApprovalCard approval={approval({ tool: "erp.update_stock", arguments: { sku: "A1", qty: 3 } })} meId="u-olivia" />);
     expect(html).toContain("Use erp.update_stock");

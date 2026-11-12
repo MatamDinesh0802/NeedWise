@@ -8,6 +8,7 @@ import { useId, useMemo, useState } from "react";
 import { SignedInGate } from "@/components/auth/signed-in-gate";
 import { EmptyState, ErrorAlert, TableSkeleton } from "@/components/data/states";
 import { DocumentStatusLabel, FileTypeIcon, SensitivityBadge, TrustBadge } from "@/components/knowledge/badges";
+import { DocumentGovernance } from "@/components/knowledge/document-governance";
 import { LiveIndicator } from "@/components/knowledge/live-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -26,12 +27,12 @@ export function DocumentView() {
   const { id } = useParams<{ id: string }>();
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-      <SignedInGate purpose="open this document">{() => <DocumentLoader key={id} documentId={id} />}</SignedInGate>
+      <SignedInGate purpose="open this document">{(me) => <DocumentLoader key={id} documentId={id} meId={me.id} />}</SignedInGate>
     </div>
   );
 }
 
-function DocumentLoader({ documentId }: { documentId: string }) {
+function DocumentLoader({ documentId, meId }: { documentId: string; meId: string }) {
   const key = knowledgeKeys.document(documentId);
   const { state, refetch } = useApiQuery(key, () => knowledgeApi.getDocument(documentId));
   const live = useLiveRefresh(key, state.status === "success" ? [state.data] : null);
@@ -65,6 +66,7 @@ function DocumentLoader({ documentId }: { documentId: string }) {
       </Link>
       <Header doc={doc} />
       <LiveIndicator live={live.live} stopped={live.stopped} onResume={live.resume} />
+      <DocumentGovernance doc={doc} meId={meId} />
       <Versions doc={doc} />
       {/* Keyed by version + status, so chunks reload when a new version finishes indexing. */}
       <ChunkViewer key={`${doc.version}:${doc.status}`} doc={doc} />

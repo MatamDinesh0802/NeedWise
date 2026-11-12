@@ -29,6 +29,7 @@ import { AddressChips } from "@/components/work/address-chips";
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { useColleagues } from "@/hooks/use-people";
 import { formatDateTime, formatRelative } from "@/lib/format";
+import { knowledgeKeys } from "@/lib/knowledge/api";
 import { personName, type Person } from "@/lib/people";
 import { getQueryCache } from "@/lib/stores/query-cache";
 import { cn } from "@/lib/utils";
@@ -86,7 +87,12 @@ export function ApprovalStatusBadge({ approval }: { approval: Approval }) {
 /** Stores the decision everywhere the approval is shown (chat, inbox, page) and refreshes the bell. */
 async function afterDecision(approval: Approval) {
   getQueryCache().setData<Approval>(workKeys.approval(approval.id), () => approval);
-  await Promise.all([invalidateQueries(workKeys.approvals), getNotificationsStore().refresh()]);
+  await Promise.all([
+    invalidateQueries(workKeys.approvals),
+    getNotificationsStore().refresh(),
+    // An official-status decision changes the document's trust and its pending request.
+    approval.tool === OFFICIAL_KIND ? invalidateQueries(knowledgeKeys.all) : null,
+  ]);
 }
 
 /**
