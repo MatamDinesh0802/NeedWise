@@ -28,8 +28,9 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+from pydantic import JsonValue
 
-JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
+__all__ = ["JsonValue"]  # re-exported: results are lists of rows of JsonValue
 
 DEFAULT_TIMEOUT_S = 10.0
 CONFIG: dict[str, str | bool | int] = {

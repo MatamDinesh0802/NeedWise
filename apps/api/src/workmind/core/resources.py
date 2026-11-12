@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from workmind.core.config import Settings
 from workmind.core.db import create_engine, create_session_factory
 from workmind.modules.agents.planning import FastRouter
+from workmind.modules.analytics.service import Analytics
 from workmind.modules.authz.openfga import OpenFgaClient
 from workmind.modules.conversations.events import RunEvents
 from workmind.modules.conversations.registry import RunRegistry
@@ -63,6 +64,7 @@ class Resources:
     transcriber: Transcriber
     remote_servers: list[RemoteServer]
     assistant_mode: str
+    analytics: Analytics
 
     @classmethod
     def create(cls, settings: Settings) -> Self:
@@ -149,6 +151,12 @@ class Resources:
             remote_servers=[
                 RemoteServer(RemoteServerConfig.model_validate(c)) for c in settings.mcp_servers
             ],
+            analytics=Analytics(
+                db,
+                settings.analytics_path,
+                max_rows=settings.analytics_max_rows,
+                timeout_s=settings.analytics_timeout_s,
+            ),
         )
 
     async def load_remote_tools(self) -> None:

@@ -144,6 +144,11 @@ class Settings(BaseSettings):
     transcription_base_url: str = "http://localhost:8000/v1"
     transcription_api_key: SecretStr | None = None
 
+    # --- Business intelligence (ARCHITECTURE 16). Datasets are DuckDB files under
+    # <object_storage_path>/analytics; every query is read-only, sandboxed and capped. ---
+    analytics_max_rows: int = Field(default=1000, gt=0, le=10_000)
+    analytics_timeout_s: float = Field(default=10.0, gt=0, le=120)
+
     # Sessions (ARCHITECTURE section 6.3): sliding idle timeout, hard absolute lifetime.
     session_idle_timeout_s: int = Field(default=1800, gt=0)
     session_absolute_timeout_s: int = Field(default=43200, gt=0)
@@ -173,6 +178,10 @@ class Settings(BaseSettings):
         """One collection per embedding model: switching models builds a new one (ARCH. 8)."""
         slug = "".join(c if c.isalnum() else "_" for c in self.embedding_model.lower())
         return f"chunks_{slug}_{self.embedding_dimensions}"
+
+    @property
+    def analytics_path(self) -> Path:
+        return Path(self.object_storage_path) / "analytics"
 
     @property
     def public_origin(self) -> str:
