@@ -56,8 +56,10 @@ next steps.
 | Add agents, models, budgets, connectors | [Admin guide](agents.md) |
 | Configure a deployment | [Configuration](getting-started/configuration.md) and the [reference](reference/configuration.md) |
 | Call the API | [HTTP API](reference/api.md) |
+| Run it on Kubernetes, back it up, upgrade it | [Kubernetes (Helm)](deploy/kubernetes.md), [backup and restore](operations/backup-restore.md), [upgrades](operations/upgrade.md), [multi-tenant mode](multi-tenancy.md) |
+| Check how it is secured | [Threat model](security/threat-model.md), [OWASP Top 10 for LLM Applications review](security/owasp-llm-top10.md), [supply chain](security/supply-chain.md) |
 | Understand the design | [Architecture](ARCHITECTURE.md) and the [decision records](adr/README.md) |
-| See what was measured | [Evaluation](evals/README.md) |
+| See what was measured | [Evaluation](evals/README.md) and [load testing](load-testing.md) |
 | See what comes next | [Roadmap](ROADMAP.md) |
 
 ## License

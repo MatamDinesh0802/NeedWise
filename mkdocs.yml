@@ -143,7 +143,16 @@ nav:
       - Connectors: connectors.md
       - Automation and workflows: automation.md
       - Enterprise edition: enterprise.md
-  # Deploy and operate (to come: deploy/kubernetes.md, operations/*, multi-tenancy.md)
+  - Deploy and operate:
+      - Kubernetes (Helm): deploy/kubernetes.md
+      - Multi-tenant mode: multi-tenancy.md
+      - Backup and restore: operations/backup-restore.md
+      - Upgrades (from v0.x): operations/upgrade.md
+      - Releasing: operations/releasing.md
+  - Security:
+      - Threat model: security/threat-model.md
+      - OWASP Top 10 for LLM Applications: security/owasp-llm-top10.md
+      - Supply chain: security/supply-chain.md
   - Reference:
       - Configuration: reference/configuration.md
       - HTTP API: reference/api.md
@@ -164,6 +173,7 @@ nav:
           - 0011 Open-core boundary and license keys: adr/0011-open-core-boundary-and-license-keys.md
   - Evaluation:
       - evals/README.md
+      - Load testing: load-testing.md
   - Roadmap: ROADMAP.md
   - Devlog:
       - devlog/index.md

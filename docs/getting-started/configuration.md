@@ -69,8 +69,9 @@ The defaults are for a laptop. Before a deployment that other people can reach:
       [Models and keys](../models.md#the-data-policy-what-may-leave). New organizations default
       to keeping `restricted` documents away from external models.
 
-This list covers the settings. Running WorkMind in production also means TLS, backups and
-upgrades, which this page does not cover.
+This list covers the settings. Running WorkMind in production also means TLS in front of it
+(the Compose file's Caddy serves plain HTTP; on [Kubernetes](../deploy/kubernetes.md) it is your
+ingress), [backups](../operations/backup-restore.md) and [upgrades](../operations/upgrade.md).
 
 ## Common changes
 
