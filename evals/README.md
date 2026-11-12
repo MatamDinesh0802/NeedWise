@@ -139,6 +139,15 @@ about 6%, so the trust boost and BM25 noise decide the order. See
 **Caveat:** the fusion settings were tuned on this same question set. They are configurable
 (`RETRIEVAL_RRF_K`, `RETRIEVAL_SPARSE_WEIGHT`) and will be re-validated on a larger corpus.
 
+**On 47 documents (2026-11-12, [report](results/2026-11-12-permission-gate.md)).** The same 82
+questions, default hybrid settings, after the 10 legal documents (Phase 11) and the 3 injection
+documents (Phase 12) were added, 421 chunks: Doc Recall@1 96.3% (was 98.8%), Doc Recall@5 100%,
+Evidence@1 90.2% (was 92.7%), Evidence MRR 0.942 (was 0.957). Four questions changed rank: pp-08
+now ranks a Phase 11 legal policy first (the answer at 4), pp-29 has its evidence passage second,
+qa-42 ranks the Slack export first (the answer at 2), and qa-26 improved. None of the three
+injection documents is in the top three of any of them. Which added documents cause the drop
+was not separated further.
+
 ### Restricted data kept local ([report](results/2026-11-04-local-only.md))
 
 The same suite under the default tenant policy `restricted_data: local_only`, with no local
