@@ -4,6 +4,12 @@ const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker image (see Dockerfile).
   output: "standalone",
   poweredByHeader: false,
+  experimental: {
+    // The dev rewrite below proxies /api through Next.js, which keeps only the first 10 MB of a
+    // request body by default: a meeting recording (up to 500 MB, MAX_MEETING_BYTES) arrived
+    // truncated and failed. Caddy (Docker) never sends /api through Next.js.
+    proxyClientMaxBodySize: "500mb",
+  },
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
