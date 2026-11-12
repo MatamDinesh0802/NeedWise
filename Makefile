@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -99,3 +99,40 @@ ee-dev-license: ## Write a development Enterprise license to .workmind/ (APP_ENV
 
 seed: ## Create the Acme Robotics demo company and its logins (safe to re-run)
 	$(COMPOSE) --profile tools run --rm --build seed
+
+# Load tests (docs/load-testing.md): Locust in loadtests/, its own uv project. A run creates the
+# demo users' access tokens, runs Locust headless, cleans up, revokes the tokens and writes
+# loadtests/results/<date>-<LABEL>.md. Model scenarios need the stack pointed at the stub
+# (make loadtest-stub; loadtests/compose.stub.yaml): the preflight stops the run otherwise.
+# NO_MODEL=1 leaves out everything that calls the model.
+#   make loadtest USERS=5 DURATION=60s NO_MODEL=1 LABEL=smoke
+#   make loadtest USERS=50 SPAWN_RATE=5 DURATION=10m STUB_URL=http://127.0.0.1:8490 LABEL=stub-50
+LOADTEST_HOST ?= http://localhost:$(HTTP_PORT)
+USERS ?= 10
+SPAWN_RATE ?= 1
+DURATION ?= 2m
+LABEL ?= run
+STUB_PORT ?= 8490
+
+loadtest: ## Load test (USERS SPAWN_RATE DURATION LABEL MIX NO_MODEL STUB_URL UPLOAD_COLLECTION)
+	cd loadtests && uv run python -m workmind_load.run --host $(LOADTEST_HOST) \
+		--users $(USERS) --spawn-rate $(SPAWN_RATE) --duration $(DURATION) --label $(LABEL) \
+		$(if $(MIX),--mix $(MIX)) $(if $(NO_MODEL),--no-model) $(if $(STUB_URL),--stub-url $(STUB_URL)) \
+		$(if $(UPLOAD_COLLECTION),--upload-collection $(UPLOAD_COLLECTION)) $(if $(THINK),--think $(THINK))
+
+loadtest-stub: ## Run the stub model server for load tests (STUB_PORT TTFT_MS TPS ANSWER_TOKENS)
+	cd loadtests && uv run python stub_llm.py --port $(STUB_PORT) \
+		$(if $(TTFT_MS),--ttft-ms $(TTFT_MS)) $(if $(TPS),--tokens-per-s $(TPS)) \
+		$(if $(ANSWER_TOKENS),--answer-tokens $(ANSWER_TOKENS))
+
+loadtest-report: ## Rewrite a load-test report from its raw stats (RUN=<date>-<label>)
+	cd loadtests && uv run python -m workmind_load.report results/raw/$(RUN)/locust \
+		--meta results/raw/$(RUN)/meta.json --out results/$(RUN).md
+
+loadtest-sweep: ## Revoke leftover load-test tokens, delete leftover [load] conversations
+	cd loadtests && uv run python -m workmind_load.tokens sweep --host $(LOADTEST_HOST) \
+		$(if $(UPLOAD_COLLECTION),--upload-collection $(UPLOAD_COLLECTION))
+
+loadtest-check: ## Lint, type-check and test the load-test harness (no stack needed)
+	cd loadtests && uv run ruff check . && uv run ruff format --check . && uv run pyright \
+		&& uv run pytest -q
