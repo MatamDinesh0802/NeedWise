@@ -31,7 +31,7 @@ from workmind.modules.knowledge.models import (
 )
 from workmind.modules.knowledge.parsing import UnsupportedFormatError, parse
 from workmind.modules.knowledge.sensitivity import scan, suggest
-from workmind.modules.knowledge.storage import ObjectStorage
+from workmind.modules.knowledge.storage import ObjectStorage, owned_key
 from workmind.modules.retrieval.qdrant import QdrantClient, match
 from workmind.modules.retrieval.sparse import encode_document
 from workmind.modules.work.events import DocumentReady, document_ready
@@ -103,7 +103,7 @@ async def _ingest(
         trust, sensitivity = document.trust, document.sensitivity
         storage_key = version.storage_key
 
-    data = await deps.storage.get(storage_key)
+    data = await deps.storage.get(owned_key(tenant_id, storage_key))
     try:
         parsed = await asyncio.to_thread(parse, data, filename, mime)
     except (UnsupportedFormatError, ValueError, KeyError, OSError) as exc:

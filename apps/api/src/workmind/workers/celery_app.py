@@ -7,6 +7,11 @@
 Tasks are thin: they build their own clients and call the same async code the API uses.
 Transient failures (embedding server, Qdrant, network) retry with exponential backoff;
 unreadable files fail permanently and show their reason in the Knowledge Hub.
+
+Every task about one tenant's data takes the tenant id as its first argument and does all its
+work inside that tenant (Row-Level Security, tenant-scoped Qdrant and storage keys), so another
+tenant's record id finds nothing. A missing or malformed tenant id is refused
+(TenantRequiredError, never retried); a task for a suspended or deleted tenant does nothing.
 """
 
 import asyncio
@@ -15,8 +20,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+import structlog
 from celery import Celery
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.config import get_settings
 from workmind.core.db import create_engine, create_session_factory
@@ -28,6 +35,7 @@ from workmind.modules.connectors.schedule import due_sources
 from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sync import SyncDeps, sync_source
 from workmind.modules.identity.models import Tenant
+from workmind.modules.identity.service import tenant_is_active
 from workmind.modules.knowledge.dispatch import CeleryDispatcher
 from workmind.modules.knowledge.governance import send_review_reminders
 from workmind.modules.knowledge.pipeline import IngestionDeps, PermanentIngestionError, ingest
@@ -56,6 +64,7 @@ MEETING_TASK = "workmind.process_meeting"
 WORKFLOW_RUN_TASK = "workmind.start_workflow_run"
 REVIEWS_TASK = "workmind.send_review_reminders"
 
+log = structlog.get_logger("workmind.workers")
 settings = get_settings()
 app = Celery("workmind", broker=settings.celery_broker_url)
 app.conf.update(
@@ -85,8 +94,36 @@ app.conf.update(
 extensions = load_extensions(settings)
 
 
-async def _run_ingest(tenant_id: str, document_id: str, version_id: str) -> dict[str, Any]:
+class TenantRequiredError(ValueError):
+    """A tenant task called without a valid tenant id. Never retried: it cannot succeed."""
+
+
+def tenant_of(value: object) -> uuid.UUID:
+    """The tenant argument of a task, refused when missing or malformed."""
+    if not isinstance(value, str | uuid.UUID) or not str(value).strip():
+        raise TenantRequiredError("this task needs the id of the tenant it works for")
+    try:
+        return value if isinstance(value, uuid.UUID) else uuid.UUID(value)
+    except ValueError as exc:
+        raise TenantRequiredError(f"not a tenant id: {value!r}") from exc
+
+
+async def _tenant_active(
+    sessions: async_sessionmaker[AsyncSession], tenant_id: uuid.UUID, task: str
+) -> bool:
+    async with global_transaction(sessions) as session:
+        active = await tenant_is_active(session, tenant_id)
+    if not active:
+        log.info("task_skipped_inactive_tenant", task=task, tenant_id=str(tenant_id))
+    return active
+
+
+async def _run_ingest(tenant_id: str, document_id: str, version_id: str) -> dict[str, Any] | None:
+    tenant = tenant_of(tenant_id)
     engine = create_engine(settings.database_url)
+    if not await _tenant_active(create_session_factory(engine), tenant, INGEST_TASK):
+        await engine.dispose()
+        return None
     async with httpx.AsyncClient(timeout=120) as http:
         deps = IngestionDeps(
             sessions=create_session_factory(engine),
@@ -96,9 +133,7 @@ async def _run_ingest(tenant_id: str, document_id: str, version_id: str) -> dict
             collection_name=settings.qdrant_collection,
         )
         try:
-            result = await ingest(
-                deps, uuid.UUID(tenant_id), uuid.UUID(document_id), uuid.UUID(version_id)
-            )
+            result = await ingest(deps, tenant, uuid.UUID(document_id), uuid.UUID(version_id))
         finally:
             await engine.dispose()
     for run_id in result.workflow_runs:  # "document.ready": each triggered run is its own task
@@ -112,7 +147,7 @@ async def _run_ingest(tenant_id: str, document_id: str, version_id: str) -> dict
     retry_backoff=True,
     retry_backoff_max=300,
     max_retries=8,
-    dont_autoretry_for=(PermanentIngestionError,),
+    dont_autoretry_for=(PermanentIngestionError, TenantRequiredError),
 )
 def ingest_document(tenant_id: str, document_id: str, version_id: str) -> dict[str, Any] | None:
     try:
@@ -122,7 +157,11 @@ def ingest_document(tenant_id: str, document_id: str, version_id: str) -> dict[s
 
 
 async def _run_sync(tenant_id: str, source_id: str) -> dict[str, Any]:
+    tenant = tenant_of(tenant_id)
     engine = create_engine(settings.database_url)
+    if not await _tenant_active(create_session_factory(engine), tenant, SYNC_TASK):
+        await engine.dispose()
+        return {"source_id": source_id, "status": "skipped"}
     async with httpx.AsyncClient(timeout=60) as http:
         deps = SyncDeps(
             sessions=create_session_factory(engine),
@@ -140,7 +179,7 @@ async def _run_sync(tenant_id: str, source_id: str) -> dict[str, Any]:
             max_bytes=settings.max_upload_bytes,
         )
         try:
-            report = await sync_source(deps, uuid.UUID(tenant_id), uuid.UUID(source_id))
+            report = await sync_source(deps, tenant, uuid.UUID(source_id))
         finally:
             await engine.dispose()
     return {"source_id": source_id, "status": report.status, **report.stats()}
@@ -200,11 +239,14 @@ def run_due_workflows() -> int:
 
 
 async def _start_workflow_run(tenant_id: str, run_id: str) -> str | None:
+    tenant = tenant_of(tenant_id)
     resources = Resources.create(settings, extensions=extensions)
-    await resources.load_remote_tools()
     try:
+        if not await _tenant_active(resources.db, tenant, WORKFLOW_RUN_TASK):
+            return None
+        await resources.load_remote_tools()
         deps = WorkflowDeps(resources.db, resources.llm, resources.tools, resources.models)
-        run = await start_queued(deps, uuid.UUID(tenant_id), uuid.UUID(run_id))
+        run = await start_queued(deps, tenant, uuid.UUID(run_id))
     finally:
         await resources.aclose()
     return run.status if run else None
@@ -254,16 +296,19 @@ def review_reminders() -> int:
 
 
 async def _process_meeting(tenant_id: str, meeting_id: str) -> None:
+    tenant = tenant_of(tenant_id)
     resources = Resources.create(settings, extensions=extensions)
     try:
+        if not await _tenant_active(resources.db, tenant, MEETING_TASK):
+            return
         deps = MeetingDeps(
             resources.db,
             resources.storage,
-            await resources.models.for_tenant(uuid.UUID(tenant_id)),
+            await resources.models.for_tenant(tenant),
             resources.transcriber,
             CeleryDispatcher(),
         )
-        await process_meeting(deps, uuid.UUID(tenant_id), uuid.UUID(meeting_id))
+        await process_meeting(deps, tenant, uuid.UUID(meeting_id))
     finally:
         await resources.aclose()
 

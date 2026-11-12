@@ -31,6 +31,7 @@ from workmind.modules.identity.models import SLUG_PATTERN
 from workmind.modules.knowledge import service
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import delete_document_points
+from workmind.modules.knowledge.storage import owned_key
 from workmind.providers.factory import secret
 
 router = APIRouter(prefix="/admin/sources", tags=["admin"])
@@ -226,7 +227,7 @@ async def delete_source(ctx: AdminContext, request: Request, key: str) -> Respon
             resources.qdrant, resources.collection_name, ctx.tenant_id, document_id
         )
     for storage_key in set(orphaned):
-        await resources.storage.delete(storage_key)
+        await resources.storage.delete(owned_key(ctx.tenant_id, storage_key))
     return Response(status_code=204)
 
 

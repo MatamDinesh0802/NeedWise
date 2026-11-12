@@ -31,7 +31,7 @@ from workmind.modules.knowledge import service
 from workmind.modules.knowledge.dispatch import Dispatcher
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import delete_document_points
-from workmind.modules.knowledge.storage import ObjectStorage
+from workmind.modules.knowledge.storage import ObjectStorage, owned_key
 from workmind.modules.retrieval.qdrant import QdrantClient
 
 log = structlog.get_logger("workmind.sync")
@@ -207,7 +207,7 @@ async def _delete_missing(
             deps.qdrant, deps.collection_name, source.tenant_id, document.id
         )
     for key in set(orphaned):
-        await deps.storage.delete(key)
+        await deps.storage.delete(owned_key(source.tenant_id, key))
     report.deleted = len(gone)
 
 
