@@ -123,7 +123,7 @@ E: elevation of privilege. "Residual" lists what is not prevented.
 | I | Restricted passages to an external model | Sensitivity routing (`route`): above the tenant's threshold only to a local model, else withheld and counted | The label is set by ingestion rules and collection defaults; a mislabelled document is routed by its label |
 | I | Answer exfiltrates data through an image URL | Images removed from stored answers and research text (fixed), never loaded in the web app, CSP `img-src 'self'` | Tokens are streamed raw over SSE before the stored copy is cleaned: an API client rendering the stream itself would see the image markup |
 | I | Answer exfiltrates through a link | Links open in a new tab, `noreferrer`; the host is shown next to the text (fixed) | No allow-list: a person can still click |
-| D | Many concurrent runs | One run per conversation; at most `MAX_INFLIGHT_PER_USER` (4) answers in progress per person (fixed); budgets | No request rate limit per minute; budgets do not count unpriced (local) models |
+| D | Many concurrent runs | One run per conversation; at most `MAX_INFLIGHT_PER_USER` (4) answers in progress per person (fixed); request rate limits per person and tenant (`core/ratelimit.py`, added by the multi-tenancy work after this review); budgets | Budgets do not count unpriced (local) models; the rate-limit defaults were chosen, not measured |
 | E | Follow-up history used to re-ask after access is revoked | Each turn retrieves again with current access | Earlier answers stay in the conversation and its summary, and are sent back as history |
 | T | An injected answer persists: folded into the summary, it would sit in the system prompt of every later turn | The summary and the history are escaped and cannot close their elements (fixed); the summary is labelled "not a source" | The summary is still model text in the system prompt; a model may follow it |
 
@@ -238,16 +238,18 @@ E: elevation of privilege. "Residual" lists what is not prevented.
 3. **Self-approval.** In research mode the person who asked approves the proposed email or
    task. The approval shows every argument; a hurried approval of an injected email still
    sends it.
-4. **Unpriced models are not budgeted.** The in-flight cap bounds concurrency per person, but
-   not volume over time; there is no per-minute rate limit.
+4. **Unpriced models are not budgeted.** The in-flight cap bounds concurrency per person and
+   the request rate limits (`core/ratelimit.py`, [multi-tenancy](../multi-tenancy.md#abuse-limits))
+   bound requests per minute, but nothing bounds what an unpriced model does over a day.
 5. **No per-document permissions.** Access is per collection; synced sources do not bring their
    own per-file sharing (Enterprise roadmap).
 6. **Secrets use one deployment key** (`SECRETS_KEY`, `SECRETS_ENCRYPTION_KEY`), not per-tenant
    data keys or a KMS.
 7. **Streamed tokens are not sanitized**; the stored answer is. API clients that render the SSE
    stream themselves must not load images.
-8. **Supply chain**: lockfiles, Dependabot and gitleaks exist; image scanning, SBOMs and digest
-   pinning are Phase 12 work outside this review (see owasp-llm-top10.md, LLM03).
+8. **Supply chain** is outside this review. Lockfile and image scanning, SBOMs and digest
+   pinning were added by separate Phase 12 work ([supply-chain.md](supply-chain.md)); those CI
+   workflows have not run on GitHub yet.
 
 ## 6. Keeping this current
 

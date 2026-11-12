@@ -19,7 +19,8 @@ code). The red team (`evals/datasets/red_team.jsonl`) grew from 16 to 59 attacks
 it needs `wm eval` with a model and the seeded stack (`uv run wm eval --skip-retrieval --suites
 redteam`), so how often a model obeys the new attacks is not measured yet. Its retrieval part
 (52 attacks, three retrieval modes) runs without a model and is the CI permission gate. No
-external penetration test, no fuzzing, no load test (Locust is separate Phase 12 work).
+external penetration test, no fuzzing, and no load test in this review (the Locust harness is
+[load-testing.md](../load-testing.md)).
 
 Code paths below are relative to `apps/api/src/workmind/` and test paths to `apps/api/tests/`,
 unless they start with `apps/web` or name a web test (`*.test.tsx`, in `apps/web/src`).
@@ -158,7 +159,7 @@ compromised model or embedding model; a third-party MCP server; GitHub Actions p
 
 **Controls.** Lockfiles (`apps/api/uv.lock`, `apps/web/pnpm-lock.yaml`) installed frozen in CI;
 Dependabot weekly for uv, npm, Docker and Actions (`.github/dependabot.yml`); gitleaks in CI;
-third-party images pinned to versions in `compose.yaml`; the Enterprise package is loaded only
+third-party images pinned by digest in `compose.yaml`; the Enterprise package is loaded only
 through its entry point with a valid license and the core never imports it
 (`test_open_core_boundary.py`); remote MCP tools are prefixed, cannot shadow built-ins, and are
 `external` (approval-gated) unless the operator lists them as read-only
@@ -166,10 +167,10 @@ through its entry point with a valid license and the core never imports it
 Models are chosen by the operator or a tenant admin; no model is downloaded at run time by the
 API.
 
-**Residual risk.** Not part of this review and not on this branch: image scanning, SBOMs,
-digest pinning of base images (`python:3.13-slim`, `node:24-alpine` are pinned by tag) and SHA
-pinning of Actions; those are separate Phase 12 items. Model weights pulled into Ollama or
-llama.cpp are not verified by WorkMind.
+**Residual risk.** Not part of this review: image scanning, SBOMs, digest pinning of images and
+SHA pinning of Actions. Separate Phase 12 work added them after this review
+([supply-chain.md](supply-chain.md)). Model weights pulled into Ollama or llama.cpp are not
+verified by WorkMind.
 
 ## LLM04: Data and model poisoning
 
@@ -311,6 +312,8 @@ characters; uploads up to 50 MB (meetings 500 MB); a crawl up to 5,000 pages.
 `integration/test_security_inflight.py`; `test_security_agency.py::test_a_research_run_executes_a_bounded_number_of_tool_calls`;
 `test_analytics_engine.py::test_a_query_over_the_memory_limit_is_stopped`, `::test_one_person_cannot_take_every_worker`.
 
-**Residual risk.** No requests-per-minute rate limit. Budgets do not count models without a
-listed price, so a deployment on local models has only the concurrency caps. Workflow runs
+**Residual risk.** Request rate limits per person, per tenant and per sign-in address were added
+after this review by the multi-tenancy work (`core/ratelimit.py`); their defaults were chosen, not
+measured. Budgets do not count models without a listed price, so a deployment on local models has
+only the concurrency caps and those rate limits. Workflow runs
 triggered by uploads are not capped per hour.
