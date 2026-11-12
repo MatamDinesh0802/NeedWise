@@ -212,9 +212,10 @@ tried to transcribe a meeting that has no recording.
   vector store.
 
 What is still missing before a real company should use it: a tagged v1.0 release and a public
-repository, an install on a Kubernetes cluster, live verification of the Drive and Slack
+repository, an install on a cloud or production Kubernetes cluster (the chart was only tested
+on kind), live verification of the Drive and Slack
 connectors, an external penetration test, a judge from another model family, measurements with
 local models, and a corpus and question set much larger than Acme's.
 
-WorkMind was built by one maintainer with Claude as a coding assistant: 310 of the repository's
-311 commits carry a Claude co-author line.
+WorkMind was built by one maintainer with Claude as a coding assistant: every commit carries a
+Claude co-author line except one merge commit (bb4dc95).

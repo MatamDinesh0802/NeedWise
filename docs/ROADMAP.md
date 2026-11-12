@@ -22,18 +22,22 @@ Sizes are rough estimates in **weeks of focused work**; part-time takes longer. 
 |---|---|---|---|---|
 | 0 ✅ | v0.0.x | Foundation and synthetic company | 1–2 wk | Repo public (pre-alpha), architecture post |
 | 1 ✅ | v0.1 | Identity, tenancy and permissions | 2 wk | Login + permission model demo |
-| 2 | v0.2 | Knowledge ingestion | 2 wk | 500-document corpus ingested, live status |
-| 3 | v0.3 | Retrieval engine + evaluation harness | 2–3 wk | First published eval numbers |
-| 4 | **v0.4** | **AI Assistant — first usable product** | 2 wk | **Public launch** (HN, Reddit, LinkedIn video) |
-| 5 | v0.5 | Multi-agent orchestration | 2–3 wk | "Do you need multi-agent? I measured it." |
-| 6 | v0.6 | Tools and MCP | 2 wk | WorkMind inside Claude Desktop / Cursor |
-| 7 | v0.7 | Connectors and sync | 3 wk | Google Drive + Slack live sync |
-| 8 | v0.8 | Workflow automation and approvals | 2–3 wk | Human-in-the-loop demo |
-| 9 | v0.9 | Meeting intelligence | 2 wk | Recording → decisions and action items |
-| 10 | v0.10 | Business intelligence agent | 3 wk | Question → chart + SQL + explanation |
-| 11 | v0.11 | Admin, governance and usage analytics | 2 wk | New agent created without code |
-| 12 | **v1.0** | **Production hardening** | 2–3 wk | **v1.0 launch** (HN, Product Hunt) |
+| 2 ✅ | v0.2 | Knowledge ingestion | 2 wk | 500-document corpus ingested, live status |
+| 3 ✅ | v0.3 | Retrieval engine + evaluation harness | 2–3 wk | First published eval numbers |
+| 4 ✅ | **v0.4** | **AI Assistant — first usable product** | 2 wk | **Public launch** (HN, Reddit, LinkedIn video) |
+| 5 ✅ | v0.5 | Multi-agent orchestration | 2–3 wk | "Do you need multi-agent? I measured it." |
+| 6 ✅ | v0.6 | Tools and MCP | 2 wk | WorkMind inside Claude Desktop / Cursor |
+| 7 🚧 | v0.7 | Connectors and sync | 3 wk | Google Drive + Slack live sync |
+| 8 ✅ | v0.8 | Workflow automation and approvals | 2–3 wk | Human-in-the-loop demo |
+| 9 ✅ | v0.9 | Meeting intelligence | 2 wk | Recording → decisions and action items |
+| 10 ✅ | v0.10 | Business intelligence agent | 3 wk | Question → chart + SQL + explanation |
+| 11 ✅ | v0.11 | Admin, governance and usage analytics | 2 wk | New agent created without code |
+| 12 🚧 | **v1.0** | **Production hardening** | 2–3 wk | **v1.0 launch** (HN, Product Hunt) |
 | — | after 1.0 | Commercial track | ongoing | WorkMind Cloud + Enterprise edition |
+
+✅ built (4: launch pending the public repository; 8: with the gaps its section lists); 🚧 built
+with work remaining (7: live Drive and Slack verification; 12: the final review and the
+release). Each phase's section below has the details.
 
 ---
 

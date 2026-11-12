@@ -50,8 +50,8 @@ Engineering…) handle department work. Actions that leave the system need human
   as the person asking (an account executive sees only his accounts, whatever SQL the model
   writes), in a read-only DuckDB sandbox, and checks every number in its answer against the
   query results ([docs/analytics.md](docs/analytics.md)). On a 51-question text-to-SQL eval
-  with Claude Sonnet 5.5: 33/36 answers return the gold result, 0 permission leaks, 6.9 s
-  (median) and $0.026 per answer.
+  with Claude Sonnet 5.5: 33/36 answers return the gold result, 0 permission leaks, 6.8 s
+  (median) and $0.026 per answer (the v1.0 run).
 - **Enterprise identity:** Keycloak SSO, company isolation enforced by PostgreSQL Row-Level
   Security, departments and nested groups, a hash-chained audit log, scoped access tokens.
 - **Knowledge with an owner and a review date.** Every document has an owner who is reminded
@@ -62,8 +62,9 @@ Engineering…) handle department work. Actions that leave the system need human
 ## What makes it different
 
 - **Permissions are enforced by code, never by the LLM.** Every agent and tool acts as the
-  requesting user. A public red-team suite with canary tokens must show **zero leaks** for a
-  change to merge.
+  requesting user. A red-team suite with canary tokens checks for **zero leaks**: CI's
+  permission gate fails on any leak (it becomes a merge requirement once the repository is
+  public and branch protection requires the check, which is not set up yet).
 - **Grounded or silent.** Every claim cites a source you can open, or the assistant says it
   doesn't know.
 - **Measured, not claimed.** Each release publishes retrieval quality, faithfulness, latency

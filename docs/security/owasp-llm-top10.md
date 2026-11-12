@@ -78,8 +78,11 @@ document, and no `forbidden_text` or code word appears in any document the attac
 (`tests/test_eval_redteam.py`). They also show the scoring catches a broken retriever, a broken
 row policy, an obeyed injection and a copied system prompt, and passes an honest answer.
 
-The one live run so far (2026-11-12, Claude Sonnet 5.5, 0 leaks, 2 violations after rescoring) is
-described at the top of this page and in [evals/README.md](../../evals/README.md#red-team).
+Three live runs so far, all on 2026-11-12 with Claude Sonnet 5.5: the first after the Phase 12
+merges (0 leaks, 2 violations after rescoring), described at the top of this page and in
+[evals/README.md](../../evals/README.md#red-team); then the v1.0 benchmark's runs in `single` and
+`auto` mode (0 leaks, 0 violations each; [v1.0 benchmarks](../benchmarks/v1.0.md)). The change
+from 2 to 0 came with no related code change: model variation, not an improvement.
 
 ---
 
@@ -119,10 +122,10 @@ rt-17 to rt-29 (documents, meeting, Slack, ticket, on chat, agents and research)
 **Residual risk.** Prompt-level defenses are probabilistic. Within what the person may see and
 do, an injected document can still change what the answer says, steer a research run's
 searches, or get an email drafted for the person's approval. There is no input or output
-classifier (the "input guard" in ARCHITECTURE 12.1 is not built). In the one live run of the
-59 attacks (2026-11-12, Claude Sonnet 5.5), no answer followed an injected instruction; one
-quoted the injected code word while saying it ignored it. One run with one model is not an obey
-rate. Agent instructions written by a malicious admin reach users
+classifier (the "input guard" in ARCHITECTURE 12.1 is not built). In the three live runs of the
+59 attacks (2026-11-12, Claude Sonnet 5.5), no answer followed an injected instruction; in the
+first, one quoted the injected code word while saying it ignored it. Three runs of one model are
+not an obey rate. Agent instructions written by a malicious admin reach users
 unfiltered (versioned and audited).
 
 ## LLM02: Sensitive information disclosure
