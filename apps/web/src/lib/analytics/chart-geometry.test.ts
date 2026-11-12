@@ -49,6 +49,9 @@ describe("chartGeometry", () => {
     expect(g.rotateLabels).toBe(true);
     expect(g.labelStep).toBe(1); // every bar keeps its label
     expect(g.margin.bottom).toBeGreaterThan(28);
+    // The first label, run down-left at an angle, still starts inside the chart.
+    const first = shortLabel(names[0]).length * 6.4 * Math.cos((35 * Math.PI) / 180);
+    expect(g.x(0) - first).toBeGreaterThanOrEqual(0);
     expect(shortLabel("Brightwater Beverages and Sons")).toBe("Brightwater Beverag…");
     expect(chartGeometry(data("stacked_bar"), 600).rotateLabels).toBe(false); // three months fit
   });

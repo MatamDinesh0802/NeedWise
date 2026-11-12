@@ -67,15 +67,20 @@ export function chartGeometry(data: ChartData, width: number, endLabel: string |
     right = Math.max(right, Math.ceil(estimateTextWidth(data.categories[data.categories.length - 1].label) / 2 + 4));
   }
   const margin = { top: 12, right, bottom: 28, left };
-  const plotWidth = Math.max(40, width - margin.left - margin.right);
+  let plotWidth = Math.max(40, width - margin.left - margin.right);
   const labels = data.categories.map((c) => c.label);
   // Bars name categories (customers, countries): thinning their labels leaves bars nobody can
   // name, so they turn to an angle instead, as long as one line of text fits per bar.
   const slot = plotWidth / Math.max(1, data.categories.length);
   const rotateLabels = data.type !== "line" && labelStep(labels, slot) > 1 && slot >= LINE_HEIGHT;
   if (rotateLabels) {
-    const longest = Math.max(...labels.map((l) => estimateTextWidth(shortLabel(l))));
-    margin.bottom = Math.ceil(Math.min(130, longest * Math.sin((LABEL_ANGLE * Math.PI) / 180) + 22));
+    const angle = (LABEL_ANGLE * Math.PI) / 180;
+    const widths = labels.map((l) => estimateTextWidth(shortLabel(l)));
+    margin.bottom = Math.ceil(Math.min(130, Math.max(...widths) * Math.sin(angle) + 22));
+    // A label runs down and to the left of its bar: the first ones need room left of the plot.
+    const reach = Math.max(...widths.map((w, i) => w * Math.cos(angle) - (i + 0.5) * slot));
+    margin.left = Math.max(margin.left, Math.ceil(reach + 4));
+    plotWidth = Math.max(40, width - margin.left - margin.right);
   }
   const t0 = ticks[0];
   const t1 = ticks[ticks.length - 1];
