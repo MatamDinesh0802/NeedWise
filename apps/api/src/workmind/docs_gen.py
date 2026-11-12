@@ -132,7 +132,8 @@ NOTES: dict[str, str] = {
     ),
     "secrets_encryption_key": (
         "Encrypts organizations' model provider keys at rest (AES-256-GCM): 32 random bytes, "
-        "base64. Required unless `APP_ENV` is `dev` or `test`. Rotation: see Models and keys."
+        "base64. Required unless `APP_ENV` is `dev` or `test`. "
+        "[Rotating it](../models.md#rotating-the-key)."
     ),
     "secrets_encryption_previous_keys": (
         "Older keys, comma-separated, that only decrypt: set during a rotation, then run "

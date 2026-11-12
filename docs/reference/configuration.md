@@ -54,7 +54,7 @@ not shown here; where one exists it is a development value.
 | Variable | Type | Default | Description |
 |---|---|---|---|
 | <a id="secrets_key"></a>`SECRETS_KEY` | *secret* | *development value* | Encrypts connector credentials at rest (AES-256-GCM): 32 random bytes, base64. Production refuses the development value. |
-| <a id="secrets_encryption_key"></a>`SECRETS_ENCRYPTION_KEY` | *secret* | *unset* | Encrypts organizations' model provider keys at rest (AES-256-GCM): 32 random bytes, base64. Required unless `APP_ENV` is `dev` or `test`. Rotation: see Models and keys. |
+| <a id="secrets_encryption_key"></a>`SECRETS_ENCRYPTION_KEY` | *secret* | *unset* | Encrypts organizations' model provider keys at rest (AES-256-GCM): 32 random bytes, base64. Required unless `APP_ENV` is `dev` or `test`. [Rotating it](../models.md#rotating-the-key). |
 | <a id="secrets_encryption_previous_keys"></a>`SECRETS_ENCRYPTION_PREVIOUS_KEYS` | *secret* | *unset* | Older keys, comma-separated, that only decrypt: set during a rotation, then run `wm secrets rotate`. |
 
 ## Language models
