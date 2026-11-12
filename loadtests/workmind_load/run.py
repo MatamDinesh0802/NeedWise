@@ -14,10 +14,12 @@
 """
 
 import argparse
+import contextlib
 import json
 import os
 import platform
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -67,6 +69,38 @@ def commit() -> str:
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
     return result.stdout.strip()
+
+
+def run_in_group(command: list[str], cwd: Path, *, grace_s: float = 10.0) -> int:
+    """Runs a command in a process group of its own; when it ends, stops what is left of the
+    group. With --processes, Locust's worker processes can outlive the master: they wait for
+    its heartbeat for 60 s, then stop their users and report to whatever master listens on
+    the port by then. In a series of runs that is the next run's: its report counted their
+    conversation deletes, sent with the previous run's revoked tokens, as failures (401)."""
+    process = subprocess.Popen(command, cwd=cwd, start_new_session=True)  # noqa: S603
+    try:
+        return process.wait()
+    finally:
+        stop_group(process.pid, grace_s)
+
+
+def stop_group(group: int, grace_s: float) -> None:
+    """SIGTERM to every process of the group, SIGKILL to those still there after grace_s."""
+    if not hasattr(os, "killpg"):  # not POSIX: nothing to clean up this way
+        return
+    try:
+        os.killpg(group, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + grace_s
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(group, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.1)
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(group, signal.SIGKILL)
 
 
 def processes(count: int) -> str:
@@ -194,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
     clock = time.monotonic()
     exit_code = 1
     try:
-        exit_code = subprocess.run(command, cwd=LOADTESTS_DIR, check=False).returncode  # noqa: S603
+        exit_code = run_in_group(command, LOADTESTS_DIR)
     finally:
         meta["elapsed_s"] = round(time.monotonic() - clock, 1)
         if sampler is not None:
