@@ -1,6 +1,6 @@
 # WorkMind AI — Roadmap, Releases and Go-to-Market
 
-> **Status:** Draft v0.2 · **Phase 0 complete** · **Last updated:** 2026-11-02
+> **Status:** Draft v0.2 · **Phase 0 complete** · **Last updated:** 2026-11-12
 > **Companion doc:** [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## 1. Strategy in one paragraph
@@ -249,14 +249,27 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #8 — "Connecting to Google Drive is easy. Keeping permissions in sync is the hard part."**
 
-### Phase 8 — Workflow automation and approvals (v0.8) ✅ Backend done; UI in progress (see `docs/automation.md`)
+### Phase 8 — Workflow automation and approvals (v0.8) ✅ Built, except escalation, email/Slack notifications and request routing (see `docs/automation.md`)
 
 > DoD met live: "prepare the weekly ops report and email it to leadership" → four searches → a
-> drafted email → approval with an edit → sent (Mailpit) → every step audited. Done: approvals
-> (stored proposals, atomic decisions, edits re-validated, expiry), tasks and department queues,
-> notifications, SMTP `send_email`, `create_task`, research mode in chat with approval events,
-> YAML workflows with cron schedules, pause and resume at approvals. Event triggers (`document.ready`)
-> are defined but not yet fired by ingestion.
+> drafted email → approval with an edit → sent (Mailpit) → every step audited.
+>
+> Done: approvals (stored proposals, atomic decisions, edits re-validated, expiry after 3 days);
+> the approvals inbox and approval pages; inline approval cards in chat, which come back after a
+> reload with the research steps that proposed them; tasks with department queues (claim, hand
+> over); SMTP `send_email` and `create_task`; research mode; workflows with manual, cron and
+> `document.ready` triggers (one run per document version, as the owner, only for documents the
+> owner can view), paused and resumed at approvals; Admin › Workflows (edit, run now, run history,
+> delete); in-app notifications, each opening a page that exists. The Operations agent is a
+> department agent in `seed/acme/company.yaml`; the weekly report is a template in Admin ›
+> Workflows, not a seeded workflow.
+>
+> Not built: escalation (an approval nobody decides expires after 3 days, with no reminder and no
+> second approver); notifications by email or Slack/Teams (in-app only); approver rules other than
+> a named person (roles, department managers, chains); classifying inbound requests into
+> department queues (a task reaches a queue only when a person, or the assistant after approval,
+> puts it there); a YAML editor (Admin › Workflows takes the definition as JSON); events other
+> than `document.ready`.
 
 **Goal:** WorkMind does work, safely, with humans in control.
 
