@@ -21,7 +21,8 @@ config:
   env:
     OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc:4318
 
-# A managed Postgres 16 or later. Create the roles and databases first (docs/deploy/kubernetes.md,
+# A managed PostgreSQL 18 or later (required: the schema uses uuidv7(), new in 18; on 16 or 17
+# the migrate hook fails at 0002 and so does helm install). Create the roles and databases first (docs/deploy/kubernetes.md,
 # "External services"); the bundled Keycloak and OpenFGA use their own databases on it.
 database:
   host: workmind-db.example.internal   # yours

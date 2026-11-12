@@ -62,7 +62,7 @@ Each row becomes a full Architecture Decision Record (ADR) in `docs/adr/` when i
 | Architecture style | Modular monolith (API + workers + scheduler) | Fast to build solo and easy to deploy. Clear module boundaries keep a later split possible. | Microservices (too much ops overhead for now) |
 | Backend | Python 3.12+ / FastAPI | Best AI ecosystem, async, OpenAPI out of the box | Node.js / TypeScript |
 | Agent orchestration | Plain asyncio orchestrator ([ADR 0009](adr/0009-orchestration-without-a-graph-framework.md)) | The graph is shallow and fixed; streaming and replay already live in run events; approvals are persisted actions, not suspended graphs | LangGraph, CrewAI, AutoGen |
-| Relational DB | PostgreSQL 17+ | Reliable, Row-Level Security for tenant isolation, JSONB | MySQL |
+| Relational DB | PostgreSQL 18+ (required: `uuidv7()`) | Reliable, Row-Level Security for tenant isolation, JSONB | MySQL |
 | Search | Qdrant: dense + BM25 sparse vectors, fused with RRF | Hybrid search in one query, fast payload filtering for permissions, tenant-aware indexing | pgvector + Postgres full-text, OpenSearch |
 | Identity (login) | Keycloak | OIDC/SAML, MFA, social login, federation to Okta/Entra/Google, Organizations for multi-tenancy | Auth.js, Ory, Zitadel |
 | Authorization | OpenFGA (relationship-based, Zanzibar model) | Inheritance (org → department → collection → document), nested groups, external ACLs from connectors | Plain RBAC tables, Casbin, Cerbos |

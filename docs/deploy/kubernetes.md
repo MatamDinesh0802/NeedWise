@@ -303,7 +303,9 @@ Set `<service>.enabled: false` and point the chart at your service.
 [`examples/external-services.yaml`](../../deploy/helm/workmind/examples/external-services.yaml)
 does it for all of them.
 
-**Postgres.** Compose and CI use 18.6; older versions are not tested. Set `database.host`,
+**Postgres.** PostgreSQL 18 or later is required: every migration from `0002` on uses
+`uuidv7()`, which is new in 18, so on 16 or 17 the migrate hook fails at `0002` (`function
+uuidv7() does not exist`) and `helm install` with it. Compose and CI use 18.6. Set `database.host`,
 `database.port` and, for TLS, `database.urlParams: ssl=require`. Create the roles and the
 database the way `deploy/postgres/init/01-databases.sh` does, as a user that is a member of
 `workmind_owner` (on a managed service, `GRANT workmind_owner TO <admin user>` first: Postgres
