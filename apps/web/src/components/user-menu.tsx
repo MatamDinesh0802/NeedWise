@@ -134,8 +134,7 @@ export function UserMenu() {
           <Button variant="ghost" className="h-9 gap-2 px-1.5" aria-label={`Account menu for ${me.display_name}`} />
         }
       >
-        {/* The initials repeat the name: hidden, so the visible text is part of the button's name. */}
-        <Avatar aria-hidden="true">
+        <Avatar>
           <AvatarFallback className="text-xs">{initials(me.display_name, me.email)}</AvatarFallback>
         </Avatar>
         <span className="hidden max-w-40 truncate text-sm font-medium sm:inline">{me.display_name}</span>

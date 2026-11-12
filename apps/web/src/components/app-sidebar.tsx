@@ -17,11 +17,24 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { activeNavItem, siteConfig, visibleNavItems, type NavItem } from "@/config/site";
 import { useSession } from "@/hooks/use-session";
 
+/**
+ * On a phone the sidebar is a sheet over the page: close it once a link is chosen, or it keeps
+ * covering the page that link opened. On wider screens it stays as it is.
+ */
+function useCloseOnNavigate(): () => void {
+  const { isMobile, setOpenMobile } = useSidebar();
+  return () => {
+    if (isMobile) setOpenMobile(false);
+  };
+}
+
 function NavMenu({ items, activeHref }: { items: NavItem[]; activeHref?: string }) {
+  const closeOnNavigate = useCloseOnNavigate();
   return (
     <SidebarMenu>
       {items.map((item) => {
@@ -31,7 +44,7 @@ function NavMenu({ items, activeHref }: { items: NavItem[]; activeHref?: string 
             <SidebarMenuButton
               isActive={active}
               tooltip={item.title}
-              render={<Link href={item.href} aria-current={active ? "page" : undefined} />}
+              render={<Link href={item.href} aria-current={active ? "page" : undefined} onClick={closeOnNavigate} />}
             >
               <item.icon />
               <span>{item.title}</span>
@@ -61,13 +74,14 @@ function SidebarView({ activeHref }: { activeHref: string | undefined }) {
   const role = state.kind === "signed_in" ? state.me.org_role : undefined;
   // Hiding Admin for non-admins is cosmetic only: the API enforces every permission.
   const adminItems = visibleNavItems("administration", role);
+  const closeOnNavigate = useCloseOnNavigate();
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<Link href="/" />}>
+            <SidebarMenuButton size="lg" render={<Link href="/" onClick={closeOnNavigate} />}>
               <BrandMark className="size-8!" />
               <div className="grid flex-1 text-left leading-tight">
                 <span className="truncate font-semibold">{siteConfig.name}</span>
