@@ -14,6 +14,7 @@ import threading
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 import uvicorn
@@ -111,54 +112,35 @@ def fake() -> Iterator[tuple[FakeWorkMind, str]]:
     thread.join(10)
 
 
-def test_the_token_users_run_their_scenarios(
-    fake: tuple[FakeWorkMind, str], tmp_path: Path
-) -> None:
-    workmind, host = fake
+MIX = "reader=1,poller=1,chat=1,agents=1,analyst=1,admin=0,login=0,upload=0"
+
+
+def run_locust(host: str, tmp_path: Path, *options: str) -> dict[str, dict[str, Any]]:
+    """Four seconds of headless Locust with tokens for LOGINS; its JSON statistics by name."""
     tokens = tmp_path / "tokens.json"
     issued = [IssuedToken(email, f"id-{i}", f"token-{i}") for i, email in enumerate(LOGINS)]
     TokenFile(host, "loadtest-test", "now", issued).save(tokens)
     out = tmp_path / "locust"
-
+    command = [
+        sys.executable, "-m", "locust", "-f", str(LOADTESTS / "locustfile.py"), "--headless",
+        "--host", host, "-u", "5", "-r", "5", "-t", "4s", "--json-file", str(out),
+        "--only-summary", "--stop-timeout", "5", "--exit-code-on-error", "0",
+        "--wm-tokens", str(tokens), "--wm-think", "0.05,0.1", "--wm-mix", MIX, *options,
+    ]  # fmt: skip
     finished = subprocess.run(  # noqa: S603  (fixed arguments)
-        [
-            sys.executable,
-            "-m",
-            "locust",
-            "-f",
-            str(LOADTESTS / "locustfile.py"),
-            "--headless",
-            "--host",
-            host,
-            "-u",
-            "5",
-            "-r",
-            "5",
-            "-t",
-            "4s",
-            "--json-file",
-            str(out),
-            "--only-summary",
-            "--stop-timeout",
-            "5",
-            "--exit-code-on-error",
-            "0",
-            "--wm-tokens",
-            str(tokens),
-            "--wm-think",
-            "0.05,0.1",
-            "--wm-mix",
-            "reader=1,poller=1,chat=1,agents=1,analyst=1,admin=0,login=0,upload=0",
-        ],
-        cwd=LOADTESTS,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
+        command, cwd=LOADTESTS, capture_output=True, text=True, timeout=60, check=False
     )
-
     assert finished.returncode == 0, finished.stderr[-2000:]
-    stats = {e["name"]: e for e in json.loads(out.with_suffix(".json").read_text())}
+    return {e["name"]: e for e in json.loads(out.with_suffix(".json").read_text())}
+
+
+def test_the_token_users_run_their_scenarios(
+    fake: tuple[FakeWorkMind, str], tmp_path: Path
+) -> None:
+    workmind, host = fake
+
+    stats = run_locust(host, tmp_path)
+
     assert {n: e["num_failures"] for n, e in stats.items() if e["num_failures"]} == {}
     for name in (
         "conversations: list",
@@ -177,3 +159,15 @@ def test_the_token_users_run_their_scenarios(
     deleted = sum(1 for m, p, _ in workmind.seen if m == "DELETE")
     assert created == deleted > 0  # each user deletes its conversations when it stops
     assert {a for _, _, a in workmind.seen} <= {f"Bearer token-{i}" for i in range(len(LOGINS))}
+
+
+def test_without_a_model_nothing_asks(fake: tuple[FakeWorkMind, str], tmp_path: Path) -> None:
+    workmind, host = fake
+
+    stats = run_locust(host, tmp_path, "--wm-no-model")
+
+    asked = {p for m, p, _ in workmind.seen if m == "POST" and p.endswith(("/messages", "/ask"))}
+    assert asked == set()
+    assert not [n for n in stats if n.endswith(("send question", "time to first token"))]
+    assert stats["insights: re-run query"]["num_requests"] > 0  # the analyst still works
+    assert stats["search"]["num_requests"] > 0
