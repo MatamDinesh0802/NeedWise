@@ -125,6 +125,7 @@ E: elevation of privilege. "Residual" lists what is not prevented.
 | I | Answer exfiltrates through a link | Links open in a new tab, `noreferrer`; the host is shown next to the text (fixed) | No allow-list: a person can still click |
 | D | Many concurrent runs | One run per conversation; at most `MAX_INFLIGHT_PER_USER` (4) answers in progress per person (fixed); budgets | No request rate limit per minute; budgets do not count unpriced (local) models |
 | E | Follow-up history used to re-ask after access is revoked | Each turn retrieves again with current access | Earlier answers stay in the conversation and its summary, and are sent back as history |
+| T | An injected answer persists: folded into the summary, it would sit in the system prompt of every later turn | The summary and the history are escaped and cannot close their elements (fixed); the summary is labelled "not a source" | The summary is still model text in the system prompt; a model may follow it |
 
 ### 4.2 Agents mode and configured agents (`modules/agents/`)
 

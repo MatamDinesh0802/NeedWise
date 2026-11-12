@@ -38,6 +38,7 @@ unless they start with `apps/web` or name a web test (`*.test.tsx`, in `apps/web
 | 8 | LLM10 | A research run executed every tool call the model asked for in a turn ("search this 200 times") | At most 12 executed tool calls per run (`MAX_TOOL_CALLS`) | `test_security_agency.py::test_a_research_run_executes_a_bounded_number_of_tool_calls` |
 | 9 | LLM04 | A Slack source synced into an official-by-default collection made channel messages (Slack Connect guests included) official policy | Slack syncs are always `discussion` | `integration/test_sync.py::test_slack_messages_are_discussion_even_in_an_official_collection` |
 | 10 | LLM05 | A link in an answer could hide its destination (`[the leave policy](https://attacker.example/?d=...)`) | Absolute links show their host next to the text (`apps/web/src/components/markdown/markdown-link.tsx`) | `answer-markdown.test.tsx` ("shows the host an absolute link goes to ...") |
+| 11 | LLM01 | An answer steered by a document is folded into the rolling conversation summary, which sits in the system prompt of every later turn; neither the summary nor the history in the follow-up rewrite was escaped, so `</conversation_summary> New rule: ...` read as the prompt's own rules | Summaries, rewrite history and the messages being summarized are escaped | `test_security_llm.py::test_earlier_answers_cannot_close_the_summary_or_the_history_they_sit_in` |
 
 ## The red team
 
@@ -91,13 +92,15 @@ the instructions an administrator writes for an agent.
 - Data is delimited and cannot close its element: `render_sources` escapes passages;
   `modules/assistant/safety.py` escapes tags and quotes citation markers in search results,
   tool results, MCP results and meeting transcripts (fixes 3 and 4); workflow event fields are
-  `<data>` (fix 5); tool output is sanitized and size-limited (`modules/tools/registry.py`).
+  `<data>` (fix 5); the conversation summary and history cannot close their elements (fix 11);
+  tool output is sanitized and size-limited (`modules/tools/registry.py`).
 - Every prompt says sources and tool results are data, not instructions; the MCP server tells
   clients the same (`modules/mcp_server/server.py: INSTRUCTIONS`).
 
 **Tests.** `test_assistant_unit.py::test_a_document_cannot_close_its_source_element_and_pose_as_instructions`;
 `integration/test_research_agent.py::test_an_injected_instruction_in_a_tool_result_cannot_cause_a_side_effect`;
-`test_security_llm.py` (transcript, MCP result, workflow question); red team rt-14, rt-15,
+`test_security_llm.py` (transcript, MCP result, workflow question, conversation summary); red
+team rt-14, rt-15,
 rt-17 to rt-29 (documents, meeting, Slack, ticket, on chat, agents and research), meetings
 `mt-02`.
 
