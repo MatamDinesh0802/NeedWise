@@ -16,7 +16,10 @@ import io
 import json
 import re
 import sys
+import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path, PurePath
 from typing import Any
 
@@ -45,7 +48,8 @@ Rules:
 FORMAT_GUIDANCE = {
     "xlsx": (
         "This becomes a spreadsheet: put the data in Markdown tables, each under a "
-        "'## <Sheet name>' heading. Notes go in a short paragraph under the table."
+        "'## <Sheet name>' heading of at most 31 characters (Excel's limit). Notes go in a "
+        "short paragraph under the table."
     ),
     "pptx": (
         "This becomes a slide deck: one '## <Slide title>' section per slide "
@@ -268,23 +272,59 @@ def to_pdf(markdown: str, title: str) -> bytes:
     return buffer.getvalue()
 
 
+SHEET_NAME_MAX = 31  # Excel's limit for a worksheet name
+# Written into every generated workbook instead of the time it was made, so the same Markdown
+# always gives the same bytes (and re-seeding an unchanged file is a no-op, not a new version).
+REPRODUCIBLE_TIME = datetime(2026, 1, 1)
+
+
+def sheet_name(heading: str, taken: Iterable[str] = ()) -> str:
+    """A worksheet name from a '## heading'. Excel forbids []:*?/\\ and allows 31 characters:
+    a longer heading is shortened at a word boundary (never mid-word), and a name already in
+    use (Excel compares them ignoring case) gets a number."""
+    name = " ".join(re.sub(r"[\[\]:*?/\\]", " ", heading).split()) or "Sheet"
+    if len(name) > SHEET_NAME_MAX:
+        words = name[: SHEET_NAME_MAX + 1].rsplit(" ", 1)[0].rstrip(",;-")
+        name = words if 0 < len(words) <= SHEET_NAME_MAX else name[:SHEET_NAME_MAX]
+    used = {t.lower() for t in taken}
+    unique, number = name, 2
+    while unique.lower() in used:
+        suffix = f" {number}"
+        unique = name[: SHEET_NAME_MAX - len(suffix)].rstrip() + suffix
+        number += 1
+    return unique
+
+
+def _fixed_zip_times(data: bytes) -> bytes:
+    """Zip entries record when they were written: the same fixed time for every entry."""
+    out = io.BytesIO()
+    stamp = REPRODUCIBLE_TIME.timetuple()[:6]
+    with (
+        zipfile.ZipFile(io.BytesIO(data)) as source,
+        zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as target,
+    ):
+        for entry in source.infolist():
+            fixed = zipfile.ZipInfo(entry.filename, date_time=stamp)
+            fixed.compress_type = zipfile.ZIP_DEFLATED
+            target.writestr(fixed, source.read(entry))
+    return out.getvalue()
+
+
 def to_xlsx(markdown: str, title: str) -> bytes:
     from openpyxl import Workbook
+    from openpyxl.writer.excel import ExcelWriter
 
     workbook = Workbook()
     workbook.properties.title = title
+    workbook.properties.created = workbook.properties.modified = REPRODUCIBLE_TIME
     default = workbook.active
     sheet = None
-    name = "Sheet1"
+    heading = "Sheet1"
     for block in markdown_blocks(markdown):
         if block.kind == "heading" and block.level >= 2:
-            name = re.sub(r"[\[\]:*?/\\]", " ", block.text)[:31].strip() or "Sheet"
+            heading = block.text
         elif block.kind == "table":
-            sheet = workbook.create_sheet(
-                name
-                if name not in workbook.sheetnames
-                else f"{name[:28]} {len(workbook.sheetnames)}"
-            )
+            sheet = workbook.create_sheet(sheet_name(heading, workbook.sheetnames))
             for row in block.rows:
                 sheet.append([_cell(c) for c in row])
         elif block.kind in ("paragraph", "bullet", "number") and sheet is not None:
@@ -293,8 +333,10 @@ def to_xlsx(markdown: str, title: str) -> bytes:
     if default is not None and len(workbook.sheetnames) > 1:
         workbook.remove(default)
     buffer = io.BytesIO()
-    workbook.save(buffer)
-    return buffer.getvalue()
+    # Workbook.save() stamps the current time as "modified"; its writer keeps ours.
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+        ExcelWriter(workbook, archive).save()
+    return _fixed_zip_times(buffer.getvalue())
 
 
 def _cell(value: str) -> str | int | float:
