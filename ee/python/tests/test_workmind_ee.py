@@ -7,10 +7,12 @@ import pytest
 
 pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra ee")
 
+from pydantic import ValidationError
 from workmind.core.edition import FEATURES, Edition, License
 from workmind.core.extensions import ENTRY_POINT_GROUP, ExtensionRegistry, enable_extensions
 
 import workmind_ee
+from workmind_ee.retention import PolicyIn, cutoffs
 
 NOW = datetime(2026, 11, 12, tzinfo=UTC)
 
@@ -44,3 +46,31 @@ def test_the_installed_package_enables_enterprise() -> None:
     registry = enable_extensions(_enterprise())
     assert registry.edition.enterprise
     assert registry.edition.has("retention_policies")
+
+
+def test_setup_registers_retention_and_the_siem_export() -> None:
+    registry = ExtensionRegistry(_enterprise())
+    workmind_ee.setup(registry, registry.edition)
+    paths = {
+        (getattr(route, "path", ""), extension.feature)
+        for extension in registry.routers
+        for route in extension.router.routes
+    }
+    assert set(workmind_ee.IMPLEMENTED) == {"retention_policies", "advanced_audit_export"}
+    assert ("/admin/retention", "retention_policies") in paths
+    assert ("/admin/retention/run", "retention_policies") in paths
+    assert ("/admin/audit-events/export.jsonl", "advanced_audit_export") in paths
+    assert [(t.name, t.every_s, t.feature) for t in registry.scheduled_tasks] == [
+        ("workmind_ee.retention.apply", 86_400.0, "retention_policies")
+    ]
+
+
+def test_retention_never_goes_below_30_days() -> None:
+    with pytest.raises(ValidationError):
+        PolicyIn(conversations_days=29)
+    policy = PolicyIn(conversations_days=30, read_notifications_days=365)
+    limits = cutoffs(policy, NOW)
+    assert limits["conversations"] == NOW - timedelta(days=30)
+    assert limits["read_notifications"] == NOW - timedelta(days=365)
+    assert limits["analytics_runs"] is None  # not set: kept forever
+    assert limits["meeting_recordings"] is None

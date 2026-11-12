@@ -68,6 +68,8 @@ class MeetingOut(BaseModel):
     error: str | None
     filename: str
     has_media: bool
+    # Set when a retention policy deleted the recording (the transcript and notes stay).
+    media_deleted_at: datetime | None
     duration_s: float | None
     language: str | None
     segments: list[dict[str, Any]]
@@ -155,7 +157,8 @@ def _out(m: Meeting, can_edit: bool) -> MeetingOut:
         status=m.status,
         error=m.error,
         filename=m.filename,
-        has_media=transcripts.kind(m.filename) == "audio",
+        has_media=transcripts.kind(m.filename) == "audio" and m.media_deleted_at is None,
+        media_deleted_at=m.media_deleted_at,
         duration_s=m.duration_s,
         language=m.language,
         segments=m.segments,
@@ -284,6 +287,13 @@ async def meeting_media(ctx: AskContext, request: Request, meeting_id: uuid.UUID
     media_type = MEDIA_TYPES.get(PurePath(meeting.filename).suffix.lower())
     if media_type is None:
         raise ApiError(404, "not_found", "This meeting has no recording")
+    if meeting.media_deleted_at is not None:
+        raise ApiError(
+            410,
+            "media_deleted",
+            "The recording was deleted",
+            "The retention policy deleted it; the transcript and notes are kept.",
+        )
     data = await resources.storage.get(meeting.media_key)
     headers = {"Content-Security-Policy": "sandbox", "Accept-Ranges": "bytes"}
     try:

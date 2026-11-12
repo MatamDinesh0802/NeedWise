@@ -19,6 +19,7 @@ from starlette.routing import Route
 from workmind.api import auth, v1
 from workmind.api.deps import require_feature
 from workmind.api.ops import probes
+from workmind.api.v1 import enterprise_fallbacks
 from workmind.core.config import Settings, get_settings
 from workmind.core.errors import ApiError, api_error_handler, validation_error_handler
 from workmind.core.extensions import ExtensionRegistry, load_extensions
@@ -107,6 +108,8 @@ def create_app(
         app.include_router(
             extension.router, prefix="/api/v1", dependencies=[require_feature(extension.feature)]
         )
+    # Last: Enterprise paths that nothing registered answer 402 "enterprise_feature".
+    app.include_router(enterprise_fallbacks.router, prefix="/api/v1")
     _add_mcp(app, settings)
     app.state.tracer_provider = configure_telemetry(app, settings)
     return app
