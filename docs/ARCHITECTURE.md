@@ -688,6 +688,13 @@ If the selected model is an external API and the tenant policy is `restricted_da
 
 This is a key enterprise feature that only makes sense because WorkMind is open source and model-agnostic.
 
+**As built (Phase 3, generalized in Phase 11):** option (a) when a local model exists, else (b),
+with the person told how many sources were left out. The tenant's data policy (Admin → Models)
+sets the highest sensitivity external models may receive (`public` to `restricted`) and its local
+model; without one, `restricted_data` maps onto it (`local_only` = up to `confidential`, `allow` =
+everything). Every model call resolves through the tenant's role mapping and providers, including
+bring-your-own keys: see [docs/models.md](models.md).
+
 ### 11.7 Caching and performance targets
 
 - Caches: query embeddings, and the principal set.
