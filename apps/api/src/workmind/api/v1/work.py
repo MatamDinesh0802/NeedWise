@@ -344,6 +344,10 @@ async def get_task(ctx: AskContext, request: Request, task_id: uuid.UUID) -> Tas
 async def update_task(
     ctx: AskContext, request: Request, task_id: uuid.UUID, body: TaskUpdate
 ) -> TaskOut:
+    if ctx.org_role == "guest" and body.assignee_id not in (None, ctx.user_id):
+        # As in create_task: a guest's tasks are for themselves, so they cannot hand one over
+        # either (that would put work, and a notification title, on any employee's list).
+        raise ApiError(403, "forbidden", "Guests can only assign tasks to themselves")
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         task = await _visible_task(session, ctx, task_id)
         if body.status:

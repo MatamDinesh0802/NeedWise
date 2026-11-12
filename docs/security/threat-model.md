@@ -143,7 +143,7 @@ E: elevation of privilege. "Residual" lists what is not prevented.
 | | Threat | Control | Residual |
 |---|---|---|---|
 | E | Injected instruction makes the agent send email or create a task | Write and external tools stop at the approval gate; the approval stores the call and shows its full arguments; it runs only if a person approves | The person who asked approves their own research run's actions: an injected email the person does not read carefully can be approved |
-| E | A guest sends mail as the company or assigns work to employees | `send_email` and `create_task` are not available to guests, and refuse them (fixed); a guest's POST /tasks is for themselves only (fixed) | none known |
+| E | A guest sends mail as the company or assigns work to employees | `send_email` and `create_task` are not available to guests, and refuse them (fixed); a guest's POST /tasks is for themselves only, and a guest cannot hand a task to anyone else with PATCH /tasks/{id} (both fixed) | none known |
 | I | Probing the directory through tool errors | Guests no longer reach `create_task` (fixed) | Members can still learn whether an address exists (they also see the directory) |
 | D | "Search this 200 times" in one turn | At most 6 model turns and 12 executed tool calls per research run (fixed) | none known |
 | T | An approver edits a workflow's proposed email and it runs as the workflow's owner | Edits are audited (`edited: true`) and shown on the approval | By design: the approver is chosen by the owner |

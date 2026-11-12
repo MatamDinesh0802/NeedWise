@@ -134,7 +134,7 @@ collection (e.g. by sensitivity or file type).
 
 Guests (external contractors) cannot use `send_email` or `create_task`: research mode does not
 offer them, and a call that reaches them anyway is refused. A guest's `POST /api/v1/tasks` can
-only create a task for themselves. In a research step, values from `{{ event.* }}` and
+only create a task for themselves, and `PATCH /api/v1/tasks/{id}` cannot hand one to anyone else. In a research step, values from `{{ event.* }}` and
 `{{ steps.* }}` are inserted as `<data>` elements (someone else wrote them: a document's author,
 or a model that read documents); in tool arguments they are inserted as they are.
 
