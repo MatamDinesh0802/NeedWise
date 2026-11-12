@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Me } from "@/lib/session";
 import { alice } from "@/test/fixtures";
-import { aliceCap, financeBudget, tenantBudget, tenantSummary } from "@/test/usage-fixtures";
+import { aliceCap, financeBudget, selfSummary, tenantBudget, tenantSummary } from "@/test/usage-fixtures";
 
 import {
   budgetsForMe,
@@ -16,6 +16,7 @@ import {
   groupOptions,
   joinNames,
   kpis,
+  myUsage,
   resetText,
   scopeHeading,
   sortBudgets,
@@ -113,6 +114,17 @@ describe("KPIs", () => {
     expect(unpricedNote({ requests: 640, unpriced_requests: 1 })).toContain("1 of 640 requests has no price");
     expect(unpricedNote({ requests: 12, unpriced_requests: 12 })).toContain("All 12 requests have no price");
     expect(unpricedNote({ requests: 1, unpriced_requests: 1 })).toContain("The only request has no price");
+  });
+});
+
+describe("myUsage", () => {
+  it("uses the totals when the scope is only me, and my group otherwise", () => {
+    expect(myUsage(selfSummary, alice.id)).toEqual({ cost_usd: 1.2, requests: 31, unpriced_requests: 0 });
+    const byUser = { ...tenantSummary, group_by: "user" as const, groups: [{ ...tenantSummary.groups[0], key: alice.id }] };
+    expect(myUsage(byUser, alice.id)).toEqual({ cost_usd: 9.5, requests: 300, unpriced_requests: null });
+    expect(myUsage(byUser, "nobody")).toEqual({ cost_usd: 0, requests: 0, unpriced_requests: null });
+    // Grouped by something else, a department id must never be read as mine.
+    expect(myUsage({ ...tenantSummary, groups: [{ ...tenantSummary.groups[0], key: alice.id }] }, alice.id).requests).toBe(0);
   });
 });
 

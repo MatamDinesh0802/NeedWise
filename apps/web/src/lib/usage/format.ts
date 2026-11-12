@@ -15,6 +15,7 @@ import type {
   UsageFeature,
   UsageGroup,
   UsageScope,
+  UsageSummary,
   UsageTotals,
 } from "@/lib/usage/api";
 
@@ -163,6 +164,21 @@ export function kpis(totals: UsageTotals): Kpi[] {
       detail: tokens > 0 ? `${formatNumber(totals.input_tokens, "compact")} in · ${formatNumber(totals.output_tokens, "compact")} out` : null,
     },
   ];
+}
+
+/**
+ * This person's own figures from a summary grouped by user: the totals when the scope is only
+ * them, otherwise their group (keyed by user id). Not in the groups means no requests.
+ */
+export function myUsage(
+  summary: Pick<UsageSummary, "scope" | "totals" | "groups" | "group_by">,
+  meId: string,
+): { cost_usd: number; requests: number; unpriced_requests: number | null } {
+  if (summary.scope.kind === "self") {
+    return { cost_usd: summary.totals.cost_usd, requests: summary.totals.requests, unpriced_requests: summary.totals.unpriced_requests };
+  }
+  const group = summary.group_by === "user" ? summary.groups.find((g) => g.key === meId) : undefined;
+  return { cost_usd: group?.cost_usd ?? 0, requests: group?.requests ?? 0, unpriced_requests: null };
 }
 
 // --- Budgets ---------------------------------------------------------------------------------
