@@ -32,7 +32,7 @@ Trivy keeps its vulnerability database (about 1.6 GB unpacked) in `~/.cache/work
 | Dockerfile lint | hadolint 2.15.1 | Security workflow, `make scan` | any finding, info level included |
 | Workflow lint and audit | actionlint 1.7.12 (with shellcheck), zizmor 1.32.0, shellcheck on `scripts/`, `scripts/lib/` and `deploy/helm/*.sh` | Security workflow, `make scan` | any actionlint or shellcheck error; a zizmor finding of medium severity or above |
 | Static analysis | CodeQL, `security-extended` (python, javascript-typescript, actions) | [`codeql.yml`](../../.github/workflows/codeql.yml) | results go to Security > Code scanning; they block a merge only if branch protection requires the check |
-| Secrets in git history | gitleaks 8.30.1 | `ci.yml`, pre-commit | any leak |
+| Secrets in git history | gitleaks 8.30.1, default rules; [`.gitleaks.toml`](../../.gitleaks.toml) allows only test fixtures, the fictional demo company's documents and the documented development-only key (10 findings in history, all invented values) | `ci.yml`, pre-commit | any other leak |
 | Updates | Dependabot | weekly, grouped: uv (api, loadtests), npm (web, e2e/browser), Dockerfile bases, compose images, actions | (opens PRs) |
 
 The Security workflow ([`security.yml`](../../.github/workflows/security.yml)) runs on pushes to
