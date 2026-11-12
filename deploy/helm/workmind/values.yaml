@@ -293,6 +293,12 @@ objectStorage:
 # ---------------------------------------------------------------------------------------------
 api:
   replicas: 1
+  # Uvicorn worker processes per pod (WEB_CONCURRENCY). One process uses at most one CPU core,
+  # and under load that core is the API's limit (docs/benchmarks/load.md): keep the CPU limit
+  # at least this many cores. Each process has its own database pool (DB_POOL_SIZE +
+  # DB_MAX_OVERFLOW, 10 + 10 by default): replicas x workers x 20 must stay under Postgres's
+  # max_connections, with room for Keycloak, OpenFGA and the workers.
+  workers: 2
   # Uvicorn trusts X-Forwarded-* from these addresses. Only the Service (and, with
   # networkPolicy.enabled, only the listed sources) can reach the pod.
   forwardedAllowIps: "*"

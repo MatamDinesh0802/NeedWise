@@ -78,6 +78,7 @@ refuse "the demo seed in production" "refuses config.appEnv production" \
 refuse "renamed roles on the bundled Postgres" "can only change with an external database" \
   --set database.appUser=app
 refuse "no embedding server" "config.embedding.baseUrl is required" --set embeddings.enabled=false
+refuse "an API without worker processes" "workers" --set api.workers=0
 refuse "an external Valkey with auth and no password" "credentials.valkeyPassword is required" \
   --set valkey.enabled=false --set valkey.external.host=valkey.example
 echo "All chart checks passed."

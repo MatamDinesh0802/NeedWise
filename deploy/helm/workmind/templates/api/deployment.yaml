@@ -66,6 +66,8 @@ spec:
             {{- include "workmind.appEnv" . | nindent 12 }}
             - name: FORWARDED_ALLOW_IPS
               value: {{ $c.forwardedAllowIps | quote }}
+            - name: WEB_CONCURRENCY
+              value: {{ $c.workers | quote }}
             {{- with $c.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

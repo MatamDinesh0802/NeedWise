@@ -169,3 +169,10 @@ not shown here; where one exists it is a development value.
 | <a id="keycloak_admin_user"></a>`KEYCLOAK_ADMIN_USER` | string | `admin` | The Keycloak admin login the seed tool (`make seed`) creates demo logins with. |
 | <a id="keycloak_admin_password"></a>`KEYCLOAK_ADMIN_PASSWORD` | *secret* | *development value* | That login's password. |
 | <a id="demo_password"></a>`DEMO_PASSWORD` | *secret* | *development value* | The password of the demo logins that `make seed` creates. |
+
+## Other settings
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| <a id="db_pool_size"></a>`DB_POOL_SIZE` | integer, ≥ 1, ≤ 200 | `10` | The API's database connections per worker process: kept open, and extra under load. Every API worker process (API_WORKERS in compose, api.workers in Helm) has its own pool, so the API opens at most (size + overflow) x processes; keep that under Postgres's max_connections with room for Keycloak, OpenFGA and the Celery workers (docs/benchmarks/load.md). |
+| <a id="db_max_overflow"></a>`DB_MAX_OVERFLOW` | integer, ≥ 0, ≤ 200 | `10` | *Not described yet.* |

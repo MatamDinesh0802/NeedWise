@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     )
     # Name of the runtime role; migrations grant and revoke privileges for it.
     db_app_role: str = "workmind_app"
+    # The API's database connections per worker process: kept open, and extra under load.
+    # Every API worker process (API_WORKERS in compose, api.workers in Helm) has its own pool,
+    # so the API opens at most (size + overflow) x processes; keep that under Postgres's
+    # max_connections with room for Keycloak, OpenFGA and the Celery workers
+    # (docs/benchmarks/load.md).
+    db_pool_size: int = Field(default=10, ge=1, le=200)
+    db_max_overflow: int = Field(default=10, ge=0, le=200)
     valkey_url: str = "redis://localhost:6379/0"
     qdrant_url: str = "http://localhost:6333"
     openfga_api_url: str = "http://localhost:8401"

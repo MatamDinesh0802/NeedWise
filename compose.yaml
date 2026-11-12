@@ -194,6 +194,10 @@ services:
       <<: *app-env
       # Trust X-Forwarded-* headers: only Caddy (and localhost) can reach this container.
       FORWARDED_ALLOW_IPS: "*"
+      # Uvicorn worker processes. One process runs on one CPU core; under load that core is
+      # the API's limit (docs/benchmarks/load.md). Each has its own database pool
+      # (DB_POOL_SIZE + DB_MAX_OVERFLOW connections, 10 + 10 by default).
+      WEB_CONCURRENCY: ${API_WORKERS:-2}
     volumes:
       - ./.data/objects:/data/objects
       # License files from `make ee-dev-license` (docs/enterprise.md). Empty: Community.

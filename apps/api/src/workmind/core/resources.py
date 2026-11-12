@@ -111,7 +111,11 @@ class Resources:
         if extensions is None:
             extensions = load_extensions(settings)
         # Every client connects lazily, so startup never blocks on infrastructure.
-        engine = create_engine(settings.database_url)
+        engine = create_engine(
+            settings.database_url,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+        )
         valkey = Redis.from_url(settings.valkey_url)  # pyright: ignore[reportUnknownMemberType] (untyped **kwargs upstream)
         http = httpx.AsyncClient(timeout=10)
         db = create_session_factory(engine)

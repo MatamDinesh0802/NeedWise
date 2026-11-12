@@ -49,8 +49,12 @@ def uuid_primary_key() -> Mapped[uuid.UUID]:
     return mapped_column(primary_key=True, server_default=text("uuidv7()"))
 
 
-def create_engine(url: str) -> AsyncEngine:
-    return create_async_engine(url, pool_pre_ping=True, pool_size=10, max_overflow=10)
+def create_engine(url: str, *, pool_size: int = 10, max_overflow: int = 10) -> AsyncEngine:
+    """`pool_size` connections stay open, up to `max_overflow` more under load (DB_POOL_SIZE,
+    DB_MAX_OVERFLOW)."""
+    return create_async_engine(
+        url, pool_pre_ping=True, pool_size=pool_size, max_overflow=max_overflow
+    )
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

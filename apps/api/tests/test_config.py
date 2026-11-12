@@ -81,3 +81,34 @@ def test_encryption_keys_must_be_32_bytes_of_base64() -> None:
         secrets_encryption_previous_keys=f" {REAL_KEY} ,",  # pyright: ignore[reportArgumentType]
     )
     assert rotated.encryption_keys == (OTHER_KEY, [REAL_KEY])
+
+
+async def test_the_database_pool_follows_its_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DB_POOL_SIZE and DB_MAX_OVERFLOW size each API process's pool (one per uvicorn worker,
+    docs/benchmarks/load.md). Nothing connects: the engine opens connections lazily."""
+    from sqlalchemy.pool import QueuePool
+
+    from workmind.core.resources import Resources
+
+    monkeypatch.setenv("DB_POOL_SIZE", "3")
+    monkeypatch.setenv("DB_MAX_OVERFLOW", "4")
+    settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+
+    resources = Resources.create(settings)
+    try:
+        pool = resources.engine.sync_engine.pool
+        assert isinstance(pool, QueuePool)
+        assert pool.size() == 3
+        assert pool.overflow() == -3  # nothing checked out yet: room for 3 + 4
+        assert "Pool size: 3" in pool.status()
+    finally:
+        await resources.aclose()
+
+
+def test_the_database_pool_settings_are_bounded() -> None:
+    with pytest.raises(ValueError, match="db_pool_size"):
+        Settings(_env_file=None, db_pool_size=0)  # pyright: ignore[reportCallIssue]
+    with pytest.raises(ValueError, match="db_max_overflow"):
+        Settings(_env_file=None, db_max_overflow=-1)  # pyright: ignore[reportCallIssue]
+    defaults = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+    assert (defaults.db_pool_size, defaults.db_max_overflow) == (10, 10)

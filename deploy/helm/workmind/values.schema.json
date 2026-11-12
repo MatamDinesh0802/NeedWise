@@ -633,6 +633,11 @@
           "type": "integer",
           "minimum": 0
         },
+        "workers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
         "forwardedAllowIps": {
           "type": "string"
         },
