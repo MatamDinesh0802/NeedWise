@@ -49,7 +49,9 @@ spec:
         - name: seed-data
           image: {{ include "workmind.image" (list . $c.data.image .Chart.AppVersion) }}
           imagePullPolicy: {{ $c.data.image.pullPolicy }}
-          command: ["sh", "-c", "cp -R \"$SEED_PATH\"/. /seed/"]
+          # The volume is mounted elsewhere than /seed here: mounted at /seed, it would hide the
+          # image's own /seed (the default data.image.path) and leave nothing to copy.
+          command: ["sh", "-c", "cp -R \"$SEED_PATH\"/. /seed-copy/"]
           env:
             - name: SEED_PATH
               value: {{ $c.data.image.path | quote }}
@@ -60,7 +62,7 @@ spec:
             limits: {cpu: 200m, memory: 128Mi}
           volumeMounts:
             - name: seed
-              mountPath: /seed
+              mountPath: /seed-copy
         {{- else if eq $src "archive" }}
         - name: seed-data
           image: {{ include "workmind.apiImage" . }}
