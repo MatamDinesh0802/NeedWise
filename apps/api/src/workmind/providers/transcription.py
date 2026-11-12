@@ -12,7 +12,7 @@ import io
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import httpx
 
@@ -74,7 +74,10 @@ class FasterWhisperTranscriber:
                 raise TranscriptionError(
                     "install the meetings extra: uv sync --extra meetings"
                 ) from exc
-            self._model = WhisperModel(self._name, device="cpu", compute_type=self._compute)
+            # cast: without the extra installed, WhisperModel is Unknown to pyright.
+            self._model = cast(
+                Any, WhisperModel(self._name, device="cpu", compute_type=self._compute)
+            )
         return self._model
 
     def _run(self, data: bytes, hotwords: str | None) -> Transcript:

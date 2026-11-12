@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from tests.fakes import FakeLLM
+from workmind.api.v1.meetings import UnsatisfiableRangeError, byte_range
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.extract import ActionItem, Decision, Extraction, clock, extract
 from workmind.modules.meetings.models import Meeting
@@ -161,3 +162,30 @@ def test_the_spelling_hint_dedupes_and_fits_the_prompt_budget() -> None:
     assert many is not None
     assert len(many) <= 100
     assert many.startswith("Person Number 0, ")
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("bytes=0-", (0, 99)),
+        ("bytes=10-19", (10, 19)),
+        ("bytes=90-500", (90, 99)),  # past the end: up to the last byte
+        ("bytes=-30", (70, 99)),  # the last 30 bytes
+        ("bytes=-500", (0, 99)),
+        ("bytes=0-0", (0, 0)),
+        ("bytes=20-10", None),  # invalid: ignored, the whole file
+        ("bytes=0-1, 5-6", None),  # several ranges: the whole file
+        ("items=0-5", None),
+        ("bytes=-", None),
+    ],
+)
+def test_media_answers_one_byte_range(header: str | None, expected: tuple[int, int] | None) -> None:
+    assert byte_range(header, 100) == expected
+
+
+@pytest.mark.parametrize("header", ["bytes=100-", "bytes=500-600", "bytes=-0"])
+def test_a_range_past_the_end_is_not_satisfiable(header: str) -> None:
+    with pytest.raises(UnsatisfiableRangeError):
+        byte_range(header, 100)

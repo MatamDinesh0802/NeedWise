@@ -290,6 +290,17 @@ async def test_a_recording_that_cannot_be_transcribed_fails_visibly(
         "audio/mp4",
         b"\x00audio",
     )
+    # Players seek with Range requests; without a 206 browsers can't jump to a timestamp.
+    path, me = f"/api/v1/meetings/{meeting['id']}/media", acme.as_("olivia.grant")
+    part = api.get(path, headers={**me, "Range": "bytes=1-3"})
+    past = api.get(path, headers={**me, "Range": "bytes=50-"})
+    assert media.headers["accept-ranges"] == "bytes"
+    assert (part.status_code, part.headers["content-range"], part.content) == (
+        206,
+        "bytes 1-3/6",
+        b"aud",
+    )
+    assert (past.status_code, past.headers["content-range"]) == (416, "bytes */6")
 
 
 async def test_members_look_up_colleagues_and_guests_cannot(api: TestClient, acme: Acme) -> None:
