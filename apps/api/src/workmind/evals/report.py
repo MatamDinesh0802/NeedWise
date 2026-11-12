@@ -12,7 +12,9 @@ from workmind.evals.runner import (
     AnswerRecord,
     EvalRun,
     RetrievalRecord,
+    RoutingRecord,
     percentile,
+    routing_by_agent,
     summarize_retrieval,
 )
 
@@ -72,6 +74,71 @@ def by_category(records: list[RetrievalRecord], mode: str) -> list[str]:
     return lines
 
 
+def routing_section(records: list[RoutingRecord]) -> list[str]:
+    ran = [r for r in records if r.skipped is None]
+    skipped = [r for r in records if r.skipped is not None]
+    right = [r for r in ran if r.correct]
+    fast = [r for r in ran if r.routed_by == "fast_path"]
+    fast_right = [r for r in fast if r.correct]
+    out = [
+        "",
+        "## Routing (planner and fast path)",
+        "",
+        f"Exact agent set: **{len(right)}/{len(ran)}**. Fast path used for "
+        f"{len(fast)} questions, {len(fast_right)} of them correct. Planner latency p50 "
+        f"{percentile([r.latency_ms for r in ran], 0.5) / 1000:.1f} s.",
+    ]
+    if skipped:
+        reasons = sorted({r.skipped or "" for r in skipped})
+        out += [
+            "",
+            f"Skipped {len(skipped)} question(s) whose expected agent does not exist in this "
+            f"tenant: {'; '.join(reasons)}. They are not counted above.",
+        ]
+    out += ["", "| Expected | Questions | Correct |", "|---|---|---|"]
+    for mode in ("single", "fan_out", "direct"):
+        rows = [r for r in ran if r.expected_mode == mode]
+        if rows:
+            out.append(f"| {mode} | {len(rows)} | {sum(r.correct for r in rows)}/{len(rows)} |")
+    by_agent = routing_by_agent(records)
+    if by_agent:
+        out += [
+            "",
+            "### By agent",
+            "",
+            "Expected in: questions whose expected plan includes the agent. Exact: of those, "
+            "the plan had exactly the expected agents. Picked: of those, the plan included the "
+            "agent. Picked when not expected: false positives over every question that ran.",
+            "",
+            "| Agent | Expected in | Exact | Picked | Picked when not expected |",
+            "|---|---|---|---|---|",
+        ]
+        for key, s in by_agent.items():
+            n = s["expected"]
+            out.append(
+                f"| {key} | {n} | {s['exact']}/{n} | {s['picked']}/{n} | {s['false_positives']} |"
+            )
+    near = [r for r in ran if r.not_agents]
+    if near:
+        kept = [r for r in near if not set(r.agents) & set(r.not_agents)]
+        out += [
+            "",
+            f"Near misses kept away from the agent they sound like: **{len(kept)}/{len(near)}**.",
+        ]
+    wrong = [r for r in ran if not r.correct]
+    if wrong:
+        out += ["", "### Wrong plans", ""]
+        out += [
+            f"- {r.id}: expected {r.expected_agents or ['direct']}, got {r.agents or [r.mode]}"
+            f" ({r.routed_by}){' ' + r.error if r.error else ''}"
+            for r in wrong
+        ]
+    if skipped:
+        out += ["", "### Skipped", ""]
+        out += [f"- {r.id}: skipped ({r.skipped})" for r in skipped]
+    return out
+
+
 def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
     out: list[str] = [f"# WorkMind evaluation: {meta['label']}", ""]
     out += [f"- {key}: `{value}`" for key, value in meta.items() if key != "label"]
@@ -104,30 +171,7 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
             ]
 
     if run.routing:
-        right = [r for r in run.routing if r.correct]
-        fast = [r for r in run.routing if r.routed_by == "fast_path"]
-        fast_right = [r for r in fast if r.correct]
-        out += [
-            "",
-            "## Routing (planner and fast path)",
-            "",
-            f"Exact agent set: **{len(right)}/{len(run.routing)}**. Fast path used for "
-            f"{len(fast)} questions, {len(fast_right)} of them correct. Planner latency p50 "
-            f"{percentile([r.latency_ms for r in run.routing], 0.5) / 1000:.1f} s.",
-            "",
-            "| Expected | Questions | Correct |",
-            "|---|---|---|",
-        ]
-        for mode in ("single", "fan_out", "direct"):
-            rows = [r for r in run.routing if r.expected_mode == mode]
-            if rows:
-                out.append(f"| {mode} | {len(rows)} | {sum(r.correct for r in rows)}/{len(rows)} |")
-        wrong = [r for r in run.routing if not r.correct]
-        out += [
-            f"- {r.id}: expected {r.expected_agents or ['direct']}, got {r.agents or [r.mode]}"
-            f" ({r.routed_by}){' ' + r.error if r.error else ''}"
-            for r in wrong
-        ]
+        out += routing_section(run.routing)
 
     if run.meetings:
         out += [
