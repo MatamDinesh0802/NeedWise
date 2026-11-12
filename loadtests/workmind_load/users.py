@@ -225,7 +225,10 @@ class Reader(WorkMindUser):
     def list_collections(self) -> None:
         page = self.get_json("/api/v1/collections", "collections: list")
         if page:
-            self.collections = [c["id"] for c in page["items"]]
+            # Not the upload scenario's collection: its documents are deleted mid-run, so
+            # opening one later is a correct 404, not a failure of the stack.
+            skip = STATE.settings.upload_collection
+            self.collections = [c["id"] for c in page["items"] if c.get("key") != skip]
 
     @task(3)
     def list_documents(self) -> None:

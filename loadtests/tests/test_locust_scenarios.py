@@ -79,7 +79,10 @@ class FakeWorkMind:
                 Route("/api/v1/conversations/{id}", reply(None, 204), methods=["DELETE"]),
                 Route("/api/v1/conversations/{id}/messages", send, methods=["POST"]),
                 Route("/api/v1/runs/{id}/events", events),
-                Route("/api/v1/collections", reply({"items": [{"id": "k1", "key": "kb"}]})),
+                Route(
+                    "/api/v1/collections",
+                    reply({"items": [{"id": "k1", "key": "kb"}, {"id": "k2", "key": "uploads"}]}),
+                ),
                 Route("/api/v1/collections/{id}/documents", reply({"items": [{"id": "d1"}]})),
                 Route("/api/v1/documents/{id}", reply({"id": "d1", "status": "ready"})),
                 Route("/api/v1/search", reply({"passages": []}), methods=["POST"]),
@@ -171,3 +174,17 @@ def test_without_a_model_nothing_asks(fake: tuple[FakeWorkMind, str], tmp_path: 
     assert not [n for n in stats if n.endswith(("send question", "time to first token"))]
     assert stats["insights: re-run query"]["num_requests"] > 0  # the analyst still works
     assert stats["search"]["num_requests"] > 0
+
+
+def test_readers_leave_the_upload_collection_alone(
+    fake: tuple[FakeWorkMind, str], tmp_path: Path
+) -> None:
+    """Its documents are deleted mid-run: opening one later would be a correct 404."""
+    workmind, host = fake
+
+    stats = run_locust(host, tmp_path, "--wm-no-model", "--wm-upload-collection", "uploads")
+
+    assert stats["documents: list"]["num_requests"] > 0
+    paths = {p for _, p, _ in workmind.seen}
+    assert "/api/v1/collections/k1/documents" in paths
+    assert "/api/v1/collections/k2/documents" not in paths
