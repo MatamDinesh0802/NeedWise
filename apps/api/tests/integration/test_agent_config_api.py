@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import uuid
+from pathlib import Path
 from typing import Any
 
 import asyncpg
@@ -30,6 +31,8 @@ from tests.integration.conftest import (
     seed_acme,
 )
 from workmind.core.tenancy import tenant_transaction
+from workmind.evals.datasets import load_routing
+from workmind.evals.runner import RoutingRecord, route_items
 from workmind.modules.agents.models import AgentDefinition, AgentDefinitionVersion
 from workmind.modules.agents.planning import FastRouter, PlanOut, load_agents, plan_question
 from workmind.modules.governance.models import AuditEvent
@@ -40,6 +43,35 @@ from workmind.seed.apply import seed_database
 from workmind.seed.company import load_company
 
 BASE = "/api/v1/admin/agents"
+DATASETS = Path(__file__).resolve().parents[4] / "evals" / "datasets"
+# The definition docs/agents.md recommends for the Legal agent, field for field.
+RECOMMENDED_LEGAL: dict[str, Any] = {
+    "key": "legal",
+    "name": "Legal agent",
+    "description": (
+        "Contracts and compliance: who may sign which contract and up to what value (the "
+        "signature authority matrix), NDAs and when the standard NDA needs no legal review, "
+        "supplier contract reviews, data processing agreements and GDPR, the standard customer "
+        "terms (payment terms, liability cap, warranty), export control and sanctions for robot "
+        "shipments, records retention and litigation holds, IP and invention assignment, and "
+        "anti-bribery rules for gifts and hospitality to customers and public officials. Not for "
+        "employment contracts, probation, leave or pay (HR), or a customer's renewal date or "
+        "deal status (Sales)."
+    ),
+    "collections": ["legal-contracts"],
+    "examples": [
+        "Who signs a customer contract worth more than one million euros?",
+        "When can I sign an NDA without a legal review?",
+        "Does a supplier that processes personal data need a DPA?",
+        "Which countries can't we ship robots to?",
+        "What are the rules for gifts to public officials?",
+    ],
+    "instructions": (
+        "Quote thresholds, deadlines and owners exactly as the documents state them. If a "
+        "question needs legal advice beyond the documents, say so and point to legal@acme.test."
+    ),
+    "note": "First version of the Legal agent",
+}
 LEGAL: dict[str, Any] = {
     "key": "legal",
     "name": "Legal agent",
@@ -284,6 +316,34 @@ async def test_a_new_edited_or_disabled_agent_takes_effect_on_the_next_question_
     assert created == ["legal", "legal"]  # its examples now match, in both processes
     assert disabled == [None, None]
     assert '"legal": Robot maintenance schedules only.' in planner.listings[0]
+
+
+async def test_the_legal_routing_questions_run_once_the_documented_agent_is_created(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    """The wiring of the Phase 11 check, without a real model: the routing eval skips the legal
+    questions while no Legal agent exists, and plans all of them once an administrator creates
+    the agent docs/agents.md describes. (Whether the plans are right needs a real planner.)"""
+    items = load_routing(DATASETS)
+    planner = PlannerSpy()
+
+    async def run() -> list[RoutingRecord]:
+        agents = await load_agents(app_sessions, acme.tenant_id)
+        return await route_items(planner, None, agents, items)
+
+    before = await run()
+    planned_before = len(planner.listings)
+    created = create(api, acme, RECOMMENDED_LEGAL)
+    after = await run()
+
+    skipped = [r for r in before if r.skipped]
+    assert len(skipped) == 15
+    assert {r.skipped for r in skipped} == {"agent missing: legal"}
+    assert not any(r.skipped for r in after)
+    assert created["version"] == 1
+    shown = planner.listings[planned_before:]
+    assert shown
+    assert all('"legal": Contracts and compliance' in listing for listing in shown)
 
 
 def _alembic(url: str, target: str) -> None:
