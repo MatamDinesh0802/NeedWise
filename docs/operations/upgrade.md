@@ -10,13 +10,14 @@ back. Backups are in [backup-restore.md](backup-restore.md).
   (`0001` to `0019` today) and the `migrate` service applies every missing step in order, so
   there is no need to stop at intermediate versions.
 - **Tested:** v0.1.0 (the only tag so far, 2026-11-04; alembic `0004`) to this code (alembic
-  `0019`), three times on 2026-11-12, with `scripts/upgrade-test.sh`
+  `0019`), four times on 2026-11-12, with `scripts/upgrade-test.sh`
   ([below](#measured-v010-to-this-code)). Restoring a v0.1.0 backup into this code, and rolling
   an upgraded stack back to v0.1.0, were tested too.
 - **Not supported:** downgrades (the migrations go forward only; to go back, restore the backup
   you took before upgrading), and running the old and the new version side by side (a rolling
   upgrade). Plan a short downtime: from `docker compose up` to healthy took 32 to 138 seconds
-  in the test runs (the migrations themselves take seconds); build the images before stopping
+  in the test runs, depending on how busy the machine was (the migrations themselves take
+  seconds); build the images before stopping
   the old version to keep builds out of it.
 
 ## How an upgrade runs
@@ -112,6 +113,7 @@ test could not create any before upgrading.
 | 1 | 67 s, 52 s | 3 s | 13 s | 32 s | 16 of 17; the usage check was wrong (it left out the required dates), fixed, then 17 of 17 on the same stack | not timed |
 | 2 | 10 s, 52 s | 2 s | 14 s | 71 s | 17 of 17 | 172 s, teardown included |
 | 3 | 10 s, 67 s | 4 s | 45 s | 138 s | 16 of 17: the API's status check reported Keycloak down (its 2-second timeout, right after start on a busy machine) while sign-ins worked; the checks now retry the status for up to 90 s | kept for the rollback |
+| 4 (the scripts as committed) | 14 s, 64 s | 3 s | 30 s | 96 s | 17 of 17 | 219 s |
 
 What the checks covered, after the upgrade:
 
@@ -132,10 +134,15 @@ What the checks covered, after the upgrade:
 | Conversations (new) | created and listed |
 
 **Restoring a v0.1.0 backup into this code** (the backup the test takes before upgrading,
-restored with `scripts/restore.sh --force --public-url ...` into a stack running this code):
-56 seconds, of which 30 for the start with migrations `0004` -> `0019`; the same checks passed,
-except the edition, which said Enterprise because that target already had a license file (a
-restore adds or replaces license files, it never deletes one).
+restored with `scripts/restore.sh --force --public-url ...` into a stack running this code),
+twice:
+
+- into run 4's upgraded stack: 78 s, of which 28 s for the start with migrations `0004` ->
+  `0019`; exit code 0 (rows, objects and system status as in the manifest), then the same 17
+  checks passed;
+- into the restore-drill stack of [backup-restore.md](backup-restore.md#measured-a-restore-drill):
+  56 s; the same checks passed except the edition, which said Enterprise because that target
+  already had a license file (a restore adds or replaces license files, it never deletes one).
 
 ## Rollback
 

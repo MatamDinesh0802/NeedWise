@@ -218,7 +218,10 @@ showed exactly that. What an operator changes:
 ## Measured: a restore drill
 
 On 2026-11-12, on one laptop (Apple silicon, Docker Desktop with 8 CPUs and 16 GB), from the
-development stack to a second stack, both Docker Compose, with the scripts in this commit.
+development stack to a second stack, both Docker Compose. Two later fixes to `restore.sh` (it
+stops only the services a release has; the status check reads the overall status) came from
+the upgrade tests; the committed version restored a v0.1.0 backup with every check passing
+([upgrade.md](upgrade.md#measured-v010-to-this-code)).
 
 **Source:** the running development stack at `http://localhost:8480`, backed up `--online`
 with `--no-compose` (Postgres reached over TCP) because it was in use and had to stay
