@@ -179,7 +179,10 @@ Cost is known only after a call, so **a budget can be overshot**:
 - by events recorded in the moment between a cached value being summed from the database and
   that value being stored (they are counted at the next refresh, within 60 seconds);
 - by usage written straight to the table (the backfill) until the cached values refresh;
-- for 10 seconds after a budget is changed, in API processes other than the one that saved it.
+- for 10 seconds after a budget is changed, in API processes other than the one that saved it;
+- with department budgets, for 30 seconds after someone moves to another department: each API
+  process keeps which department budget limits a person for that long (recording is not
+  affected: each event takes the department at the moment it is written).
 
 A call that starts after the spending has reached the limit is always refused.
 
@@ -218,7 +221,11 @@ chargeback CSV are Community.
 ```bash
 cd apps/api && uv run wm usage backfill            # every active organization
 cd apps/api && uv run wm usage backfill acme       # one, by slug
+docker compose exec api wm usage backfill          # the same, inside the Docker Compose stack
 ```
+
+On the demo stack (after `make seed` and some use), the Compose command printed
+`acme: imported 21 answers, 10 BI answers, 2 meetings`.
 
 Before usage events existed, usage was kept with some records. The backfill imports:
 
@@ -242,7 +249,9 @@ call. The department is the person's department when the command runs; the provi
 Migration `0017`: `usage_events`, `budgets`, `budget_alerts`, all with forced Row-Level Security
 (`tenant_isolation`). The runtime role may insert usage events but not update or delete them
 (`REVOKE UPDATE, DELETE, TRUNCATE`), like the audit log. Deleting a person or a department keeps
-their usage, without the link.
+their usage, without the link. Retention policies (Enterprise, [enterprise.md](enterprise.md#retention-policies))
+delete conversations, Insights runs and recordings but never usage events: an event keeps its
+`ref_type` and `ref_id` (no foreign key), and its record may no longer exist.
 
 ## Tests
 
@@ -256,5 +265,13 @@ record; a chat run stopped half way by a budget), `test_usage_analytics.py` (Ins
 backfill, who sees what, the event list) and `test_usage_editions.py` (department budgets and the chargeback CSV with the real
 `workmind-ee` loaded; nothing enforced once the license expires).
 
-Not measured: the time recording adds to a model call against a loaded database, and usage of a
-real provider (the token counts and costs above come from scripted models).
+Checked on the running stack (2026-11-12, `ASSISTANT_MODE=auto`): one real assistant answer with
+Claude Sonnet 5.5 was recorded as one live event (`agents`, the asker, their department, the
+message ref) with the tokens Anthropic reported (2,773 in, 301 out) and $0.008556, which is those
+tokens at $2 / $10 per million. The usage summary, the event list, the chargeback CSV and
+saving budgets (with a department budget) were called live as an admin, a department manager and
+an employee, and their responses match the web app's types.
+
+Not measured: the time recording adds to a model call against a loaded database; a stopped or
+failed call against a real provider (those paths are tested with scripted models only); an
+OpenAI-compatible or tenant-key provider.

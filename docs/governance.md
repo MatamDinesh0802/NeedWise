@@ -213,3 +213,21 @@ self-approval, editors cannot set official directly, rejection, demotion, overvi
 `review_overdue` in sources, the seeded dates), `tests/integration/test_audit_explorer.py`
 (filters, cursor paging, CSV of the filtered view, tenant isolation, admins and auditors only),
 and the web tests next to the components (`*.test.ts(x)` under `apps/web/src`).
+
+Checked through the API on the running stack (2026-11-12, after `make seed`), not in a browser:
+
+- A real answer about parental leave cited the Leave Policy 2026 (Company Handbook, official,
+  review due 2026-11-03) with `review_overdue: true`, both while streaming and in the stored
+  message.
+- Alice asked for official status on "Leave Policy 2025 (Draft)" (HR Guidance, which she owns):
+  the request went to Erin and Priya (org admin and owner); a second request answered
+  `409 official_pending`, `PATCH` with `trust: "official"` answered `403
+  official_requires_approval`, editing the approval's arguments `422 not_editable`. Erin
+  rejected it with a note: the document stayed `reference`, Priya's copy became `superseded`,
+  and Alice was notified.
+- The overview, documents, collections, the audit list with cursor paging and filters, the
+  CSV and JSON-lines exports, and the retention policy and previews answered with the shapes the
+  web app expects; members got `403` on the admin routes.
+
+Not checked yet: the screens themselves against the running stack, and a reminder sent by the
+daily task (it first runs a day after beat starts).

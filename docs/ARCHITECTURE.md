@@ -563,6 +563,15 @@ Conventions:
 | **Governance** | `audit_events` | `actor_id, actor_type, action, resource_type, resource_id, metadata, ip, prev_hash, hash` (append-only, hash-chained) |
 | | `usage_events` | `user_id, run_id, provider, model, tokens_in, tokens_out, cost_usd` |
 
+> **As built (v0.11, [usage.md](usage.md), [governance.md](governance.md)):** `usage_events` has
+> one row per model call: `user_id, department_id, agent_key, feature, model, model_id, provider,
+> local, input_tokens, output_tokens, cost_usd, ref_type, ref_id, latency_ms, status, source`. The
+> record it belongs to is `ref_type`/`ref_id` (no `run_id`, no foreign key), and the app role may
+> insert but not update or delete. `budgets` and `budget_alerts` hold the limits and the
+> once-per-period warnings. Documents carry `owner_id, reviewed_at, reviewed_by, next_review_at,
+> review_task_id`; collections an owner and `review_interval_days`. `retention_policies` (one per
+> tenant) is used only by the Enterprise retention task. No table is partitioned yet.
+
 ---
 
 ## 10. Knowledge ingestion pipeline

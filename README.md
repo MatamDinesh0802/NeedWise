@@ -56,7 +56,8 @@ Engineering…) handle department work. Actions that leave the system need human
   Security, departments and nested groups, a hash-chained audit log, scoped access tokens.
 - **Knowledge with an owner and a review date.** Every document has an owner who is reminded
   when its review is due; "official" (what answers prefer) needs a second person's approval;
-  the audit log can be filtered and exported ([docs/governance.md](docs/governance.md)).
+  answers mark an official source whose review is overdue; the audit log can be filtered and
+  exported as CSV ([docs/governance.md](docs/governance.md)).
 
 ## What makes it different
 
@@ -153,7 +154,7 @@ apps/web      Next.js frontend (TypeScript, pnpm)
 deploy/       Postgres init, Caddy, later Keycloak realm and OpenFGA model
 seed/         Acme Robotics: the fictional demo company and test corpus
 evals/        Evaluation datasets, runners and published results
-ee/           Enterprise Edition (separate license): the package and its hooks, no features yet
+ee/           Enterprise Edition (separate license): budgets, chargeback, retention, SIEM export
 docs/         Architecture, roadmap, ADRs
 ```
 
@@ -166,8 +167,9 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Commits need 
 
 Community (everything outside `ee/`) is complete and Apache-2.0, security basics included.
 Enterprise adds features for large organizations from `ee/` and runs only with a license key.
-Built so far: department budgets and the chargeback report; with them the boundary, license
-checks and development licenses (`make ee-dev-license`). See [docs/enterprise.md](docs/enterprise.md).
+Built so far: department budgets, the chargeback report, retention policies and the export of
+the audit chain for a SIEM; with them the boundary, license checks and development licenses
+(`make ee-dev-license`). See [docs/enterprise.md](docs/enterprise.md).
 
 ## License
 

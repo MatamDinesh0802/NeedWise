@@ -21,11 +21,16 @@ imported. Get a development license with `make ee-dev-license` (accepted only wi
 `APP_ENV=dev`).
 
 **Status:** the boundary is built (license verification, the extension registry, the package,
-`GET /api/v1/edition`, 402 for unlicensed features). Implemented here: department budgets
-(`budgets.py`, feature `department_budgets`) and the chargeback report (`chargeback.py`,
-`chargeback_reports`), both on the core's usage hooks ([docs/usage.md](../docs/usage.md)).
-Not built yet: retention policies and advanced audit export. No official licenses are issued
-yet.
+`GET /api/v1/edition`, 402 for unlicensed features). Implemented here, one module per feature:
+
+| Module | Feature | Plugs in as |
+|---|---|---|
+| `budgets.py` | `department_budgets` | the core's `usage.department_budgets` hook ([docs/usage.md](../docs/usage.md)) |
+| `chargeback.py` | `chargeback_reports` | the core's `usage.chargeback_report` hook |
+| `retention.py` | `retention_policies` | a router (`/admin/retention`) and a daily task ([docs/enterprise.md](../docs/enterprise.md#retention-policies)) |
+| `audit_export.py` | `advanced_audit_export` | a router (`/admin/audit-events/export.jsonl`) |
+
+No official licenses are issued yet.
 
 Rules that keep the boundary clean:
 

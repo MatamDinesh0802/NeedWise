@@ -20,8 +20,8 @@ __version__ = "0.0.1"
 
 log = structlog.get_logger("workmind_ee")
 
-# The features this package implements (the others in workmind.core.edition.FEATURES are
-# not built yet: docs/enterprise.md).
+# The features this package implements: all four in workmind.core.edition.FEATURES
+# (docs/enterprise.md).
 IMPLEMENTED: tuple[str, ...] = (
     "department_budgets",
     "chargeback_reports",

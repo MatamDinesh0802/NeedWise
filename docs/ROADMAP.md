@@ -333,7 +333,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #11 — "Letting an LLM write SQL against company data, safely."**
 
-### Phase 11 — Admin, governance and usage analytics (v0.11) 🚧 In progress: agents as configuration, model management and the open-core boundary are built, and a Legal agent made from configuration routes 15/15 in the routing eval; usage and budgets, knowledge governance, the audit explorer and retention are built
+### Phase 11 — Admin, governance and usage analytics (v0.11) 🚧 Built and merged; the DoD is measured through the API (a Legal agent made from configuration routes 15/15), and the browser walkthrough is pending
 
 **Goal:** organizations can run WorkMind themselves: configure, control and account for it.
 
@@ -347,7 +347,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **DoD:** an admin creates a new "Legal agent" from the UI without code, and it routes correctly in the routing eval.
 
-> **Status on 2026-11-12, as merged into `main`:**
+> **Status on 2026-11-12, as merged into `main`** (everything below is in `main`; what was
+> checked on the running stack is said so):
 >
 > - **Agent configuration ([docs/agents.md](agents.md)):** tools (read-level only, run as the
 >   asker), a model per agent from the organization's catalog (checked when saved, applied when
@@ -364,25 +365,37 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >   catalog with prices, a model per role and the data policy, resolved per organization for
 >   every model call. Tested with scripted models; no real provider was called through a tenant
 >   key.
-> - **Open core ([docs/enterprise.md](enterprise.md)):** license keys, development licenses, the
->   extension registry and `GET /api/v1/edition`. Enterprise features built: department budgets,
->   the chargeback report, retention policies and the SIEM export of the audit chain.
 > - **Usage and budgets ([docs/usage.md](usage.md)):** one usage event per model call (failed
 >   and stopped calls included, never the text), attributed to the person, their department,
 >   the agent, the feature and the record; costs from the catalog's prices; the Usage page,
 >   Admin › Budgets and "Your usage this month" on the Overview; organization budgets, personal
->   and default caps that warn or block (429 `budget_exceeded`, or the chat run's error event),
->   checked before every model call; `wm usage backfill` for older answers. Enterprise:
->   department budgets and the chargeback CSV. Tested with scripted models only; the overshoot
->   bound and what is not recorded are in the doc.
-> - **Knowledge governance, the audit explorer and retention ([docs/governance.md](governance.md),
->   [docs/enterprise.md](enterprise.md#retention-policies)):** document owners, review cycles with
->   a daily reminder (a task and a notification, once per cycle), official status only through an
->   approval (never self-approved; demotion immediate and audited), a governance overview for
->   admins and collection owners, and audit filters, cursor paging and a CSV export, all in
->   Community. Retention policies and the SIEM export of the hash chain are Enterprise, in `ee/`.
->   Tested with the integration suite and mocked screens; not yet walked through in the browser
->   against the running stack. Not built: review escalation, legal hold, document retention.
+>   and default caps that warn or block (429 `budget_exceeded`, the chat run's error event, or
+>   an MCP tool error), checked before every model call; `wm usage backfill` for older answers.
+>   On the running stack, one real Claude Sonnet 5.5 answer was recorded as one event with the
+>   provider's tokens and the right cost, and the backfill imported 33 older records (21 chat
+>   answers, 10 Insights answers, 2 meetings). Failed and stopped calls are tested with scripted
+>   models only.
+> - **Knowledge governance and the audit explorer ([docs/governance.md](governance.md)):**
+>   document owners, review cycles with a daily reminder (a task and a notification, once per
+>   cycle), official status only through an approval (never self-approved; demotion immediate
+>   and audited), a governance overview for admins and collection owners, "Review overdue" on
+>   cited official documents, and audit filters, cursor paging and a CSV export. All Community.
+>   On the running stack, through the API: an overdue official source was flagged in a real
+>   answer, and an official-status request was refused when repeated, rejected by an admin and
+>   superseded for the other approver.
+> - **Open core ([docs/enterprise.md](enterprise.md)):** license keys, development licenses, the
+>   extension registry and `GET /api/v1/edition`. Four Enterprise features are built in `ee/`
+>   and plug in through the registry: department budgets, the chargeback CSV, retention
+>   policies (with a preview of a draft and a typed confirmation to run) and the export of the
+>   audit hash chain for a SIEM. Without a license they answer `402 enterprise_feature`.
+> - **Gates on the merged `main`:** 1098 backend tests (unit, integration and `ee/`), 1013 web
+>   tests, `pyright` and `ruff` clean, `pnpm build`; migrations 0012 → 0018 → 0012 → 0018 on a
+>   fresh database with no model drift.
+> - **Not done:** the browser walkthrough of the Phase 11 screens against the running stack
+>   (they are tested with vitest and mocked APIs); a reminder sent by the daily task on the
+>   running stack (it first runs a day after beat starts); review escalation, legal hold and
+>   retention of documents. DLP, permission sync, SCIM and the other paid features of §5 are
+>   not built and not part of this phase.
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
