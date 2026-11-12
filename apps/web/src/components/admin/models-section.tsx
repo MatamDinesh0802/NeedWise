@@ -58,6 +58,8 @@ import { toast } from "@/lib/stores/toasts";
 import { cn } from "@/lib/utils";
 
 const NO_LOCAL = "none";
+// Full width, and long model names are cut rather than pushing the page sideways on phones.
+const WIDE_SELECT = "w-full min-w-0 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:overflow-hidden";
 
 function notify(error: unknown) {
   const message = errorMessage(error);
@@ -147,7 +149,7 @@ export function ProvidersPanel({ catalog }: { catalog: ModelCatalog }) {
   return (
     <section className="flex flex-col gap-3" aria-labelledby="providers-heading">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <h4 id="providers-heading" className="font-semibold">
             Providers
           </h4>
@@ -472,7 +474,7 @@ export function CatalogPanel({ catalog }: { catalog: ModelCatalog }) {
   return (
     <section className="flex flex-col gap-3" aria-labelledby="catalog-heading">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <h4 id="catalog-heading" className="font-semibold">
             Model catalog
           </h4>
@@ -699,7 +701,7 @@ export function RolesPanel({ catalog }: { catalog: ModelCatalog }) {
       >
         <div className="grid gap-4 md:grid-cols-2">
           {ROLES.map(({ role, label, description }) => (
-            <Field key={role} label={label} hint={description}>
+            <Field key={role} label={label} hint={description} className="min-w-0">
               {({ id, describedBy }) => (
                 <SimpleSelect
                   id={id}
@@ -707,7 +709,7 @@ export function RolesPanel({ catalog }: { catalog: ModelCatalog }) {
                   value={chosen[role]}
                   onChange={(value) => setChosen((c) => ({ ...c, [role]: value }))}
                   options={roleOptions(catalog, role)}
-                  className="w-full"
+                  className={WIDE_SELECT}
                 />
               )}
             </Field>
@@ -775,7 +777,7 @@ export function PolicyPanel({ catalog }: { catalog: ModelCatalog }) {
         }}
       >
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="External models may receive">
+          <Field label="External models may receive" className="min-w-0">
             {({ id, describedBy }) => (
               <SimpleSelect<Sensitivity>
                 id={id}
@@ -783,11 +785,11 @@ export function PolicyPanel({ catalog }: { catalog: ModelCatalog }) {
                 value={policy.max_external_sensitivity}
                 onChange={(value) => setPolicy((p) => ({ ...p, max_external_sensitivity: value }))}
                 options={SENSITIVITY_OPTIONS}
-                className="w-full"
+                className={WIDE_SELECT}
               />
             )}
           </Field>
-          <Field label="Local model for the rest" hint={locals.length === 0 ? "No local models yet: mark a provider as local and add a model to it." : undefined}>
+          <Field label="Local model for the rest" className="min-w-0" hint={locals.length === 0 ? "No local models yet: mark a provider as local and add a model to it." : undefined}>
             {({ id, describedBy }) => (
               <SimpleSelect
                 id={id}
@@ -795,7 +797,7 @@ export function PolicyPanel({ catalog }: { catalog: ModelCatalog }) {
                 value={policy.local_model ?? NO_LOCAL}
                 onChange={(value) => setPolicy((p) => ({ ...p, local_model: value === NO_LOCAL ? null : value }))}
                 options={[{ value: NO_LOCAL, label: "None: leave those sources out" }, ...locals]}
-                className="w-full"
+                className={WIDE_SELECT}
               />
             )}
           </Field>
