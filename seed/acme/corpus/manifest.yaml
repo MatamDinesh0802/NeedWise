@@ -64,6 +64,26 @@ documents:
   title: Warehouse Safety SOP
 - file: operations-sops/shipping-and-returns-sop.docx
   title: Shipping and Returns SOP
+- file: legal-contracts/contract-signature-authority-matrix.xlsx
+  title: Contract Signature Authority Matrix
+- file: legal-contracts/nda-policy.md
+  title: NDA Policy
+- file: legal-contracts/supplier-contract-review-checklist.docx
+  title: Supplier Contract Review Checklist
+- file: legal-contracts/data-processing-agreements-and-gdpr.pdf
+  title: Data Processing Agreements and GDPR
+- file: legal-contracts/standard-customer-terms-2026.pdf
+  title: Standard Customer Terms 2026
+- file: legal-contracts/export-control-amr-hardware.docx
+  title: Export Control for AMR Hardware
+- file: legal-contracts/records-retention-and-litigation-hold.docx
+  title: Records Retention and Litigation Hold
+- file: legal-contracts/ip-and-invention-assignment.md
+  title: IP and Invention Assignment Policy
+- file: legal-contracts/anti-bribery-and-gifts-policy.pdf
+  title: Anti-Bribery and Gifts Policy
+- file: legal-contracts/working-with-legal-2026.pptx
+  title: Working with Legal & Compliance 2026
 - file: leadership-strategy/board-update-q3-2026.pptx
   title: Board Update Q3 2026
   sensitivity: restricted
