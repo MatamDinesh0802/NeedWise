@@ -312,3 +312,86 @@ async def test_a_budget_used_up_half_way_ends_the_chat_run_with_budget_exceeded(
     # The warning (at 50%) went to the organization's owners and admins, once.
     notes = api.get("/api/v1/notifications", headers=acme.as_("erin")).json()
     assert [n["kind"] for n in notes if n["kind"].startswith("budget.")] == ["budget.warning"]
+
+
+async def test_background_work_over_budget_fails_and_says_which_budget(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        session.add(
+            UsageEvent(
+                tenant_id=acme.tenant_id,
+                user_id=acme.users["carol"],
+                feature="chat",
+                model="claude-sonnet-5-5",
+                provider="anthropic",
+                local=False,
+                input_tokens=1,
+                output_tokens=1,
+                cost_usd=2,
+            )
+        )
+    tenant_budget = {
+        "scope": "tenant",
+        "subject_id": None,
+        "period": "month",
+        "limit_usd": 1,
+        "warn_at": 0.8,
+        "action": "block",
+    }
+    saved = api.put(
+        "/api/v1/admin/budgets",
+        json={"budgets": [tenant_budget], "user_default": None},
+        headers=acme.as_("erin", write=True),
+    )
+    assert saved.status_code == 200, saved.text
+    llm = use_model(api, FakeLLM(structured=[OUTCOME], tool_turns=[[]]))
+    reason = "The monthly organization budget of $1.00 is used up ($2.00 spent)."
+
+    # A workflow run: its research step fails, and the run ends failed with the reason.
+    api.put(
+        "/api/v1/admin/workflows/weekly-digest",
+        json={
+            "key": "weekly-digest",
+            "name": "Weekly digest",
+            "definition": {"steps": [{"id": "gather", "research": "What happened this week?"}]},
+        },
+        headers=acme.as_("erin", write=True),
+    )
+    started = api.post(
+        "/api/v1/admin/workflows/weekly-digest/run", headers=acme.as_("erin", write=True)
+    )
+    assert started.status_code == 202  # background work is not refused up front
+    runs = "/api/v1/admin/workflows/weekly-digest/runs"
+    wait_until(
+        lambda: (
+            api.get(runs, headers=acme.as_("erin")).json()[0]["status"] not in ("queued", "running")
+        )
+    )
+    run = api.get(runs, headers=acme.as_("erin")).json()[0]
+    assert run["status"] == "failed"
+    assert run["error"].startswith(f"step gather: {reason}")
+    assert run["steps"]["gather"]["error"].startswith("budget_exceeded: ")
+
+    # A meeting: the notes are not extracted, and the meeting says why.
+    uploaded = api.post(
+        "/api/v1/meetings",
+        params={"collection": "operations-sops", "filename": "ops.vtt", "title": "Ops sync"},
+        content=VTT,
+        headers={
+            **acme.as_("olivia.grant", write=True),
+            "Content-Type": "application/octet-stream",
+        },
+    )
+    assert uploaded.status_code == 202, uploaded.text
+    meeting = f"/api/v1/meetings/{uploaded.json()['id']}"
+    wait_until(
+        lambda: (
+            api.get(meeting, headers=acme.as_("olivia.grant")).json()["status"]
+            in ("ready", "failed")
+        )
+    )
+    failed = api.get(meeting, headers=acme.as_("olivia.grant")).json()
+    assert failed["status"] == "failed"
+    assert failed["error"].startswith(reason)
+    assert llm.requests == []  # no model was called for either
