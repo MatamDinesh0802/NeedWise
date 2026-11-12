@@ -6,6 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import openpyxl
 import pytest
 import yaml
 from pydantic import ValidationError
@@ -223,6 +224,25 @@ def test_monthly_revenue_by_product_line_matches_the_workbook_to_the_euro(acme: 
         by_line[line].append(revenue // 1000)
         assert month.startswith("2026-")
     assert dict(by_line) == WORKBOOK
+
+
+def test_revenue_by_quarter_and_product_matches_the_q3_financial_summary(acme: Path) -> None:
+    """The finance assistant reads the Q3 summary, the BI agent the data: they must agree."""
+    workbook = openpyxl.load_workbook(
+        ACME_ANALYTICS.parent / "corpus" / "finance-reports" / "q3-2026-financial-summary.xlsx",
+        read_only=True,
+    )
+    sheet = list(workbook["Revenue by Product"].iter_rows(values_only=True))
+    lines = {"AMR-200 hardware": "AMR-200", "AMR-500 hardware": "AMR-500"}
+    lines["FleetOS subscriptions"] = "FleetOS"
+    summary = {lines[str(r[0])]: [float(v) for v in r[1:4]] for r in sheet if r[0] in lines}
+    rows = results(acme, metrics=["revenue"], dimensions=["quarter", "product_line"], limit=100)
+
+    data: dict[str, list[float]] = defaultdict(list)
+    for _, line, revenue in rows:
+        data[line].append(round(revenue / 1e6, 2))  # the summary is in millions, 2 decimals
+    assert dict(data) == summary
+    assert [r[0] for r in sheet if r[0]][1:5] == [*lines, "Total"]  # no product the data lacks
 
 
 def test_fleetos_in_september(acme: Path) -> None:

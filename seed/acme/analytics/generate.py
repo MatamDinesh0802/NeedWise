@@ -5,8 +5,9 @@ lines and the sales pipeline, January to September 2026.
 
 Deterministic (fixed seed). It agrees with the documents in seed/acme/corpus:
 - invoice lines per month and product line add up, to the euro, to
-  finance-reports/monthly-revenue-by-product-2026.xlsx (FleetOS 1,520 k€ in September, ...);
-  void lines exist and are not revenue
+  finance-reports/monthly-revenue-by-product-2026.xlsx (FleetOS 1,520 k€ in September, ...),
+  and per quarter to the "Revenue by Product" sheet of q3-2026-financial-summary.xlsx (FleetOS
+  30.3% of Q3 revenue); void lines exist and are not revenue
 - Bluefin Freight is the largest customer, FleetOS at 2.3 M€ annual recurring revenue
 - Nordlicht Grocers won in Q3 with 25 AMR-200 (first 10 delivered in September)
 - Harbor Logistics lost on price; Kestrel Retail has an open proposal, 40 AMR-500 for 1.1 M€
