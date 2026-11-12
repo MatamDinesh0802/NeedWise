@@ -298,9 +298,6 @@ slug_taken`, `404 not_found`.
 
 ## Not built and not measured
 
-- **Creating the Legal agent in the browser.** It was measured after creating it through the
-  API with the same fields; the walk-through of step 1 to 4 in the UI has not been recorded
-  here.
 - **An agent on a model other than the default** has been tested with scripted models only
   (the routing evaluation measures the planner, which uses the `router` role, not the agents'
   own models).
