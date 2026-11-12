@@ -516,3 +516,36 @@ def test_only_meetings_with_a_recording_are_transcribed() -> None:
     assert meeting_sources(items["mt-01"], folder, audio=True) == ["transcript", "audio"]
     assert meeting_sources(items["mt-02"], folder, audio=True) == ["transcript"]  # no .m4a
     assert meeting_sources(items["mt-01"], folder, audio=False) == ["transcript"]
+
+
+def test_the_report_gives_latency_and_cost_per_suite() -> None:
+    # Regression: the committed report gave one latency and cost over every answer (QA,
+    # red-team attacks, abstentions), while the docs quoted QA-only figures that only the
+    # git-ignored per-answer JSON could reproduce.
+    def answer(suite: str, ttft_ms: float, output_tokens: int) -> AnswerRecord:
+        return AnswerRecord(
+            id=f"{suite}-{ttft_ms}",
+            suite=suite,
+            user="bob",
+            question="q",
+            text="t",
+            cited_files=[],
+            context_files=[],
+            abstained=False,
+            unknown_markers=[],
+            withheld=0,
+            ttft_ms=ttft_ms,
+            total_ms=ttft_ms * 2,
+            usage=LLMUsage(
+                model="claude-sonnet-5-5", input_tokens=1000, output_tokens=output_tokens
+            ),
+        )
+
+    run = EvalRun(
+        answers=[answer("qa", 800, 100), answer("qa", 900, 100), answer("redteam", 9000, 300)]
+    )
+    text = markdown(run, {"label": "t"}, ["hybrid"])
+
+    assert "| Time to first token | 0.9 s | 9.0 s |" in text  # all three answers
+    assert "| qa | 2 | 0.8 / 0.9 s | 1.6 / 1.8 s | $" in text
+    assert "| redteam | 1 | 9.0 / 9.0 s | 18.0 / 18.0 s | $" in text

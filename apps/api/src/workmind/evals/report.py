@@ -74,19 +74,56 @@ def by_category(records: list[RetrievalRecord], mode: str) -> list[str]:
     return lines
 
 
+def suite_latency_table(answered: list[AnswerRecord]) -> list[str]:
+    """The same figures per suite: the totals above mix questions answered from documents with
+    red-team attacks (some through research or analytics) and abstentions."""
+    suites = sorted({a.suite for a in answered})
+    if len(suites) < 2:
+        return []
+    out = [
+        "",
+        "By suite:",
+        "",
+        "| Suite | Answers | Time to first token p50 / p95 | Complete answer p50 / p95 "
+        "| Mean cost |",
+        "|---|---|---|---|---|",
+    ]
+    for suite in suites:
+        rows = [a for a in answered if a.suite == suite]
+        ttft = [a.ttft_ms for a in rows]
+        total = [a.total_ms for a in rows]
+        costs = [c for a in rows if (c := a.cost) is not None]
+        out.append(
+            f"| {suite} | {len(rows)} "
+            f"| {percentile(ttft, 0.5) / 1000:.1f} / {percentile(ttft, 0.95) / 1000:.1f} s "
+            f"| {percentile(total, 0.5) / 1000:.1f} / {percentile(total, 0.95) / 1000:.1f} s "
+            f"| {f'${statistics.fmean(costs):.4f}' if costs else '-'} |"
+        )
+    return out
+
+
 def routing_section(records: list[RoutingRecord]) -> list[str]:
     ran = [r for r in records if r.skipped is None]
     skipped = [r for r in records if r.skipped is not None]
     right = [r for r in ran if r.correct]
     fast = [r for r in ran if r.routed_by == "fast_path"]
     fast_right = [r for r in fast if r.correct]
+    planned = [r.latency_ms for r in ran if r.routed_by != "fast_path"]
+    # Over every routed question, fast-path decisions (milliseconds) included; the planner's
+    # own latency is over the questions it decided.
     out = [
         "",
         "## Routing (planner and fast path)",
         "",
         f"Exact agent set: **{len(right)}/{len(ran)}**. Fast path used for "
-        f"{len(fast)} questions, {len(fast_right)} of them correct. Planner latency p50 "
-        f"{percentile([r.latency_ms for r in ran], 0.5) / 1000:.1f} s.",
+        f"{len(fast)} questions, {len(fast_right)} of them correct. Routing latency p50 "
+        f"{percentile([r.latency_ms for r in ran], 0.5) / 1000:.1f} s over every question"
+        + (
+            f"; the planner ({len(planned)} calls) p50 {percentile(planned, 0.5) / 1000:.1f} s, "
+            f"p95 {percentile(planned, 0.95) / 1000:.1f} s."
+            if planned
+            else "."
+        ),
     ]
     if skipped:
         reasons = sorted({r.skipped or "" for r in skipped})
@@ -330,6 +367,7 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
             f"Mean tokens per answer: {tokens_in:.0f} in / {tokens_out:.0f} out."
             + (f" Mean cost per answer: ${statistics.fmean(costs):.4f}." if costs else ""),
         ]
+        out += suite_latency_table(answered)
 
     failures = [a for a in qa if a.facts_missing or a.error or a.unsupported_claims]
     if failures:

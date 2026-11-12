@@ -471,7 +471,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   answers (59 attacks in `single` and `auto` mode) and 51 analytics answers; 0 violations;
   81/82 correct, faithfulness 99.5%; cross-department 14/15 with one search, 15/15 with agents;
   routing 53/56; text-to-SQL 33/36; chat time to first token p50 0.8 s (`single`), 2.6 s
-  (`auto`); $0.0071 per chat answer (`single`), $0.0114 (`auto`); the whole run $8.74. Synthetic
+  (`auto`) and $0.0071 per chat answer (`single`), $0.0114 (`auto`), over the 82 QA answers; the whole run $8.74. Synthetic
   company, small datasets, the judge from the same model family.
 - [x] **A case study** ([case study](case-study.md)) of the build for the synthetic Acme Robotics:
   choices, phases, results, what went wrong, costs, lessons.

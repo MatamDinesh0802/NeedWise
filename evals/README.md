@@ -118,9 +118,14 @@ baselines below and the limitations: **[docs/benchmarks/v1.0.md](../docs/benchma
 | Routing | 53/56; Legal 15/15 picked, 0 false positives | [routing](results/2026-11-12-v1.0-routing.md) |
 | Text-to-SQL | 33/36, 0 leaks, 184/184 numbers backed | [analytics](results/2026-11-12-v1.0-analytics.md) |
 | Meetings | decisions 10/10, action items 13/13 over 2 transcripts and 1 recording; 1 rejected idea reported from the recording | [meetings](results/2026-11-12-v1.0-meetings.md) |
-| Chat time to first token, p50 / p95 | 0.8 / 1.5 s (`single`), 2.6 / 6.0 s (`auto`) | [core](results/2026-11-12-v1.0-core.md), [core, auto](results/2026-11-12-v1.0-core-auto.md) |
-| Cost per chat answer | $0.0071 (`single`), $0.0114 (`auto`) | same |
+| Chat time to first token, p50 / p95, the 82 QA answers | 0.8 / 1.5 s (`single`), 2.6 / 6.0 s (`auto`) | "By suite" in [core](results/2026-11-12-v1.0-core.md), [core, auto](results/2026-11-12-v1.0-core-auto.md) |
+| Cost per chat answer, the 82 QA answers | $0.0071 (`single`), $0.0114 (`auto`) | same |
 | The whole benchmark | 1,041 model calls, $8.74 (judge included) | usage events, feature `eval` |
+
+A report's headline latency and cost are over every answer it holds, red-team attacks
+included (some go through the research or BI agent): 0.9 / 8.8 s and $0.0099 in `single`
+mode. The QA figures above are its "By suite" table, added to the two reports by
+re-rendering them from their per-answer JSON (`--rescore`: same answers, no score changed).
 
 ## Baseline results (2026-11-04, [full report](results/2026-11-04-sonnet-baseline.md))
 

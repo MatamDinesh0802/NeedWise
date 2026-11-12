@@ -593,3 +593,19 @@ def test_support_sales_and_marketing_are_configuration_only() -> None:
     assert {"support", "sales", "marketing"} <= keys
     assert "legal" not in keys  # created in the UI (docs/agents.md), not seeded
     assert any(c["key"] == "legal-contracts" for c in company["collections"])
+
+
+def test_the_routing_report_separates_the_planner_from_the_fast_path() -> None:
+    # Regression: "Planner latency p50" was over every question, fast-path ones (milliseconds)
+    # included, so it disagreed with the planner's own latency under the same name.
+    def record(routed_by: str, latency_ms: float) -> RoutingRecord:
+        return RoutingRecord("x", "single", ["hr"], "single", ["hr"], routed_by, latency_ms)
+
+    records = [record("fast_path", 12), record("fast_path", 12), record("fast_path", 12)]
+    records += [record("planner", 1800), record("planner", 2200)]
+
+    report = "\n".join(routing_section(records))
+
+    assert "Planner latency" not in report
+    assert "Routing latency p50 0.0 s over every question" in report
+    assert "the planner (2 calls) p50 1.8 s, p95 2.2 s" in report

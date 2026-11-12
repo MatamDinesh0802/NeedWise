@@ -84,8 +84,8 @@ limitations: [docs/benchmarks/v1.0.md](docs/benchmarks/v1.0.md).
 | Answers with every required fact / faithfulness / abstention | 81/82 / 99.5% / 6/6 |
 | Cross-department questions: one search / department agents | 14/15 / 15/15 |
 | Routing to department agents / text-to-SQL execution accuracy | 53/56 / 33/36 |
-| Time to first token, p50 / p95 (one search; `auto` mode) | 0.8 / 1.5 s; 2.6 / 6.0 s |
-| Cost per answer (one search; `auto`; BI agent) | $0.0071; $0.0114; $0.026 |
+| Time to first token, p50 / p95, QA questions (one search; `auto` mode) | 0.8 / 1.5 s; 2.6 / 6.0 s |
+| Cost per answer, QA questions (one search; `auto`); BI agent | $0.0071; $0.0114; $0.026 |
 | Load, stub model | up to 400 simulated users at unloaded chat latency on one laptop ([load](docs/benchmarks/load.md)) |
 
 A [case study](docs/case-study.md) tells how it was built for Acme, what went wrong and what it
