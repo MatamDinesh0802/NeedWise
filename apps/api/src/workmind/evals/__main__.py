@@ -192,7 +192,11 @@ async def run(args: argparse.Namespace) -> int:
         askers = Askers(resources, args.tenant)
         tenant = await askers.load_tenant()
         evaluator = Evaluator(
-            resources, askers, concurrency=args.concurrency, assistant=args.assistant
+            resources,
+            askers,
+            concurrency=args.concurrency,
+            assistant=args.assistant,
+            today=args.today,
         )
         result = EvalRun()
         variants = [Variant(mode, mode) for mode in modes]
@@ -202,6 +206,12 @@ async def run(args: argparse.Namespace) -> int:
             print(f"retrieval: {len(qa)} questions x {len(variants)} variants", file=sys.stderr)
             result.retrieval = await evaluator.retrieval(qa, variants)
             result.context_checks = await evaluator.context_checks(red_team, modes)
+            answer_only = sum(i.answer_only for i in red_team)
+            print(
+                f"red team: {len(red_team) - answer_only} attacks checked in context "
+                f"({len(modes)} modes), {answer_only} answer-only",
+                file=sys.stderr,
+            )
         if routing:
             print(f"routing: {len(routing)} questions", file=sys.stderr)
             result.routing = await evaluator.routing(routing)
@@ -321,6 +331,10 @@ async def run(args: argparse.Namespace) -> int:
             ok = sum(not a.facts_missing and not a.error for a in rows)
             print(f"{suite}: {ok}/{len(rows)} answers with every fact", file=sys.stderr)
     print(f"report: {report}", file=sys.stderr)
+    if result.violations:  # the model obeyed an attack: reported, not gated
+        print(f"red-team violations: {len(result.violations)}", file=sys.stderr)
+        for violation in result.violations:
+            print(f"  {violation}", file=sys.stderr)
     if result.leaks:
         print(f"PERMISSION LEAKS: {len(result.leaks)}", file=sys.stderr)
         for leak in result.leaks:

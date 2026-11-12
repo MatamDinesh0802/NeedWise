@@ -31,6 +31,7 @@ MAX_STEPS = 6
 # "search this 200 times"): each one runs a search, a query or a remote call, so the run stops
 # executing them here (docs/security/owasp-llm-top10.md, LLM10).
 MAX_TOOL_CALLS = 12
+TOOL_LIMIT = "Tool call limit reached"
 
 RESEARCH_SYSTEM = """You are the research assistant of {organization}. Answer the employee's \
 question by using the tools.
@@ -94,7 +95,7 @@ async def research(
         nonlocal made
         if made >= MAX_TOOL_CALLS:
             await record(ResearchStep(call.name, ok=False, error="limit_reached"))
-            return "Tool call limit reached: answer with what you have.", True
+            return f"{TOOL_LIMIT}: answer with what you have.", True
         made += 1
         try:
             result = await execute_tool(
