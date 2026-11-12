@@ -9,7 +9,8 @@ Two routes to a plan:
 
 import math
 import uuid
-from collections.abc import Sequence
+from collections import OrderedDict
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -18,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.tenancy import tenant_transaction
-from workmind.modules.agents.models import AgentDefinition
+from workmind.modules.agents.models import DEFAULT_OUTPUT_TOKENS, AgentDefinition
 from workmind.modules.knowledge.models import Collection
 from workmind.providers.embeddings import EmbeddingProvider
 from workmind.providers.llm import LLMMessage, LLMProvider, LLMRequest, LLMUsage
@@ -37,15 +38,42 @@ class Agent:
     collection_ids: tuple[str, ...]
     examples: tuple[str, ...]
     max_searches: int
+    tools: tuple[str, ...] = ()  # read-level tools it may call besides searching
+    model: str | None = None  # a model catalog id; None: the model of the `agent` role
+    max_tool_calls: int = 0
+    max_output_tokens: int = DEFAULT_OUTPUT_TOKENS
 
     @property
     def profile(self) -> str:
         return f"{self.name}: {self.description} Examples: {' '.join(self.examples)}"
 
 
+def agent_from_definition(d: AgentDefinition, collection_ids: Mapping[str, str]) -> Agent:
+    """`collection_ids` maps collection keys to ids; a key that no longer exists is skipped."""
+    return Agent(
+        key=d.key,
+        name=d.name,
+        description=d.description,
+        instructions=d.instructions,
+        collection_ids=tuple(collection_ids[k] for k in d.collection_keys if k in collection_ids),
+        examples=tuple(d.examples),
+        max_searches=d.max_searches,
+        tools=tuple(d.tools),
+        model=d.model,
+        max_tool_calls=d.max_tool_calls,
+        max_output_tokens=d.max_output_tokens,
+    )
+
+
+async def collection_ids(session: AsyncSession) -> dict[str, str]:
+    return {c.key: str(c.id) for c in await session.scalars(select(Collection))}
+
+
 async def load_agents(
     sessions: async_sessionmaker[AsyncSession], tenant_id: uuid.UUID
 ) -> list[Agent]:
+    """The tenant's enabled agents, read from the database for every question: a created,
+    edited or disabled agent takes effect on the next question, in every process."""
     async with tenant_transaction(sessions, tenant_id) as session:
         definitions = (
             await session.scalars(
@@ -54,19 +82,8 @@ async def load_agents(
                 .order_by(AgentDefinition.key)
             )
         ).all()
-        collections = {c.key: str(c.id) for c in await session.scalars(select(Collection))}
-    return [
-        Agent(
-            key=d.key,
-            name=d.name,
-            description=d.description,
-            instructions=d.instructions,
-            collection_ids=tuple(collections[k] for k in d.collection_keys if k in collections),
-            examples=tuple(d.examples),
-            max_searches=d.max_searches,
-        )
-        for d in definitions
-    ]
+        collections = await collection_ids(session)
+    return [agent_from_definition(d, collections) for d in definitions]
 
 
 class Subtask(BaseModel):
@@ -108,7 +125,14 @@ only see what the employee may see."""
 
 
 class FastRouter:
-    """Embedding similarity between a question and each agent's profile."""
+    """Embedding similarity between a question and each agent's profile.
+
+    Profile vectors are cached by the profile's text (name, description, examples), not by the
+    agent alone: an edited agent has a new profile and is embedded again on the next question,
+    and a disabled one is not passed in at all. The cache is bounded, least recently used out
+    first, so drafts tried in the test console cannot grow it without limit."""
+
+    MAX_PROFILES = 1024
 
     def __init__(
         self, embeddings: EmbeddingProvider, *, min_score: float = 0.3, min_margin: float = 0.15
@@ -116,7 +140,7 @@ class FastRouter:
         self._embeddings = embeddings
         self.min_score = min_score
         self.min_margin = min_margin
-        self._profiles: dict[tuple[str, str], list[float]] = {}
+        self._profiles: OrderedDict[tuple[str, str], list[float]] = OrderedDict()
 
     async def scores(self, question: str, agents: Sequence[Agent]) -> list[tuple[str, float]]:
         missing = [a for a in agents if (a.key, a.profile) not in self._profiles]
@@ -127,8 +151,13 @@ class FastRouter:
             self._profiles.update(
                 {(a.key, a.profile): v for a, v in zip(missing, vectors, strict=True)}
             )
+        profiles = {a.key: self._profiles[(a.key, a.profile)] for a in agents}
+        for agent in agents:
+            self._profiles.move_to_end((agent.key, agent.profile))
+        while len(self._profiles) > self.MAX_PROFILES:
+            self._profiles.popitem(last=False)
         query = await self._embeddings.embed_query(question)
-        scored = [(a.key, _cosine(query, self._profiles[(a.key, a.profile)])) for a in agents]
+        scored = [(a.key, _cosine(query, profiles[a.key])) for a in agents]
         return sorted(scored, key=lambda pair: -pair[1])
 
     async def route(self, question: str, agents: Sequence[Agent]) -> str | None:
