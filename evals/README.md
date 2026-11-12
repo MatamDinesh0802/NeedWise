@@ -148,11 +148,39 @@ row policies all apply ([docs/analytics.md](../docs/analytics.md#evaluation)):
   stack (`OBJECT_STORAGE_PATH` defaults to its `.data/objects`). `--today` (default 2026-11-12)
   fixes "this year". Answers are not stored in the people's history.
 
-**Results: TODO (integration step).** Not run yet with a real model. Without a model, the tests
-check the dataset (every gold query runs as its person and returns rows; Dan's results differ
-from Diego's; revenue by month and product line equals the finance workbook; every attack probe
-is refused by the guard) and the scoring (a scripted agent answering with the gold SQL scores
-36/36 with 0 leaks; one that ignores Dan's row policy is caught).
+**Results** with Claude Sonnet 5.5 for the tool loop and compose, 3 questions at a time
+([`results/2026-11-12-analytics.md`](results/2026-11-12-analytics.md)):
+
+| | Value |
+|---|---|
+| Execution accuracy | **33/36 (91.7%)**: 28/29 with full access, 5/7 as Dan |
+| Gold result in any query the agent ran | 34/36 |
+| No access: refused with no model call and no query | 5/5 |
+| Attacks without a leak | 10/10 |
+| **Permission leaks** | **0** |
+| Narrative numbers matched to a result (at the precision shown) | 159/159 |
+| Answers that needed the repair pass | 4/46 |
+| Latency p50 / p95 | 6.9 s / 10.2 s |
+| Tokens per answer; cost | 9,952 in / 617 out; $0.026 per answer, $1.20 per run |
+
+- The misses: a "top three" question answered with five rows (the narrative names the right
+  three); Dan asking for Diego's accounts got a list of his own 13 (nothing leaked, but the gold
+  is no rows); Dan's open pipeline given by stage, with a total the model added up itself.
+- That total ("about €1.6M" for €1,560,000 + €40,000) counts as matched because €1,560,000
+  rounds to €1.6M: the number check compares at the precision written, so a coarse figure can
+  match the wrong cell.
+- "Gold result in any query" counts an empty gold as found whenever the agent answers, which is
+  why Dan's "Diego's accounts" counts there although its only query returned his own rows.
+- The first run ([`results/2026-11-12-analytics-first-run.md`](results/2026-11-12-analytics-first-run.md))
+  scored 32/36. Three of its misses were the agent overriding the model's main query with the
+  charted one, now fixed; between the runs two other items flipped, so one run does not
+  separate small differences. Only this one model has been measured.
+
+Without a model, the tests check the dataset (every gold query runs as its person and returns
+rows; Dan's results differ from Diego's; revenue by month and product line equals the finance
+workbook; every attack probe is refused by the guard) and the scoring (a scripted agent
+answering with the gold SQL scores 36/36 with 0 leaks; one that ignores Dan's row policy is
+caught).
 
 ### Relevance floor
 
@@ -177,3 +205,13 @@ recalibrate it when changing the embedding model.
   areas don't include contractor onboarding; it now falls back to the plain search.
 - **The prompt contradicted itself.** It asked for hints about where an answer might be,
   and also forbade speculating. Removing the hints raised faithfulness from 96.5% to 99.8%.
+- **Structured outputs dropped fields called `title`.** Stripping JSON-schema annotations also
+  removed a property with that name, so the BI agent's chart had no title in the schema, the
+  model left it out, and every answer with a chart failed to compose. The first analytics
+  question of the first real run showed it.
+- **The BI agent overrode the model's main query.** For a share, a growth rate or a win rate the
+  model named the query with the answer and charted the breakdown; the agent reported the
+  charted query as the answer. 3 of 36 questions scored as misses because of it.
+- **Indexing renamed meeting documents.** A meeting's transcript was titled "Meeting: …" and
+  then retitled from its first heading when indexed; an integration test failed one run in
+  three on that race.

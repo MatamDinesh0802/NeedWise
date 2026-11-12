@@ -111,7 +111,10 @@ transcript from the plan. macOS `say` read it aloud with one voice per speaker, 
 | Extraction (Claude Sonnet 5.5) | 9 s | 9 s |
 
 Recording results are three extraction runs on one transcription (Whisper with beam 1 is
-deterministic, extraction is not).
+deterministic, extraction is not). After the change to how structured-output schemas are built
+(fields named `title` are kept), the transcript run was repeated on 2026-11-12 with the same
+result: 4/4 decisions, 5/5 action items, 5/5 due dates, 10 s
+([results](../evals/results/2026-11-12-meetings-regression.md)).
 
 **Colleagues' names as a spelling hint.** Without speaker labels, the model works out who owns
 "I'll do it" from names said nearby, so a misheard name loses the owner. Whisper spelled

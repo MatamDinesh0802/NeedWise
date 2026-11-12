@@ -299,7 +299,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #10 — "From a 30-minute meeting to tracked commitments, fully self-hosted."**
 
-### Phase 10 — Business intelligence agent (v0.10) 🚧 Built and tested with a scripted model: semantic layer, guard, DuckDB, agent, number verification, API, data tools, Insights page, text-to-SQL eval (51 questions, zero-leak gate). Pending: the eval run with a real model (execution accuracy not published yet) and Postgres/MySQL sources (see `docs/analytics.md`)
+### Phase 10 — Business intelligence agent (v0.10) ✅ Done for CSV/XLSX data: execution accuracy 33/36 with Claude Sonnet 5.5, 0 permission leaks in 51 answers. Not built: Postgres/MySQL sources (see `docs/analytics.md`)
 
 **Goal:** analytical questions answered with charts, explanations and verifiable SQL.
 
@@ -315,7 +315,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **Status:**
 - Done: CSV/XLSX → versioned DuckDB per tenant; semantic layer YAML; sqlglot guard with row policies; sandboxed read-only engine; the BI agent (tool loop, compose, chart spec, number verification with one repair pass); `/api/v1/analytics/*` and admin routes; `describe_data` / `query_data` for research mode and MCP; the Insights page and Admin › Analytics; the text-to-SQL eval (`wm eval --suites analytics`, [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md)).
-- Not done: execution accuracy with a real model (the DoD's last sentence); Postgres/MySQL connectors; streaming of the agent's progress.
+- Measured with Claude Sonnet 5.5 ([evals/results/2026-11-12-analytics.md](../evals/results/2026-11-12-analytics.md)): execution accuracy 33/36 (28/29 with full access, 5/7 under Dan's row policy), 5/5 people without access refused with no model call, 10/10 attacks without a leak, 0 leaks, 159/159 narrative numbers matched to a result, 6.9 s p50 / 10.2 s p95, $0.026 per answer. The DoD question was asked on the Insights page against the running stack: a chart, the narrative, 4 queries with their SQL and data, 20/20 figures backed. Two runs only, one model.
+- Not done: Postgres/MySQL connectors; streaming of the agent's progress; measurements with other or local models.
 
 **LinkedIn post #11 — "Letting an LLM write SQL against company data, safely."**
 
