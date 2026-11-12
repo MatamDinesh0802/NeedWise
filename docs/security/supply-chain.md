@@ -16,6 +16,9 @@ scripts/security-scan.sh image workmind-api:dev report.json   # any local image,
 scripts/security-scan.sh sbom workmind-web:dev web.spdx.json  # SPDX SBOM of a local image
 ```
 
+Trivy keeps its vulnerability database (about 1.6 GB unpacked) in `~/.cache/workmind-trivy`; set
+`TRIVY_CACHE_DIR` to put it elsewhere.
+
 ## What runs where
 
 | Check | Tool (pinned) | Where | Fails the build when |
