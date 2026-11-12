@@ -43,9 +43,13 @@ OnDecided = Callable[[Approval], Awaitable[None]]
 class ApprovalKind:
     """What approving an approval of this kind does. `run` gets the approval and the person who
     approved it, runs in its own transaction, and returns the final status ("executed" or
-    "failed") and a result for the record."""
+    "failed") and a result for the record.
+
+    `check`, when set, says why the person may not decide it (or None), before any decision is
+    recorded: a refused decision changes nothing, so the other approvers' copies stay valid."""
 
     run: Callable[[Approval, RequestContext], Awaitable[tuple[str, dict[str, Any]]]]
+    check: Callable[[AsyncSession, Approval, RequestContext], Awaitable[str | None]] | None = None
 
 
 async def propose(
@@ -130,6 +134,11 @@ async def decide(
         approval = await session.get(Approval, approval_id)
         if approval is None or approval.approver_id != decider.user_id:
             raise ApiError(404, "not_found", "Approval not found")
+        kind = (kinds or {}).get(approval.tool)
+        if kind is not None and kind.check is not None and approval.status == "pending":
+            problem = await kind.check(session, approval, decider)
+            if problem is not None:
+                raise ApiError(403, "not_allowed", "You may not decide this", problem)
         # Claim it atomically: a double click or two devices can never run the action twice.
         claimed = await session.scalar(
             update(Approval)
@@ -164,12 +173,11 @@ async def decide(
             session,
             tenant_id=decider.tenant_id,
             actor=Actor(type="user", id=decider.user_id),
-            action=f"approval.{decision}d",
+            action="approval.approved" if decision == "approve" else "approval.rejected",
             resource_type="approval",
             resource_id=str(approval.id),
             details={"tool": approval.tool, "edited": edited_arguments is not None},
         )
-    kind = (kinds or {}).get(approval.tool)
     if decision == "approve" and kind is not None:
         await _run_kind(sessions, kind, approval, decider)
     elif decision == "approve":

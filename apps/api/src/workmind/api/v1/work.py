@@ -17,7 +17,12 @@ from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN, Department, DepartmentMember, User
-from workmind.modules.knowledge.governance import OFFICIAL_KIND, official_status_kind
+from workmind.modules.knowledge.governance import (
+    OFFICIAL_KIND,
+    official_status_kind,
+    unreadable_collections,
+    withhold_official_request,
+)
 from workmind.modules.knowledge.models import Collection
 from workmind.modules.knowledge.pipeline import set_document_labels
 from workmind.modules.knowledge.service import collection_access
@@ -75,12 +80,15 @@ def approval_kinds(resources: Resources) -> dict[str, ApprovalKind]:
     return {OFFICIAL_KIND: official_status_kind(resources.db, trust_changed)}
 
 
-def _approval(a: Approval) -> ApprovalOut:
+def _approval(a: Approval, withheld: set[uuid.UUID] | None = None) -> ApprovalOut:
+    arguments, summary = a.arguments, a.summary
+    if a.tool == OFFICIAL_KIND and _collection_of(a) in (withheld or set()):
+        arguments, summary = withhold_official_request(a.arguments)
     return ApprovalOut(
         id=a.id,
         tool=a.tool,
-        summary=a.summary,
-        arguments=a.arguments,
+        summary=summary,
+        arguments=arguments,
         edited_arguments=a.edited_arguments,
         status=a.status,
         requested_by=a.requested_by,
@@ -92,6 +100,22 @@ def _approval(a: Approval) -> ApprovalOut:
         origin={k: v for k, v in a.origin.items() if k != "scopes"},
         created_at=a.created_at,
     )
+
+
+def _collection_of(approval: Approval) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(approval.arguments.get("collection_id")))
+    except ValueError:
+        return None
+
+
+async def _withheld(
+    session: AsyncSession, ctx: RequestContext, approvals: list[Approval]
+) -> set[uuid.UUID]:
+    """Collections of official-status requests the caller cannot open: those requests are shown
+    without the document's title and the requester's note (docs/governance.md)."""
+    ids = {c for a in approvals if a.tool == OFFICIAL_KIND and (c := _collection_of(a))}
+    return await unreadable_collections(session, ctx, ids)
 
 
 @router.get("/approvals")
@@ -118,17 +142,21 @@ async def list_approvals(
     if workflow_run_id is not None:
         query = query.where(Approval.origin["workflow_run_id"].astext == str(workflow_run_id))
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
-        rows = (await session.scalars(query.order_by(Approval.created_at.desc()).limit(100))).all()
-    return [_approval(a) for a in rows]
+        rows = list(
+            (await session.scalars(query.order_by(Approval.created_at.desc()).limit(100))).all()
+        )
+        withheld = await _withheld(session, ctx, rows)
+    return [_approval(a, withheld) for a in rows]
 
 
 @router.get("/approvals/{approval_id}")
 async def get_approval(ctx: AskContext, request: Request, approval_id: uuid.UUID) -> ApprovalOut:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         approval = await session.get(Approval, approval_id)
-    if approval is None or ctx.user_id not in (approval.approver_id, approval.requested_by):
-        raise ApiError(404, "not_found", "Approval not found")
-    return _approval(approval)
+        if approval is None or ctx.user_id not in (approval.approver_id, approval.requested_by):
+            raise ApiError(404, "not_found", "Approval not found")
+        withheld = await _withheld(session, ctx, [approval])
+    return _approval(approval, withheld)
 
 
 @router.post("/approvals/{approval_id}/decision")
@@ -137,9 +165,18 @@ async def decide_approval(
 ) -> ApprovalOut:
     resources = resources_of(request)
     kinds = approval_kinds(resources)
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        approval = await session.get(Approval, approval_id)
+    if approval is not None and approval.tool in kinds and ctx.auth_method != "session":
+        # Governance decisions (making a document official) need a browser session, like
+        # every other governance change: an access token never makes one.
+        raise ApiError(
+            403,
+            "session_required",
+            "Decide this in the web app",
+            "Access tokens cannot decide governance requests.",
+        )
     if body.arguments is not None:  # an edit must still fit the tool
-        async with tenant_transaction(resources.db, ctx.tenant_id) as session:
-            approval = await session.get(Approval, approval_id)
         if approval is not None and approval.tool in kinds:
             raise ApiError(422, "not_editable", "This request is approved or rejected as it is")
         tool = resources.tools.get(approval.tool) if approval else None
