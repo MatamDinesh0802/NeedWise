@@ -80,6 +80,12 @@ describe("one task", () => {
       label: "From a meeting",
       href: "/meetings/m%201",
     });
+    expect(taskOrigin(task({ origin: { via: "meeting", meeting_title: "Weekly ops sync", meeting_deleted: true } }))).toEqual({
+      kind: "meeting",
+      label: "From “Weekly ops sync” (deleted meeting)",
+      href: null,
+    });
+    expect(taskOrigin(task({ origin: { via: "meeting", meeting_deleted: true } }))?.label).toBe("From a deleted meeting");
     expect(taskOrigin(task({ origin: { via: "assistant" } }))?.label).toBe("From the assistant");
     expect(taskOrigin(task({ origin: { via: "workflow", workflow_run_id: "r1" } }))?.href).toBeNull();
     expect(taskOrigin(task({ origin: { via: "web" } }))).toBeNull();

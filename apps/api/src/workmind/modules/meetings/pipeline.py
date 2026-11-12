@@ -21,6 +21,7 @@ from workmind.modules.knowledge.storage import ObjectStorage
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.extract import clock, extract, speaker_name
 from workmind.modules.meetings.models import Meeting, held_on
+from workmind.modules.work.links import meeting_link
 from workmind.modules.work.notifications import notify
 from workmind.providers.llm import LLMError, LLMProvider
 from workmind.providers.transcription import Transcriber, TranscriptionError
@@ -38,12 +39,21 @@ class MeetingDeps:
     ingestion: Dispatcher
 
 
+class MeetingDeletedError(RuntimeError):
+    """Someone deleted the meeting while it was being processed: stop, leave nothing behind."""
+
+
+def _still_there(meeting: Meeting | None) -> Meeting:
+    if meeting is None:
+        raise MeetingDeletedError
+    return meeting
+
+
 async def _status(
     deps: MeetingDeps, meeting: Meeting, status: str, error: str | None = None
 ) -> None:
     async with tenant_transaction(deps.sessions, meeting.tenant_id) as session:
-        stored = await session.get(Meeting, meeting.id)
-        assert stored is not None  # noqa: S101
+        stored = _still_there(await session.get(Meeting, meeting.id))
         stored.status, stored.error = status, error
 
 
@@ -94,9 +104,15 @@ def transcript_markdown(meeting: Meeting) -> str:
 
 
 async def process_meeting(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
+    try:
+        await _process(deps, tenant_id, meeting_id)
+    except MeetingDeletedError:
+        log.info("meeting_deleted_while_processing", meeting_id=str(meeting_id))
+
+
+async def _process(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
     async with tenant_transaction(deps.sessions, tenant_id) as session:
-        meeting = await session.get(Meeting, meeting_id)
-        assert meeting is not None  # noqa: S101
+        meeting = _still_there(await session.get(Meeting, meeting_id))
         tenant = await session.get(Tenant, tenant_id)
         directory = await load_directory(session)
     people = directory.people
@@ -133,8 +149,7 @@ async def process_meeting(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: u
             for label in sorted({str(s["speaker"]) for s in segments if s["speaker"]})
         }
         async with tenant_transaction(deps.sessions, tenant_id) as session:
-            stored = await session.get(Meeting, meeting_id)
-            assert stored is not None  # noqa: S101
+            stored = _still_there(await session.get(Meeting, meeting_id))
             stored.segments, stored.duration_s, stored.language = (
                 segments,
                 transcript.duration,
@@ -159,8 +174,7 @@ async def process_meeting(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: u
         # 3. Searchable transcript in the meeting's collection
         document_id = await _index(deps, meeting)
         async with tenant_transaction(deps.sessions, tenant_id) as session:
-            stored = await session.get(Meeting, meeting_id)
-            assert stored is not None  # noqa: S101
+            stored = _still_there(await session.get(Meeting, meeting_id))
             stored.summary = outcome["summary"]
             stored.decisions, stored.action_items = outcome["decisions"], outcome["action_items"]
             stored.document_id, stored.timings = document_id, {**timings, "model": usage.model}
@@ -171,7 +185,7 @@ async def process_meeting(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: u
                 stored.owner_id,
                 kind="meeting.ready",
                 title=f"Meeting notes ready: {stored.title}",
-                link=f"/meetings/{stored.id}",
+                link=meeting_link(stored.id),
             )
             await record_event(
                 session,
@@ -205,6 +219,9 @@ async def _index(deps: MeetingDeps, meeting: Meeting) -> uuid.UUID:
     )
     slug = re.sub(r"[^a-z0-9]+", "-", meeting.title.lower()).strip("-")[:50] or "meeting"
     async with tenant_transaction(deps.sessions, meeting.tenant_id) as session:
+        # Locked, and the document recorded on it in this same transaction: a deletion either
+        # happens first (we stop here) or waits and then finds the document to delete with it.
+        _still_there(await session.get(Meeting, meeting.id, with_for_update=True))
         collection = await session.get(Collection, meeting.collection_id)
         assert collection is not None  # noqa: S101
         result = await service.upload(
@@ -220,6 +237,8 @@ async def _index(deps: MeetingDeps, meeting: Meeting) -> uuid.UUID:
         )
         result.document.url = f"/meetings/{meeting.id}"
         result.document.title = document_title(meeting)
+        stored = _still_there(await session.get(Meeting, meeting.id))
+        stored.document_id = result.document.id
     if not result.unchanged:
         await deps.ingestion.dispatch(meeting.tenant_id, result.document.id, result.version.id)
     return result.document.id

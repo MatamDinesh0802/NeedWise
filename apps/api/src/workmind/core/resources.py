@@ -1,5 +1,7 @@
 """Long-lived clients shared by the whole process, created at startup and closed at shutdown."""
 
+import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Self
 
@@ -30,6 +32,7 @@ from workmind.modules.tools.builtin import draft_email_tool, search_knowledge_to
 from workmind.modules.tools.mcp_client import RemoteServer, RemoteServerConfig, import_tools
 from workmind.modules.tools.registry import ToolRegistry
 from workmind.modules.work.tools import create_task_tool, send_email_tool
+from workmind.modules.work.workflows import WorkflowDeps, start_queued
 from workmind.providers.email import SmtpMailer
 from workmind.providers.embeddings import EmbeddingProvider
 from workmind.providers.factory import (
@@ -132,7 +135,7 @@ class Resources:
         tools.register(create_task_tool(db))
         if settings.searxng_url:
             tools.register(web_search_tool(http, settings.searxng_url))
-        return cls(
+        resources = cls(
             engine=engine,
             db=db,
             valkey=valkey,
@@ -178,6 +181,22 @@ class Resources:
             edition=extensions.edition,
             extensions=extensions,
         )
+        if isinstance(resources.ingestion, InlineDispatcher):
+            resources.ingestion.start_runs = resources.start_workflow_runs
+        return resources
+
+    async def start_workflow_runs(self, tenant_id: uuid.UUID, run_ids: Sequence[uuid.UUID]) -> None:
+        """Starts runs an event queued, in the background (with the model and tools of now)."""
+        deps = WorkflowDeps(self.db, self.llm, self.tools)
+
+        async def start() -> None:
+            for run_id in run_ids:
+                try:
+                    await start_queued(deps, tenant_id, run_id)
+                except Exception:  # one broken run must not keep the others from starting
+                    log.exception("workflow_run_failed", run_id=str(run_id))
+
+        self.runs.start(start())
 
     async def load_remote_tools(self) -> None:
         """Imports every configured MCP server's tools. A server that is down is skipped (and

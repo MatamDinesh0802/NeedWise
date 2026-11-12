@@ -896,6 +896,8 @@ steps:
 
 If workflows later need complex long-running timers, we evaluate Temporal (MIT) behind the same workflow interface.
 
+> **As built (v0.8, [docs/automation.md](automation.md)):** the engine runs on Celery with state in Postgres, without a separate `run_as` (a run acts as the admin who saved the workflow). Triggers: manual, cron schedule, and the event `document.ready`, fired by ingestion in the transaction that marks a version ready: one queued run per matching workflow and version (an idempotency key), only when the owner can view the document. An approver is a named person (default: the owner); approvals expire after 3 days. Not built: role, department-manager and chained approvers, escalation, email and Slack/Teams notifications (in-app only), the other events (meeting processed, inbound email), and request classification into department queues.
+
 ---
 
 ## 15. Meeting intelligence

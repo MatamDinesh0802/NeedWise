@@ -4,9 +4,9 @@ import uuid
 from datetime import UTC, date, datetime, time
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from workmind.api.deps import require_scope, resources_of
@@ -16,7 +16,10 @@ from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN, Department, DepartmentMember, User
+from workmind.modules.knowledge.models import Collection
+from workmind.modules.knowledge.service import collection_access
 from workmind.modules.work.approvals import decide
+from workmind.modules.work.links import task_link
 from workmind.modules.work.models import Approval, Notification, Task, Workflow, WorkflowRun
 from workmind.modules.work.notifications import notify
 from workmind.modules.work.workflows import (
@@ -79,14 +82,27 @@ def _approval(a: Approval) -> ApprovalOut:
 
 @router.get("/approvals")
 async def list_approvals(
-    ctx: AskContext, request: Request, status: str = "pending"
+    ctx: AskContext,
+    request: Request,
+    status: str = "pending",
+    conversation_id: Annotated[
+        uuid.UUID | None, Query(description="only those proposed in this conversation")
+    ] = None,
+    workflow_run_id: Annotated[
+        uuid.UUID | None, Query(description="only those this workflow run proposed")
+    ] = None,
 ) -> list[ApprovalOut]:
-    """Waiting for me (as approver), plus what I asked for (as requester)."""
+    """Waiting for me (as approver), plus what I asked for (as requester), newest first (100).
+    The filters narrow that set; they never show anyone else's approvals."""
     query = select(Approval).where(
         or_(Approval.approver_id == ctx.user_id, Approval.requested_by == ctx.user_id)
     )
     if status != "all":
         query = query.where(Approval.status == status)
+    if conversation_id is not None:
+        query = query.where(Approval.origin["conversation_id"].astext == str(conversation_id))
+    if workflow_run_id is not None:
+        query = query.where(Approval.origin["workflow_run_id"].astext == str(workflow_run_id))
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         rows = (await session.scalars(query.order_by(Approval.created_at.desc()).limit(100))).all()
     return [_approval(a) for a in rows]
@@ -242,7 +258,7 @@ async def create_task(ctx: AskContext, request: Request, body: TaskCreate) -> Ta
                 body.assignee_id,
                 kind="task.assigned",
                 title=f"New task: {body.title}",
-                link=f"/tasks/{task.id}",
+                link=task_link(task.id),
             )
         return _task(task)
 
@@ -285,7 +301,7 @@ async def update_task(
                     body.assignee_id,
                     kind="task.assigned",
                     title=f"Handed over to you: {task.title}",
-                    link=f"/tasks/{task.id}",
+                    link=task_link(task.id),
                 )
         await record_event(
             session,
@@ -417,6 +433,29 @@ def _definition(raw: dict[str, Any]) -> dict[str, Any]:
         ) from exc
 
 
+async def _check_event_collection(
+    session: AsyncSession, ctx: RequestContext, definition: dict[str, Any]
+) -> None:
+    """An event trigger's collection must exist, and the admin saving it must be able to view it:
+    runs act as them, so a collection they can't view would never start one."""
+    trigger: dict[str, Any] = definition.get("trigger") or {}
+    key = trigger.get("collection")
+    if not isinstance(key, str) or not key:
+        return
+    collection_id = await session.scalar(select(Collection.id).where(Collection.key == key))
+    try:
+        if collection_id is None:
+            raise ApiError(404, "not_found", "Collection not found")
+        await collection_access(session, ctx, collection_id)
+    except ApiError as exc:
+        raise ApiError(
+            422,
+            "trigger_collection",
+            f"No collection “{key}” that you can view",
+            "The workflow runs as you, so it only starts for documents you can view.",
+        ) from exc
+
+
 @admin_router.get("")
 async def list_workflows(ctx: AdminContext, request: Request) -> list[WorkflowOut]:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
@@ -434,6 +473,7 @@ async def save_workflow(
         raise ApiError(422, "key_mismatch", "The key in the body must match the URL")
     definition = _definition(body.definition)
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        await _check_event_collection(session, ctx, definition)
         workflow = await session.scalar(select(Workflow).where(Workflow.key == key))
         if workflow is None:
             workflow = Workflow(
@@ -461,6 +501,51 @@ async def save_workflow(
             details={"steps": [s["id"] for s in definition["steps"]], "enabled": body.enabled},
         )
         return _workflow(workflow)
+
+
+@admin_router.delete("/{key}", status_code=204)
+async def delete_workflow(ctx: AdminContext, request: Request, key: str) -> Response:
+    """Deletes the workflow and its run history. Refused while a run is queued, running or
+    waiting for an approval: its approval could still run the action after the workflow is gone.
+    Disable the workflow to stop new runs meanwhile."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        workflow = await session.scalar(
+            select(Workflow).where(Workflow.key == key).with_for_update()
+        )
+        if workflow is None:
+            raise ApiError(404, "not_found", "Workflow not found")
+        active = await session.scalar(
+            select(func.count())
+            .select_from(WorkflowRun)
+            .where(
+                WorkflowRun.workflow_id == workflow.id,
+                WorkflowRun.status.in_(("queued", "running", "waiting_approval")),
+            )
+        )
+        if active:
+            raise ApiError(
+                409,
+                "runs_in_progress",
+                "This workflow has runs in progress",
+                "Wait for them to finish, or reject the approvals they wait for, then delete it. "
+                "Disable it to stop new runs meanwhile.",
+            )
+        runs = await session.scalar(
+            select(func.count())
+            .select_from(WorkflowRun)
+            .where(WorkflowRun.workflow_id == workflow.id)
+        )
+        await session.delete(workflow)  # its runs go with it (ON DELETE CASCADE)
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="admin.workflow.deleted",
+            resource_type="workflow",
+            resource_id=key,
+            details={"name": workflow.name, "runs": runs or 0},
+        )
+    return Response(status_code=204)
 
 
 @admin_router.post("/{key}/run", status_code=202)

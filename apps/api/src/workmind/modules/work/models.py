@@ -29,7 +29,8 @@ def _in(column: str, values: tuple[str, ...]) -> str:
 
 TASK_STATUSES = ("open", "in_progress", "done", "cancelled")
 APPROVAL_STATUSES = ("pending", "approved", "rejected", "expired", "executed", "failed")
-RUN_STATUSES = ("running", "waiting_approval", "succeeded", "failed", "cancelled")
+# "queued": created by an event, not started yet (start_queued claims it, exactly once).
+RUN_STATUSES = ("queued", "running", "waiting_approval", "succeeded", "failed", "cancelled")
 
 
 class Task(Base, TenantScoped, Timestamps):
@@ -139,12 +140,16 @@ class WorkflowRun(Base, TenantScoped, Timestamps):
         ),
         CheckConstraint(_in("status", RUN_STATUSES), name="status"),
         Index("ix_workflow_runs_workflow", "tenant_id", "workflow_id", "created_at"),
+        # One run per event and workflow: a re-delivered or repeated event finds it taken.
+        # NULLs are distinct, so manual and scheduled runs (no key) never collide.
+        UniqueConstraint("tenant_id", "workflow_id", "idempotency_key"),
     )
 
     id: Mapped[uuid.UUID] = uuid_primary_key()
     workflow_id: Mapped[uuid.UUID]
     status: Mapped[str] = mapped_column(String(24), server_default="running")
     trigger: Mapped[str] = mapped_column(String(16))  # manual | schedule | event
+    idempotency_key: Mapped[str | None] = mapped_column(Text)  # "document.ready:<version id>"
     # Per step id: {"status", "output", "error", "approval_id"}. A paused run resumes here.
     steps: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     current_step: Mapped[str | None] = mapped_column(Text)

@@ -2,7 +2,8 @@
 
 Conversations are private to the person who started them. Assistant messages keep their
 citations and source references so history can be shown without searching again; showing a
-source's text always goes back through the permission-checked chunks API.
+source's text always goes back through the permission-checked chunks API. Research answers also
+keep their steps (tool calls, and the approvals they proposed), so a reload shows what was done.
 """
 
 import uuid
@@ -84,6 +85,11 @@ class Message(Base, TenantScoped, Timestamps):
         JSONB, server_default=text("'[]'::jsonb")
     )
     sources: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    # Research runs, in order: [{"tool", "ok", "error", "approval_id", "summary"}]. Names and
+    # outcomes only: tool inputs and outputs (search results, drafts) are not kept here.
+    tool_steps: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb")
+    )
     usage: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     abstained: Mapped[bool] = mapped_column(server_default=sa_false())
     withheld: Mapped[int] = mapped_column(Integer, server_default="0")

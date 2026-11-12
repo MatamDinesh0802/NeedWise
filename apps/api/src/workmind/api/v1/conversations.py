@@ -53,6 +53,8 @@ class MessageOut(BaseModel):
     search_query: str | None
     citations: list[dict[str, Any]]
     sources: list[dict[str, Any]]
+    # Research answers: each tool call, and the approval it proposed (if any), in order.
+    tool_steps: list[dict[str, Any]] = []
     usage: dict[str, Any]
     abstained: bool
     withheld: int
@@ -111,6 +113,7 @@ def _message_out(m: Message) -> MessageOut:
         search_query=m.search_query,
         citations=m.citations,
         sources=m.sources,
+        tool_steps=m.tool_steps,
         usage=m.usage,
         abstained=m.abstained,
         withheld=m.withheld,

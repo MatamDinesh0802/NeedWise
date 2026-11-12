@@ -18,11 +18,11 @@ resumes it (ADR 0009: no graph state in memory, nothing re-planned on resume).
 
 import re
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.context import RequestContext
@@ -35,9 +35,10 @@ from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError, ToolRegistry
 from workmind.modules.work.approvals import propose
 from workmind.modules.work.cron import Cron, CronError
+from workmind.modules.work.links import workflow_link
 from workmind.modules.work.models import Approval, Workflow, WorkflowRun
 from workmind.modules.work.notifications import notify
-from workmind.providers.llm import LLMProvider
+from workmind.providers.llm import LLMError, LLMProvider
 
 PLACEHOLDER = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
 
@@ -45,7 +46,7 @@ PLACEHOLDER = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
 class Trigger(BaseModel):
     schedule: str | None = None
     event: Literal["document.ready"] | None = None
-    collection: str | None = None  # event filter: a collection key
+    collection: str | None = Field(default=None, pattern=SLUG_PATTERN)  # event filter
 
     @model_validator(mode="after")
     def _valid(self) -> Self:
@@ -54,6 +55,8 @@ class Trigger(BaseModel):
                 Cron(self.schedule)
             except CronError as exc:
                 raise ValueError(f"schedule: {exc}") from exc
+        if self.collection and not self.event:
+            raise ValueError("collection: only an event trigger can name a collection")
         return self
 
 
@@ -165,6 +168,44 @@ async def start_run(
     return await advance(deps, tenant_id, run_id)
 
 
+async def start_queued(
+    deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID
+) -> WorkflowRun | None:
+    """Starts a run an event queued. The claim is atomic: the ingestion that queued it and the
+    beat task that sweeps up missed ones can both try, and only one of them runs it."""
+    async with tenant_transaction(deps.sessions, tenant_id) as session:
+        claimed = await session.scalar(
+            update(WorkflowRun)
+            .where(WorkflowRun.id == run_id, WorkflowRun.status == "queued")
+            .values(status="running")
+            .returning(WorkflowRun.id)
+        )
+    if claimed is None:
+        return None
+    return await advance(deps, tenant_id, run_id)
+
+
+async def queued_runs(
+    sessions: async_sessionmaker[AsyncSession],
+    tenant_id: uuid.UUID,
+    now: datetime,
+    *,
+    grace: timedelta = timedelta(minutes=1),
+) -> list[uuid.UUID]:
+    """Runs queued for longer than `grace` that nobody started (the beat task starts them)."""
+    async with tenant_transaction(sessions, tenant_id) as session:
+        return list(
+            (
+                await session.scalars(
+                    select(WorkflowRun.id)
+                    .where(WorkflowRun.status == "queued", WorkflowRun.created_at < now - grace)
+                    .order_by(WorkflowRun.created_at)
+                    .limit(100)
+                )
+            ).all()
+        )
+
+
 async def advance(deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID) -> WorkflowRun:
     """Runs the next steps until the workflow finishes, fails, or waits for a person."""
     async with tenant_transaction(deps.sessions, tenant_id) as session:
@@ -234,6 +275,10 @@ async def advance(deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID) -
             outputs[step.id] = {"status": "failed", "error": f"{exc.code}: {exc}"}
             await _save(deps, run, outputs, step.id)
             return await _finish(deps, run, "failed", f"step {step.id}: {exc}")
+        except LLMError as exc:  # the model is down: the run ends visibly, never stuck running
+            outputs[step.id] = {"status": "failed", "error": f"model_unavailable: {exc}"[:500]}
+            await _save(deps, run, outputs, step.id)
+            return await _finish(deps, run, "failed", f"step {step.id}: the model is unavailable")
         await _save(deps, run, outputs, step.id)
     return await _finish(deps, run, "succeeded", None)
 
@@ -262,7 +307,12 @@ async def _pause(
             arguments=arguments,
             summary=f"{workflow.name}: {summary}",
             approver_id=approver_id,
-            origin={"via": "workflow", "workflow_run_id": str(run.id), "step": step.id},
+            origin={
+                "via": "workflow",
+                "workflow": workflow.key,
+                "workflow_run_id": str(run.id),
+                "step": step.id,
+            },
         )
         outputs[step.id] = {"status": "waiting_approval", "approval_id": str(approval.id)}
         stored = await session.get(WorkflowRun, run.id)
@@ -338,7 +388,7 @@ async def _finish(
                     kind=f"workflow.{status}",
                     title=f"{workflow.name}: {status}",
                     body=error or "",
-                    link=f"/workflows/{workflow.key}",
+                    link=workflow_link(workflow.key, run.id),
                 )
             await record_event(
                 session,
