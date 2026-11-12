@@ -1,5 +1,8 @@
 """API errors as RFC 9457 problem details (application/problem+json)."""
 
+import re
+from typing import Any
+
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -35,6 +38,38 @@ async def api_error_handler(_request: Request, exc: Exception) -> Response:
     return problem_response(exc)
 
 
+# Fields whose values never go back in an error: Pydantic's errors carry the input, and for a
+# missing field that input is the whole object, keys and passwords included.
+SENSITIVE_FIELD = re.compile(
+    r"(?:^|_)(?:api_?key|token|secret|password|passphrase|credentials?)$", re.IGNORECASE
+)
+REDACTED = "[redacted]"
+
+
+def _redact(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            k: REDACTED if isinstance(k, str) and SENSITIVE_FIELD.search(k) else _redact(v)
+            for k, v in value.items()  # pyright: ignore[reportUnknownVariableType]
+        }
+    if isinstance(value, list | tuple):
+        return [_redact(v) for v in value]  # pyright: ignore[reportUnknownVariableType]
+    return value
+
+
+def redact_errors(errors: Any) -> list[dict[str, Any]]:
+    redacted: list[dict[str, Any]] = []
+    for error in errors:
+        error = dict(error)
+        loc = error.get("loc") or ()
+        if any(isinstance(part, str) and SENSITIVE_FIELD.search(part) for part in loc):
+            error["input"] = REDACTED
+        elif "input" in error:
+            error["input"] = _redact(error["input"])
+        redacted.append(error)
+    return redacted
+
+
 async def validation_error_handler(_request: Request, exc: Exception) -> Response:
     """Request validation errors in the same problem+json shape as every other error."""
     if not isinstance(exc, RequestValidationError):
@@ -46,7 +81,7 @@ async def validation_error_handler(_request: Request, exc: Exception) -> Respons
             "title": "Invalid request",
             "status": 422,
             "code": "validation_error",
-            "errors": jsonable_encoder(exc.errors()),
+            "errors": jsonable_encoder(redact_errors(exc.errors())),
         },
         media_type="application/problem+json",
     )

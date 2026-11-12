@@ -295,11 +295,15 @@ class LLMResolver:
         self.system = system
         self.system_local = system_local
         self.keyring = keyring
+        self.settings = settings
         self.ttl_s = ttl_s
+        # How provider tests (Admin > Models) reach the network; tests put a mock here.
+        self.probe_transport: httpx.AsyncBaseTransport | None = None
         self._sessions = sessions
         self._catalog: SystemCatalog = system_catalog(settings)
-        self._build = build or tenant_llm_factory(http, fallbacks=settings.llm_fallbacks)
-        self._build_system: Callable[[str], LLMProvider] = build_system or (
+        # Builds tenant providers' clients and the deployment's other models (assignable).
+        self.build = build or tenant_llm_factory(http, fallbacks=settings.llm_fallbacks)
+        self.build_system: Callable[[str], LLMProvider] = build_system or (
             lambda name: create_llm(settings, http, model=name)
         )
         self._system_clients: dict[str, LLMProvider] = {}
@@ -396,7 +400,7 @@ class LLMResolver:
                 client = self.system  # exactly what the deployment does for this role
             else:
                 if name not in self._system_clients:
-                    self._system_clients[name] = self._build_system(name)
+                    self._system_clients[name] = self.build_system(name)
                 client = self._system_clients[name]
             return Target(model_id, client, client.external)
         provider = catalog.provider(provider_id)
@@ -409,7 +413,7 @@ class LLMResolver:
                     f"({entry.config.key_errors[provider.id]}). Enter it again in Admin > Models."
                 )
             else:
-                entry.clients[model_id] = self._build(
+                entry.clients[model_id] = self.build(
                     provider, model.name, entry.config.keys.get(provider.id)
                 )
         client = entry.clients[model_id]
