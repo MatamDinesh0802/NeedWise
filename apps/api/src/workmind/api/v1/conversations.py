@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from workmind.api.deps import require_scope, resources_of
+from workmind.api.deps import enforce_limit, require_scope, resources_of
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
@@ -218,6 +218,7 @@ async def send_message(
     ctx: AskContext, request: Request, conversation_id: uuid.UUID, body: MessageCreate
 ) -> RunStarted:
     resources = resources_of(request)
+    await enforce_limit(request, ctx, "research" if body.mode == "research" else "chat")
     # A used-up budget refuses the question (429 budget_exceeded) before it is stored.
     await resources.usage.check(ctx)
     run_id = uuid.uuid4()

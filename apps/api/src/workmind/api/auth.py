@@ -14,7 +14,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
-from workmind.api.deps import resources_of, settings_of, verify_csrf
+from workmind.api.deps import client_address, resources_of, settings_of, verify_csrf
 from workmind.core.config import Settings
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
@@ -75,6 +75,8 @@ async def login(
     login_hint: Annotated[str | None, Query(max_length=254, pattern=r"^[^\s<>\"']+$")] = None,
 ) -> RedirectResponse:
     settings, resources = settings_of(request), resources_of(request)
+    # Each start stores a flow in Valkey for 10 minutes: counted per address.
+    await resources.limits.check_address(client_address(request), "login")
     try:
         attempt = await resources.oidc.begin_login(login_hint=login_hint)
     except OidcError as exc:
@@ -108,6 +110,7 @@ async def callback(
         _clear_flow_cookie(response, settings)
         return response
 
+    await resources.limits.check_address(client_address(request), "login")
     if error:
         return fail("login_cancelled" if error == "access_denied" else "login_failed")
     browser_state = request.cookies.get(FLOW_COOKIE)

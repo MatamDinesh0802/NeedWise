@@ -3,6 +3,7 @@
 from typing import Annotated
 from urllib.parse import urlsplit
 
+import structlog
 from fastapi import Depends, Request
 
 from workmind.core.config import Settings
@@ -51,6 +52,7 @@ async def _token_context(request: Request, plain: str) -> RequestContext:
     if result is None:
         raise unauthenticated("The access token is invalid, revoked or expired.")
     token, identity = result
+    structlog.contextvars.bind_contextvars(tenant_id=str(token.tenant_id))
     return RequestContext(
         request_id=getattr(request.state, "request_id", ""),
         tenant_id=token.tenant_id,
@@ -85,6 +87,8 @@ async def get_request_context(request: Request) -> RequestContext:
         await resources.sessions.delete(session_id)
         raise unauthenticated()
 
+    # Every log line of the request from here on (and its access log line) names the tenant.
+    structlog.contextvars.bind_contextvars(tenant_id=str(session.tenant_id))
     return RequestContext(
         request_id=getattr(request.state, "request_id", ""),
         tenant_id=session.tenant_id,
@@ -127,3 +131,28 @@ async def _session_only(ctx: CurrentContext) -> RequestContext:
 
 
 SessionContext = Annotated[RequestContext, Depends(_session_only)]
+
+
+async def enforce_limit(request: Request, ctx: RequestContext, bucket: str) -> None:
+    """Counts the request against the person's and the tenant's limit (429 rate_limited)."""
+    await resources_of(request).limits.check(ctx.tenant_id, ctx.user_id, bucket)
+
+
+class RateLimit:
+    """A route's limit; `bucket` stays readable so a test can list every limited route."""
+
+    def __init__(self, bucket: str) -> None:
+        self.bucket = bucket
+
+    async def __call__(self, request: Request, ctx: CurrentContext) -> None:
+        await enforce_limit(request, ctx, self.bucket)
+
+
+def rate_limit(bucket: str):
+    """Use as `dependencies=[rate_limit("chat")]`: sign-in first (401), then the limit (429)."""
+    return Depends(RateLimit(bucket))
+
+
+def client_address(request: Request) -> str | None:
+    """The caller's address (uvicorn applies X-Forwarded-For from trusted proxies: Caddy)."""
+    return request.client.host if request.client else None

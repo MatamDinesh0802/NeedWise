@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from workmind.api.deps import resources_of, settings_of
+from workmind.api.deps import rate_limit, resources_of, settings_of
 from workmind.api.v1.admin import AdminContext
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
@@ -250,7 +250,7 @@ def sync_deps(request: Request) -> SyncDeps:
     )
 
 
-@router.post("/{key}/sync", status_code=202)
+@router.post("/{key}/sync", status_code=202, dependencies=[rate_limit("sync")])
 async def sync_now(ctx: AdminContext, request: Request, key: str) -> Response:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         source = await _source(session, key)

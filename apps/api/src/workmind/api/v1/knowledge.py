@@ -17,7 +17,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from workmind.api.deps import SessionContext, require_scope, resources_of, settings_of
+from workmind.api.deps import (
+    SessionContext,
+    rate_limit,
+    require_scope,
+    resources_of,
+    settings_of,
+)
 from workmind.api.v1.admin import AdminContext, PersonRef
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
@@ -298,7 +304,11 @@ async def list_documents(
     return Items(items=items)
 
 
-@router.post("/collections/{collection_id}/documents", status_code=202)
+@router.post(
+    "/collections/{collection_id}/documents",
+    status_code=202,
+    dependencies=[rate_limit("ingest")],
+)
 async def upload_document(
     ctx: SessionContext,
     request: Request,
@@ -431,7 +441,9 @@ async def download_document(
     return Response(content=data, media_type=mime, headers=headers)
 
 
-@router.post("/documents/{document_id}/reindex", status_code=202)
+@router.post(
+    "/documents/{document_id}/reindex", status_code=202, dependencies=[rate_limit("ingest")]
+)
 async def reindex_document(
     ctx: SessionContext, request: Request, document_id: uuid.UUID
 ) -> DocumentOut:

@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 import pytest
+import structlog
 from fastapi.testclient import TestClient
 from redis.asyncio import Redis
 from sqlalchemy import select, text, update
@@ -22,6 +23,7 @@ from sqlalchemy import select, text, update
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, seed_acme
 from workmind import cli
+from workmind.core import middleware
 from workmind.core.config import Settings
 from workmind.core.db import create_engine, create_session_factory
 from workmind.core.tenancy import global_transaction, tenant_transaction
@@ -356,6 +358,32 @@ def test_a_suspended_tenant_ends_its_sessions_at_once(settings: Settings, api: T
 
     _run(suspend())
     assert api.get("/api/v1/me", headers=headers).status_code == 401
+    assert tenant_cli.main(["delete", acme.slug, "--confirm", acme.slug], settings) == 0
+
+
+class AccessLog:
+    """Records each access log line with the log context bound at that moment."""
+
+    def __init__(self) -> None:
+        self.lines: list[dict[str, Any]] = []
+
+    def info(self, _event: str, **fields: Any) -> None:
+        self.lines.append({**structlog.contextvars.get_contextvars(), **fields})
+
+
+def test_request_logs_name_the_tenant(
+    settings: Settings, api: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    acme = _run(_control(settings))
+    access = AccessLog()
+    monkeypatch.setattr(middleware, "_access_log", access)
+
+    assert api.get("/api/v1/me", headers=acme.as_("alice")).status_code == 200
+    assert api.get("/api/v1/me").status_code == 401
+
+    signed_in, anonymous = access.lines
+    assert signed_in["tenant_id"] == str(acme.tenant_id)
+    assert "tenant_id" not in anonymous
     assert tenant_cli.main(["delete", acme.slug, "--confirm", acme.slug], settings) == 0
 
 

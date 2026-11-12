@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from workmind.api.deps import require_scope, resources_of
+from workmind.api.deps import rate_limit, require_scope, resources_of
 from workmind.api.v1.admin import AdminContext
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
@@ -446,7 +446,7 @@ def _reason(mode: str, routed_by: str, picked: list[str]) -> str:
     return "The planner chose by the agents' descriptions."
 
 
-@router.post("/test")
+@router.post("/test", dependencies=[rate_limit("agent_test")])
 async def test_agent(ctx: AdminContext, request: Request, body: TestRequest) -> TestOut:
     """Routing and an answer for one question, with an unsaved draft or a saved agent. Runs as
     the administrator: their permissions, narrowed to the agent's collections. Its model calls

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from workmind.api.deps import require_scope, resources_of, settings_of
+from workmind.api.deps import rate_limit, require_scope, resources_of, settings_of
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
@@ -192,7 +192,7 @@ async def _meeting(
     return meeting, access.can_edit or meeting.owner_id == ctx.user_id
 
 
-@router.post("/meetings", status_code=202)
+@router.post("/meetings", status_code=202, dependencies=[rate_limit("ingest")])
 async def upload_meeting(
     ctx: AskContext,
     request: Request,

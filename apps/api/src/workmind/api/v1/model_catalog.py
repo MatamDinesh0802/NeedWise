@@ -21,7 +21,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Body, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from workmind.api.deps import resources_of, settings_of
+from workmind.api.deps import rate_limit, resources_of, settings_of
 from workmind.api.v1.admin import AdminContext
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
@@ -327,7 +327,7 @@ async def delete_provider(ctx: AdminContext, request: Request, provider_id: str)
     return Response(status_code=204)
 
 
-@admin_router.post("/providers/{provider_id}/test")
+@admin_router.post("/providers/{provider_id}/test", dependencies=[rate_limit("agent_test")])
 async def probe_provider(
     ctx: AdminContext,
     request: Request,

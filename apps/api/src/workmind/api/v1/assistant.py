@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from workmind.api.deps import require_scope, resources_of
+from workmind.api.deps import rate_limit, require_scope, resources_of
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
@@ -97,7 +97,7 @@ def _passage_out(p: Passage) -> PassageOut:
     )
 
 
-@router.post("/search")
+@router.post("/search", dependencies=[rate_limit("search")])
 async def search(
     ctx: Annotated[RequestContext, require_scope("knowledge:read")],
     request: Request,
@@ -111,7 +111,7 @@ async def search(
     )
 
 
-@router.post("/ask")
+@router.post("/ask", dependencies=[rate_limit("chat")])
 async def ask(
     ctx: Annotated[RequestContext, require_scope("assistant:ask")],
     request: Request,
@@ -201,7 +201,7 @@ class ResearchOut(BaseModel):
     usage: UsageOut
 
 
-@router.post("/research")
+@router.post("/research", dependencies=[rate_limit("research")])
 async def research_question(
     ctx: Annotated[RequestContext, require_scope("assistant:ask")],
     request: Request,
