@@ -1,0 +1,807 @@
+# WorkMind AI Helm chart. Reference: docs/deploy/kubernetes.md and README.md next to this file.
+# values.schema.json validates everything below: a misspelled key is an error, not a no-op.
+#
+# Out of the box this installs the whole stack in one namespace: the WorkMind API, worker,
+# scheduler (beat) and web app, plus Postgres, Valkey, Qdrant, OpenFGA, Keycloak and an
+# embedding server as simple single-replica workloads. Turn any of those off and point the app
+# at a service you run (see examples/external-services.yaml).
+
+global:
+  # Replaces the registry of every image (a mirror or a private registry).
+  imageRegistry: ""
+  imagePullSecrets: []
+  # Storage class for every PersistentVolumeClaim that doesn't set its own. Empty: the default class.
+  storageClass: ""
+
+# Resource names start with <fullname>: "<release>-workmind", or the release name alone when it
+# contains "workmind" (release "workmind": workmind-api, workmind-credentials...).
+nameOverride: ""
+fullnameOverride: ""
+# Added to every resource.
+commonLabels: {}
+
+# ---------------------------------------------------------------------------------------------
+# Images of WorkMind itself. No images are published yet: build them from the repository and
+# push them to your registry (docs/deploy/kubernetes.md, "Images"). The tag defaults to the
+# chart's appVersion; a digest, when set, wins over the tag.
+# ---------------------------------------------------------------------------------------------
+images:
+  # The API image runs the API, the worker, beat, the migrations and the seed Job.
+  api:
+    registry: ""
+    repository: workmind-api
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  web:
+    registry: ""
+    repository: workmind-web
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------------------------------------
+# Application settings (apps/api/src/workmind/core/config.py), stored in a ConfigMap. Secrets
+# never go here: they are under `credentials`.
+# ---------------------------------------------------------------------------------------------
+config:
+  # The URL people type into the browser, without a path. Login redirects, the session cookie
+  # (Secure and __Host- prefixed with https), Keycloak's hostname and the Ingress host derive from it.
+  publicUrl: http://workmind.localhost
+  # dev | test | demo | production. production refuses development secrets and hides the API
+  # docs; the demo seed Job refuses to run with it.
+  appEnv: production
+  logLevel: INFO
+  logFormat: json
+  # single | auto | agents (ADR 0009)
+  assistantMode: single
+  llm:
+    # anthropic (needs credentials.anthropicApiKey) | openai_compatible (Ollama, vLLM, llama.cpp...)
+    provider: anthropic
+    model: claude-sonnet-5-5
+    # openai_compatible only
+    baseUrl: ""
+    # true when baseUrl is a third-party API rather than a model you run yourself (ARCHITECTURE 11.6)
+    external: false
+    fallbacks: true
+    # Per-role overrides; empty: `model`.
+    roleModels:
+      answer: ""
+      router: ""
+      judge: ""
+      generator: ""
+      agent: ""
+  # Optional local model for restricted data (ARCHITECTURE 11.6).
+  localLlm:
+    baseUrl: ""
+    model: ""
+  embedding:
+    # openai_compatible | hash (deterministic test embeddings, no model: search quality is poor)
+    provider: openai_compatible
+    # Empty with embeddings.enabled: the bundled server. Otherwise required for openai_compatible.
+    baseUrl: ""
+    model: embeddinggemma-300m
+    dimensions: 768
+  transcription:
+    # faster_whisper (runs in the worker, downloads the model on first use) | openai_compatible | none
+    provider: faster_whisper
+    model: base.en
+    baseUrl: ""
+  smtp:
+    # Empty: email is disabled.
+    host: ""
+    port: 587
+    from: ""
+    username: ""
+    starttls: false
+  google:
+    # Google Drive sources (docs/connectors.md); the secret is credentials.googleClientSecret.
+    clientId: ""
+  searxngUrl: ""
+  # A license issued for one deployment is valid only where DEPLOYMENT_ID matches it.
+  deploymentId: ""
+  # Public key of the development license signer (`wm license dev`). Trusted only with appEnv dev.
+  licenseDevPublicKey: ""
+  # Any other setting, as environment variables (strings), e.g. RETRIEVAL_MIN_SIMILARITY: "0.25"
+  # or OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  env: {}
+
+# ---------------------------------------------------------------------------------------------
+# Credentials. Each one comes from, in this order:
+#   1. its own `existingSecret` (a Secret you manage) and `key`,
+#   2. its `value` (stored in the chart's Secret <fullname>-credentials),
+#   3. `credentials.existingSecret`, the one Secret you manage for all of them (same keys),
+#   4. a random value the chart generates once and then reuses (only for the ones marked
+#      "generated", and only for what the bundled services need).
+# The chart's Secret is kept when the release is uninstalled (helm.sh/resource-policy: keep):
+# it holds the encryption keys, and the bundled Postgres keeps the passwords it was created
+# with. Back it up. Tools that render with `helm template` (Argo CD) can't reuse generated
+# values: give every credential a value or an existing Secret there.
+# ---------------------------------------------------------------------------------------------
+credentials:
+  existingSecret: ""
+  # Postgres role of the app at runtime (no BYPASSRLS). Generated. The password is put into a
+  # connection URL as it is: use letters and digits, or percent-encode it.
+  databaseAppPassword:
+    value: ""
+    existingSecret: ""
+    key: database-app-password
+  # Postgres owner role, used only by the migrate and seed Jobs. Generated. Same URL rule.
+  databaseOwnerPassword:
+    value: ""
+    existingSecret: ""
+    key: database-owner-password
+  # Superuser of the bundled Postgres. Generated when postgresql.enabled.
+  postgresPassword:
+    value: ""
+    existingSecret: ""
+    key: postgres-password
+  # Keycloak's database role. Generated when keycloak.enabled.
+  keycloakDbPassword:
+    value: ""
+    existingSecret: ""
+    key: keycloak-db-password
+  # OpenFGA's database role. Generated when openfga.enabled.
+  openfgaDbPassword:
+    value: ""
+    existingSecret: ""
+    key: openfga-db-password
+  # Valkey password. Generated when valkey.enabled and valkey.auth.enabled; optional for an
+  # external Valkey. Same URL rule.
+  valkeyPassword:
+    value: ""
+    existingSecret: ""
+    key: valkey-password
+  # Pre-shared key between the API and OpenFGA. Generated when openfga.enabled; required otherwise.
+  openfgaApiKey:
+    value: ""
+    existingSecret: ""
+    key: openfga-api-key
+  # Secret of the confidential OIDC client "workmind-api". Generated when keycloak.enabled
+  # (and written into the imported realm); required with an external Keycloak.
+  oidcClientSecret:
+    value: ""
+    existingSecret: ""
+    key: oidc-client-secret
+  # SECRETS_KEY: encrypts connector credentials (32 bytes, base64). Generated.
+  secretsKey:
+    value: ""
+    existingSecret: ""
+    key: secrets-key
+  # SECRETS_ENCRYPTION_KEY: encrypts tenants' model provider keys (32 bytes, base64). Generated.
+  secretsEncryptionKey:
+    value: ""
+    existingSecret: ""
+    key: secrets-encryption-key
+  # Older encryption keys that still decrypt, comma-separated (key rotation, docs/models.md).
+  secretsEncryptionPreviousKeys:
+    value: ""
+    existingSecret: ""
+    key: secrets-encryption-previous-keys
+  # Keycloak's bootstrap admin (keycloak.adminUser). Generated when keycloak.enabled. The seed
+  # Job also logs in with it.
+  keycloakAdminPassword:
+    value: ""
+    existingSecret: ""
+    key: keycloak-admin-password
+  # Password of the demo logins the seed Job creates. Empty: the app's default, workmind-demo.
+  demoPassword:
+    value: ""
+    existingSecret: ""
+    key: demo-password
+  anthropicApiKey:
+    value: ""
+    existingSecret: ""
+    key: anthropic-api-key
+  # LLM_API_KEY, for an openai_compatible provider that needs one.
+  llmApiKey:
+    value: ""
+    existingSecret: ""
+    key: llm-api-key
+  localLlmApiKey:
+    value: ""
+    existingSecret: ""
+    key: local-llm-api-key
+  embeddingApiKey:
+    value: ""
+    existingSecret: ""
+    key: embedding-api-key
+  transcriptionApiKey:
+    value: ""
+    existingSecret: ""
+    key: transcription-api-key
+  smtpPassword:
+    value: ""
+    existingSecret: ""
+    key: smtp-password
+  googleClientSecret:
+    value: ""
+    existingSecret: ""
+    key: google-client-secret
+  # The Enterprise license token (LICENSE_KEY, docs/enterprise.md). Empty: Community edition.
+  licenseKey:
+    value: ""
+    existingSecret: ""
+    key: license-key
+  # MCP_SERVERS: remote MCP servers as JSON (it holds their tokens), e.g.
+  # [{"key": "erp", "url": "https://erp.example/mcp", "token": "...", "read_only": ["stock"]}]
+  mcpServers:
+    value: ""
+    existingSecret: ""
+    key: mcp-servers
+
+# ---------------------------------------------------------------------------------------------
+# The WorkMind database. With postgresql.enabled the bundled server creates it with these fixed
+# names (files/postgres/01-databases.sh); with an external server, create the roles and the
+# database first (docs/deploy/kubernetes.md, "External services").
+# ---------------------------------------------------------------------------------------------
+database:
+  # External server; ignored when postgresql.enabled.
+  host: ""
+  port: 5432
+  name: workmind
+  appUser: workmind_app
+  ownerUser: workmind_owner
+  # Query string appended to both connection URLs (asyncpg), e.g. "ssl=require".
+  urlParams: ""
+
+# Shared by every pod of the chart.
+serviceAccount:
+  create: true
+  # Empty: <fullname>. With create false, an existing ServiceAccount (or "default").
+  name: ""
+  annotations: {}
+
+# Defaults for the WorkMind pods (api, worker, beat, web, migrate, seed). Each component can
+# override them with its own podSecurityContext / securityContext.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  capabilities:
+    drop: [ALL]
+  seccompProfile:
+    type: RuntimeDefault
+
+# ---------------------------------------------------------------------------------------------
+# Uploaded files, meeting recordings and analytics datasets (OBJECT_STORAGE_PATH=/data/objects),
+# shared by the API, the worker and the seed Job.
+# ---------------------------------------------------------------------------------------------
+objectStorage:
+  existingClaim: ""
+  storageClass: ""
+  # ReadWriteOnce works on one node only. With colocatePods the chart then schedules every pod
+  # that mounts it onto the same node. For API or worker replicas on several nodes, use a
+  # ReadWriteMany class (NFS, CephFS, EFS, Azure Files...) and set colocatePods false.
+  accessModes: [ReadWriteOnce]
+  colocatePods: true
+  size: 20Gi
+  annotations: {}
+  # Keep the claim (and the files) when the release is uninstalled.
+  keepOnUninstall: true
+
+# ---------------------------------------------------------------------------------------------
+# The API: REST, SSE, the login BFF and the MCP server at /mcp.
+# ---------------------------------------------------------------------------------------------
+api:
+  replicas: 1
+  # Uvicorn trusts X-Forwarded-* from these addresses. Only the Service (and, with
+  # networkPolicy.enabled, only the listed sources) can reach the pod.
+  forwardedAllowIps: "*"
+  # Empty: the image's command (uvicorn on :8000 with --proxy-headers).
+  command: []
+  args: []
+  extraEnv: []
+  extraEnvFrom: []
+  resources:
+    requests: {cpu: 250m, memory: 768Mi}
+    # The analytics query workers (ANALYTICS_WORKERS x ANALYTICS_WORKER_MEMORY_MB) run in this
+    # pod: raise the limit with those settings.
+    limits: {cpu: "2", memory: 4Gi}
+  tmpSizeLimit: 1Gi
+  # The compose healthcheck uses /healthz (the process is up). /readyz also checks Postgres,
+  # Valkey, Qdrant, OpenFGA and Keycloak; as a readiness path, one slow dependency would take
+  # every API pod out of the Service at once, so it is not the default.
+  startupProbe:
+    httpGet: {path: /healthz, port: http}
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 60
+  livenessProbe:
+    httpGet: {path: /healthz, port: http}
+    periodSeconds: 15
+    timeoutSeconds: 10
+    failureThreshold: 4
+  readinessProbe:
+    httpGet: {path: /healthz, port: http}
+    periodSeconds: 10
+    timeoutSeconds: 10
+    failureThreshold: 3
+  # Lets the endpoints controller and the ingress drop the pod before it stops.
+  preStopSleepSeconds: 5
+  terminationGracePeriodSeconds: 30
+  service:
+    type: ClusterIP
+    port: 8000
+    annotations: {}
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: null
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+# ---------------------------------------------------------------------------------------------
+# Background jobs (Celery): ingestion, meetings, connector sync, workflows.
+# ---------------------------------------------------------------------------------------------
+worker:
+  replicas: 1
+  queues: [ingest, default]
+  concurrency: 2
+  logLevel: INFO
+  extraEnv: []
+  extraEnvFrom: []
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "2", memory: 4Gi}
+  tmpSizeLimit: 1Gi
+  # Speech-to-text models (HF_HOME=/models), downloaded on the first recording. Without
+  # persistence: an emptyDir, so a new pod downloads again.
+  models:
+    persistence: false
+    existingClaim: ""
+    storageClass: ""
+    size: 5Gi
+    sizeLimit: 5Gi
+  # Compose has no healthcheck for the worker, so none by default. A working liveness probe
+  # (one `celery inspect ping` takes about 2 s and starts a Python interpreter in the pod):
+  #   exec: {command: [sh, -c, "celery -A workmind.workers.celery_app inspect ping -d celery@$HOSTNAME --timeout 10"]}
+  #   periodSeconds: 60
+  #   timeoutSeconds: 30
+  livenessProbe: {}
+  # Celery finishes running tasks on SIGTERM (late acks redeliver the rest).
+  terminationGracePeriodSeconds: 300
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: null
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+# ---------------------------------------------------------------------------------------------
+# Celery beat: queues scheduled work (connector syncs, workflows, review reminders, Enterprise
+# retention). Always exactly one replica (Recreate strategy). Its schedule is kept on a volume,
+# so a restart does not start every interval again.
+# ---------------------------------------------------------------------------------------------
+beat:
+  logLevel: INFO
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    size: 128Mi
+  extraEnv: []
+  resources:
+    requests: {cpu: 50m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  tmpSizeLimit: 128Mi
+  livenessProbe: {}
+  terminationGracePeriodSeconds: 30
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  priorityClassName: ""
+
+# ---------------------------------------------------------------------------------------------
+# The web app (Next.js).
+# ---------------------------------------------------------------------------------------------
+web:
+  replicas: 1
+  # The "View as" switcher of the demo (NEXT_PUBLIC_DEMO). Only for demo deployments.
+  demoSwitcher: false
+  extraEnv: []
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 768Mi}
+  tmpSizeLimit: 256Mi
+  # Same check as compose and the image's HEALTHCHECK: GET / answers 2xx.
+  startupProbe:
+    httpGet: {path: /, port: http}
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 30
+  livenessProbe:
+    httpGet: {path: /, port: http}
+    periodSeconds: 15
+    timeoutSeconds: 10
+    failureThreshold: 4
+  readinessProbe:
+    httpGet: {path: /, port: http}
+    periodSeconds: 10
+    timeoutSeconds: 10
+    failureThreshold: 3
+  preStopSleepSeconds: 5
+  terminationGracePeriodSeconds: 30
+  service:
+    type: ClusterIP
+    port: 3000
+    annotations: {}
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: null
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+  podAnnotations: {}
+  podLabels: {}
+  # The web image runs as nextjs (1001:1001).
+  podSecurityContext:
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+# ---------------------------------------------------------------------------------------------
+# Database migrations (alembic upgrade head) as a Helm hook Job, with the owner role. With an
+# external database it runs before install and before every upgrade (pre-install,pre-upgrade).
+# With the bundled Postgres the first run is post-install (a pre-install hook would run before
+# the database exists); every upgrade is still pre-upgrade.
+# ---------------------------------------------------------------------------------------------
+migrate:
+  backoffLimit: 3
+  activeDeadlineSeconds: 1800
+  # Seconds the init container waits for Postgres to accept connections.
+  waitTimeoutSeconds: 600
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------------------------
+# Demo data (Acme Robotics: people, logins, 34 documents, a meeting, analytics), loaded by
+# `python -m workmind.seed` in a post-install/post-upgrade hook Job. Development and demos
+# only: it refuses config.appEnv production. Re-running is safe.
+# ---------------------------------------------------------------------------------------------
+seed:
+  enabled: false
+  # Under the seed directory.
+  companyFile: acme/company.yaml
+  # e.g. [--skip-corpus] when no embedding server is reachable.
+  args: []
+  data:
+    # The repository's seed/ directory (about 9 MB) is not in the API image. Where to get it:
+    #   image:   an image that holds it at data.image.path (needs sh and cp), copied by an init container
+    #   archive: a .tar.gz of the repository (top directory stripped), downloaded by an init container
+    #   existingClaim: a PersistentVolumeClaim that holds it at its root
+    source: image
+    image:
+      registry: ""
+      repository: ""
+      tag: ""
+      digest: ""
+      pullPolicy: IfNotPresent
+      path: /seed
+    archiveUrl: ""
+    existingClaim: ""
+  backoffLimit: 1
+  activeDeadlineSeconds: 3600
+  waitTimeoutSeconds: 900
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 2Gi}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------------------------
+# Routing, the same as deploy/caddy/Caddyfile: /api and /mcp to the API, /auth to the bundled
+# Keycloak, everything else to the web app. /api/auth/backchannel-logout (Keycloak calls it on
+# the cluster network) goes to the web app, which answers 404, as Caddy does.
+# ---------------------------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: ""
+  # Controller-specific settings. Uploads go up to 500 MB (meeting recordings) and answers
+  # stream over SSE: raise the body size limit and the read timeout of your controller.
+  annotations: {}
+  # Empty: the host of config.publicUrl.
+  host: ""
+  tls:
+    enabled: false
+    # Empty: <fullname>-tls (e.g. issued by cert-manager through an annotation).
+    secretName: ""
+
+# Gateway API alternative to the Ingress (same routes). Needs the Gateway API CRDs and a Gateway.
+httpRoute:
+  enabled: false
+  annotations: {}
+  # e.g. [{name: public, namespace: gateway-system, sectionName: https}]
+  parentRefs: []
+  # Empty: the host of config.publicUrl.
+  hostnames: []
+  # The headers Caddy sets (nosniff, Referrer-Policy, X-Frame-Options) and removes (Server),
+  # through a ResponseHeaderModifier filter (Gateway API "extended" support).
+  securityHeaders: true
+
+# Optional NetworkPolicies (ingress only; egress stays open: model APIs, connectors and model
+# downloads need it). Bundled services accept connections only from the WorkMind pods that use
+# them; the worker and beat accept none.
+networkPolicy:
+  enabled: false
+  # Who may reach the web app, the API and Keycloak: your ingress controller or gateway, e.g.
+  # [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-system}}}].
+  # Empty: any source.
+  publicFrom: []
+
+# ---------------------------------------------------------------------------------------------
+# Bundled dependencies: simple single-replica workloads with the same official images as
+# compose.yaml. Set enabled: false to use a service you run (managed Postgres, a Keycloak
+# cluster...). Back up their volumes (docs/deploy/kubernetes.md, "Backups").
+# ---------------------------------------------------------------------------------------------
+postgresql:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: postgres
+    tag: "18.6"
+    digest: ""
+    pullPolicy: IfNotPresent
+  # Extra server arguments, e.g. [-c, max_connections=200]
+  args: []
+  persistence:
+    storageClass: ""
+    size: 20Gi
+  shmSizeLimit: 256Mi
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 2Gi}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile: {type: RuntimeDefault}
+  podDisruptionBudget:
+    enabled: false
+    maxUnavailable: 1
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+valkey:
+  enabled: true
+  # Require a password (credentials.valkeyPassword). Sessions and queued tasks live here.
+  auth:
+    enabled: true
+  # Used when enabled is false.
+  external:
+    host: ""
+    port: 6379
+    tls: false
+  image:
+    registry: docker.io
+    repository: valkey/valkey
+    tag: 9.1.3-alpine
+    digest: ""
+    pullPolicy: IfNotPresent
+  persistence:
+    storageClass: ""
+    size: 2Gi
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: "1", memory: 1Gi}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile: {type: RuntimeDefault}
+  podDisruptionBudget:
+    enabled: false
+    maxUnavailable: 1
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+qdrant:
+  enabled: true
+  # Used when enabled is false, e.g. http://qdrant.vector.svc:6333. The API has no Qdrant API
+  # key setting: restrict access to it on the network.
+  external:
+    url: ""
+  image:
+    registry: docker.io
+    repository: qdrant/qdrant
+    tag: v1.20.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  persistence:
+    storageClass: ""
+    size: 20Gi
+  snapshotsSizeLimit: 5Gi
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 4Gi}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile: {type: RuntimeDefault}
+  podDisruptionBudget:
+    enabled: false
+    maxUnavailable: 1
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+openfga:
+  enabled: true
+  # Used when enabled is false: the HTTP API, e.g. http://openfga.authz.svc:8080
+  external:
+    url: ""
+  replicas: 1
+  # Its own database on the WorkMind Postgres by default (database.host, or the bundled one).
+  database:
+    host: ""
+    port: 5432
+    name: openfga
+    username: openfga
+    sslmode: disable
+  image:
+    registry: docker.io
+    repository: openfga/openfga
+    tag: v1.22.1
+    digest: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: "1", memory: 512Mi}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile: {type: RuntimeDefault}
+  podDisruptionBudget:
+    enabled: false
+    maxUnavailable: 1
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+keycloak:
+  enabled: true
+  # Used when enabled is false: the base URL the API uses (with the /auth path if your
+  # Keycloak has one), e.g. https://sso.example.com/auth. Import files/keycloak/realm-workmind.json
+  # there (docs/deploy/kubernetes.md).
+  external:
+    url: ""
+  realm: workmind
+  oidcClientId: workmind-api
+  # start (production mode) | start-dev (development mode, as in compose)
+  startCommand: start
+  adminUser: admin
+  heapOptions: "-Xms256m -Xmx768m"
+  database:
+    host: ""
+    port: 5432
+    name: keycloak
+    username: keycloak
+    # Appended to the JDBC URL, e.g. "?sslmode=require"
+    jdbcParams: ""
+  image:
+    registry: quay.io
+    repository: keycloak/keycloak
+    tag: 26.8.1
+    digest: ""
+    pullPolicy: IfNotPresent
+  extraEnv: []
+  resources:
+    requests: {cpu: 250m, memory: 768Mi}
+    limits: {cpu: "2", memory: 1536Mi}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    seccompProfile: {type: RuntimeDefault}
+  # The stock image builds itself on start (`start` with Postgres and health checks enabled)
+  # and writes to /opt/keycloak/lib: its root filesystem can't be read-only.
+  readOnlyRootFilesystem: false
+  podDisruptionBudget:
+    enabled: false
+    maxUnavailable: 1
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# The embedding model (EmbeddingGemma-300M on llama.cpp, CPU), as `make quickstart` runs it.
+# The first start downloads the model from Hugging Face (about 330 MB).
+embeddings:
+  enabled: true
+  image:
+    registry: ghcr.io
+    repository: ggml-org/llama.cpp
+    tag: server-b12098
+    digest: ""
+    pullPolicy: IfNotPresent
+  model: ggml-org/embeddinggemma-300M-GGUF:Q8_0
+  args: ["--embeddings", "-c", "8192", "--parallel", "4", "-ub", "2048", "-b", "2048"]
+  persistence:
+    enabled: false
+    existingClaim: ""
+    storageClass: ""
+    size: 2Gi
+  cacheSizeLimit: 2Gi
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "4", memory: 2Gi}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile: {type: RuntimeDefault}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# `helm test <release>`: checks the API's /readyz (every dependency) and the web app.
+tests:
+  enabled: true

@@ -1,0 +1,92 @@
+{{- $c := .Values.web -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "workmind.componentName" (list . "web") }}
+  labels:
+    {{- include "workmind.labels" (list . "web") | nindent 4 }}
+spec:
+  {{- if not $c.autoscaling.enabled }}
+  replicas: {{ $c.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "workmind.selectorLabels" (list . "web") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "workmind.selectorLabels" (list . "web") | nindent 8 }}
+        {{- with $c.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $c.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "workmind.podCommon" (list . $c) | nindent 6 }}
+      securityContext:
+        {{- include "workmind.podSecurityContext" (list . $c.podSecurityContext) | nindent 8 }}
+      terminationGracePeriodSeconds: {{ $c.terminationGracePeriodSeconds }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: web
+          image: {{ include "workmind.image" (list . .Values.images.web .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.images.web.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            # The server side of the web app calls the API directly; browsers go through the Ingress.
+            - name: API_INTERNAL_URL
+              value: {{ include "workmind.apiInternalUrl" . | quote }}
+            - name: NEXT_PUBLIC_DEMO
+              value: {{ ternary "1" "0" $c.demoSwitcher | quote }}
+            {{- with $c.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with $c.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $c.preStopSleepSeconds }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", {{ $c.preStopSleepSeconds | quote }}]
+          {{- end }}
+          securityContext:
+            {{- include "workmind.securityContext" (list . $c.securityContext) | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            # Next.js writes its cache here; the rest of the filesystem is read-only.
+            - name: next-cache
+              mountPath: /app/.next/cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: next-cache
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ $c.tmpSizeLimit }}

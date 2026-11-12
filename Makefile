@@ -84,6 +84,9 @@ authz-model: ## Compile the OpenFGA model to JSON and run the authorization matr
 e2e: ## End-to-end tests against the running, seeded stack (`make up seed` first)
 	cd apps/api && E2E_BASE_URL=http://localhost:$(HTTP_PORT) uv run pytest tests/e2e -v
 
+helm-check: ## Lint, render and validate the Helm chart (needs helm and kubeconform on PATH)
+	PYTHON="uv run --no-project --with pyyaml==6.0.2 python" deploy/helm/validate.sh
+
 # Local embeddings: EmbeddingGemma-300M on llama.cpp (Apple GPU via Metal). 4 slots x 2048 tokens.
 EMBED_GGUF ?= $(firstword $(wildcard $(HOME)/.cache/huggingface/hub/models--ggml-org--embeddinggemma-300M-GGUF/snapshots/*/embeddinggemma-300M-Q8_0.gguf))
 EMBED_SOURCE = $(if $(EMBED_GGUF),-m "$(EMBED_GGUF)",-hf ggml-org/embeddinggemma-300M-GGUF:Q8_0)

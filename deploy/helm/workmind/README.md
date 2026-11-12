@@ -1,0 +1,92 @@
+# WorkMind Helm chart
+
+Installs WorkMind AI on Kubernetes: the API, the Celery worker, Celery beat and the web app,
+with the database migrations as a Helm hook. Postgres, Valkey, Qdrant, OpenFGA, Keycloak and
+an embedding server can come bundled (simple single-replica workloads with the same images
+as `compose.yaml`) or from services you run. The full guide is
+[docs/deploy/kubernetes.md](../../../docs/deploy/kubernetes.md).
+
+**Status.** The chart passes `helm lint --strict`, renders with the default values and the
+examples, and validates against the Kubernetes 1.33 schemas (`deploy/helm/validate.sh`, run
+in CI by `.github/workflows/helm.yml`). The images and security settings it uses were run in
+Docker with the same users, read-only root filesystems and dropped capabilities. It has not
+been installed on a cluster by this repository's CI yet. No WorkMind images are published:
+build them first (below).
+
+## Install
+
+```bash
+# 1. Build and push the two images (no published images yet)
+docker build --build-context ee=ee -t registry.example.com/workmind/workmind-api:0.0.1 apps/api
+docker build -t registry.example.com/workmind/workmind-web:0.0.1 apps/web
+docker push registry.example.com/workmind/workmind-api:0.0.1
+docker push registry.example.com/workmind/workmind-web:0.0.1
+
+# 2. Install, everything bundled
+helm install workmind deploy/helm/workmind --namespace workmind --create-namespace \
+  --set config.publicUrl=https://workmind.example.com \
+  --set images.api.repository=registry.example.com/workmind/workmind-api \
+  --set images.web.repository=registry.example.com/workmind/workmind-web \
+  --set ingress.className=<your ingress class> --set ingress.tls.enabled=true \
+  --wait --timeout 20m
+
+# 3. Check every dependency from inside the cluster
+helm test workmind --namespace workmind
+```
+
+The chart generates the database passwords, the OpenFGA key, the OIDC client secret and the
+encryption keys on the first install, stores them in the Secret `<fullname>-credentials`
+(`workmind-credentials` for a release named `workmind`; otherwise
+`<release>-workmind-credentials`) and reuses them on upgrades. That Secret is kept when the release is uninstalled: back it up,
+it holds the keys that decrypt stored provider keys and connector credentials.
+
+Other setups:
+
+| File | What it shows |
+|---|---|
+| [`values.yaml`](values.yaml) | Every setting, with comments; validated by [`values.schema.json`](values.schema.json) |
+| [`examples/external-services.yaml`](examples/external-services.yaml) | Every dependency outside the chart, all credentials in one existing Secret |
+| [`examples/production.yaml`](examples/production.yaml) | A managed Postgres, ReadWriteMany object storage, several replicas, autoscaling, NetworkPolicies, TLS through cert-manager |
+
+## What it creates
+
+| Component | Kind | Notes |
+|---|---|---|
+| api | Deployment, Service, PDB, optional HPA | Uvicorn on :8000. Probes on `/healthz`, as in compose |
+| worker | Deployment, PDB, optional HPA | Celery, queues `ingest,default`; speech models in an emptyDir or a PVC |
+| beat | Deployment (always 1 replica, Recreate), PVC | Celery beat; its schedule survives restarts |
+| web | Deployment, Service, PDB, optional HPA | Next.js on :3000. Probes on `/`, as in compose |
+| migrate | hook Job (+ hook ServiceAccount and Secret) | `alembic upgrade head` with the owner role |
+| seed | hook Job, optional | The Acme Robotics demo; refuses `config.appEnv: production` |
+| objects | PVC | `/data/objects`, shared by the API, the worker and the seed Job |
+| postgresql | StatefulSet, Services, ConfigMap | `postgres:18.6` with `deploy/postgres/init` as a ConfigMap |
+| valkey | StatefulSet, Services | `valkey/valkey:9.1.3-alpine`, password required |
+| qdrant | StatefulSet, Services | `qdrant/qdrant:v1.20.0` |
+| openfga | Deployment, Service, migrate Job | `openfga/openfga:v1.22.1`, pre-shared key |
+| keycloak | Deployment, Service, ConfigMap | `quay.io/keycloak/keycloak:26.8.1` in production mode, realm imported |
+| embeddings | Deployment, Service, optional PVC | `ghcr.io/ggml-org/llama.cpp:server-b12098` with EmbeddingGemma-300M |
+| Ingress or HTTPRoute | | The routes of `deploy/caddy/Caddyfile` |
+| NetworkPolicies | optional | Ingress rules per component |
+
+OpenFGA and Keycloak are Deployments rather than StatefulSets: they keep their state in
+Postgres, so a StatefulSet would add nothing but ordered rollouts.
+
+## Files
+
+- `files/postgres/01-databases.sh` and `files/keycloak/realm-workmind.json` are copies of the
+  files in `deploy/postgres/init` and `deploy/keycloak` (Helm can only read files inside the
+  chart). `validate.sh` fails when they differ: edit the originals and copy them.
+- `ci/` holds values used only by the CI checks; it is left out of a packaged chart.
+
+## Validate
+
+```bash
+make helm-check   # = PYTHON="uv run --no-project --with pyyaml==6.0.2 python" deploy/helm/validate.sh
+```
+
+`HELM` and `KUBECONFORM` choose other binaries than the ones on `PATH`.
+
+It needs Helm, [kubeconform](https://github.com/yannh/kubeconform) and network access to the
+schema repositories. It lints, renders four sets of values, validates them against the
+Kubernetes 1.33 schemas, checks every pod against the chart's rules (`../check-manifests.py`),
+and checks that invalid values are refused.

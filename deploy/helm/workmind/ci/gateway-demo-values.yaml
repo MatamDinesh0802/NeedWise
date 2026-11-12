@@ -1,0 +1,78 @@
+# CI only (deploy/helm/validate.sh): exercises the branches the default and example values
+# leave out. Not a recommended setup.
+global:
+  imageRegistry: mirror.example.com
+  imagePullSecrets: [registry-credentials]
+images:
+  api:
+    repository: workmind/workmind-api
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+config:
+  publicUrl: http://workmind.localhost:8480
+  appEnv: demo
+  assistantMode: auto
+  llm:
+    provider: openai_compatible
+    baseUrl: http://ollama.ai.svc:11434/v1
+    model: qwen3:14b
+    roleModels:
+      router: qwen3:8b
+  embedding:
+    provider: hash
+    model: hash-ci
+  transcription:
+    provider: none
+  smtp:
+    host: smtp.example.com
+    from: WorkMind <workmind@example.com>
+    username: workmind
+    starttls: true
+  env:
+    RETRIEVAL_MIN_SIMILARITY: "0"
+credentials:
+  anthropicApiKey:
+    existingSecret: model-keys
+    key: anthropic
+  llmApiKey:
+    value: not-a-real-key
+  smtpPassword:
+    value: not-a-real-password
+  demoPassword:
+    value: workmind-demo
+serviceAccount:
+  create: false
+  name: workmind-runner
+valkey:
+  auth:
+    enabled: false
+keycloak:
+  startCommand: start-dev
+embeddings:
+  enabled: false
+beat:
+  persistence:
+    enabled: false
+worker:
+  models:
+    persistence: true
+    existingClaim: whisper-models
+seed:
+  enabled: true
+  args: [--skip-analytics]
+  data:
+    source: archive
+    archiveUrl: https://example.com/workmind/archive/main.tar.gz
+ingress:
+  enabled: false
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: public
+      namespace: gateway-system
+      sectionName: http
+networkPolicy:
+  enabled: true
+  publicFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gateway-system
