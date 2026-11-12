@@ -24,7 +24,7 @@ from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.authz.sync import enqueue
 from workmind.modules.governance.audit import Actor, record_event
-from workmind.modules.identity.models import User
+from workmind.modules.identity.models import Department, Group, User
 from workmind.modules.knowledge import governance, service
 from workmind.modules.knowledge.acl import collection_tuples
 from workmind.modules.knowledge.models import (
@@ -39,6 +39,7 @@ from workmind.modules.knowledge.pipeline import (
     refresh_collection_acl,
     set_document_labels,
 )
+from workmind.modules.knowledge.storage import owned_key
 
 router = APIRouter(tags=["knowledge"])
 ReadContext = Annotated[RequestContext, require_scope("knowledge:read")]
@@ -417,7 +418,7 @@ async def download_document(
         if version is None:
             raise ApiError(404, "not_found", "Document has no stored file")
         filename, mime, key = document.filename, document.mime_type, version.storage_key
-    data = await resources.storage.get(key)
+    data = await resources.storage.get(owned_key(ctx.tenant_id, key))
     # RFC 6266: an ASCII fallback plus the exact UTF-8 name (RFC 5987) for non-ASCII names.
     fallback = filename.encode("ascii", "replace").decode().replace('"', "").replace("?", "_")
     # Only PDFs open inline: uploaded HTML or SVG shown on our origin could run scripts.
@@ -582,7 +583,7 @@ async def delete_document(
         resources.qdrant, resources.collection_name, ctx.tenant_id, document_id
     )
     for key in orphaned:
-        await resources.storage.delete(key)
+        await resources.storage.delete(owned_key(ctx.tenant_id, key))
     return Response(status_code=204)
 
 
@@ -620,6 +621,32 @@ def baseline_viewers(tenant_id: uuid.UUID, scope: str, department_id: uuid.UUID 
     if scope == "department" and department_id:
         return {f"dept:{department_id}"}
     return set()
+
+
+async def check_principals(
+    session: AsyncSession, tenant_id: uuid.UUID, principals: Sequence[str]
+) -> None:
+    """Every principal must name someone of this tenant. The id format alone says nothing: a
+    user, group or department id of another tenant (or another tenant's org) is refused."""
+    wanted: dict[str, set[uuid.UUID]] = {"user": set(), "group": set(), "dept": set()}
+    for principal in principals:
+        kind, _, raw = principal.partition(":")
+        subject = uuid.UUID(raw)  # the Principal pattern already checked the format
+        if kind == "org":
+            if subject != tenant_id:
+                raise _unknown_principal(principal)
+            continue
+        wanted["dept" if kind == "dept-manager" else kind].add(subject)
+    for kind, model in (("user", User), ("group", Group), ("dept", Department)):
+        if not wanted[kind]:
+            continue
+        found = set(await session.scalars(select(model.id).where(model.id.in_(wanted[kind]))))
+        if missing := wanted[kind] - found:
+            raise _unknown_principal(f"{kind}:{min(missing)}")
+
+
+def _unknown_principal(principal: str) -> ApiError:
+    return ApiError(422, "unknown_principal", "Unknown person, group or department", principal)
 
 
 def resolve_grants(
@@ -787,6 +814,12 @@ async def create_collection(
     if body.scope == "restricted" and not (viewers or editors):
         raise ApiError(422, "viewers_required", "A restricted collection needs explicit viewers")
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        if (
+            body.department_id is not None
+            and await session.get(Department, body.department_id) is None
+        ):
+            raise ApiError(422, "unknown_department", "Unknown department")
+        await check_principals(session, ctx.tenant_id, [*body.viewers, *body.editors])
         if (await session.scalars(select(Collection).where(Collection.key == body.key))).first():
             raise ApiError(409, "slug_taken", "A collection with this key already exists")
         collection = Collection(
@@ -856,6 +889,10 @@ async def replace_grants(
                 )
             ).all()
         )
+        # New principals only: a grant that is already there may stay as it is.
+        granted = {g.principal for g in old}
+        added = [p for p in (*body.viewers, *body.editors) if p not in granted]
+        await check_principals(session, ctx.tenant_id, added)
         viewers, editors = resolve_grants(
             baseline_viewers(ctx.tenant_id, collection.scope, collection.department_id),
             body.viewers,
