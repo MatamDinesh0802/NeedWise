@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e e2e-browser seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check backup restore upgrade-test helm-check
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e e2e-browser seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check backup restore upgrade-test helm-check helm-kind-test
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -86,6 +86,9 @@ e2e: ## End-to-end tests against the running, seeded stack (`make up seed` first
 
 helm-check: ## Lint, render and validate the Helm chart (needs helm and kubeconform on PATH)
 	PYTHON="uv run --no-project --with pyyaml==6.0.2 python" deploy/helm/validate.sh
+
+helm-kind-test: ## Install, test, upgrade and uninstall the chart on a throwaway kind cluster (needs kind, kubectl, helm)
+	deploy/helm/kind-test.sh
 
 # Browser suite (e2e/browser/README.md). E2E_MODEL=1 adds the @model tests (they call the model).
 E2E_BASE_URL ?= http://localhost:$(HTTP_PORT)

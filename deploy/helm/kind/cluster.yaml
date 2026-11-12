@@ -1,0 +1,16 @@
+# kind cluster for deploy/helm/kind-test.sh: one control plane that runs ingress-nginx (its port
+# 80 published on 127.0.0.1:8680) and two workers for WorkMind. The node image comes from the
+# script (--image), so one file serves every Kubernetes version.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    labels:
+      ingress-ready: "true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 8680
+        listenAddress: 127.0.0.1
+        protocol: TCP
+  - role: worker
+  - role: worker

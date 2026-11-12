@@ -2,7 +2,7 @@
 # Validates the WorkMind Helm chart without a cluster:
 #   1. the chart's copies of deploy/postgres/init and deploy/keycloak match the originals,
 #   2. helm lint --strict and helm template with the default values, the two examples and
-#      the CI values,
+#      the CI values (ci/: the Gateway API demo and the kind test),
 #   3. kubeconform -strict against the Kubernetes schemas (KUBERNETES_VERSION, default 1.33.0),
 #   4. the chart's own rules (check-manifests.py: non-root, read-only, limits, probes...),
 #   5. values the chart must refuse.
@@ -41,6 +41,7 @@ render default
 render external-services "$CHART/examples/external-services.yaml"
 render production "$CHART/examples/production.yaml"
 render gateway-demo "$CHART/ci/gateway-demo-values.yaml"
+render kind "$CHART/ci/kind-values.yaml"
 
 echo "== kubeconform (Kubernetes $KUBERNETES_VERSION)"
 # HTTPRoute (Gateway API) is a CRD: its schema comes from the datreeio CRDs catalog.
