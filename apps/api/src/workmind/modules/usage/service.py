@@ -58,6 +58,7 @@ async def admin_view(
             "period": default.period,
             "limit_usd": round(default.limit_usd, 4),
             "action": default.action,
+            "warn_at": default.warn_at,
         }
         if default
         else None,

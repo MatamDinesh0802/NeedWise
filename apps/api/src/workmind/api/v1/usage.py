@@ -18,7 +18,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from workmind.api.deps import require_feature, require_scope, resources_of
@@ -146,13 +146,23 @@ async def chargeback_csv(
 # --- Budgets --------------------------------------------------------------------------------
 
 
+def _storable(limit: float) -> float:
+    """Limits are stored with 4 decimals: a smaller one would be stored as $0."""
+    if round(limit, 4) <= 0:
+        raise ValueError("The smallest limit is $0.0001.")
+    return limit
+
+
+LimitUsd = Annotated[float, Field(gt=0, le=MAX_LIMIT_USD), AfterValidator(_storable)]
+
+
 class BudgetIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     scope: Literal["tenant", "department", "user"]
     subject_id: uuid.UUID | None = None
     period: Literal["day", "month"]
-    limit_usd: float = Field(gt=0, le=MAX_LIMIT_USD)
+    limit_usd: LimitUsd
     warn_at: float = Field(default=0.8, gt=0, le=1)
     action: Literal["block", "warn"] = "block"
 
@@ -161,7 +171,7 @@ class UserDefaultIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     period: Literal["day", "month"]
-    limit_usd: float = Field(gt=0, le=MAX_LIMIT_USD)
+    limit_usd: LimitUsd
     action: Literal["block", "warn"] = "block"
     warn_at: float = Field(default=0.8, gt=0, le=1)
 

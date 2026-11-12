@@ -168,7 +168,12 @@ async def test_admins_save_budgets_and_read_them_back_with_their_status(
         1.25,
         "warning",
     )
-    assert body["user_default"] == {"period": "month", "limit_usd": 20.0, "action": "warn"}
+    assert body["user_default"] == {
+        "period": "month",
+        "limit_usd": 20.0,
+        "action": "warn",
+        "warn_at": 0.8,
+    }
     assert api.get("/api/v1/admin/budgets", headers=acme.as_("erin")).json() == body
 
     # Saving again keeps each budget's id (and so its warnings); what is left out is removed.
@@ -216,6 +221,50 @@ async def test_invalid_budgets_are_refused_field_by_field(api: TestClient, acme:
         (("budgets", 4, "subject_id"), "The organization budget has no subject."),
     }
     assert api.get("/api/v1/admin/budgets", headers=acme.as_("erin")).json()["budgets"] == []
+
+
+async def test_a_limit_too_small_to_store_is_refused_not_a_server_error(
+    api: TestClient, acme: Acme
+) -> None:
+    tiny = put_budgets(api, acme, [budget("tenant", 0.00001)])
+    tiny_default = put_budgets(api, acme, [], {"period": "day", "limit_usd": 0.00004})
+    smallest = put_budgets(api, acme, [budget("tenant", 0.0001)])
+
+    assert tiny.status_code == 422, tiny.text
+    assert [e["msg"] for e in tiny.json()["errors"]] == [
+        "Value error, The smallest limit is $0.0001."
+    ]
+    assert tiny_default.status_code == 422, tiny_default.text
+    assert smallest.status_code == 200, smallest.text
+
+
+async def test_the_default_caps_warning_level_is_read_back(api: TestClient, acme: Acme) -> None:
+    saved = put_budgets(
+        api, acme, [], {"period": "month", "limit_usd": 5, "action": "block", "warn_at": 0.5}
+    )
+    read = api.get("/api/v1/admin/budgets", headers=acme.as_("erin")).json()
+
+    assert saved.status_code == 200, saved.text
+    assert read["user_default"] == {
+        "period": "month",
+        "limit_usd": 5.0,
+        "action": "block",
+        "warn_at": 0.5,
+    }
+
+
+async def test_a_call_in_progress_counts_towards_the_budget_before_its_next_turn(
+    meter: UsageMeter, api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    await spend(app_sessions, acme, "bob", 0.9)
+    assert put_budgets(api, acme, [budget("tenant", 1, period="day")]).status_code == 200
+    bob = Attribution("research", user_id=acme.users["bob"])
+
+    await meter.admit(acme.tenant_id, bob, pending_usd=0.05)  # $0.95 of $1
+    with pytest.raises(BudgetExceededError) as crossed:
+        await meter.admit(acme.tenant_id, bob, pending_usd=0.1)
+
+    assert crossed.value.status.spent_usd == pytest.approx(1.0)
 
 
 async def test_department_budgets_and_chargeback_are_enterprise_features(
