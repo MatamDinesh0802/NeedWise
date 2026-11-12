@@ -47,6 +47,7 @@ make loadtest USERS=50 SPAWN_RATE=5 DURATION=10m STUB_URL=http://127.0.0.1:8490 
 | `UPLOAD_COLLECTION` | none | Collection key for the upload scenario; unset: no uploads |
 | `THINK` | `3,10` | Seconds between a person's actions (min,max) |
 | `PROCESSES` | 1 | Locust processes; `-1`: one per CPU |
+| `MONITOR` | none | A compose project's name (`workmind`): record its resource use for the report (see "Resource use") |
 | `LOADTEST_HOST` | `http://localhost:8480` | The target |
 
 Other targets: `make loadtest-stub` (the stub; `STUB_PORT`, `TTFT_MS`, `TPS`, `ANSWER_TOKENS`),
@@ -260,6 +261,7 @@ A report (`loadtests/results/<date>-<label>.md`) has:
 - **calls to the stub**: by kind and schema, to check that a run used the stub and how many
   model calls a scenario makes (in `auto` mode, a planner call for each chat question the fast
   path does not route);
+- **resource use**, with `MONITOR` (below);
 - **the target before the run**: the preflight's findings; **notes** given with `--note`.
 
 Percentiles are Locust's, from its histogram: times are rounded to 10 ms above 100 ms and to
@@ -275,6 +277,25 @@ single mode it is all WorkMind (plus a rewrite for follow-ups). The report does 
 these yet: the stub counts calls but not their durations per run.
 
 Compare runs only with the same machine, stub timing, mix, think time and assistant mode.
+
+### Resource use
+
+`MONITOR=<compose project>` (`--monitor`, `workmind_load/monitor.py`) records what the stack spent
+while Locust ran, from the host with the Docker CLI only:
+
+- every 5 s, `docker stats` for each container of the project (CPU in % of one core, memory) and
+  Postgres connections per database and state, with the number of active backends waiting on a
+  lock;
+- the API's own time per route from its access log (`docker logs`): without Caddy and the
+  network, ids replaced by `{id}`;
+- the Postgres statements with the most total time, from `pg_stat_statements`. The monitor
+  resets the statistics when the run starts. The extension must be loaded by the server
+  (`shared_preload_libraries=pg_stat_statements`) and created in the `postgres` database; the
+  compose file does neither, so without it the report says so;
+- Qdrant's requests and latency per endpoint during the run (its `/metrics` histogram;
+  `--qdrant-url`, default `http://localhost:6333`), and Valkey's commands per second.
+
+It runs `psql` as the `postgres` superuser inside the Postgres container: it is for test stacks.
 
 ## Caveats
 

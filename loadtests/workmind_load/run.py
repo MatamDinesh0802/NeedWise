@@ -29,7 +29,7 @@ from urllib.parse import urljoin
 
 import requests
 
-from workmind_load import preflight, report, tokens
+from workmind_load import monitor, preflight, report, tokens
 from workmind_load.settings import (
     ADMIN_USER,
     DEFAULT_DEMO_PASSWORD,
@@ -126,6 +126,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tokens", type=Path, default=TOKEN_FILE)
     parser.add_argument("--keep-tokens", action="store_true", help="do not revoke at the end")
     parser.add_argument("--note", action="append", default=[], help="a line for the report")
+    parser.add_argument("--monitor", metavar="PROJECT",
+                        help="record the compose project's resource use (monitor.py)")  # fmt: skip
+    parser.add_argument("--qdrant-url", default="http://localhost:6333",
+                        help="Qdrant's metrics, with --monitor")  # fmt: skip
     args = parser.parse_args(argv)
     try:
         weights = Settings(
@@ -184,12 +188,20 @@ def main(argv: list[str] | None = None) -> int:
     tokens.create(args.host, users, args.tokens)
     command = locust_command(args, prefix)
     print("locust:", " ".join(command[2:]))
+    sampler = monitor.Monitor(args.monitor, args.qdrant_url) if args.monitor else None
+    if sampler is not None:
+        sampler.start()
     clock = time.monotonic()
     exit_code = 1
     try:
         exit_code = subprocess.run(command, cwd=LOADTESTS_DIR, check=False).returncode  # noqa: S603
     finally:
         meta["elapsed_s"] = round(time.monotonic() - clock, 1)
+        if sampler is not None:
+            meta["resources"] = sampler.stop()
+            (raw / "resources.json").write_text(
+                json.dumps(meta["resources"], indent=2), encoding="utf-8"
+            )
         if args.keep_tokens:
             meta["notes"].append(f"Tokens kept in {args.tokens}: revoke them with `tokens revoke`.")
         else:

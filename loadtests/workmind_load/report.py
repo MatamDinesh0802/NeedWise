@@ -203,6 +203,96 @@ def stub_calls(calls: dict[str, int]) -> list[str]:
     return rows
 
 
+def _bound(value: float) -> str:
+    return "over 50 s" if value == float("inf") else f"<= {_ms(value)}"
+
+
+def resource_use(resources: dict[str, Any], api_routes: int = 25) -> list[str]:
+    """The monitor's summary (monitor.py) as Markdown sections."""
+    out = [
+        "",
+        "## Resource use",
+        "",
+        f"Sampled every {resources.get('interval_s', 0):.0f} s while Locust ran "
+        f"({resources.get('samples', 0)} samples of compose project "
+        f"`{resources.get('project', '?')}`). CPU is in % of one core, as `docker stats` "
+        "reports it.",
+        "",
+        "| Container | CPU mean % | CPU peak % | Memory peak MiB |",
+        "|---|---:|---:|---:|",
+    ]
+    for service, c in (resources.get("containers") or {}).items():
+        out.append(
+            f"| {_cell(service)} | {c['cpu_mean']:.0f} | {c['cpu_peak']:.0f} | "
+            f"{c['mem_peak_mib']:,.0f} |"
+        )
+    connections = resources.get("connections_peak") or {}
+    if connections:
+        out += [
+            "",
+            "Postgres connections, peak per database and state: "
+            + ", ".join(f"{_cell(k)} {v}" for k, v in connections.items())
+            + f". Active backends waiting on a lock, peak: {resources.get('lock_waits_peak', 0)}.",
+        ]
+    if resources.get("valkey_commands_per_s") is not None:
+        out += ["", f"Valkey: {resources['valkey_commands_per_s']:,.0f} commands/s on average."]
+    api = resources.get("api") or []
+    if api:
+        out += [
+            "",
+            "### The API's own time per route",
+            "",
+            "From the API's access log: the time inside the API, without Caddy and the network.",
+            "Ids are replaced by `{id}`. An event stream's time is the whole stream.",
+            f"The {min(api_routes, len(api))} routes with the most total time:",
+            "",
+            "| Route | Requests | 5xx | p50 ms | p95 ms | p99 ms | max ms | total s |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+        out += [
+            f"| {_cell(r['route'])} | {r['requests']:,} | {r['errors']} | {_ms(r['p50'])} | "
+            f"{_ms(r['p95'])} | {_ms(r['p99'])} | {_ms(r['max'])} | {r['total_s']:,.1f} |"
+            for r in api[:api_routes]
+        ]
+    statements = resources.get("statements") or []
+    if statements:
+        out += [
+            "",
+            "### Postgres statements with the most total time",
+            "",
+            "From `pg_stat_statements` (reset when the run started; every database of the server).",
+            "",
+            "| Database | Calls | Total ms | Mean ms | Max ms | Rows | Statement |",
+            "|---|---:|---:|---:|---:|---:|---|",
+        ]
+        out += [
+            f"| {_cell(st['database'])} | {st['calls']:,} | {st['total_ms']:,.0f} | "
+            f"{st['mean_ms']:.2f} | {st['max_ms']:,.0f} | {st['rows']:,} | "
+            f"`{_cell(st['query'])[:160]}` |"
+            for st in statements
+        ]
+    qdrant = resources.get("qdrant") or []
+    if qdrant:
+        out += [
+            "",
+            "### Qdrant",
+            "",
+            "From Qdrant's own histogram (successful requests during the run); percentiles are",
+            "the histogram bucket that holds them.",
+            "",
+            "| Endpoint | Requests | Mean ms | p50 ms | p95 ms | p99 ms |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+        out += [
+            f"| {_cell(q['endpoint'])} | {q['requests']:,} | {q['mean_ms']:.1f} | "
+            f"{_bound(q['p50_le_ms'])} | {_bound(q['p95_le_ms'])} | {_bound(q['p99_le_ms'])} |"
+            for q in qdrant
+        ]
+    if resources.get("notes"):
+        out += ["", *[f"- {n}" for n in resources["notes"]]]
+    return out
+
+
 def render(
     rows: list[Row],
     failures: list[dict[str, str]],
@@ -297,6 +387,8 @@ def render(
                 "",
                 f"Peak concurrent model calls since the stub started: {stub['peak_in_flight']}.",
             ]
+    if meta.get("resources"):
+        out += resource_use(meta["resources"])
     if meta.get("preflight"):
         out += ["", "## Target before the run", "", "```text", *meta["preflight"], "```"]
     if meta.get("notes"):
