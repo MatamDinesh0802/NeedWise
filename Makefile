@@ -4,7 +4,7 @@ COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
 HTTP_PORT ?= 8480
 
-.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock
+.PHONY: help up down reset logs ps status infra api-dev web-dev install lint fmt test e2e seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -120,7 +120,7 @@ scan-images: ## Build the api and web images under :scan tags, scan them, remove
 # Documentation site (mkdocs.yml, docs/): MkDocs with Material, run by uv from the pinned
 # docs/requirements.txt, so nothing is installed globally.
 DOCS_PYTHON := 3.13
-DOCS_PORT ?= 8490
+DOCS_PORT ?= 8495
 # docs-lock pins only packages released on or before this date: move it on purpose.
 DOCS_LOCK_DATE ?= 2026-10-29
 MKDOCS := uvx --python $(DOCS_PYTHON) --with-requirements docs/requirements.txt mkdocs
@@ -128,7 +128,7 @@ MKDOCS := uvx --python $(DOCS_PYTHON) --with-requirements docs/requirements.txt 
 docs: ## Build the documentation site into site/ (strict: a broken link or anchor fails)
 	$(MKDOCS) build --strict
 
-docs-serve: ## Serve the documentation with live reload on http://127.0.0.1:8490
+docs-serve: ## Serve the documentation with live reload on http://127.0.0.1:8495
 	$(MKDOCS) serve --dev-addr 127.0.0.1:$(DOCS_PORT)
 
 docs-gen: ## Regenerate docs/reference/ (settings, OpenAPI) from the code; a test checks it
@@ -138,3 +138,41 @@ docs-lock: ## Re-pin docs/requirements.txt (with hashes) from docs/requirements.
 	uv pip compile docs/requirements.in --python-version $(DOCS_PYTHON) --generate-hashes \
 		--exclude-newer $(DOCS_LOCK_DATE) --custom-compile-command "make docs-lock" \
 		-o docs/requirements.txt
+
+# Load tests (docs/load-testing.md): Locust in loadtests/, its own uv project. A run creates the
+# demo users' access tokens, runs Locust headless, cleans up, revokes the tokens and writes
+# loadtests/results/<date>-<LABEL>.md. Model scenarios need the stack pointed at the stub
+# (make loadtest-stub; loadtests/compose.stub.yaml): the preflight stops the run otherwise.
+# NO_MODEL=1 leaves out everything that calls the model.
+#   make loadtest USERS=5 DURATION=60s NO_MODEL=1 LABEL=smoke
+#   make loadtest USERS=50 SPAWN_RATE=5 DURATION=10m STUB_URL=http://127.0.0.1:8490 LABEL=stub-50
+LOADTEST_HOST ?= http://localhost:$(HTTP_PORT)
+USERS ?= 10
+SPAWN_RATE ?= 1
+DURATION ?= 2m
+LABEL ?= run
+STUB_PORT ?= 8490
+
+loadtest: ## Load test (USERS SPAWN_RATE DURATION LABEL MIX NO_MODEL STUB_URL UPLOAD_COLLECTION)
+	cd loadtests && uv run python -m workmind_load.run --host $(LOADTEST_HOST) \
+		--users $(USERS) --spawn-rate $(SPAWN_RATE) --duration $(DURATION) --label $(LABEL) \
+		$(if $(MIX),--mix $(MIX)) $(if $(NO_MODEL),--no-model) $(if $(STUB_URL),--stub-url $(STUB_URL)) \
+		$(if $(UPLOAD_COLLECTION),--upload-collection $(UPLOAD_COLLECTION)) $(if $(THINK),--think $(THINK)) \
+		$(if $(PROCESSES),--processes $(PROCESSES))
+
+loadtest-stub: ## Run the stub model server for load tests (STUB_PORT TTFT_MS TPS ANSWER_TOKENS)
+	cd loadtests && uv run python stub_llm.py --port $(STUB_PORT) \
+		$(if $(TTFT_MS),--ttft-ms $(TTFT_MS)) $(if $(TPS),--tokens-per-s $(TPS)) \
+		$(if $(ANSWER_TOKENS),--answer-tokens $(ANSWER_TOKENS))
+
+loadtest-report: ## Rewrite a load-test report from its raw stats (RUN=<date>-<label>)
+	cd loadtests && uv run python -m workmind_load.report results/raw/$(RUN)/locust \
+		--meta results/raw/$(RUN)/meta.json --out results/$(RUN).md
+
+loadtest-sweep: ## Revoke leftover load-test tokens, delete leftover [load] conversations
+	cd loadtests && uv run python -m workmind_load.tokens sweep --host $(LOADTEST_HOST) \
+		$(if $(UPLOAD_COLLECTION),--upload-collection $(UPLOAD_COLLECTION))
+
+loadtest-check: ## Lint, type-check and test the load-test harness (no stack needed)
+	cd loadtests && uv run ruff check . && uv run ruff format --check . && uv run pyright \
+		&& uv run pytest -q

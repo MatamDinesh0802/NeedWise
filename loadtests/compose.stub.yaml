@@ -1,0 +1,33 @@
+# Points the stack's model calls at the load-test stub (loadtests/stub_llm.py) instead of a
+# paid model. An override for the repository's compose.yaml, used from the repository root:
+#
+#   uv --directory loadtests run python stub_llm.py --port 8490          # on the host, first
+#   docker compose -f compose.yaml -f loadtests/compose.stub.yaml up -d --wait api worker beat
+#   ...load test (make loadtest)...
+#   docker compose up -d --wait api worker beat                          # back to .env's model
+#
+# The values here win over .env for these services: every role's model is the stub, the stub
+# counts as a model on your own infrastructure (so restricted sources are not rerouted or
+# withheld, as with a local model), and the agents mode follows ASSISTANT_MODE as usual.
+# Organizations that chose other models in Admin > Models keep them: run
+# `python -m workmind_load.preflight --expect-model workmind-stub` (docs/load-testing.md).
+
+x-stub-llm: &stub-llm
+  LLM_PROVIDER: openai_compatible
+  LLM_BASE_URL: http://host.docker.internal:${STUB_PORT:-8490}/v1
+  LLM_API_KEY: ""
+  LLM_MODEL: workmind-stub
+  LLM_MODEL_ANSWER: workmind-stub
+  LLM_MODEL_ROUTER: workmind-stub
+  LLM_MODEL_JUDGE: workmind-stub
+  LLM_MODEL_GENERATOR: workmind-stub
+  LLM_MODEL_AGENT: workmind-stub
+  LLM_EXTERNAL: "false"
+
+services:
+  api:
+    environment: *stub-llm
+  worker:
+    environment: *stub-llm
+  beat:
+    environment: *stub-llm

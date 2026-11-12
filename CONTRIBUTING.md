@@ -18,7 +18,7 @@ See [Local development](README.md#local-development). In short: `make install`, 
 ## Documentation
 
 The documentation site is built from `docs/` with MkDocs (`mkdocs.yml`). `make docs-serve`
-serves it on http://127.0.0.1:8490 while you write; `make docs` builds it with `--strict`, as CI
+serves it on http://127.0.0.1:8495 while you write; `make docs` builds it with `--strict`, as CI
 does, so a broken link or anchor fails. Write Markdown that also reads well on GitHub, and add a
 new page to `nav` in `mkdocs.yml`.
 

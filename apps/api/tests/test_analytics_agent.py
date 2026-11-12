@@ -520,6 +520,13 @@ def test_a_table_falls_back_to_the_querys_columns() -> None:
     assert (chart.x, chart.y, chart.y_format) == ("customer", ["growth"], "eur")
 
 
+def test_a_single_value_charted_as_a_table_is_no_chart() -> None:
+    # Found by the load-test model stub: this used to raise IndexError and fail the answer.
+    queries = [query(("row_count", "number"))]
+
+    assert _chart(draft(type="table", x="row_count", y=["row_count"]), queries) is None
+
+
 async def test_a_loop_cut_at_the_step_limit_is_still_composed(acme_file: Path) -> None:
     analytics = LocalAnalytics(acme_file)
     turns: list[ToolTurn] = [[("query_metrics", {"metrics": ["revenue"]})]] * (MAX_STEPS + 1)

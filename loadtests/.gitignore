@@ -1,0 +1,4 @@
+# Plain access tokens between `tokens create` and `tokens revoke`: never commit them.
+.secrets/
+# Locust's raw CSV/JSON/HTML output; the Markdown reports in results/ are committed.
+results/raw/

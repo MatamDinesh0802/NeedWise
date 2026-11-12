@@ -641,6 +641,8 @@ def _chart(draft: ChartDraft | None, queries: Sequence[AnswerQuery]) -> Chart | 
         if draft.type != "table":
             return None
         y = [c.name for c in query.columns if c.name != x]
+        if not y:  # one column (a single value): nothing to chart, even as a table
+            return None
     if draft.type != "table":
         # One value axis: measures in another unit (a count beside euros) would be drawn on
         # it with the first one's unit. They stay in the table.

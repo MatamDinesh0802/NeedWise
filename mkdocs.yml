@@ -1,6 +1,6 @@
 # The documentation site, built from docs/ with MkDocs and Material for MkDocs.
 #   make docs         build into site/ with --strict (what CI runs: .github/workflows/docs.yml)
-#   make docs-serve   serve on http://127.0.0.1:8490 with live reload
+#   make docs-serve   serve on http://127.0.0.1:8495 with live reload
 #   make docs-gen     regenerate docs/reference/ from the code (a unit test fails when stale)
 # Dependencies are pinned with hashes in docs/requirements.txt (make docs-lock). MkDocs 1.6 and
 # Material 9 are pinned on purpose: MkDocs 2.0 does not run Material, and Material is maintained
