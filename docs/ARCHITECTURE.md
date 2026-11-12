@@ -68,6 +68,7 @@ Each row becomes a full Architecture Decision Record (ADR) in `docs/adr/` when i
 | Authorization | OpenFGA (relationship-based, Zanzibar model) | Inheritance (org → department → collection → document), nested groups, external ACLs from connectors | Plain RBAC tables, Casbin, Cerbos |
 | Session pattern | Backend-for-Frontend (BFF): server-side sessions + httpOnly cookie | Tokens never reach browser JavaScript. One auth path serves web, API and MCP. | Tokens in browser storage |
 | Background jobs | Celery + Valkey | Mature retries, queue routing, schedules (beat) | Dramatiq, arq, Temporal |
+| Business intelligence | A semantic layer in YAML; SQL checked and rewritten for row policies with sqlglot; sandboxed read-only DuckDB ([ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md)) | Definitions written down once; permissions applied by rewriting every table reference, whatever SQL the model writes; no server, columnar, a file per dataset version | Raw text-to-SQL on the schema, a semantic-only query language, Postgres foreign data wrappers |
 | LLM access | Our own `LLMProvider` interface: Anthropic SDK (default) + OpenAI-compatible adapter ([ADR 0007](adr/0007-model-providers-and-lightweight-parsing.md)) | Claude by default; Ollama/vLLM/llama.cpp for fully local setups; no gateway library to trust | LiteLLM |
 | Default open models | Qwen3 / gpt-oss families (Apache-2.0 weights) via Ollama (dev) and vLLM (production) | Permissive licenses, good tool calling. The final choice is made by evals in Phase 3. | Llama (community license, not OSI-approved) |
 | Embeddings | EmbeddingGemma-300M (768 dimensions, multilingual) on llama.cpp, via an OpenAI-compatible adapter | Small, strong, fast on the Apple GPU; any `/v1/embeddings` server can replace it | BGE-M3, Qwen3-Embedding, hosted APIs |
@@ -928,6 +929,8 @@ Clicking a decision or action item jumps to that moment in the recording. Privac
 | Verification | Every number in the narrative must appear in the query results. The validator checks this. |
 | Evaluation | A text-to-SQL gold set scored by execution accuracy (§22) |
 
+> **As built so far (v0.10, [docs/analytics.md](analytics.md)):** the semantic layer, the sqlglot guard, the DuckDB sandbox, the semantic-query compiler and versioned per-tenant datasets (CSV/XLSX), behind one service interface. Row policies are applied by rewriting every reference to a restricted table into a filtered subquery; the DuckDB connection is read-only, with external access off and its configuration locked, as the second lock. The agent checks access in code before any model call, then runs a tool loop (`query_metrics` for semantic queries, `run_sql` for the rest) whose every query runs through the service as the asker; a structured compose call writes the narrative, picks the chart spec (line, bar, stacked bar or table) and the main query; every number in the narrative is checked against the result cells at the precision shown, with one repair pass. Answers are stored per person (`/api/v1/analytics/*`), SQL can be re-run as the caller, admins manage the model and the tables, and `describe_data` / `query_data` give research mode and MCP clients the same data under the same permissions. The web app has the Insights page and Admin › Analytics. The text-to-SQL evaluation (§22) is built: `wm eval --suites analytics` asks 51 questions as 8 people (36 scored by execution accuracy against gold SQL run as the same person, 5 without access, 10 attacks) with a zero-leak gate on every query result; it has been checked with a scripted model only, so execution accuracy with a real model is not measured yet. Postgres/MySQL sources are not built: data comes from CSV/XLSX uploads. Decisions and rejected alternatives: [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md).
+
 ---
 
 ## 17. Conversation memory and context engineering
@@ -1104,7 +1107,7 @@ It is both the **demo data** and the **test set**.
 | Red team | User + adversarial question (direct, indirect, injection) → forbidden canaries and document IDs |
 | Injection documents | Documents with hidden instructions + the behavior that must *not* happen |
 | Abstention | Questions whose answers are not in sources the user can access |
-| Text-to-SQL | Question → expected result set |
+| Text-to-SQL | Question and asking user → gold SQL run as that user (rows or a value), or the expected refusal (`evals/datasets/analytics.jsonl`) |
 | Meeting extraction | Transcript → expected decisions and action items |
 
 ### 22.3 Metrics

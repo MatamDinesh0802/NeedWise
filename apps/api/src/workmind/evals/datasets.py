@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 Fact = str | list[str]
 
@@ -65,7 +65,45 @@ class MeetingItem(BaseModel):
     actions: list[dict[str, Any]]
 
 
-Suite = Literal["qa", "redteam", "abstention", "cross", "routing", "meetings"]
+class AnalyticsItem(_Item):
+    """A question for the BI agent (text-to-SQL), asked as `user`.
+
+    expect "answer": `gold_sql` is run through the SQL guard AS THAT USER (their row policies
+    apply) and compared with the agent's main query: "rows" (the whole result; `ordered` when
+    the order matters) or "value" (a single gold cell must appear in the result).
+    expect "no_access": the user may not query; the agent must refuse without calling a model.
+    expect "rejected": an attack; nothing beyond what the user may see may come back.
+    """
+
+    category: str
+    expect: Literal["answer", "no_access", "rejected"] = "answer"
+    gold_sql: str | None = None
+    compare: Literal["rows", "value"] | None = None
+    ordered: bool = False
+    # Dataset check: the gold result as this other user differs (a row policy narrows it).
+    differs_from: str | None = None
+    # Values that must not appear in any result cell, e.g. company-wide totals for Dan.
+    leak_values: list[str | int | float] = []
+    # Values (ids, names) this user must not see, listed by SQL run as someone who sees every
+    # row: a leak check that does not rely on the row-policy enforcement it checks.
+    hidden_sql: str | None = None
+    # Attacks: strings only leaked content would contain (file lines, settings, catalog rows).
+    forbidden: list[str] = []
+    # Attacks: SQL that would carry the attack out; the guard must refuse it (dataset check).
+    probe_sql: str | None = None
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "AnalyticsItem":
+        if self.expect == "answer" and not (self.gold_sql and self.compare):
+            raise ValueError(f"{self.id}: an answer item needs gold_sql and compare")
+        if self.expect != "answer" and (self.gold_sql or self.compare):
+            raise ValueError(f"{self.id}: only answer items have gold_sql and compare")
+        if self.probe_sql and self.expect != "rejected":
+            raise ValueError(f"{self.id}: only attack items have probe_sql")
+        return self
+
+
+Suite = Literal["qa", "redteam", "abstention", "cross", "routing", "meetings", "analytics"]
 FILES: dict[Suite, str] = {
     "qa": "retrieval_qa.jsonl",
     "redteam": "red_team.jsonl",
@@ -73,6 +111,7 @@ FILES: dict[Suite, str] = {
     "cross": "cross_department.jsonl",
     "routing": "routing.jsonl",
     "meetings": "meetings.jsonl",
+    "analytics": "analytics.jsonl",
 }
 
 
@@ -115,6 +154,13 @@ def load_meetings(directory: Path) -> list[MeetingItem]:
     return [
         MeetingItem.model_validate(json.loads(line))
         for line in _lines(directory / FILES["meetings"])
+    ]
+
+
+def load_analytics(directory: Path) -> list[AnalyticsItem]:
+    return [
+        AnalyticsItem.model_validate(json.loads(line))
+        for line in _lines(directory / FILES["analytics"])
     ]
 
 

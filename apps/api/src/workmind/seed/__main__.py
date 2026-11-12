@@ -21,6 +21,7 @@ from workmind.modules.knowledge.storage import LocalObjectStorage
 from workmind.modules.retrieval.qdrant import QdrantClient
 from workmind.providers.embeddings import EmbeddingUnavailableError
 from workmind.providers.factory import create_embeddings
+from workmind.seed.analytics_load import seed_analytics
 from workmind.seed.apply import SeedResult, seed_database, seed_keycloak
 from workmind.seed.company import CompanySpec, load_company
 from workmind.seed.corpus_load import load_corpus
@@ -34,6 +35,7 @@ async def _run(
     skip_keycloak: bool,
     skip_openfga: bool,
     corpus_dir: Path | None,
+    analytics_dir: Path | None = None,
 ) -> SeedResult:
     subjects: dict[str, str] = {}
     if not skip_keycloak:
@@ -47,6 +49,8 @@ async def _run(
     sessions = create_session_factory(engine)
     try:
         result = await seed_database(spec, sessions, subjects)
+        if analytics_dir is not None:
+            await _load_analytics(settings, sessions, result, analytics_dir)
         if corpus_dir is not None:
             await _load_corpus(settings, sessions, result, spec, corpus_dir)
         if not skip_openfga:
@@ -63,6 +67,22 @@ async def _run(
         return result
     finally:
         await engine.dispose()
+
+
+async def _load_analytics(
+    settings: Settings, sessions: Any, result: SeedResult, analytics_dir: Path
+) -> None:
+    seeded = await seed_analytics(
+        sessions, result.tenant_id, analytics_dir, settings.analytics_path
+    )
+    if seeded is None:
+        return
+    rows = sum(seeded.tables.values())
+    print(
+        f"Analytics: {len(seeded.tables)} tables ({rows} rows), "
+        f"dataset {'rebuilt' if seeded.dataset_updated else 'unchanged'}, "
+        f"model {'updated' if seeded.model_updated else 'unchanged'}."
+    )
 
 
 async def _load_corpus(
@@ -101,6 +121,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-keycloak", action="store_true", help="don't create logins")
     parser.add_argument("--skip-openfga", action="store_true", help="don't sync authorization")
     parser.add_argument("--skip-corpus", action="store_true", help="don't load documents")
+    parser.add_argument(
+        "--skip-analytics", action="store_true", help="don't load the analytics model and data"
+    )
     args = parser.parse_args(argv)
 
     settings = get_settings()
@@ -111,6 +134,8 @@ def main(argv: list[str] | None = None) -> int:
     spec = load_company(args.company_file)
     corpus_dir = args.company_file.parent / "corpus"
     load = not args.skip_corpus and (corpus_dir / "manifest.yaml").exists()
+    analytics_dir = args.company_file.parent / "analytics"
+    analytics = not args.skip_analytics and (analytics_dir / "semantic.yaml").exists()
     result = asyncio.run(
         _run(
             spec,
@@ -118,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
             skip_keycloak=args.skip_keycloak,
             skip_openfga=args.skip_openfga,
             corpus_dir=corpus_dir if load else None,
+            analytics_dir=analytics_dir if analytics else None,
         )
     )
 

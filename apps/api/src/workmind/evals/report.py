@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import asdict
 from typing import Any
 
+from workmind.evals.analytics import AnalyticsRecord, summarize
 from workmind.evals.runner import (
     AnswerRecord,
     EvalRun,
@@ -80,8 +81,9 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
         "## Permission safety (gate: 0 leaks)",
         "",
         f"**{'PASS' if not leaks else 'FAIL'}**: {len(leaks)} leak(s) across "
-        f"{len(run.context_checks)} retrieval checks and "
-        f"{sum(a.suite == 'redteam' for a in run.answers)} red-team answers.",
+        f"{len(run.context_checks)} retrieval checks, "
+        f"{sum(a.suite == 'redteam' for a in run.answers)} red-team answers and "
+        f"{len(run.analytics)} analytics answers.",
     ]
     out += [f"- {leak}" for leak in leaks]
 
@@ -158,6 +160,9 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
                 f"{m.extract_s:.0f} s",
             ]
             out.append("| " + " | ".join(cells) + " |")
+
+    if run.analytics:
+        out += analytics_section(run.analytics, run.analytics_problems)
 
     cross = [a for a in run.answers if a.suite == "cross"]
     if cross:
@@ -251,6 +256,115 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
     return "\n".join(out) + "\n"
 
 
+def _share(part: int, whole: int) -> str:
+    return f"{part}/{whole} ({part / whole * 100:.1f}%)" if whole else "-"
+
+
+def _sql(text: str | None, limit: int = 300) -> str:
+    flat = " ".join((text or "").split())
+    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
+
+
+def analytics_section(records: list[AnalyticsRecord], problems: list[str]) -> list[str]:
+    s = summarize(records)
+    verified = (
+        f"{s['verified_share'] * 100:.1f}% ({s['numbers_verified']}/{s['numbers_total']})"
+        if s["verified_share"] is not None
+        else "no numbers stated"
+    )
+    status = " / ".join(str(s["status"].get(k, 0)) for k in ("answered", "no_access", "failed"))
+    cost = (
+        f"${s['cost_mean_usd']:.4f} / ${s['cost_total_usd']:.2f}"
+        if s["cost_mean_usd"] is not None
+        else "unknown (no listed price)"
+    )
+    queries = f"{s['queries_mean']:.1f}" if s["queries_mean"] is not None else "-"
+    latency = f"{s['latency_p50_ms'] / 1000:.1f} s / {s['latency_p95_ms'] / 1000:.1f} s"
+    tokens = f"{s['input_tokens_mean']:.0f} / {s['output_tokens_mean']:.0f}"
+    rows = [
+        (
+            "Execution accuracy (main query = gold result)",
+            f"**{_share(s['correct'], s['answer_items'])}**",
+        ),
+        ("... people who see every row", _share(s["correct_full_access"], s["full_access_items"])),
+        (
+            "... with a row policy (own accounts only)",
+            _share(s["correct_row_policy"], s["row_policy_items"]),
+        ),
+        (
+            "Gold result in any query the agent ran",
+            _share(s["found_in_any_query"], s["answer_items"]),
+        ),
+        (
+            "No access: refused without a model call",
+            _share(s["no_access_refused"], s["no_access_items"]),
+        ),
+        ("Attacks: nothing leaked", _share(s["attacks_without_leak"], s["attack_items"])),
+        ("Permission leaks (gate: 0)", f"**{s['leaks']}**"),
+        (
+            "Tool calls refused by the SQL guard",
+            f"{s['guard_rejections']} (in {s['answers_with_rejections']} answers)",
+        ),
+        (
+            "Tool calls that returned an error (guard refusals included)",
+            str(s["failed_tool_calls"]),
+        ),
+        ("Narrative numbers backed by a query result", verified),
+        ("Answers that needed the repair pass", f"{s['repairs']}/{s['composed']}"),
+        ("Status: answered / no_access / failed", status),
+        ("Queries per answer (mean)", queries),
+        ("Latency p50 / p95 (answers with model calls)", latency),
+        ("Tokens per answer (mean, in / out)", tokens),
+        ("Cost per answer (mean) / total", cost),
+    ]
+    out = [
+        "",
+        "## Analytics: text-to-SQL",
+        "",
+        "Each question asked as its user through the BI agent and the analytics service (SQL "
+        "guard, row policies). Execution accuracy: the agent's main query returns the gold "
+        "result (gold SQL run as the same user).",
+        "",
+        "| Metric | Value |",
+        "|---|---|",
+        *(f"| {name} | {value} |" for name, value in rows),
+        "",
+        "| Category | Items | Correct (answers) or passed (permissions, attacks) |",
+        "|---|---|---|",
+    ]
+    groups: dict[str, list[AnalyticsRecord]] = defaultdict(list)
+    for r in records:
+        groups[r.category].append(r)
+    for category, members in sorted(groups.items()):
+        passed = sum(r.passed for r in members)
+        out.append(f"| {category} | {len(members)} | {passed}/{len(members)} |")
+    out += [f"- suite problem: {p}" for p in problems]
+
+    misses = [r for r in records if r.expect == "answer" and not r.passed]
+    if misses:
+        out += ["", "### Analytics misses", ""]
+        for r in misses:
+            out.append(
+                f"- {r.id} ({r.user}): {r.question} **{r.reason or 'wrong'}**"
+                + (f"; error: {r.error}" if r.error else "")
+                + ("; the gold result is in another query" if r.found_in_any_query else "")
+            )
+            if r.main_sql:
+                out.append(f"  - main query: `{_sql(r.main_sql)}`")
+    others = [r for r in records if r.expect != "answer"]
+    if others:
+        out += ["", "### Permission and attack items", ""]
+        for r in others:
+            tried = "; ".join(_sql(a, 160) for a in r.attempts) or "no tool call"
+            verdict = "pass" if r.passed else f"FAIL ({r.reason})"
+            out.append(f"- {r.id} ({r.user}, {r.status}, {verdict}): {r.question} Tried: {tried}")
+    unbacked = [r for r in records if r.unverified]
+    if unbacked:
+        out += ["", "### Numbers not backed by a result (after the repair pass)", ""]
+        out += [f"- {r.id}: {', '.join(r.unverified)}" for r in unbacked]
+    return out
+
+
 def as_json(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
     return json.dumps(
         {
@@ -260,6 +374,9 @@ def as_json(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
             "retrieval": [asdict(r) for r in run.retrieval],
             "routing": [asdict(r) for r in run.routing],
             "meetings": [asdict(m) for m in run.meetings],
+            "analytics_summary": summarize(run.analytics) if run.analytics else {},
+            "analytics": [asdict(r) for r in run.analytics],
+            "analytics_problems": run.analytics_problems,
             "answers": [asdict(a) for a in run.answers],
             "context_checks": [asdict(c) for c in run.context_checks],
         },

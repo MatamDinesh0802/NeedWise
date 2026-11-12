@@ -12,7 +12,7 @@ In WorkMind: **Settings → Access tokens → New token**. Pick the scopes:
 | Scope | Allows |
 |---|---|
 | `knowledge:read` | `search_knowledge`, `list_collections` |
-| `assistant:ask` | `ask` (cited answers; uses the configured model) |
+| `assistant:ask` | `ask` (cited answers; uses the configured model); `describe_data`, `query_data` if you have access to the analytics data |
 
 The token (`wm_pat_...`) is shown once. It acts as you, never with more access, and can be
 revoked at any time.
@@ -73,6 +73,13 @@ async with Client(streamable_http_client("http://localhost:8480/mcp", http_clien
 | `ask(question)` | A cited answer from the documents you may read, or an honest "not found" |
 | `search_knowledge(query, limit)` | Raw passages with their source titles |
 | `list_collections()` | The collections you can read |
+| `describe_data()` | The analytics data you may query: metrics, dimensions, tables, your row limits |
+| `query_data(metrics, dimensions, filters, date_from, date_to, order_by, limit)` | A semantic query (metrics by dimensions) run as you: only the rows your row policies allow |
+
+`describe_data` and `query_data` appear in `tools/list` only for token owners whom the
+organization's semantic model gives access to the analytics data ([analytics.md](analytics.md)),
+and only with the `assistant:ask` scope. A client that calls them anyway is refused by the
+analytics service with the reason.
 
 ## Security notes
 

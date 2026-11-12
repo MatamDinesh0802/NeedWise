@@ -3,6 +3,7 @@
     uv run wm eval                       # retrieval for every mode + answers + red team
     uv run wm eval --retrieval-only      # no LLM calls: recall/MRR and the context leak gate
     uv run wm eval --judge               # also grade faithfulness with the judge model
+    uv run wm eval --skip-retrieval --suites analytics   # the BI agent: text-to-SQL
 
 Exits with status 2 if any permission leak is found (the CI gate, ARCHITECTURE 22.3).
 """
@@ -18,9 +19,11 @@ from pathlib import Path
 
 from workmind.core.config import Settings
 from workmind.core.resources import Resources
+from workmind.evals.analytics import AnalyticsRecord, summarize
 from workmind.evals.datasets import (
     fact_present,
     load_abstention,
+    load_analytics,
     load_cross,
     load_meetings,
     load_qa,
@@ -66,7 +69,8 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--suites",
         default="qa,redteam,abstention",
-        help="answer suites: qa, redteam, abstention, cross (multi-department), routing",
+        help="answer suites: qa, redteam, abstention, cross (multi-department), routing, "
+        "meetings, analytics (the BI agent: text-to-SQL)",
     )
     parser.add_argument(
         "--assistant",
@@ -84,6 +88,13 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
         "--skip-retrieval", action="store_true", help="skip recall and the context gate"
     )
     parser.add_argument(
+        "--today",
+        type=dt.date.fromisoformat,
+        default=ACME_TODAY,
+        help="analytics: the date questions are asked on ('this year', 'year to date'); the "
+        f"Acme data is fixed in 2026 (default {ACME_TODAY.isoformat()})",
+    )
+    parser.add_argument(
         "--rescore",
         type=Path,
         help="re-grade a saved run (.json) against the current datasets, without model calls",
@@ -91,6 +102,9 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+# The Acme analytics data runs through 2026-09-30 and October is not closed yet: questions
+# are asked as on this day, so "this year" stays 2026 whenever the eval runs.
+ACME_TODAY = dt.date(2026, 11, 12)
 MODES: dict[str, Mode] = {"hybrid": "hybrid", "dense": "dense", "sparse": "sparse"}
 ABLATION = [
     Variant(f"hybrid k={k} w={w}{'' if boost else ' no-trust'}", "hybrid", knobs)
@@ -131,6 +145,9 @@ async def run(args: argparse.Namespace) -> int:
     cross = load_cross(args.datasets) if "cross" in suites else []
     routing = load_routing(args.datasets) if "routing" in suites else []
     meeting_items = load_meetings(args.datasets) if "meetings" in suites else []
+    analytics_items = load_analytics(args.datasets) if "analytics" in suites else []
+    # Candidates for the person who sees every row (the leak checks), before any filtering.
+    analytics_people = sorted({i.user for i in analytics_items})
     if args.only:
         wanted = set(args.only.split(","))
         qa = [i for i in qa if i.id in wanted]
@@ -138,6 +155,7 @@ async def run(args: argparse.Namespace) -> int:
         abstention = [i for i in abstention if i.id in wanted]
         cross = [i for i in cross if i.id in wanted]
         routing = [i for i in routing if i.id in wanted]
+        analytics_items = [i for i in analytics_items if i.id in wanted]
     if args.limit:
         qa, red_team, abstention = (
             qa[: args.limit],
@@ -145,6 +163,7 @@ async def run(args: argparse.Namespace) -> int:
             abstention[: args.limit],
         )
         cross, routing = cross[: args.limit], routing[: args.limit]
+        analytics_items = analytics_items[: args.limit]
 
     overrides: dict[str, object] = {"agent_fast_path": args.fast_path == "on"}
     if args.fast_path_score is not None:
@@ -188,6 +207,12 @@ async def run(args: argparse.Namespace) -> int:
             if cross:
                 print(f"cross-department ({args.assistant}): {len(cross)}", file=sys.stderr)
                 result.answers += await evaluator.cross(cross, with_judge=args.judge)
+            if analytics_items:
+                print(f"analytics: {len(analytics_items)} questions", file=sys.stderr)
+                done = await evaluator.analytics(
+                    analytics_items, today=args.today, reference_users=analytics_people
+                )
+                result.analytics, result.analytics_problems = done.records, done.problems
         points = await resources.qdrant.count(settings.qdrant_collection, {"must": []})
     finally:
         await resources.aclose()
@@ -215,8 +240,13 @@ async def run(args: argparse.Namespace) -> int:
             else " (fast path off)"
         ),
         "datasets": f"{len(qa)} QA, {len(red_team)} red team, {len(abstention)} abstention, "
-        f"{len(cross)} cross-department, {len(routing)} routing",
+        f"{len(cross)} cross-department, {len(routing)} routing, "
+        f"{len(analytics_items)} analytics",
     }
+    if result.analytics:
+        meta["analytics agent model"] = settings.llm_model_agent or settings.llm_model
+        meta["analytics compose model"] = settings.llm_model_answer or settings.llm_model
+        meta["analytics questions asked on"] = args.today.isoformat()
     args.out.mkdir(parents=True, exist_ok=True)
     report = args.out / f"{args.label}.md"
     labels = [v.label for v in variants]
@@ -244,6 +274,17 @@ async def run(args: argparse.Namespace) -> int:
         right = sum(r.correct for r in result.routing)
         fast = sum(r.routed_by == "fast_path" for r in result.routing)
         print(f"routing: {right}/{len(result.routing)} correct, {fast} fast path", file=sys.stderr)
+    if result.analytics:
+        s = summarize(result.analytics)
+        print(
+            f"analytics: execution accuracy {s['correct']}/{s['answer_items']}, no access "
+            f"{s['no_access_refused']}/{s['no_access_items']}, attacks "
+            f"{s['attacks_without_leak']}/{s['attack_items']}, guard rejections "
+            f"{s['guard_rejections']}",
+            file=sys.stderr,
+        )
+        for problem in result.analytics_problems:
+            print(f"  analytics suite problem: {problem}", file=sys.stderr)
     for suite in ("qa", "cross"):
         rows = [a for a in result.answers if a.suite == suite]
         if rows:
@@ -267,6 +308,8 @@ def rescore(args: argparse.Namespace) -> int:
         retrieval=[RetrievalRecord(**r) for r in saved["retrieval"]],
         routing=[RoutingRecord(**r) for r in saved.get("routing", [])],
         context_checks=[ContextLeakRecord(**c) for c in saved["context_checks"]],
+        analytics=[AnalyticsRecord(**r) for r in saved.get("analytics", [])],
+        analytics_problems=list(saved.get("analytics_problems", [])),
     )
     for raw in saved["answers"]:
         raw["usage"] = LLMUsage(**raw["usage"])

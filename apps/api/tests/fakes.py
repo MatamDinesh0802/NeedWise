@@ -1,10 +1,34 @@
 """A scripted language model for tests: no network, records every request."""
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
-from workmind.providers.llm import Done, LLMRequest, LLMUsage, Role, StreamEvent, TextDelta
+from workmind.providers.llm import (
+    Done,
+    LLMRequest,
+    LLMUsage,
+    Role,
+    StreamEvent,
+    TextDelta,
+    ToolCall,
+    ToolExecutor,
+    ToolLoopResult,
+    ToolSpec,
+)
+
+# One model turn of a tool loop: the tool calls the model makes in that turn, as (name, input).
+ToolTurn = Sequence[tuple[str, Mapping[str, Any]]]
+
+
+@dataclass(frozen=True)
+class ToolReply:
+    """What the executor returned to the model for one scripted call."""
+
+    tool: str
+    content: str
+    is_error: bool
 
 
 class FakeLLM:
@@ -16,6 +40,10 @@ class FakeLLM:
         external: bool = True,
         delay: float = 0.0,
         structured: Sequence[Any] = (),
+        tool_turns: Sequence[ToolTurn] | None = None,
+        tool_text: str = "Done.",
+        tool_script: Callable[[LLMRequest], Sequence[ToolTurn]] | None = None,
+        structured_script: Callable[[LLMRequest], Any] | None = None,
     ) -> None:
         self.tokens = [reply] if isinstance(reply, str) else list(reply)
         self.rewrite = rewrite
@@ -23,6 +51,15 @@ class FakeLLM:
         self.delay = delay
         self.requests: list[tuple[Role, LLMRequest]] = []
         self.structured_replies = list(structured)
+        # run_tools replays these turns through the caller's executor (None: not scripted).
+        self.tool_turns = None if tool_turns is None else [list(t) for t in tool_turns]
+        self.tool_text = tool_text
+        # Per request (e.g. per question, for an eval): the turns, and the structured replies
+        # once the scripted `structured` list is used up.
+        self.tool_script = tool_script
+        self.structured_script = structured_script
+        self.offered: list[ToolSpec] = []
+        self.tool_replies: list[ToolReply] = []
 
     async def complete(self, role: Role, request: LLMRequest) -> tuple[str, LLMUsage]:
         self.requests.append((role, request))
@@ -39,14 +76,47 @@ class FakeLLM:
 
     async def structured(self, role: Role, request: LLMRequest, schema: Any) -> Any:
         self.requests.append((role, request))
-        return self.structured_replies.pop(0), LLMUsage(
-            model="fake", input_tokens=30, output_tokens=8
-        )
+        if self.structured_replies or self.structured_script is None:
+            reply = self.structured_replies.pop(0)
+        else:
+            reply = self.structured_script(request)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply, LLMUsage(model="fake", input_tokens=30, output_tokens=8)
 
     async def run_tools(
-        self, role: Role, request: LLMRequest, tools: Any, execute: Any, *, max_steps: int = 6
-    ) -> Any:
-        raise NotImplementedError
+        self,
+        role: Role,
+        request: LLMRequest,
+        tools: Sequence[ToolSpec],
+        execute: ToolExecutor,
+        *,
+        max_steps: int = 6,
+    ) -> ToolLoopResult:
+        """Replays the scripted turns: each call goes through `execute` (the real executor),
+        and its reply is kept in `tool_replies`. One usage entry per model turn."""
+        if self.tool_script is not None:
+            turns = [list(t) for t in self.tool_script(request)]
+        elif self.tool_turns is not None:
+            turns = self.tool_turns
+        else:
+            raise NotImplementedError("script the tool loop with tool_turns=[...]")
+        self.requests.append((role, request))
+        self.offered = list(tools)
+        result = ToolLoopResult(text="")
+        for number, turn in enumerate(turns):
+            if number >= max_steps:
+                result.stopped = "max_steps"
+                return result
+            result.usage.append(LLMUsage(model="fake", input_tokens=50, output_tokens=10))
+            for index, (name, arguments) in enumerate(turn):
+                call = ToolCall(f"call-{number}-{index}", name, dict(arguments))
+                result.calls.append(call)
+                content, is_error = await execute(call)
+                self.tool_replies.append(ToolReply(name, content, is_error))
+        result.usage.append(LLMUsage(model="fake", input_tokens=60, output_tokens=12))
+        result.text = self.tool_text
+        return result
 
     def roles(self) -> list[Role]:
         return [role for role, _ in self.requests]
