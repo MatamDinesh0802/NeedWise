@@ -96,6 +96,30 @@ describe("reduceRunEvent", () => {
     });
   });
 
+  it("keeps the budget of a budget_exceeded failure, and its detail when there is no message", () => {
+    const budget = {
+      id: "b1",
+      scope: "tenant",
+      subject: null,
+      period: "month",
+      limit_usd: 500,
+      spent_usd: 500.4,
+      warn_at: 0.8,
+      status: "exceeded",
+      resets_at: "2026-12-01T00:00:00Z",
+    };
+    expect(play([{ id: "1-0", type: "run.failed", data: { code: "budget_exceeded", detail: "The monthly budget is used up.", budget } }]).error).toEqual({
+      code: "budget_exceeded",
+      message: "The monthly budget is used up.",
+      budget,
+    });
+    // A malformed budget is dropped; the code and words stay.
+    expect(play([{ id: "1-0", type: "run.failed", data: { code: "budget_exceeded", message: "Used up.", budget: { id: 3 } } }]).error).toEqual({
+      code: "budget_exceeded",
+      message: "Used up.",
+    });
+  });
+
   it("ignores events after the run ended, and unknown event types", () => {
     const done = play(RUN);
     expect(reduceRunEvent(done, { id: "1730000000099-0", type: "token", data: { text: "late" } })).toBe(done);

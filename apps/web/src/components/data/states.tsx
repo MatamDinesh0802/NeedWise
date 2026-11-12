@@ -6,9 +6,15 @@ import type { ReactNode } from "react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BudgetExceededAlert } from "@/components/usage/budget-exceeded-alert";
 import { errorMessage, type ErrorMessage } from "@/lib/error-messages";
+import { budgetBlockFromError } from "@/lib/usage/budget-error";
 
-/** An API error, explained (or `message`, already worded by the caller). Optionally with a retry button. */
+/**
+ * An API error, explained (or `message`, already worded by the caller). Optionally with a retry
+ * button. A used-up budget ("budget_exceeded") gets its own alert, without retry: retrying can't
+ * help until the budget resets.
+ */
 export function ErrorAlert({
   error,
   message: worded,
@@ -20,6 +26,8 @@ export function ErrorAlert({
   onRetry?: () => void;
   className?: string;
 }) {
+  const block = budgetBlockFromError(error);
+  if (block) return <BudgetExceededAlert block={block} className={className} />;
   const message = worded ?? errorMessage(error);
   return (
     <Alert variant="destructive" className={className}>

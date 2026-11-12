@@ -10,6 +10,7 @@ import { Composer } from "@/components/chat/composer";
 import { RunApprovals } from "@/components/chat/research-activity";
 import { SourcesPanel, type PanelSources } from "@/components/chat/sources-panel";
 import { EmptyState, ErrorAlert } from "@/components/data/states";
+import { BudgetExceededAlert } from "@/components/usage/budget-exceeded-alert";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
@@ -22,6 +23,7 @@ import { createThreadController } from "@/lib/chat/thread-controller";
 import { questionForRun, threadItems } from "@/lib/chat/thread";
 import { errorMessage } from "@/lib/error-messages";
 import { toast } from "@/lib/stores/toasts";
+import { budgetBlockFromError, type BudgetBlock } from "@/lib/usage/budget-error";
 import { cn } from "@/lib/utils";
 import { workApi, workKeys, type Approval } from "@/lib/work/api";
 import { getNotificationsStore } from "@/lib/work/notifications";
@@ -75,6 +77,7 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
   }, [approvals.state, conversationId]);
 
   const [panel, setPanel] = useState<{ answerKey: string; runId: string | null; marker: string | null } | null>(null);
+  const [blocked, setBlocked] = useState<BudgetBlock | null>(null);
   const isMobile = useIsMobile();
   const bottom = useRef<HTMLDivElement>(null);
 
@@ -106,9 +109,14 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
   async function send(text: string): Promise<boolean> {
     try {
       await controller.send(text, mode);
+      setBlocked(null);
       return true;
     } catch (error) {
-      toast({ title: errorMessage(error).title, description: errorMessage(error).description, tone: "error" });
+      // A used-up budget stays on screen above the composer (which keeps the question), naming
+      // the budget and when it resets; a toast would vanish before it can be read.
+      const block = budgetBlockFromError(error);
+      if (block) setBlocked(block);
+      else toast({ title: errorMessage(error).title, description: errorMessage(error).description, tone: "error" });
       return false;
     }
   }
@@ -180,6 +188,7 @@ export function ChatThread({ conversationId }: { conversationId: string | null }
         </div>
         <div className="border-t bg-background/80 px-4 py-3 backdrop-blur md:px-8">
           <div className="mx-auto w-full max-w-3xl space-y-1.5">
+            {blocked ? <BudgetExceededAlert block={blocked} onDismiss={() => setBlocked(null)} className="mb-2" /> : null}
             <Composer
               running={running}
               sending={state.sending}

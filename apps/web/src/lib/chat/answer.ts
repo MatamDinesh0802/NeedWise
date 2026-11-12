@@ -1,7 +1,7 @@
 /** One view model for an assistant answer, live (from a run) or stored (from history). */
 
 import type { Citation, Message, Source, Usage } from "@/lib/chat/api";
-import type { ApprovalRef, RunState, ToolStep } from "@/lib/chat/run-reducer";
+import type { ApprovalRef, RunError, RunState, ToolStep } from "@/lib/chat/run-reducer";
 import { traceFromRun, type AgentTrace } from "@/lib/chat/trace";
 
 export type AnswerPhase = "searching" | "streaming" | "complete" | "cancelled" | "failed";
@@ -18,7 +18,7 @@ export interface AnswerView {
   withheld: number;
   abstained: boolean;
   usage: Usage | null;
-  error: { code: string; message: string } | null;
+  error: RunError | null;
   /** Stored message (feedback needs its id); null while live. */
   message: Message | null;
   /** Department agents behind the answer; only known for runs seen live in this tab. */

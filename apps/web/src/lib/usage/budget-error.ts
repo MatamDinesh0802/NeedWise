@@ -69,12 +69,12 @@ export interface BudgetBlockCopy {
   manageHref: string | null;
 }
 
-function budgetPhrase(budget: BudgetStatus, viewer: Viewer | null): string {
+/** A person's cap only ever blocks their own requests, so a user budget here is always "your cap". */
+function budgetPhrase(budget: BudgetStatus): string {
   const period = budget.period === "day" ? "daily" : "monthly";
   if (budget.scope === "tenant") return `The ${period} organization budget`;
   if (budget.scope === "department") return `The ${period} budget for ${budget.subject?.name ?? "your department"}`;
-  if (!budget.subject || budget.subject.id === viewer?.id) return `Your ${period} cap`;
-  return `The ${period} cap for ${budget.subject.name}`;
+  return `Your ${period} cap`;
 }
 
 export function budgetBlockCopy(block: BudgetBlock, viewer: Viewer | null, now: Date = new Date()): BudgetBlockCopy {
@@ -96,7 +96,7 @@ export function budgetBlockCopy(block: BudgetBlock, viewer: Viewer | null, now: 
     };
   }
   return {
-    title: `${budgetPhrase(budget, viewer)} is used up`,
+    title: `${budgetPhrase(budget)} is used up`,
     description: `${spentText(budget)}. Requests that use an AI model are paused until it resets.`,
     resets: resetText(budget.resets_at, now),
     who,

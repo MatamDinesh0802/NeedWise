@@ -6,6 +6,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { AgentTraceLive, AgentTraceSummary } from "@/components/chat/agent-trace";
 import { AnswerMarkdown, type ChipInfo } from "@/components/chat/answer-markdown";
 import { ToolActivity } from "@/components/chat/research-activity";
+import { BudgetExceededAlert } from "@/components/usage/budget-exceeded-alert";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +16,7 @@ import { chatApi, type Message, type Rating } from "@/lib/chat/api";
 import { ABSTAIN_FALLBACK, type AnswerView } from "@/lib/chat/answer";
 import { groupSources } from "@/lib/chat/thread";
 import { formatUsage, withheldNotice } from "@/lib/chat/format";
+import { budgetBlockFromRun } from "@/lib/usage/budget-error";
 import { cn } from "@/lib/utils";
 
 export function AssistantMessage({
@@ -44,6 +46,8 @@ export function AssistantMessage({
   }, [answer.sources, answer.citations]);
   const groups = groupSources(answer.sources, answer.text, answer.citations);
   const notice = withheldNotice(answer.withheld);
+  // A used-up budget is not a failure to retry: it says which budget and when it resets.
+  const budgetBlock = answer.phase === "failed" ? budgetBlockFromRun(answer.error) : null;
 
   return (
     <article className="flex flex-col gap-2" aria-label="Answer">
@@ -103,7 +107,9 @@ export function AssistantMessage({
         </p>
       ) : null}
 
-      {answer.phase === "failed" ? (
+      {budgetBlock ? (
+        <BudgetExceededAlert block={budgetBlock} />
+      ) : answer.phase === "failed" ? (
         <Alert variant="destructive">
           <CircleAlert aria-hidden="true" />
           <AlertTitle>The answer failed</AlertTitle>
