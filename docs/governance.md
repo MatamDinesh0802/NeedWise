@@ -63,6 +63,11 @@ The cycle's task is remembered on the document (`review_task_id`), and the rows 
 the task runs, so running it twice, or twice at the same time, reminds once. A document without
 an active owner is not reminded; it is listed in the governance overview instead.
 
+"Once a day" counts from when beat first started: the first run is a day after that. In Docker
+Compose, beat keeps its schedule in the `beat_schedule` volume, so restarting or rebuilding the
+stack does not push the next run back (with the schedule in `/tmp`, as before, every restart
+started the day again). Removing the volumes (`make reset`) starts it again.
+
 **Marking it reviewed.** The owner or a collection editor chooses **Mark reviewed** on the
 document page (an optional note says what was checked). That sets `reviewed_at` and
 `reviewed_by`, schedules the next review one interval from now, closes the cycle's task, and is

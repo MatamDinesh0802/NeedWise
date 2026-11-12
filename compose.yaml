@@ -266,17 +266,20 @@ services:
     ports: ["127.0.0.1:${MAILPIT_PORT:-8025}:8025"]
     restart: unless-stopped
 
-  # Starts scheduled work: every minute it queues the connector syncs that are due. Run exactly
-  # one of these, however many workers you scale to.
+  # Starts scheduled work: every minute it queues the connector syncs that are due; once a day
+  # the review reminders (and, with Enterprise, retention). Run exactly one of these, however
+  # many workers you scale to. Its schedule is kept in a volume: in /tmp, every restart would
+  # start each interval again, and a daily task would only run after a full day without one.
   beat:
     build: *api-build
     image: workmind-api:dev
-    command: ["celery", "-A", "workmind.workers.celery_app", "beat", "--loglevel", "INFO", "--schedule", "/tmp/celerybeat-schedule"]
+    command: ["celery", "-A", "workmind.workers.celery_app", "beat", "--loglevel", "INFO", "--schedule", "/var/lib/celerybeat/schedule"]
     env_file: *app-env-file
     environment:
       <<: *app-env
     volumes:
       - ./.workmind:/run/workmind:ro
+      - beat_schedule:/var/lib/celerybeat
     depends_on:
       migrate: { condition: service_completed_successfully }
       valkey: { condition: service_healthy }
@@ -342,6 +345,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  beat_schedule:
   llama-models:
   whisper-models:
   postgres_data:

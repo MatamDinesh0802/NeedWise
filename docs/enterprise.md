@@ -65,8 +65,9 @@ Every period is at least 30 days (checked by the API and by a database constrain
 | `POST /api/v1/admin/retention/run` | Runs the saved policy now. The body must be `{"confirm": "delete"}`; the web app asks the admin to type the word. Audited as `admin.retention.run` with the counts |
 
 A scheduled task, `workmind_ee.retention.apply`, registered through the extension registry,
-runs once a day and applies every active tenant's saved policy (audited the same way, with the
-system as the actor). Each tenant's run happens inside that tenant's transaction, so row-level
+runs once a day (on the same beat schedule as the review reminders, kept across restarts:
+[governance.md](governance.md#review-cycles)) and applies every active tenant's saved policy
+(audited the same way, with the system as the actor). Each tenant's run happens inside that tenant's transaction, so row-level
 security limits it to its own rows. Recording files are deleted only after the database
 commit, only when their key is under the tenant's prefix, and only when no kept meeting and no
 document still uses the same stored file (storage is content-addressed, so identical bytes are

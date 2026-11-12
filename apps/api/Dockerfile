@@ -30,8 +30,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable --extra meetings --extra ee
 
 FROM base AS runtime
+# /models: speech models download here. /var/lib/celerybeat: beat's schedule. Both are volumes.
 RUN useradd --system --uid 10001 --no-create-home workmind \
-    && mkdir -p /models && chown workmind /models  # speech models download here (a volume)
+    && mkdir -p /models /var/lib/celerybeat && chown workmind /models /var/lib/celerybeat
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY alembic.ini ./
