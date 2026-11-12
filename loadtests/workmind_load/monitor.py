@@ -157,36 +157,35 @@ def parse_prometheus(text: str, names: Iterable[str]) -> list[tuple[str, dict[st
 @dataclass
 class QdrantEndpoint:
     count: float = 0.0
-    total_s: float = 0.0  # count * average
+    total_s: float = 0.0  # the histogram's _sum: seconds spent on every request so far
     buckets: dict[float, float] = field(default_factory=dict[float, float])  # le -> cumulative
 
 
 def qdrant_snapshot(text: str) -> dict[str, QdrantEndpoint]:
     """Qdrant's REST histogram per 'METHOD endpoint' (successful responses)."""
     snapshot: dict[str, QdrantEndpoint] = {}
+    # Not rest_responses_avg_duration_seconds: it is not an average since the start (deltas of
+    # average x count came out negative), while _sum and _count only ever grow.
     metrics = parse_prometheus(
         text,
         (
-            "rest_responses_total",
-            "rest_responses_avg_duration_seconds",
+            "rest_responses_duration_seconds_count",
+            "rest_responses_duration_seconds_sum",
             "rest_responses_duration_seconds_bucket",
         ),
     )
-    averages: dict[str, float] = {}
     for name, labels, value in metrics:
         if labels.get("status") != "200":
             continue
         key = f"{labels.get('method')} {labels.get('endpoint')}"
         endpoint = snapshot.setdefault(key, QdrantEndpoint())
-        if name == "rest_responses_total":
+        if name == "rest_responses_duration_seconds_count":
             endpoint.count = value
-        elif name == "rest_responses_avg_duration_seconds":
-            averages[key] = value
+        elif name == "rest_responses_duration_seconds_sum":
+            endpoint.total_s = value
         else:
             bound = labels.get("le", "+Inf")
             endpoint.buckets[float("inf") if bound == "+Inf" else float(bound)] = value
-    for key, average in averages.items():
-        snapshot[key].total_s = average * snapshot[key].count
     return snapshot
 
 

@@ -284,7 +284,9 @@ def resource_use(resources: dict[str, Any], api_routes: int = 25) -> list[str]:
             "|---|---:|---:|---:|---:|---:|",
         ]
         out += [
-            f"| {_cell(q['endpoint'])} | {q['requests']:,} | {q['mean_ms']:.1f} | "
+            f"| {_cell(q['endpoint'])} | {q['requests']:,} | "
+            + ("-" if q.get("mean_ms") is None else f"{q['mean_ms']:.1f}")
+            + " | "
             f"{_bound(q['p50_le_ms'])} | {_bound(q['p95_le_ms'])} | {_bound(q['p99_le_ms'])} |"
             for q in qdrant
         ]

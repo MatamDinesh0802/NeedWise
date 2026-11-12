@@ -21,16 +21,18 @@ from workmind_load.monitor import (
 from workmind_load.report import render, resource_use
 
 QDRANT_BEFORE = """# HELP rest_responses_total total number of responses
-rest_responses_total{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 100
-rest_responses_avg_duration_seconds{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 0.001
+rest_responses_duration_seconds_count{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 100
+rest_responses_duration_seconds_sum{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 0.1
+rest_responses_avg_duration_seconds{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 0.009
 rest_responses_duration_seconds_bucket{method="POST",endpoint="/collections/{collection_name}/points/query",status="200",le="0.001"} 80
 rest_responses_duration_seconds_bucket{method="POST",endpoint="/collections/{collection_name}/points/query",status="200",le="0.005"} 100
 rest_responses_duration_seconds_bucket{method="POST",endpoint="/collections/{collection_name}/points/query",status="200",le="+Inf"} 100
-rest_responses_total{method="POST",endpoint="/collections/{collection_name}/points/query",status="400"} 3
+rest_responses_duration_seconds_count{method="POST",endpoint="/collections/{collection_name}/points/query",status="400"} 3
 """  # noqa: E501
 
-QDRANT_AFTER = """rest_responses_total{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 300
-rest_responses_avg_duration_seconds{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 0.002
+QDRANT_AFTER = """rest_responses_duration_seconds_count{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 300
+rest_responses_duration_seconds_sum{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 0.6
+rest_responses_avg_duration_seconds{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 0.0001
 rest_responses_duration_seconds_bucket{method="POST",endpoint="/collections/{collection_name}/points/query",status="200",le="0.001"} 100
 rest_responses_duration_seconds_bucket{method="POST",endpoint="/collections/{collection_name}/points/query",status="200",le="0.005"} 290
 rest_responses_duration_seconds_bucket{method="POST",endpoint="/collections/{collection_name}/points/query",status="200",le="+Inf"} 300
@@ -121,7 +123,7 @@ def test_qdrant_requests_and_latency_during_the_run_only() -> None:
     row = rows[0]
     assert row["endpoint"] == "POST /collections/{collection_name}/points/query"
     assert row["requests"] == 200
-    # 300 * 2 ms - 100 * 1 ms = 500 ms over 200 requests
+    # (0.6 s - 0.1 s) over 200 requests; the "average" gauge is ignored
     assert row["mean_ms"] == pytest.approx(2.5)
     # 20 of the 200 under 1 ms, 190 under 5 ms: p50 and p95 in the 5 ms bucket, p99 above it
     assert (row["p50_le_ms"], row["p95_le_ms"]) == (5.0, 5.0)
@@ -287,3 +289,18 @@ def test_the_report_shows_resource_use() -> None:
     assert "| POST /q | 7 | 1.2 | <= 1 | <= 5 | over 50 s |" in text
     assert "- something was missing" in text
     assert "## Resource use" in whole
+
+
+def test_the_report_leaves_out_a_qdrant_mean_it_does_not_have() -> None:
+    row = {
+        "endpoint": "POST /q",
+        "requests": 7,
+        "mean_ms": None,
+        "p50_le_ms": 1.0,
+        "p95_le_ms": 5.0,
+        "p99_le_ms": 5.0,
+    }
+
+    text = "\n".join(resource_use({"qdrant": [row]}))
+
+    assert "| POST /q | 7 | - | <= 1 | <= 5 | <= 5 |" in text
