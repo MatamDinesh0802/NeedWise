@@ -69,7 +69,7 @@ TEST_OPENFGA_URL ?= http://localhost:8401
 TEST_OPENFGA_API_KEY ?= dev-only-openfga-key
 TEST_QDRANT_URL ?= http://localhost:6333
 FGA_MODEL_DIR := apps/api/src/workmind/modules/authz/openfga
-FGA := docker run --rm -v "$(CURDIR)/$(FGA_MODEL_DIR):/model" openfga/cli:v0.8.2
+FGA := docker run --rm -v "$(CURDIR)/$(FGA_MODEL_DIR):/model" openfga/cli:v0.8.2@sha256:31a565d14d1c5ca8170d3a2225eb66517d9f490539967bcb3421613c5e2538a4
 
 test: ## Run unit + integration tests (integration needs `make infra` or `make up`)
 	cd apps/api && TEST_DATABASE_ADMIN_URL=$(TEST_DATABASE_ADMIN_URL) \
