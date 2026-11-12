@@ -27,8 +27,9 @@
 # SECRETS_ENCRYPTION_KEY): keep those apart from the backups.
 #
 # Environment: DEPLOY_DIR, COMPOSE_PROJECT_NAME/COMPOSE_FILE, PGHOST/PGPORT/PGUSER/PGPASSWORD
-# (see scripts/lib/common.sh; PGUSER must be a superuser or BYPASSRLS role), QDRANT_URL, QDRANT_API_KEY, API_URL, OBJECTS_DIR, LICENSE_DIR,
-# PG_DATABASES, QDRANT_INCLUDE/QDRANT_EXCLUDE (regular expressions), STOP_TIMEOUT.
+# (see scripts/lib/common.sh; PGUSER must be a superuser or a BYPASSRLS role), QDRANT_URL,
+# QDRANT_API_KEY, API_URL, OBJECTS_DIR, LICENSE_DIR, PG_DATABASES, QDRANT_INCLUDE/QDRANT_EXCLUDE
+# (regular expressions), STOP_TIMEOUT.
 set -euo pipefail
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"

@@ -505,6 +505,12 @@ the results as "the chart and the app work on Kubernetes", not as a production q
 | 3 | 1.37.0 | 3.19.0, 1.37.2 | `make helm-kind-test` | 0.1.3 | the default |
 | 4 | 1.37.0 | 3.19.0, 1.37.2 | `make helm-kind-test` | 0.1.4, with the `authz-sync` hook | the default |
 | 5 | 1.34.11 | 4.0.0, 1.34.13 | `deploy/helm/kind-test.sh` | 0.1.4 | the default |
+| 6 | 1.37.0 | 3.19.0, 1.37.2 | `deploy/helm/kind-test.sh` with `SKIP_BROWSER=1` | 0.1.5: the generated Qdrant API key | the default |
+
+Run 6 (after the final review): the seed Job indexed 47 documents (364 chunks) through the
+Qdrant API key, `helm test` and the API end-to-end tests (14 passed, 2 model tests skipped)
+passed through the Ingress, and the upgrade to two API replicas and the uninstall went as in
+the earlier runs. The browser suite was not run.
 
 All: kind v0.33.0, one control-plane node and two workers (containerd 2.3.4, kindnet, the
 local-path storage class), ingress-nginx controller v1.15.1 on the control plane, published

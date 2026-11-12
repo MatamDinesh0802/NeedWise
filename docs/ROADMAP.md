@@ -425,7 +425,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
-### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged, the load test is run and tuned, and the v1.0 benchmarks and the case study are written, and the Helm chart is tested on kind; the final review and the release remain
+### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged, the load test is run and tuned, the v1.0 benchmarks and the case study are written, the Helm chart is tested on kind, and the final review's findings are fixed; a last end-to-end pass and the release remain
 
 **Goal:** a release companies can trust in production.
 
@@ -475,12 +475,36 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   answers (59 attacks in `single` and `auto` mode) and 51 analytics answers; 0 violations;
   81/82 correct, faithfulness 99.5%; cross-department 14/15 with one search, 15/15 with agents;
   routing 53/56; text-to-SQL 33/36; chat time to first token p50 0.8 s (`single`), 2.6 s
-  (`auto`) and $0.0071 per chat answer (`single`), $0.0114 (`auto`), over the 82 QA answers; the whole run $8.74. Synthetic
-  company, small datasets, the judge from the same model family.
+  (`auto`) and $0.0071 per chat answer (`single`), $0.0114 (`auto`), over the 82 QA answers;
+  the whole run $8.74. Synthetic company, small datasets, the judge from the same model family.
 - [x] **A case study** ([case study](case-study.md)) of the build for the synthetic Acme Robotics:
   choices, phases, results, what went wrong, costs, lessons.
 - [ ] **The v1.0 release** itself ([releasing](operations/releasing.md)): no public repository yet.
-- [ ] **A final review** of the merged code.
+- [x] **A final review** of the merged code (2026-11-13): security, operations, CI and the
+  published claims. Fixed, each security and correctness fix with a regression test: `wm tenant
+  delete --keycloak` missed organizations whose name did not contain the slug (Keycloak searches
+  names, not aliases), so a reused slug let the old tenant's people in; a guest could hand their
+  own task to any employee with PATCH; markdown images with a line break in the alt text and
+  `<image>` tags reached MCP `ask` results; with two API processes, one person ran two analytics
+  queries at once and a pod could hold twice the query workers; the Helm chart's Qdrant had no API
+  key and its NetworkPolicies were off by default; protocol-relative links had no host label; the
+  tenant session index only grew. Operations: backups pin objects before the database snapshot (a
+  delete during a backup aborted it or left a restored row without its file), refuse a Postgres
+  role without `BYPASSRLS`, validate `--keep` and remove failed runs; restores name stuck meetings
+  and refuse other embedding settings; PostgreSQL 18 is stated as required. CI, never run on
+  GitHub: object storage owned by uid 10001 on Linux runners (seeding failed), the relevance floor
+  off only for the permission gate (the guest e2e test failed without a model key), a gitleaks
+  allowlist for 10 fixture findings, release-please signs off its commits. Claims: report-backed
+  QA latency and cost ("By suite" tables), load figures without an artifact marked, the 421-chunk
+  corpus described as measured. After the fixes, on the rebuilt stack: backend 1,408 tests, web
+  1,053, API end-to-end 14 (2 model tests skipped), browser 159; one person's four simultaneous
+  analytics queries now ran one at a time (4.0, 7.8 and 11.6 s; the fourth refused after waiting
+  10 s), where before two finished together. The chart (0.1.5, with the Qdrant API key) passed the
+  kind test again: install, seed, `helm test`, the API end-to-end tests, an upgrade to two
+  replicas and an uninstall (browser suite not run). Not done: the kind test in CI; Keycloak
+  refusing the first one or two sign-ins after Postgres is recreated (it recovers within seconds;
+  not investigated); the load test was not run again after the analytics workers were split across
+  the API processes (2 per container by default instead of 3 per process).
 
 **Scope:**
 - Security review against the OWASP Top 10 for LLM Applications. Threat model review. Red-team expansion.
