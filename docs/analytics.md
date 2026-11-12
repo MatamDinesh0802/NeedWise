@@ -476,7 +476,7 @@ that the semantic layer reproduces the documents in `seed/acme/corpus`:
 - the top 3 revenue growth drivers from Q1 to Q3 are Bluefin Freight, Meridian Auto Parts and
   Polaris Parcel.
 
-Tests: 445 unit tests (`tests/test_analytics_*.py`), including 158 queries the guard must
+Tests: 446 unit tests (`tests/test_analytics_*.py`), including 158 queries the guard must
 refuse, 45 accepted queries run as Dan that must only return his rows, 53 number-verification
 cases, 16 agent runs with a scripted model and 4 tool tests; and 33 integration tests on a
 seeded tenant: the service (`test_analytics.py`, 18), every HTTP endpoint
