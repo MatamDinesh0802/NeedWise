@@ -15,13 +15,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-import structlog
 from celery import Celery
 from sqlalchemy import select
 
 from workmind.core.config import get_settings
 from workmind.core.db import create_engine, create_session_factory
-from workmind.core.extensions import ScheduledTask, load_extensions
+from workmind.core.extensions import load_extensions
 from workmind.core.resources import Resources
 from workmind.core.tenancy import global_transaction
 from workmind.modules.connectors.registry import build_connector
@@ -38,6 +37,7 @@ from workmind.modules.work.approvals import expire_due
 from workmind.modules.work.workflows import WorkflowDeps, due_workflows, resume_after, start_run
 from workmind.providers.embeddings import EmbeddingUnavailableError
 from workmind.providers.factory import create_embeddings, secret
+from workmind.workers.enterprise import register_scheduled_tasks
 
 INGEST_TASK = "workmind.ingest_document"
 SYNC_TASK = "workmind.sync_source"
@@ -68,7 +68,6 @@ app.conf.update(
     broker_connection_retry_on_startup=True,
     task_ignore_result=True,
 )
-log = structlog.get_logger("workmind.workers")
 # Community, or Enterprise with what workmind_ee registered (ADR 0011). Built when the worker
 # or beat imports this module, so beat schedules the enterprise tasks and workers know them.
 extensions = load_extensions(settings)
@@ -223,27 +222,5 @@ def process_meeting_task(tenant_id: str, meeting_id: str) -> None:
     asyncio.run(_process_meeting(tenant_id, meeting_id))
 
 
-# --- Enterprise scheduled tasks (registered by workmind_ee; none in Community) -------------------
-
-
-def _register_scheduled(task: ScheduledTask) -> None:
-    async def run() -> object:
-        # Checked on every run: a license that expired since startup stops the task.
-        if not extensions.edition.has(task.feature):
-            log.warning("enterprise_task_skipped", task=task.name, feature=task.feature)
-            return None
-        resources = Resources.create(settings, extensions=extensions)
-        try:
-            return await task.run(resources)
-        finally:
-            await resources.aclose()
-
-    def entry() -> object:
-        return asyncio.run(run())
-
-    app.task(name=task.name)(entry)
-    app.conf.beat_schedule[task.name] = {"task": task.name, "schedule": task.every_s}
-
-
-for _task in extensions.scheduled_tasks:
-    _register_scheduled(_task)
+# Enterprise scheduled tasks (none in Community): known to workers, queued by beat.
+register_scheduled_tasks(app, settings, extensions)
