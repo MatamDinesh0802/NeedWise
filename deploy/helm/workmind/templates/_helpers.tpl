@@ -359,6 +359,18 @@ in the pod from the password variables (Kubernetes expands $(VAR) from earlier e
 {{- if not (regexMatch "^https?://[^/\\s]+/?$" .Values.config.publicUrl) -}}
 {{- fail "config.publicUrl must be a URL without a path, e.g. https://workmind.example.com" -}}
 {{- end -}}
+{{- /* A Secret you manage must not have the name of the chart's own: the chart would then
+create that Secret itself, with generated values for every key. */ -}}
+{{- $root := . -}}
+{{- $own := include "workmind.credentialsSecretName" . -}}
+{{- if eq .Values.credentials.existingSecret $own -}}
+{{- fail (printf "credentials.existingSecret is %s, the name of the Secret the chart creates itself: give your Secret another name" $own) -}}
+{{- end -}}
+{{- range $name := include "workmind.credentialNames" . | fromJsonArray -}}
+{{- if eq (get $root.Values.credentials $name).existingSecret $own -}}
+{{- fail (printf "credentials.%s.existingSecret is %s, the name of the Secret the chart creates itself: give your Secret another name" $name $own) -}}
+{{- end -}}
+{{- end -}}
 {{- if and .Values.postgresql.enabled (or (ne .Values.database.name "workmind") (ne .Values.database.appUser "workmind_app") (ne .Values.database.ownerUser "workmind_owner")) -}}
 {{- fail "the bundled Postgres creates the database workmind with the roles workmind_app and workmind_owner: database.name, appUser and ownerUser can only change with an external database" -}}
 {{- end -}}

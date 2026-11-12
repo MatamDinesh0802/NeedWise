@@ -60,8 +60,9 @@ embeddings:
 # and, when used: secrets-encryption-previous-keys, smtp-password, google-client-secret,
 #   license-key, mcp-servers, llm-api-key, local-llm-api-key, embedding-api-key,
 #   transcription-api-key
+# Not "workmind-credentials": that is the name of the Secret the chart creates itself.
 credentials:
-  existingSecret: workmind-credentials
+  existingSecret: workmind-secrets
 
 ingress:
   enabled: true

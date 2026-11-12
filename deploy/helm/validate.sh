@@ -81,4 +81,8 @@ refuse "no embedding server" "config.embedding.baseUrl is required" --set embedd
 refuse "an API without worker processes" "workers" --set api.workers=0
 refuse "an external Valkey with auth and no password" "credentials.valkeyPassword is required" \
   --set valkey.enabled=false --set valkey.external.host=valkey.example
+refuse "your Secret named like the chart's own" "the name of the Secret the chart creates itself" \
+  --set credentials.existingSecret=workmind-credentials
+refuse "one credential's Secret named like the chart's own" "credentials.licenseKey.existingSecret is" \
+  --set credentials.licenseKey.existingSecret=workmind-credentials
 echo "All chart checks passed."

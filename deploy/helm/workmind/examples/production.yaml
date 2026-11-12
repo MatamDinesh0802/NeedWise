@@ -47,7 +47,8 @@ openfga:
 # secrets-encryption-key, keycloak-admin-password, anthropic-api-key (and the optional ones
 # listed in values.yaml).
 credentials:
-  existingSecret: workmind-credentials   # yours
+  # yours; not <fullname>-credentials, the name of the Secret the chart creates itself
+  existingSecret: workmind-secrets
 
 objectStorage:
   storageClass: nfs-client   # yours: any ReadWriteMany class
