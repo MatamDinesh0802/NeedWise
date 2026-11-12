@@ -354,6 +354,14 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > UI, and its routing questions are reported as skipped until it exists. Not yet measured: the
 > routing eval with the Legal agent and a real model.
 
+> **Knowledge governance, the audit explorer and retention, as built
+> ([docs/governance.md](governance.md), [docs/enterprise.md](enterprise.md#retention-policies)):**
+> document owners, review cycles with a daily reminder (a task and a notification, once per
+> cycle), official status only through an approval (never self-approved; demotion immediate and
+> audited), a governance overview for admins and collection owners, and audit filters, cursor
+> paging and a CSV export in Community. Retention policies and the SIEM export of the hash chain
+> are Enterprise, in `ee/`. Not built: review escalation, legal hold, document retention.
+
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
 ### Phase 12 — Production hardening (v1.0)

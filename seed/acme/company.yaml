@@ -69,8 +69,8 @@ people:
 # Governance (docs/governance.md): `owner` approves official status and owns the seeded
 # documents; they are due for review `review_interval_days` after `last_reviewed`. The dates are
 # fixed so that, in November 2026, the handbook and HR guidance are overdue and engineering,
-# finance and operations are due within 30 days. Owners are people who already edit the
-# collection, so owning one gives nobody new access.
+# finance and operations are due within 30 days, while support and legal are on schedule.
+# Owners are people who already edit the collection, so owning one gives nobody new access.
 collections:
   - key: company-handbook
     name: Company Handbook
@@ -157,6 +157,8 @@ collections:
     trust: official
     editors: [department-manager:management]
     owner: priya.raman@acme.test
+    review_interval_days: 365
+    last_reviewed: 2026-03-02
     description: >-
       Contract signature authority, NDAs, supplier and customer contract terms, data processing
       agreements (GDPR), export control, records retention and legal holds, IP assignment,
