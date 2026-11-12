@@ -34,6 +34,10 @@ from sqlglot import exp
 from workmind.modules.analytics.semantic import IDENTIFIER, RESERVED_PREFIXES
 
 MAX_TABLES = 50
+# An upload's limits beyond its size in bytes: a wide header or a small XLSX that unzips into
+# millions of cells would otherwise take minutes (pure Python, while the model row is locked).
+MAX_COLUMNS = 500
+MAX_XLSX_CELLS = 2_000_000
 VERSION = re.compile(r"^[0-9]{8}T[0-9]{6}-[0-9a-f]{8}$")
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSV_TYPES = frozenset({"text/csv", "application/csv", "text/plain", "text/x-csv"})
@@ -212,6 +216,7 @@ def _load(connection: duckdb.DuckDBPyConnection, source: TableSource, scratch: P
     if kind == "xlsx":
         csv_path.write_text(_xlsx_to_csv(source.data), encoding="utf-8")
     else:
+        _check_csv_width(source)
         csv_path.write_bytes(source.data)
     table = _identifier(source.name)
     try:
@@ -255,8 +260,19 @@ def _kind(source: TableSource) -> Kind:
     )
 
 
+def _check_csv_width(source: TableSource) -> None:
+    """Refuse a header wider than MAX_COLUMNS, whichever delimiter DuckDB will detect."""
+    header = source.data[: 1024 * 1024].split(b"\n", 1)[0]
+    widest = max(header.count(d) for d in (b",", b";", b"\t", b"|")) + 1
+    if widest > MAX_COLUMNS:
+        raise DatasetError(
+            f"{source.filename or source.name}: the table has more than {MAX_COLUMNS} columns"
+        )
+
+
 def _xlsx_to_csv(data: bytes) -> str:
-    """The first sheet, its first non-empty row as the header, as CSV text."""
+    """The first sheet, its first non-empty row as the header, as CSV text (at most
+    MAX_COLUMNS columns and MAX_XLSX_CELLS cells)."""
     try:
         workbook = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as exc:  # openpyxl raises many types for broken files
@@ -276,7 +292,13 @@ def _xlsx_to_csv(data: bytes) -> str:
                     header.pop()
                 if not header or any(not h for h in header):
                     raise DatasetError("the first row of the sheet must name every column")
+                if len(header) > MAX_COLUMNS:
+                    raise DatasetError(f"the sheet has more than {MAX_COLUMNS} columns")
                 continue
+            if (len(body) + 1) * len(header) > MAX_XLSX_CELLS:
+                raise DatasetError(
+                    f"the sheet has more than {MAX_XLSX_CELLS:,} cells: upload it as CSV"
+                )
             body.append((cells + [None] * len(header))[: len(header)])
         if header is None:
             raise DatasetError("the first sheet is empty")

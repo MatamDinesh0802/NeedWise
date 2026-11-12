@@ -3,8 +3,10 @@ a new version and leaves the current one untouched until the caller switches."""
 
 import io
 import uuid
+from collections.abc import Sequence
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import openpyxl
 import pytest
@@ -21,12 +23,12 @@ def csv_source(name: str, data: bytes = CUSTOMERS) -> dataset.TableSource:
     )
 
 
-def xlsx(rows: list[list[object]]) -> bytes:
+def xlsx(rows: Sequence[Sequence[Any]]) -> bytes:
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     assert sheet is not None
     for row in rows:
-        sheet.append(row)
+        sheet.append(list(row))
     workbook.create_sheet("Ignored").append(["only the first sheet is read"])
     buffer = io.BytesIO()
     workbook.save(buffer)
@@ -181,6 +183,31 @@ def test_xlsx_needs_a_full_header_row(tmp_path: Path) -> None:
 
     with pytest.raises(dataset.DatasetError, match="name every column"):
         dataset.build(tmp_path, TENANT, base=None, put=[source])
+
+
+@pytest.mark.parametrize("separator", [b",", b";", b"\t"])
+def test_a_csv_wider_than_the_column_limit_is_refused(tmp_path: Path, separator: bytes) -> None:
+    columns = dataset.MAX_COLUMNS + 1
+    header = separator.join(b"Col %d" % i for i in range(columns))
+    source = csv_source("wide", header + b"\n" + separator.join([b"1"] * columns) + b"\n")
+
+    with pytest.raises(dataset.DatasetError, match="more than 500 columns"):
+        dataset.build(tmp_path, TENANT, base=None, put=[source])
+
+
+def test_an_xlsx_with_too_many_cells_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(dataset, "MAX_XLSX_CELLS", 20)
+    data = xlsx([["a", "b"], *([[1, 2]] * 11)])  # 22 cells
+    source = dataset.TableSource(name="t", data=data, content_type=dataset.XLSX)
+
+    with pytest.raises(dataset.DatasetError, match="more than 20 cells"):
+        dataset.build(tmp_path, TENANT, base=None, put=[source])
+    smaller = dataset.TableSource(
+        name="t", data=xlsx([["a", "b"], *([[1, 2]] * 9)]), content_type=dataset.XLSX
+    )
+    assert dataset.build(tmp_path, TENANT, base=None, put=[smaller]).tables["t"]["rows"] == 9
 
 
 @pytest.mark.parametrize("version", ["../../etc/passwd", "latest", "20261112T000000-zz"])
