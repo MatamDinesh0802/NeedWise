@@ -35,10 +35,14 @@ vector size; the number of objects; the size and SHA-256 of every file. `SHA256S
 
 - **Valkey.** It holds sessions, sign-in flows in progress, the Celery job queue, live run
   events, conversation locks and caches (usage totals, budget alert flags). After a restore it
-  is emptied: everyone signs in again; jobs that were queued but not started are gone (a
-  document uploaded just before the backup stays `pending`; the restore names them and
-  `wm reindex` re-queues them); an answer being written at backup time is lost; a budget alert
-  may be sent a second time. Nothing in Valkey is the only copy of anything a person made.
+  is emptied: everyone signs in again; jobs that were queued but not started are gone. A
+  document uploaded just before the backup stays `pending`: the restore counts them, and
+  `wm reindex <tenant>` indexes every document of the tenant again, inline (it does not
+  re-queue jobs). A meeting that was `pending`, `transcribing` or `extracting` (uploaded during
+  the backup, or cut off when `--pause` stopped the worker) stays in that state: the restore
+  lists them, and nothing re-queues a meeting (there is no retry endpoint or command), so delete
+  it and upload it again. An answer being written at backup time is lost; a budget alert may be
+  sent a second time. Nothing in Valkey is the only copy of anything a person made.
 - **The beat schedule volume.** It only remembers when each periodic job last ran. Without it,
   every interval starts again when beat starts (a daily job runs within a day).
 - **Model caches** (`whisper-models`, `llama-models`): downloaded again on first use.
@@ -214,10 +218,12 @@ differs from the manifest (printed above it). `--no-start` stops after step 7.
 1. Install Docker, check out the **same release or a newer one**, and copy `.env` from your
    secret store (the encryption keys and `OIDC_CLIENT_SECRET` must be the source's; database
    passwords can be new).
-2. `mkdir -p .data/objects .workmind && docker compose up -d --wait` once: Postgres creates its
-   roles and databases (`deploy/postgres/init`), Keycloak imports an empty realm.
+2. `make objects-dir && docker compose up -d --wait` once: Postgres creates its roles and
+   databases (`deploy/postgres/init`), Keycloak imports an empty realm.
 3. Copy the backup over (and decrypt it), then `make restore BACKUP=<dir>`. The fresh stack
-   holds no tenant, so `--force` is not needed.
+   holds no tenant, so `--force` is not needed. The restore refuses a target whose embedding
+   settings (`EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS`) name another search index than the
+   backup's: it would restore a collection the API never searches and remove the one it does.
 
 ### On another address
 

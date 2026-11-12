@@ -7,7 +7,8 @@
 # Into the compose project in DEPLOY_DIR (COMPOSE_PROJECT_NAME / COMPOSE_FILE apply), with the
 # images that project runs:
 #   1. checks the backup against its checksums, and that the code is not older than the backup
-#   2. refuses a target that holds data (tenants, Qdrant points or objects) unless --force
+#   2. refuses a target that holds data (tenants, Qdrant points or objects), or whose embedding
+#      settings use another search index than the backup's, unless --force
 #   3. stops everything except postgres, valkey and qdrant
 #   4. recreates the databases from their dumps (roles from globals.sql; passwords stay the
 #      target's) and compares WorkMind's row counts with the manifest
@@ -75,6 +76,20 @@ CODE_HEAD=$(compose run --rm --no-deps -T migrate alembic heads 2>/dev/null | aw
 info "the code here: alembic head $CODE_HEAD"
 if [[ -n $CODE_HEAD && $BACKUP_REVISION > $CODE_HEAD ]]; then
   die "the backup (alembic $BACKUP_REVISION) is newer than this code ($CODE_HEAD): restore it with that version or later"
+fi
+# The search index this deployment's settings use (EMBEDDING_MODEL, EMBEDDING_DIMENSIONS). A
+# backup of another one would restore a collection the API never searches, and --prune below
+# deletes the one it does: every search would then find nothing until a full re-index.
+BACKUP_COLLECTION=$(manifest embedding.collection)
+TARGET_COLLECTION=$(compose run --rm --no-deps -T migrate python -c 'from workmind.core.config import Settings; print(Settings().qdrant_collection)' 2>/dev/null | tail -n 1 || true)
+if [[ -n $BACKUP_COLLECTION && -n $TARGET_COLLECTION && $BACKUP_COLLECTION != "$TARGET_COLLECTION" ]]; then
+  warn "the backup's search index is $BACKUP_COLLECTION, but this deployment's embedding settings use $TARGET_COLLECTION"
+  if [[ -z $FORCE ]]; then
+    printf 'refused: set EMBEDDING_MODEL and EMBEDDING_DIMENSIONS as in the backed-up deployment, or run again with --force and then re-index every tenant (wm reindex <tenant>).\n' >&2
+    exit 2
+  fi
+  warn "--force: searches find nothing until every tenant is re-indexed (wm reindex <tenant>)"
+  MISMATCH="$MISMATCH embedding"
 fi
 
 # --- 2. Refuse to overwrite data ---------------------------------------------------------------
@@ -208,6 +223,13 @@ waiting=$(psql_value -d "$APP_DB" -c "SELECT count(*) FROM documents WHERE statu
 if [[ $waiting -gt 0 ]]; then
   warn "$waiting document(s) were queued or being indexed at backup time; their jobs were in Valkey."
   info "re-index them: docker compose run --rm worker wm reindex <tenant slug> (or per document in the UI)"
+fi
+# Meetings are processed by a Celery job too, and nothing re-queues one: name them.
+stuck=$(psql_value -d "$APP_DB" -c "SELECT count(*) FROM meetings WHERE status IN ('pending', 'transcribing', 'extracting')" 2>/dev/null || echo 0)
+if [[ $stuck -gt 0 ]]; then
+  warn "$stuck meeting(s) were queued or being processed at backup time and will stay that way:"
+  psql_value -d "$APP_DB" -c "SELECT '      ' || id || '  ' || status || '  ' || title FROM meetings WHERE status IN ('pending', 'transcribing', 'extracting') ORDER BY created_at" >&2 2>/dev/null || true
+  info "nothing re-queues a meeting: delete each one and upload its recording or transcript again"
 fi
 say "Restored in $(since "$STARTED")s (postgres ${T_POSTGRES}s, qdrant ${T_QDRANT}s, objects ${T_OBJECTS}s, start ${T_START}s)"
 if [[ -n $MISMATCH ]]; then
