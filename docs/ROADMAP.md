@@ -290,7 +290,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #10 — "From a 30-minute meeting to tracked commitments, fully self-hosted."**
 
-### Phase 10 — Business intelligence agent (v0.10) 🚧 Core, agent, number verification, API and data tools done (tested with a scripted model); Insights page in progress; eval set and Postgres/MySQL sources pending (see `docs/analytics.md`)
+### Phase 10 — Business intelligence agent (v0.10) 🚧 Built and tested with a scripted model: semantic layer, guard, DuckDB, agent, number verification, API, data tools, Insights page, text-to-SQL eval (51 questions, zero-leak gate). Pending: the eval run with a real model (execution accuracy not published yet) and Postgres/MySQL sources (see `docs/analytics.md`)
 
 **Goal:** analytical questions answered with charts, explanations and verifiable SQL.
 
@@ -303,6 +303,10 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Text-to-SQL eval set (execution accuracy).
 
 **DoD:** *"Monthly revenue trend this year and the top 3 drivers"* → chart + explanation + SQL + data link. Execution accuracy is published.
+
+**Status:**
+- Done: CSV/XLSX → versioned DuckDB per tenant; semantic layer YAML; sqlglot guard with row policies; sandboxed read-only engine; the BI agent (tool loop, compose, chart spec, number verification with one repair pass); `/api/v1/analytics/*` and admin routes; `describe_data` / `query_data` for research mode and MCP; the Insights page and Admin › Analytics; the text-to-SQL eval (`wm eval --suites analytics`, [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md)).
+- Not done: execution accuracy with a real model (the DoD's last sentence); Postgres/MySQL connectors; streaming of the agent's progress.
 
 **LinkedIn post #11 — "Letting an LLM write SQL against company data, safely."**
 

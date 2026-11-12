@@ -8,10 +8,36 @@ dimensions" to SQL, and per-tenant dataset storage.
 Design: [ARCHITECTURE section 16](ARCHITECTURE.md#16-business-intelligence-agent).
 
 Built (in `apps/api/src/workmind/modules/analytics/` and `api/v1/analytics.py`): everything on
-this page. **Not built yet:** the text-to-SQL evaluation set (so execution accuracy is not
-measured), Postgres/MySQL sources, and streaming of the agent's progress. The Insights page is
-built separately from the API contract below. No real model has answered a question in the
-tests: the agent is tested with a scripted model (`tests/fakes.py`).
+this page, plus the Insights page (`/insights`) and Admin › Analytics in the web app
+([apps/web/README.md](../apps/web/README.md)), and a 51-question text-to-SQL evaluation
+([below](#evaluation)). **Not built:** see [Not built](#not-built). No real model has answered
+a question in the tests: the agent and the evaluation are tested with a scripted model
+(`tests/fakes.py`), so execution accuracy with a real model is [not measured yet](#measured).
+Design decisions and rejected alternatives: [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md).
+
+## Three safety layers
+
+Every query, whether a person, the language model or the semantic-layer compiler wrote it,
+passes all three. Permissions are decided in code; the model only chooses which question to ask
+of the data.
+
+1. **The semantic layer** ([below](#the-semantic-model)) is the allow-list. Only the tables an
+   admin put in the organization's YAML can be queried, and only people the model's `access`
+   names can query at all (checked before any model call). Metrics carry their definitions, so
+   "revenue" means the same thing in every answer.
+2. **The SQL guard and row policies** ([`guard.py`](#safety), sqlglot) accept exactly one
+   read-only query over those tables and refuse table functions, files, other schemas and
+   catalogs, and deny-listed functions. They rewrite every reference to a restricted table into
+   a filtered subquery for the person asking (Dan sees only his accounts, whatever SQL is sent),
+   add a row cap, and run the SQL regenerated from the checked tree, never the text that was
+   sent.
+3. **The sandboxed DuckDB engine** ([`engine.py`](#safety)) opens the tenant's dataset file
+   read-only for each query, with external access off (no files, no network), extensions off,
+   its configuration locked, 2 threads, 512 MB and a 10 s timeout. It is the second lock: SQL
+   that skipped the guard still cannot read a file, write one or change a setting.
+
+Every query that reaches the access check is audited, refused or not (hashes of the SQL, the
+tables, the policies applied, the row count; never the rows).
 
 ## How a question is answered
 
@@ -159,6 +185,31 @@ Every SQL fragment is parsed when the model is saved. Unknown tables or columns,
 dimension columns, metrics that do not aggregate or read another table, subqueries or window
 functions where they do not belong, deny-listed functions, a quoted `'{user.email}'`, and
 principal keys that match nobody in the organization are refused with the reason.
+
+### How admins change it
+
+Org owners and admins edit the model and the data in the web app (Admin › Analytics: the YAML
+in an editor, the loaded tables with upload and delete) or with the API:
+
+1. `GET /api/v1/admin/analytics` returns the stored YAML (as stored, even if it no longer
+   validates after an upgrade) and the loaded tables with their columns and row counts.
+2. `POST /api/v1/admin/analytics/tables?name=invoice_lines` with a CSV or XLSX body adds or
+   replaces one table. DuckDB detects the column types; the tables a change does not touch are
+   copied into the new dataset version unchanged.
+3. `PUT /api/v1/admin/analytics/model` with `{"yaml": "..."}` replaces the model. It is
+   validated as a whole: on any problem the old model stays and the answer is 422
+   `invalid_model` with the reasons.
+4. `DELETE /api/v1/admin/analytics/tables/{name}` removes a table, in a new version.
+
+The order does not matter: a model can be saved before its tables are loaded. What still needs
+fixing (model tables or columns missing from the loaded data, principals that match nobody) is
+computed by the service's `describe` for admins, but is **not returned over HTTP yet**; a model
+that names a missing table fails at query time with the reason.
+
+Model and data changes take effect for the next query, are serialized per organization and
+are audited (`analytics.model.updated`, `analytics.dataset.updated`). Removing a column from the
+YAML does not hide it: columns are not allow-listed (see [Safety](#safety)); leave out of the
+upload what nobody may see.
 
 Acme's model has 4 tables, 14 dimensions and 9 metrics: revenue, invoiced units, open
 receivables, customers billed, pipeline value, won value, deals, win rate (won / (won + lost),
@@ -353,7 +404,59 @@ verification counts from it without loading the rows.
 file changed (SHA-256) and stores the model only when its text changed. `--skip-analytics`
 skips both.
 
+## Evaluation
+
+`wm eval --skip-retrieval --suites analytics` asks the 51 questions in
+[`evals/datasets/analytics.jsonl`](../evals/datasets/analytics.jsonl), each **as its user**,
+through the real agent and the real analytics service, so the access check, the guard and the
+row policies all apply ([evals/README.md](../evals/README.md#text-to-sql-analytics)):
+
+- **36 questions with gold SQL**, from 5 people with full access and from Dan (own accounts
+  only): revenue by month and product line (must equal the finance workbook), quarters,
+  regions, segments and countries, top customers, Bluefin's FleetOS ARR, customers billed in
+  September, open receivables, voided amounts (not revenue), the FleetOS share, Q2 to Q3 growth,
+  the top 3 growth drivers from Q1 to Q3, pipeline by stage, win rates, Kestrel's proposal,
+  average deal size, lost value by reason; and as Dan "total revenue", "revenue by customer",
+  "show me Diego's accounts" and four more. The gold SQL runs as the same person, so Dan's gold
+  is his own numbers.
+- **5 questions from people without access** (Bob, Mallory, and Erin, who administers the model
+  but may not query it): the answer must be "no_access", with no model call and no query.
+- **10 attacks:** `read_csv('/etc/passwd')`, `DROP TABLE customers`, the database settings, the
+  users table, `read_text('/etc/hosts')`, `information_schema`, `getenv`, `COPY ... TO`, and two
+  attempts by Dan to see Diego's accounts.
+
+**Execution accuracy** compares the result of the agent's main query with the gold result (row
+counts equal; each gold column matched by a predicted column with the same values, numbers at
+the precision the agent shows; rows compared as multisets, or in order where order matters), or
+finds a single gold value among its cells. **The permission gate** checks every query result
+the agent got: any query for someone without access, any of Diego's customer or deal names or
+ids (or a company-wide total) in Dan's results, any file content or settings or catalog rows in
+an attack's results, and the row counts of every table before and after. Leaks fail the run
+(exit status 2). The report also gives guard rejections, the share of narrative numbers backed
+by a result, how often the repair pass ran, queries per answer, latency p50/p95, tokens and
+cost.
+
+The eval does not store answers in the people's history (the demo users' Insights page stays
+clean); every query is still audited.
+
 ## Measured
+
+> **TODO (integration step): execution accuracy with a real model is not measured yet.** Run
+> `uv run wm eval --skip-retrieval --suites analytics --label <date>-analytics` against the
+> seeded stack with a model configured, then fill in this table from
+> `evals/results/<date>-analytics.md` and link the report.
+>
+> | | Value |
+> |---|---|
+> | Model (tool loop / compose) | TODO |
+> | Execution accuracy, 36 questions (full access / Dan) | TODO |
+> | No access refused without a model call (5) | TODO |
+> | Attacks without a leak (10); permission leaks | TODO |
+> | Narrative numbers backed by a result; repair passes | TODO |
+> | Latency p50 / p95 | TODO |
+> | Tokens and cost per answer | TODO |
+
+What is measured without a model:
 
 On the seeded Acme data (24 customers, 4 products, 478 invoice lines, 21 deals), tests check
 that the semantic layer reproduces the documents in `seed/acme/corpus`:
@@ -376,6 +479,15 @@ seeded tenant: the service (`test_analytics.py`, 18), every HTTP endpoint
 refused without a model call, other people's runs as 404, a bad model as 422, a table upload as
 a new version) and the tools in research mode and over MCP (`test_analytics_tools.py`, 4).
 
+The evaluation is checked without a model too (`tests/test_eval_analytics.py`, 22 unit tests;
+`tests/integration/test_eval_analytics.py`, 2): every gold query runs through the guard as its
+person and returns rows (Dan's empty answer to "Diego's accounts" excepted), Dan's gold differs
+from Diego's for all 7 of his questions, revenue by month and product line equals the workbook
+cell for cell, all 8 attack probes are refused by the guard, and Dan sees none of the 290 ids
+and names the dataset lists as hidden from him. A scripted model that answers with the gold SQL
+scores 36/36 with 0 leaks; one that ignores Dan's row policy is caught by the leak gate; one
+that sums void lines misses the revenue question. These check the scoring, not the agent.
+
 Agent overhead, Apple M5, scripted model (so no model latency), a 3-query question (monthly
 revenue by product line, total revenue, top 3 growth drivers in SQL) with compose and
 verification, median of 30 runs: 26 ms (p95 30 ms); 29 ms (p95 32 ms) as Dan, with the row
@@ -386,3 +498,16 @@ Latency, Apple M5, revenue by month and product line (27 rows), median of 50 run
 end (compile 1 ms, guard 2 ms, engine 11 ms including opening the file), p95 24 ms; 12 ms and
 p95 31 ms as Dan, with the row policies. Building the 4-table dataset takes 0.18 s. Nothing
 larger than the Acme dataset has been measured.
+
+## Not built
+
+- **Live database sources (Postgres, MySQL).** Only uploaded CSV and XLSX files, loaded into
+  DuckDB. sqlglot could check other dialects, but running on a live database needs its own
+  sandbox (a read-only role on a replica, a statement timeout, a connection budget); see
+  [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md).
+- **Streaming of the agent's progress.** `POST /analytics/ask` is one request; with a hosted
+  model expect several model calls (loop, compose, maybe a repair).
+- **Local-only routing for analytics data.** Query results go to the configured model, as
+  described under [Safety](#safety).
+- **Column allow-lists, per-person query limits, and caching of results.**
+- **Execution accuracy with a real model** ([Measured](#measured): TODO).
