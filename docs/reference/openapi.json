@@ -3988,6 +3988,7 @@
           "work"
         ],
         "summary": "Create Task",
+        "description": "A guest may only make tasks for themselves: other people's lists and department queues\nare for members (a guest cannot see the directory either).",
         "operationId": "create_task_api_v1_tasks_post",
         "requestBody": {
           "required": true,

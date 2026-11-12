@@ -96,6 +96,14 @@ not shown here; where one exists it is a development value.
 | <a id="retrieval_rrf_k"></a>`RETRIEVAL_RRF_K` | integer, ≥ 1 | `2` | Hybrid search: the k of reciprocal rank fusion (ADR 0008). |
 | <a id="retrieval_min_similarity"></a>`RETRIEVAL_MIN_SIMILARITY` | number, ≥ 0, ≤ 1 | `0.25` | Relevance floor: when the best dense similarity is below it, nothing is sent to a model and the assistant says it found nothing. Calibrated for EmbeddingGemma; recalibrate for another embedding model. |
 
+## Limits
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| <a id="max_inflight_per_user"></a>`MAX_INFLIGHT_PER_USER` | integer, ≥ 1, ≤ 100 | `4` | Answers one person may have in progress at once, across chat and research runs, `/ask`, MCP `ask`, analytics questions and the agent test console. More get 429 `too_many_requests`. A slot left by a process that died expires after 15 minutes. |
+| <a id="rate_limits_enabled"></a>`RATE_LIMITS_ENABLED` | boolean | `true` | Request rate limits per person, per tenant and per client address for sign-in ([multi-tenancy](../multi-tenancy.md)). `false` turns every limit off (load tests). |
+| <a id="rate_limits"></a>`RATE_LIMITS` | value | `{}` | Overrides of the default limits as JSON, e.g. `{"chat": {"per_user": 10}, "mcp": {"per_tenant": 0}}`; 0 removes that limit. An unknown limit name or field stops startup. |
+
 ## Documents and ingestion
 
 | Variable | Type | Default | Description |

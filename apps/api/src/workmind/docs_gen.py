@@ -65,6 +65,7 @@ SECTIONS: Sequence[tuple[str, Sequence[str]]] = (
         ["llm_*", "anthropic_api_key", "local_llm_*", "assistant_mode", "agent_fast_path*"],
     ),
     ("Embeddings and search", ["embedding_*", "retrieval_*"]),
+    ("Limits", ["max_inflight_per_user", "rate_limits*"]),
     ("Documents and ingestion", ["object_storage_path", "ingestion_mode", "max_upload_bytes"]),
     ("Meetings", ["max_meeting_bytes", "transcription_*"]),
     ("Analytics", ["analytics_*"]),
@@ -164,6 +165,20 @@ NOTES: dict[str, str] = {
         "`single`: one search and one answer. `agents`: a planner routes every question to "
         "department agents. `auto`: agents only for questions that span several areas. "
         "`single` was chosen by measurement (ADR 0009)."
+    ),
+    "max_inflight_per_user": (
+        "Answers one person may have in progress at once, across chat and research runs, "
+        "`/ask`, MCP `ask`, analytics questions and the agent test console. More get 429 "
+        "`too_many_requests`. A slot left by a process that died expires after 15 minutes."
+    ),
+    "rate_limits_enabled": (
+        "Request rate limits per person, per tenant and per client address for sign-in "
+        "([multi-tenancy](../multi-tenancy.md)). `false` turns every limit off (load tests)."
+    ),
+    "rate_limits": (
+        "Overrides of the default limits as JSON, e.g. "
+        '`{"chat": {"per_user": 10}, "mcp": {"per_tenant": 0}}`; 0 removes that limit. '
+        "An unknown limit name or field stops startup."
     ),
     "agent_fast_path": ("Skip the planner when one agent's profile clearly matches the question."),
     "agent_fast_path_min_score": (
