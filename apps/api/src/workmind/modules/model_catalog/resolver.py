@@ -2,7 +2,7 @@
 
     llm = await resources.models.for_tenant(ctx.tenant_id)   # a TenantLLM: an LLMProvider
     await llm.complete("router", request)                    # the tenant's model for the role
-    agent_llm = with_model(llm, agent.model)                 # a per-request catalog override
+    agent_llm = llm.select(agent.model)                      # an agent's own model, or None
     route(passages, policy=llm.max_external_sensitivity, llm=llm, local_llm=llm.local)
 
 A tenant that configured nothing gets the deployment's providers exactly as before: every role
