@@ -290,7 +290,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #10 — "From a 30-minute meeting to tracked commitments, fully self-hosted."**
 
-### Phase 10 — Business intelligence agent (v0.10) 🚧 Core done: semantic layer, SQL guard, sandbox, compiler, datasets; agent, API, charts and eval pending (see `docs/analytics.md`)
+### Phase 10 — Business intelligence agent (v0.10) 🚧 Core, agent, number verification, API and data tools done (tested with a scripted model); Insights page in progress; eval set and Postgres/MySQL sources pending (see `docs/analytics.md`)
 
 **Goal:** analytical questions answered with charts, explanations and verifiable SQL.
 
