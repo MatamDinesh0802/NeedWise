@@ -96,6 +96,11 @@ const catalog: ModelCatalog = {
 describe("key suggestion", () => {
   it("suggests a slug from the name, at most 40 characters", () => {
     expect(suggestAgentKey("Legal & Compliance")).toBe("legal-compliance");
+    // docs/agents.md: "Legal agent" gets the key the routing evaluation expects.
+    expect(suggestAgentKey("Legal agent")).toBe("legal");
+    expect(suggestAgentKey("Customer Support Agent")).toBe("customer-support");
+    expect(suggestAgentKey("Agent")).toBe("agent");
+    expect(suggestAgentKey("Agent Smith")).toBe("agent-smith");
     const long = suggestAgentKey("A very long agent name for the procurement and vendor management team");
     expect(long.length).toBeLessThanOrEqual(40);
     expect(long.endsWith("-")).toBe(false);

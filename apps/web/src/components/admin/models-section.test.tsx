@@ -88,6 +88,14 @@ describe("ProviderCard", () => {
   });
 });
 
+describe("ProviderCard without models", () => {
+  it("can't be tested until one of its models is in the catalog, and says so", () => {
+    const html = renderToStaticMarkup(<ProviderCard provider={team} models={0} result={null} />);
+    expect(html).toContain("Add a model of this provider to the catalog below to test it");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Test Team OpenAI"/);
+  });
+});
+
 describe("CatalogPanel", () => {
   it("lists prices, marks deployment models, and offers actions only on the organization's", () => {
     const html = renderToStaticMarkup(<CatalogPanel catalog={catalog()} />);

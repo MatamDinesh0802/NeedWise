@@ -80,6 +80,9 @@ describe("one task", () => {
       label: "From a meeting",
       href: "/meetings/m%201",
     });
+    expect(
+      taskOrigin(task({ origin: { via: "governance", kind: "document_review", document_id: "d 1", link: "/knowledge/documents/d 1" } })),
+    ).toEqual({ kind: "document", label: "Open the document to review", href: "/knowledge/documents/d%201" });
     expect(taskOrigin(task({ origin: { via: "meeting", meeting_title: "Weekly ops sync", meeting_deleted: true } }))).toEqual({
       kind: "meeting",
       label: "From “Weekly ops sync” (deleted meeting)",

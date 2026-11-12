@@ -104,7 +104,7 @@ export function toTaskCreate(form: TaskForm, meId: string): TaskCreate {
 }
 
 export interface TaskOrigin {
-  kind: "assistant" | "workflow" | "meeting" | "research";
+  kind: "assistant" | "workflow" | "meeting" | "research" | "document";
   label: string;
   /** Where it came from, when the viewer can go there. */
   href: `/${string}` | null;
@@ -120,6 +120,10 @@ export function taskOrigin(task: Pick<Task, "origin">): TaskOrigin | null {
   }
   if (via === "meeting") {
     return { kind: "meeting", label: "From a meeting", href: typeof meetingId === "string" ? `/meetings/${encodeURIComponent(meetingId)}` : null };
+  }
+  if (via === "governance" && typeof task.origin.document_id === "string") {
+    // A review reminder (docs/governance.md): the document to check and mark reviewed.
+    return { kind: "document", label: "Open the document to review", href: `/knowledge/documents/${encodeURIComponent(task.origin.document_id)}` };
   }
   if (via === "assistant") return { kind: "assistant", label: "From the assistant", href: null };
   if (via === "research") return { kind: "research", label: "From the assistant", href: null };

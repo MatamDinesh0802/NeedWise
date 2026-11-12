@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, CalendarClock, Hand, ListTodo, Plus, Workflow } from "lucide-react";
+import { Bot, CalendarClock, FileText, Hand, ListTodo, Plus, Workflow } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -158,7 +158,7 @@ function TaskBoard({ me }: { me: Me }) {
   );
 }
 
-export const ORIGIN_ICONS = { assistant: Bot, research: Bot, workflow: Workflow, meeting: CalendarClock } as const;
+export const ORIGIN_ICONS = { assistant: Bot, research: Bot, workflow: Workflow, meeting: CalendarClock, document: FileText } as const;
 
 /** "From a meeting" (a link to it) or "From the assistant"; nothing for tasks made here. */
 export function OriginBadge({ task }: { task: Task }) {

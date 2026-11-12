@@ -235,6 +235,8 @@ export function ProviderCard({
   onToggle?: (enabled: boolean) => void;
 }) {
   const resultId = `probe-${provider.id}`;
+  // The test calls one of the provider's catalog models; the form has no way to name another.
+  const untestable = !provider.system && models === 0;
   return (
     <li className={cn("flex flex-col gap-2 rounded-xl border bg-card p-4", !provider.enabled && "opacity-70")}>
       <div className="flex items-start justify-between gap-3">
@@ -291,6 +293,9 @@ export function ProviderCard({
         {provider.system ? " · comes from the server's settings (LLM_* and LOCAL_LLM_*)" : ""}
       </p>
       <div aria-live="polite" id={resultId}>
+        {untestable ? (
+          <p className="text-sm text-muted-foreground">Add a model of this provider to the catalog below to test it: the test sends one tiny request to it.</p>
+        ) : null}
         {result ? (
           <p className={cn("flex items-start gap-1.5 text-sm", result.ok ? "text-emerald-700 dark:text-emerald-400" : "text-destructive")}>
             {result.ok ? <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> : <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
@@ -299,7 +304,14 @@ export function ProviderCard({
         ) : null}
       </div>
       <div className="mt-auto flex flex-wrap justify-end gap-1 pt-1">
-        <Button variant="outline" size="sm" onClick={onTest} disabled={testing} aria-label={`Test ${provider.name}`} aria-describedby={resultId}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onTest}
+          disabled={testing || untestable}
+          aria-label={`Test ${provider.name}`}
+          aria-describedby={resultId}
+        >
           {testing ? <LoaderCircle className="animate-spin" data-icon="inline-start" aria-hidden="true" /> : null}
           {testing ? "Testing…" : "Test"}
         </Button>

@@ -306,9 +306,13 @@ export function formFromAgent(agent: Agent): AgentForm {
   };
 }
 
-/** Keys are slugs, at most 40 characters: "Customer Support" → "customer-support". */
+/**
+ * Keys are slugs, at most 40 characters: "Customer Support" → "customer-support". A trailing
+ * "agent" is left out, as in the seeded agents ("HR agent" is `hr`): "Legal agent" → "legal".
+ */
 export function suggestAgentKey(name: string): string {
-  return suggestSlug(name).slice(0, AGENT_LIMITS.keyMax).replace(/-+$/, "");
+  const slug = suggestSlug(name).replace(/(.)-agent$/, "$1");
+  return slug.slice(0, AGENT_LIMITS.keyMax).replace(/-+$/, "");
 }
 
 /** Name change, keeping the key in sync until it was edited by hand. */
