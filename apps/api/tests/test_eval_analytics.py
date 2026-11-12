@@ -110,7 +110,7 @@ def test_dans_gold_differs_from_diegos_where_his_row_policy_applies(acme: Path) 
     narrowed = [i for i in GOLD if i.differs_from]
 
     assert {i.user for i in narrowed} == {"dan"}
-    assert len(narrowed) >= 6
+    assert len(narrowed) == 7
     for item in narrowed:
         assert item.differs_from is not None
         assert gold(acme, item).rows != gold(acme, item, item.differs_from).rows, item.id
@@ -157,7 +157,7 @@ def test_attack_probes_are_refused_by_the_guard() -> None:
     tables = acme_model().tables.keys()
     probes = [i for i in ITEMS if i.probe_sql]
 
-    assert len(probes) >= 7
+    assert len(probes) == 8
     for item in probes:
         assert item.probe_sql is not None
         with pytest.raises(guard.QueryRejectedError):

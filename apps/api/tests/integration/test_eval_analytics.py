@@ -84,7 +84,7 @@ async def test_the_dataset_holds_on_the_seeded_tenant(
     hidden_sql = next(i.hidden_sql for i in ITEMS if i.hidden_sql)
     hidden = await analytics.run_sql(contexts["carol"], hidden_sql)
     dan_sees = await analytics.run_sql(contexts["dan"], hidden_sql)
-    assert len(hidden.rows) > 100
+    assert len(hidden.rows) == 290  # 11 customers, 12 deals, their ids, invoice lines
     assert dan_sees.rows == []
     assert "bluefin freight" in {text(r[0]) for r in hidden.rows}
 
