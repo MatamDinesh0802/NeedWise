@@ -27,7 +27,7 @@ import re
 import time
 import uuid
 from collections.abc import Callable, Coroutine, Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -174,6 +174,7 @@ class World:
     collection_name: str
     a_ids: frozenset[str]  # every id of every row A owns, and A's tenant id, slug and store
     keys_before: frozenset[str]  # Valkey keys that existed before the world was built
+    enterprise: bool  # workmind_ee installed: its routes run (else the core's 402 stand-ins)
     before: Snapshot | None = None
 
     @property
@@ -724,7 +725,8 @@ def world(database: Database, tmp_path_factory: pytest.TempPathFactory) -> Itera
     keys_before = _run(_valkey_keys())
     a = _run(_seed_side(database, storage))
     b = _run(_seed_side(database, storage))
-    app = create_app(settings, extensions=enable_extensions(Edition(license_)))
+    extensions = enable_extensions(Edition(license_))
+    app = create_app(settings, extensions=extensions)
     try:
         # An address like uvicorn's: the audit log stores the client's IP.
         # Server errors come back as 500 responses, so the sweep reports every route at once.
@@ -743,6 +745,7 @@ def world(database: Database, tmp_path_factory: pytest.TempPathFactory) -> Itera
                 collection_name=settings.qdrant_collection,
                 a_ids=_run(_a_ids(database, a)),
                 keys_before=keys_before,
+                enterprise=bool(extensions.routers),
             )
             yield world
     finally:
@@ -763,6 +766,15 @@ def world(database: Database, tmp_path_factory: pytest.TempPathFactory) -> Itera
 # --- Every route ---------------------------------------------------------------------------------
 
 NOT_FOUND = frozenset({403, 404})
+# Served by workmind_ee when it is installed (the gate installs it: uv sync --extra ee).
+ENTERPRISE_ONLY = frozenset(
+    {
+        "/api/v1/admin/retention",
+        "/api/v1/admin/retention/preview",
+        "/api/v1/admin/retention/run",
+        "/api/v1/admin/audit-events/export.jsonl",
+    }
+)
 Body = Callable[["World"], Any] | Any
 
 
@@ -1310,7 +1322,10 @@ def test_tenant_b_never_reaches_tenant_a_through_any_route(world: World) -> None
     for (method, template), probes in PROBES.items():
         if (method, template) not in routes:
             continue  # reported by test_every_route_is_classified
-        for number, probe in enumerate(probes):
+        for number, given in enumerate(probes):
+            probe = given
+            if not world.enterprise and template in ENTERPRISE_ONLY:
+                probe = replace(given, expect=frozenset({402}))  # without the ee package
             request_text, response = _send(world, method, template, probe)
             sent.update(set(re.findall(r"[0-9a-f-]{36}", request_text)) & world.a_ids)
             text_out = f"{response.headers} {response.text}"
