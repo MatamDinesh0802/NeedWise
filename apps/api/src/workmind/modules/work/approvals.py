@@ -6,10 +6,17 @@
                                        with the access they have *now*
 
 Nothing waits in memory: a decision can come days later, from another device, after restarts.
+
+Most approvals hold a tool call. An approval *kind* (ApprovalKind) is a decision the core itself
+carries out instead, such as making a document official (modules/knowledge/governance.py). Kinds
+are never tools: no agent or workflow can propose one, and their arguments cannot be edited.
+One request may go to several approvers (the same `origin.request_id`); the first decision
+wins and the others become "superseded".
 """
 
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -29,6 +36,15 @@ from workmind.modules.work.notifications import notify
 DEFAULT_TTL = timedelta(days=3)
 # Called after an approval is executed, rejected or expired: resumes the workflow run it belongs to.
 OnDecided = Callable[[Approval], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class ApprovalKind:
+    """What approving an approval of this kind does. `run` gets the approval and the person who
+    approved it, runs in its own transaction, and returns the final status ("executed" or
+    "failed") and a result for the record."""
+
+    run: Callable[[Approval, RequestContext], Awaitable[tuple[str, dict[str, Any]]]]
 
 
 async def propose(
@@ -106,6 +122,7 @@ async def decide(
     edited_arguments: dict[str, Any] | None = None,
     note: str | None = None,
     on_decided: OnDecided | None = None,
+    kinds: Mapping[str, ApprovalKind] | None = None,
 ) -> Approval:
     now = datetime.now(UTC)
     async with tenant_transaction(sessions, decider.tenant_id) as session:
@@ -130,6 +147,17 @@ async def decide(
         if claimed is None:
             raise ApiError(409, "not_pending", "This approval was already decided or has expired")
         await session.refresh(approval)
+        if request_id := approval.origin.get("request_id"):
+            # The same request went to several approvers: this decision answers it for all.
+            await session.execute(
+                update(Approval)
+                .where(
+                    Approval.origin["request_id"].astext == str(request_id),
+                    Approval.id != approval.id,
+                    Approval.status == "pending",
+                )
+                .values(status="superseded", decided_by=decider.user_id, decided_at=now)
+            )
         requester = await _requester_context(session, approval) if decision == "approve" else None
         await record_event(
             session,
@@ -140,7 +168,10 @@ async def decide(
             resource_id=str(approval.id),
             details={"tool": approval.tool, "edited": edited_arguments is not None},
         )
-    if decision == "approve":
+    kind = (kinds or {}).get(approval.tool)
+    if decision == "approve" and kind is not None:
+        await _run_kind(sessions, kind, approval, decider)
+    elif decision == "approve":
         await _execute(sessions, registry, approval, requester)
     await _close(sessions, approval)
     if on_decided is not None:
@@ -178,8 +209,26 @@ async def _execute(
     approval.status, approval.result = status, result
 
 
+async def _run_kind(
+    sessions: async_sessionmaker[AsyncSession],
+    kind: ApprovalKind,
+    approval: Approval,
+    decider: RequestContext,
+) -> None:
+    try:
+        status, result = await kind.run(approval, decider)
+    except ApiError as exc:
+        status, result = "failed", {"error": f"{exc.code}: {exc.title}"}
+    async with tenant_transaction(sessions, approval.tenant_id) as session:
+        stored = await session.get(Approval, approval.id)
+        assert stored is not None  # noqa: S101
+        stored.status, stored.result = status, result
+    approval.status, approval.result = status, result
+
+
 async def _close(sessions: async_sessionmaker[AsyncSession], approval: Approval) -> None:
-    """Tells the requester what happened (unless they decided it themselves)."""
+    """Tells the requester what happened (unless they decided it themselves), with the
+    approver's note."""
     async with tenant_transaction(sessions, approval.tenant_id) as session:
         if approval.decided_by != approval.requested_by:
             await notify(
@@ -188,6 +237,7 @@ async def _close(sessions: async_sessionmaker[AsyncSession], approval: Approval)
                 approval.requested_by,
                 kind=f"approval.{approval.status}",
                 title=f"{approval.status.capitalize()}: {approval.summary[:120]}",
+                body=approval.decision_note or "",
                 link=f"/approvals/{approval.id}",
             )
 
@@ -208,7 +258,13 @@ async def expire_due(
                 )
             ).all()
         )
+        told: set[str] = set()
         for approval in expired:
+            # A request sent to several approvers expires once for the person who asked.
+            request_id = str(approval.origin.get("request_id") or approval.id)
+            if request_id in told:
+                continue
+            told.add(request_id)
             await notify(
                 session,
                 tenant_id,

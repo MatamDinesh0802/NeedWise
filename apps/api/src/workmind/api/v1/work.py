@@ -13,10 +13,13 @@ from workmind.api.deps import require_scope, resources_of
 from workmind.api.v1.admin import AdminContext
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
+from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN, Department, DepartmentMember, User
-from workmind.modules.work.approvals import decide
+from workmind.modules.knowledge.governance import OFFICIAL_KIND, official_status_kind
+from workmind.modules.knowledge.pipeline import set_document_labels
+from workmind.modules.work.approvals import ApprovalKind, decide
 from workmind.modules.work.models import Approval, Notification, Task, Workflow, WorkflowRun
 from workmind.modules.work.notifications import notify
 from workmind.modules.work.workflows import (
@@ -56,6 +59,17 @@ class Decision(BaseModel):
     decision: Literal["approve", "reject"]
     arguments: dict[str, Any] | None = Field(default=None, description="edited arguments")
     note: str | None = Field(default=None, max_length=2000)
+
+
+def approval_kinds(resources: Resources) -> dict[str, ApprovalKind]:
+    """Approvals the core carries out itself instead of running a tool."""
+
+    async def trust_changed(tenant_id: uuid.UUID, document_id: uuid.UUID, trust: str) -> None:
+        await set_document_labels(
+            resources.qdrant, resources.collection_name, tenant_id, document_id, {"trust": trust}
+        )
+
+    return {OFFICIAL_KIND: official_status_kind(resources.db, trust_changed)}
 
 
 def _approval(a: Approval) -> ApprovalOut:
@@ -106,9 +120,12 @@ async def decide_approval(
     ctx: AskContext, request: Request, approval_id: uuid.UUID, body: Decision
 ) -> ApprovalOut:
     resources = resources_of(request)
+    kinds = approval_kinds(resources)
     if body.arguments is not None:  # an edit must still fit the tool
         async with tenant_transaction(resources.db, ctx.tenant_id) as session:
             approval = await session.get(Approval, approval_id)
+        if approval is not None and approval.tool in kinds:
+            raise ApiError(422, "not_editable", "This request is approved or rejected as it is")
         tool = resources.tools.get(approval.tool) if approval else None
         if tool is not None:
             try:
@@ -127,6 +144,7 @@ async def decide_approval(
         edited_arguments=body.arguments,
         note=body.note,
         on_decided=lambda a: _resume_in_background(request, deps, a),
+        kinds=kinds,
     )
     return _approval(decided)
 

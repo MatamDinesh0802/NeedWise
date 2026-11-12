@@ -18,6 +18,7 @@ from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.modules.authz.sync import enqueue
 from workmind.modules.governance.audit import Actor, record_event
+from workmind.modules.knowledge import governance
 from workmind.modules.knowledge.acl import acl_principals, document_tuple
 from workmind.modules.knowledge.models import (
     Chunk,
@@ -185,10 +186,15 @@ async def upload(
             source_id=synced.source_id if synced else None,
             external_id=synced.external_id if synced else None,
             url=synced.url if synced else None,
+            # The collection's default trust is the admin's standing decision for what lands
+            # there (seeding, connectors, uploads); changing a document to official later
+            # needs an approval (governance.request_official).
             trust=trust or collection.default_trust,
             sensitivity=sensitivity or collection.default_sensitivity,
             created_by=ctx.user_id,
+            owner_id=await governance.default_owner(session, ctx.user_id, collection),
         )
+        governance.start_review_cycle(document, collection, governance.utcnow())
         session.add(document)
         await session.flush()
     document.status, document.error, document.mime_type = "pending", None, mime

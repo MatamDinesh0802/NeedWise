@@ -12,7 +12,8 @@ import asyncio
 import uuid
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import structlog
@@ -20,9 +21,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.context import RequestContext
-from workmind.core.tenancy import global_transaction
+from workmind.core.tenancy import global_transaction, tenant_transaction
 from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
 from workmind.modules.identity.models import Tenant
+from workmind.modules.knowledge.models import Document
 from workmind.modules.retrieval.qdrant import QdrantClient, match, match_any
 from workmind.modules.retrieval.sparse import encode_query
 from workmind.providers.embeddings import EmbeddingProvider
@@ -74,6 +76,8 @@ class Passage:
     trust: str
     sensitivity: str
     score: float
+    # Official, but past its review date (docs/governance.md): shown as "Review overdue".
+    review_overdue: bool = False
 
     @property
     def section(self) -> str:
@@ -183,8 +187,27 @@ class Retriever:
                 dropped=result.dropped_by_recheck,
                 user_id=str(ctx.user_id),
             )
-        result.passages = [_passage(i, h) for i, h in enumerate(kept[:limit], start=1)]
+        passages = [_passage(i, h) for i, h in enumerate(kept[:limit], start=1)]
+        result.passages = await self._mark_overdue(ctx, passages)
         return result
+
+    async def _mark_overdue(self, ctx: RequestContext, passages: list[Passage]) -> list[Passage]:
+        """Review dates live in PostgreSQL, not in the index: a review must not need a
+        re-index. One query for the documents an answer may cite."""
+        official = {p.document_id for p in passages if p.trust == "official"}
+        if not official:
+            return passages
+        async with tenant_transaction(self._sessions, ctx.tenant_id) as session:
+            overdue = {
+                str(document_id)
+                for document_id in await session.scalars(
+                    select(Document.id).where(
+                        Document.id.in_([uuid.UUID(d) for d in official]),
+                        Document.next_review_at < datetime.now(UTC),
+                    )
+                )
+            }
+        return [replace(p, review_overdue=p.document_id in overdue) for p in passages]
 
     async def _query(
         self, query: str, flt: dict[str, Any], *, limit: int, mode: Mode

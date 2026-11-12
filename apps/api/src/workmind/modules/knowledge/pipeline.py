@@ -235,6 +235,24 @@ async def refresh_collection_acl(
     )
 
 
+async def set_document_labels(
+    qdrant: QdrantClient,
+    collection_name: str,
+    tenant_id: uuid.UUID,
+    document_id: uuid.UUID,
+    labels: dict[str, str],
+) -> None:
+    """After a trust or sensitivity change: every chunk of the document carries the new labels,
+    so ranking and model routing follow at once."""
+    if not await qdrant.collection_exists(collection_name):
+        return
+    await qdrant.set_payload(
+        collection_name,
+        labels,
+        {"must": [match("tenant_id", str(tenant_id)), match("document_id", str(document_id))]},
+    )
+
+
 async def delete_document_points(
     qdrant: QdrantClient, collection_name: str, tenant_id: uuid.UUID, document_id: uuid.UUID
 ) -> None:
