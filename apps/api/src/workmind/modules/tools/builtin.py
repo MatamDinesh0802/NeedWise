@@ -7,6 +7,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 from workmind.core.context import RequestContext
+from workmind.modules.assistant.safety import quote_markers
 from workmind.modules.retrieval.service import Retriever
 from workmind.modules.tools.registry import Tool, ToolError, ToolResult
 
@@ -35,7 +36,8 @@ def search_knowledge_tool(retriever: Retriever) -> Tool:
             return ToolResult("No documents you can access match this search.", {"results": []})
         blocks = [
             f'<result source="{html.escape(p.title)}" section="{html.escape(p.section)}" '
-            f'document_id="{p.document_id}" trust="{p.trust}">\n{html.escape(p.text)}\n</result>'
+            f'document_id="{p.document_id}" trust="{p.trust}">\n'
+            f"{html.escape(quote_markers(p.text))}\n</result>"
             for p in found.passages
         ]
         data = {

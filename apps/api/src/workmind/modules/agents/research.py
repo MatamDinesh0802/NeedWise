@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.context import RequestContext
 from workmind.core.tenancy import tenant_transaction
+from workmind.modules.assistant.safety import without_images
 from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError, ToolRegistry
 from workmind.modules.work.approvals import propose
@@ -126,4 +127,7 @@ async def research(
         max_tokens=8000,
     )
     loop = await llm.run_tools("agent", request, specs, execute, max_steps=MAX_STEPS)
-    return ResearchResult(text=loop.text, steps=steps, usage=loop.usage, stopped=loop.stopped)
+    # No image in the answer: its URL could carry what the tools returned (safety.py).
+    return ResearchResult(
+        text=without_images(loop.text), steps=steps, usage=loop.usage, stopped=loop.stopped
+    )

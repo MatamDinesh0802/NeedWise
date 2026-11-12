@@ -12,6 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from workmind.modules.assistant.safety import escape_tags, quote_markers
 from workmind.providers.llm import LLMMessage, LLMProvider, LLMRequest, LLMUsage
 
 SYSTEM = """You turn the transcript of a meeting at {organization} (held on {day}) into its \
@@ -63,10 +64,13 @@ def speaker_name(speakers: Mapping[str, Any], label: object) -> str:
 
 
 def render(segments: Sequence[Mapping[str, Any]], speakers: Mapping[str, Any]) -> str:
+    """One line per segment. What people said is data: it cannot close <transcript>, and a
+    segment id said aloud ("[T3]") is not a segment id (safety.py)."""
     lines: list[str] = []
     for s in segments:
-        name = speaker_name(speakers, s.get("speaker"))
-        lines.append(f"[{s['id']}] ({clock(float(s['start']))}) {name}: {s['text']}")
+        name = escape_tags(quote_markers(speaker_name(speakers, s.get("speaker"))))
+        said = escape_tags(quote_markers(str(s["text"])))
+        lines.append(f"[{s['id']}] ({clock(float(s['start']))}) {name}: {said}")
     return "\n".join(lines)
 
 
