@@ -40,13 +40,15 @@ jobs:
     name: Version and image names
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions: {}
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.v.outputs.version }}
       minor: ${{ steps.v.outputs.minor }}
       registry: ${{ steps.v.outputs.registry }}
     steps:
       - id: v
+        name: The tag is vX.Y.Z (or vX.Y.Z-pre)
         run: |
           if [[ ! "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Not a release tag: $TAG (expected vX.Y.Z or vX.Y.Z-pre)"
@@ -61,6 +63,30 @@ jobs:
             echo "minor=$minor"
             echo "registry=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
           } >>"$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      # The API reports this version (/api/v1/system/status). release-please bumps all of them;
+      # a tag pushed by hand must come after the same bump.
+      - name: The tagged source carries the tag's version
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys, tomllib
+
+          want = os.environ["VERSION"]
+          found = {
+              "apps/api/pyproject.toml": tomllib.load(open("apps/api/pyproject.toml", "rb"))["project"]["version"],
+              "ee/python/pyproject.toml": tomllib.load(open("ee/python/pyproject.toml", "rb"))["project"]["version"],
+              "apps/web/package.json": json.load(open("apps/web/package.json"))["version"],
+          }
+          wrong = {path: v for path, v in found.items() if v != want}
+          for path, v in wrong.items():
+              print(f"::error file={path}::version is {v}, the tag says {want}")
+          sys.exit(1 if wrong else 0)
+          EOF
 
   images:
     name: Image · ${{ matrix.image }} (build, attest, scan)
