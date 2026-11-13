@@ -715,6 +715,20 @@ def _answer(request: Mapping[str, Any], limit: int) -> bytes:
 
 
 def _peak_rss() -> int:
+    """This worker's peak resident memory, in bytes.
+
+    On Linux, `ru_maxrss` survives `execve`: a worker started from a large process (the API,
+    or the test runner) would report that parent's peak and stop itself at once. `VmHWM`
+    belongs to the worker's own address space, so it is read first there.
+    """
+    if sys.platform.startswith("linux"):
+        try:
+            with open("/proc/self/status", "rb") as status:
+                for line in status:
+                    if line.startswith(b"VmHWM:"):
+                        return int(line.split()[1]) * 1024  # kB
+        except (OSError, ValueError, IndexError):
+            pass
     import resource  # Unix only, like the worker processes
 
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
