@@ -210,6 +210,7 @@ def test_the_feature_names_are_the_contract() -> None:
         "chargeback_reports",
         "advanced_audit_export",
         "permission_sync",
+        "legal_hold",
     ]
     assert set(get_args(Feature)) == set(FEATURES)
 

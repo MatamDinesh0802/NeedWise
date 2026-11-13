@@ -1123,6 +1123,223 @@ async def test_sources_say_when_an_official_document_is_overdue_for_review(
     assert all(stale)
 
 
+# --- Escalation of overdue reviews -------------------------------------------------------------
+
+
+async def overdue_official(
+    sessions: SessionFactory, acme: Acme, key: str, title: str, *, owner: str, days: int
+) -> uuid.UUID:
+    return await add_document(
+        sessions,
+        acme,
+        key,
+        title,
+        owner=owner,
+        trust="official",
+        next_review_at=datetime.now(UTC) - timedelta(days=days),
+    )
+
+
+async def set_escalation(
+    sessions: SessionFactory, acme: Acme, key: str, days: int, demote: int | None = None
+) -> None:
+    async with tenant_transaction(sessions, acme.tenant_id) as session:
+        await session.execute(
+            update(Collection)
+            .where(Collection.key == key)
+            .values(review_escalation_days=days, review_auto_demote_days=demote)
+        )
+
+
+async def test_an_overdue_official_review_escalates_once_per_stage(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    await set_escalation(app_sessions, acme, "company-handbook", 7)
+    document_id = await overdue_official(
+        app_sessions, acme, "company-handbook", "Expense policy", owner="tom.becker", days=8
+    )
+    reference = await add_document(
+        app_sessions,
+        acme,
+        "company-handbook",
+        "Expense FAQ",
+        owner="tom.becker",
+        next_review_at=datetime.now(UTC) - timedelta(days=30),
+    )
+    now = datetime.now(UTC)
+    escalate = governance.escalate_overdue_reviews
+
+    first = await escalate(app_sessions, acme.tenant_id, now=now)
+    again = await escalate(app_sessions, acme.tenant_id, now=now + timedelta(hours=1))
+    too_soon = await escalate(app_sessions, acme.tenant_id, now=now + timedelta(days=6))
+    second = await escalate(app_sessions, acme.tenant_id, now=now + timedelta(days=7))
+    never = await escalate(app_sessions, acme.tenant_id, now=now + timedelta(days=400))
+    detail = api.get(f"/api/v1/documents/{document_id}", headers=acme.as_("tom.becker")).json()
+    overview = api.get("/api/v1/governance/overview", headers=acme.as_("erin")).json()
+
+    assert first.to_collection_owner == [document_id]  # Alice owns the handbook
+    assert first.to_admins == []
+    assert reference not in first.to_collection_owner + first.to_admins  # official only
+    assert (again.to_collection_owner, again.to_admins) == ([], [])
+    assert (too_soon.to_collection_owner, too_soon.to_admins) == ([], [])
+    assert second.to_admins == [document_id]
+    assert (never.to_admins, never.demoted) == ([], [])  # demotion is off by default
+    assert detail["trust"] == "official"
+    assert detail["review_escalation"] == "admins"
+    listed = next(d for d in overview["overdue"] if d["id"] == str(document_id))
+    assert listed["review_escalation"] == "admins"
+    collection = next(c for c in overview["collections"] if c["id"] == listed["collection_id"])
+    assert (collection["review_escalation_days"], collection["review_auto_demote_days"]) == (
+        7,
+        None,
+    )
+
+    to_alice = await notifications(app_sessions, acme, "alice", "document.review_escalated")
+    assert [(n.title, n.link) for n in to_alice] == [
+        ("Overdue review: Expense policy", f"/knowledge/documents/{document_id}")
+    ]
+    assert "8 days past its review date" in to_alice[0].body
+    for admin in ("erin", "priya.raman"):  # the handbook is open to everyone
+        told = await notifications(app_sessions, acme, admin, "document.review_escalated")
+        assert [(n.title, n.link) for n in told] == [
+            ("Overdue review: Expense policy", f"/knowledge/documents/{document_id}")
+        ]
+    assert await notifications(app_sessions, acme, "tom.becker", "document.review_escalated") == []
+    events = await audit(app_sessions, acme, "knowledge.document.review_escalated")
+    assert [(e.resource_id, e.details["stage"], e.actor_type) for e in events] == [
+        (str(document_id), "collection_owner", "system"),
+        (str(document_id), "admins", "system"),
+    ]
+    assert events[0].details["told"] == [str(acme.users["alice"])]
+    assert sorted(events[1].details["told"]) == sorted(
+        [str(acme.users["erin"]), str(acme.users["priya.raman"])]
+    )
+
+
+async def test_admins_who_cannot_open_the_collection_hear_which_collection_only(
+    acme: Acme, app_sessions: SessionFactory
+) -> None:
+    # Alice owns HR Guidance and the document: the collection's owner was already reminded, so
+    # the admins are told at once. Neither Erin nor Priya can open HR Guidance.
+    await set_escalation(app_sessions, acme, "hr-guidance", 7)
+    document_id = await overdue_official(
+        app_sessions, acme, "hr-guidance", "Disciplinary procedure", owner="alice", days=9
+    )
+    report = await governance.escalate_overdue_reviews(app_sessions, acme.tenant_id)
+
+    assert report.to_collection_owner == []
+    assert report.to_admins == [document_id]
+    for admin in ("erin", "priya.raman"):
+        told = await notifications(app_sessions, acme, admin, "document.review_escalated")
+        assert [(n.title, n.link) for n in told] == [
+            ("Overdue review in “HR Guidance (internal)”", "/admin/governance")
+        ]
+        assert "Disciplinary" not in told[0].body
+    assert await notifications(app_sessions, acme, "alice", "document.review_escalated") == []
+    (event,) = await audit(app_sessions, acme, "knowledge.document.review_escalated")
+    assert event.details["stage"] == "admins"
+    assert event.details["collection_owner_skipped"] == (
+        "the collection's owner owns the document and was reminded"
+    )
+
+
+async def test_an_overdue_document_is_demoted_only_when_the_collection_says_so(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    handbook = await collection_id(app_sessions, acme, "company-handbook")
+    set_demotion = api.patch(
+        f"/api/v1/admin/collections/{handbook}",
+        json={"review_escalation_days": 5, "review_auto_demote_days": 10},
+        headers=acme.as_("erin", write=True),
+    )
+    document_id = await overdue_official(
+        app_sessions, acme, "company-handbook", "Travel policy", owner="tom.becker", days=6
+    )
+    now = datetime.now(UTC)
+    escalate = governance.escalate_overdue_reviews
+    await escalate(app_sessions, acme.tenant_id, now=now)  # the collection's owner
+    await escalate(app_sessions, acme.tenant_id, now=now + timedelta(days=5))  # the admins
+    early = await escalate(app_sessions, acme.tenant_id, now=now + timedelta(days=14))
+    demoted = await escalate(app_sessions, acme.tenant_id, now=now + timedelta(days=15))
+    after = await escalate(app_sessions, acme.tenant_id, now=now + timedelta(days=60))
+    row = await document_row(app_sessions, acme, document_id)
+    overview = api.get("/api/v1/governance/overview", headers=acme.as_("erin")).json()
+
+    assert set_demotion.status_code == 200, set_demotion.text
+    assert set_demotion.json()["review_escalation_days"] == 5
+    assert set_demotion.json()["review_auto_demote_days"] == 10
+    assert early.demoted == []
+    assert demoted.demoted == [document_id]
+    assert (after.to_collection_owner, after.to_admins, after.demoted) == ([], [], [])
+    assert (row.trust, row.review_escalation) == ("reference", "demoted")
+    (event,) = await audit(app_sessions, acme, "knowledge.document.demoted")
+    assert (event.actor_type, event.details["reason"], event.details["after"]) == (
+        "system",
+        "review_overdue",
+        "reference",
+    )
+    for person in ("tom.becker", "alice"):  # the document's and the collection's owner
+        told = await notifications(app_sessions, acme, person, "document.demoted")
+        assert [n.title for n in told] == ["No longer official: Travel policy"]
+    assert [(d["document_id"], d["by"], d["to"]) for d in overview["recent_demotions"]] == [
+        (str(document_id), None, "reference")
+    ]
+    stages = await audit(app_sessions, acme, "knowledge.document.review_escalated")
+    assert [e.details["stage"] for e in stages] == ["collection_owner", "admins", "demoted"]
+    changed = await audit(app_sessions, acme, "admin.collection.governance_changed")
+    assert changed[-1].details["after"]["review_auto_demote_days"] == 10
+
+
+async def test_a_review_ends_the_escalation_and_the_next_cycle_starts_afresh(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    await set_escalation(app_sessions, acme, "company-handbook", 3)
+    document_id = await overdue_official(
+        app_sessions, acme, "company-handbook", "Remote work", owner="tom.becker", days=4
+    )
+    first = await governance.escalate_overdue_reviews(app_sessions, acme.tenant_id)
+    reviewed = api.post(
+        f"/api/v1/documents/{document_id}/review",
+        json={},
+        headers=acme.as_("tom.becker", write=True),
+    )
+    row = await document_row(app_sessions, acme, document_id)
+    later = await governance.escalate_overdue_reviews(app_sessions, acme.tenant_id)
+
+    assert first.to_collection_owner == [document_id]
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["review_escalation"] is None
+    assert (row.review_escalation, row.review_escalated_at) == (None, None)
+    assert later.to_collection_owner == []  # the handbook reviews yearly: nothing is overdue
+
+
+async def test_only_admins_set_escalation_periods_within_their_limits(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    handbook = await collection_id(app_sessions, acme, "company-handbook")
+    url = f"/api/v1/admin/collections/{handbook}"
+    erin = acme.as_("erin", write=True)
+    member = api.patch(
+        url, json={"review_escalation_days": 7}, headers=acme.as_("alice", write=True)
+    )
+    responses = [
+        api.patch(url, json=body, headers=erin)
+        for body in (
+            {"review_escalation_days": 0},
+            {"review_escalation_days": 366},
+            {"review_escalation_days": None},
+            {"review_auto_demote_days": 0},
+            {"review_auto_demote_days": 3651},
+        )
+    ]
+    listed = api.get("/api/v1/admin/collections", headers=acme.as_("erin")).json()["items"]
+
+    assert member.status_code == 403
+    assert [r.status_code for r in responses] == [422] * 5
+    entry = next(c for c in listed if c["id"] == str(handbook))
+    assert (entry["review_escalation_days"], entry["review_auto_demote_days"]) == (14, None)
+
+
 # --- Seed --------------------------------------------------------------------------------------
 
 

@@ -12,6 +12,12 @@ Every period is at least 30 days (MIN_RETENTION_DAYS, also enforced by the datab
 events are never deleted: the log is append-only and hash-chained, the runtime database role
 cannot delete from it, and deleting old events would break verification of every later one.
 
+Items under a legal hold (workmind.modules.governance.holds) are kept, however old: the preview
+and the run count them as `kept_under_hold`, and the run's audit event lists them.
+
+Documents have their own rules, per collection (workmind_ee.document_retention); the daily task
+applies both.
+
 Everything runs inside one tenant's transaction, so row-level security limits it to that
 tenant's rows; media keys are tenant-prefixed and checked again before a file is deleted.
 """
@@ -33,6 +39,7 @@ from workmind.core.resources import Resources
 from workmind.core.tenancy import global_transaction, tenant_transaction
 from workmind.modules.analytics.models import AnalyticsRun
 from workmind.modules.conversations.models import Conversation
+from workmind.modules.governance import holds
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.governance.models import (
     MAX_RETENTION_DAYS,
@@ -45,6 +52,8 @@ from workmind.modules.knowledge.storage import ObjectStorage, owned_key
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.models import Meeting
 from workmind.modules.work.models import Notification
+
+from workmind_ee import document_retention
 
 log = structlog.get_logger("workmind_ee.retention")
 
@@ -100,6 +109,8 @@ class PreviewOut(BaseModel):
     # The oldest a kept item may be, per kind (None: that kind is kept forever).
     cutoffs: dict[str, datetime | None]
     would_delete: Counts
+    # Expired, but a legal hold keeps them (read notifications are never held).
+    kept_under_hold: Counts = Field(default_factory=Counts)
 
 
 class RunIn(BaseModel):
@@ -110,6 +121,7 @@ class RunOut(BaseModel):
     as_of: datetime
     deleted: Counts
     files_deleted: int
+    kept_under_hold: Counts = Field(default_factory=Counts)
 
 
 # --- The rules ---------------------------------------------------------------------------------
@@ -132,12 +144,31 @@ def cutoffs(policy: PolicyIn, now: datetime) -> dict[Kind, datetime | None]:
     }
 
 
-async def _expired_recordings(session: AsyncSession, cutoff: datetime) -> list[Meeting]:
+async def _expired_recordings(
+    session: AsyncSession, cutoff: datetime, *, held: bool = False
+) -> list[Meeting]:
+    """Recordings older than `cutoff` that a run deletes, or (held=True) that a hold keeps."""
     candidates = await session.scalars(
-        select(Meeting).where(Meeting.created_at < cutoff, Meeting.media_deleted_at.is_(None))
+        select(Meeting).where(
+            Meeting.created_at < cutoff,
+            Meeting.media_deleted_at.is_(None),
+            holds.meeting_held() if held else ~holds.meeting_held(),
+        )
     )
     # Recordings only: an uploaded transcript file is the transcript, which is kept.
     return [m for m in candidates if _is_recording(m.filename)]
+
+
+def _expired(kind: Kind, cutoff: datetime) -> Any:
+    """The rows of one kind older than `cutoff`, held or not (meeting recordings: see above)."""
+    if kind == "conversations":
+        return select(Conversation).where(Conversation.last_message_at < cutoff)
+    if kind == "analytics_runs":
+        return select(AnalyticsRun).where(AnalyticsRun.created_at < cutoff)
+    return select(Notification).where(Notification.read_at < cutoff)
+
+
+HELD = {"conversations": holds.conversation_held, "analytics_runs": holds.analytics_run_held}
 
 
 def _is_recording(filename: str) -> bool:
@@ -147,25 +178,24 @@ def _is_recording(filename: str) -> bool:
         return False
 
 
-async def count_expired(session: AsyncSession, policy: PolicyIn, now: datetime) -> Counts:
-    """Exactly what `delete_expired` would delete at `now`, in the session's tenant."""
+async def count_expired(
+    session: AsyncSession, policy: PolicyIn, now: datetime
+) -> tuple[Counts, Counts]:
+    """Exactly what `delete_expired` would delete at `now`, in the session's tenant, and what
+    legal holds keep although it expired."""
     limits = cutoffs(policy, now)
-    counts = Counts()
-    if cutoff := limits["conversations"]:
-        counts.conversations = await _count(
-            session, select(Conversation).where(Conversation.last_message_at < cutoff)
-        )
-    if cutoff := limits["analytics_runs"]:
-        counts.analytics_runs = await _count(
-            session, select(AnalyticsRun).where(AnalyticsRun.created_at < cutoff)
-        )
+    counts, kept = Counts(), Counts()
+    for kind in ("conversations", "analytics_runs"):
+        if cutoff := limits[kind]:
+            held = HELD[kind]()
+            setattr(counts, kind, await _count(session, _expired(kind, cutoff).where(~held)))
+            setattr(kept, kind, await _count(session, _expired(kind, cutoff).where(held)))
     if cutoff := limits["meeting_recordings"]:
         counts.meeting_recordings = len(await _expired_recordings(session, cutoff))
+        kept.meeting_recordings = len(await _expired_recordings(session, cutoff, held=True))
     if cutoff := limits["read_notifications"]:
-        counts.read_notifications = await _count(
-            session, select(Notification).where(Notification.read_at < cutoff)
-        )
-    return counts
+        counts.read_notifications = await _count(session, _expired("read_notifications", cutoff))
+    return counts, kept
 
 
 async def _count(session: AsyncSession, query: Any) -> int:
@@ -186,13 +216,15 @@ async def delete_expired(
     if cutoff := limits["conversations"]:
         result = await session.execute(
             delete(Conversation)
-            .where(Conversation.last_message_at < cutoff)
+            .where(Conversation.last_message_at < cutoff, ~holds.conversation_held())
             .returning(Conversation.id)
         )
         counts.conversations = len(result.all())  # messages are deleted with them (cascade)
     if cutoff := limits["analytics_runs"]:
         result = await session.execute(
-            delete(AnalyticsRun).where(AnalyticsRun.created_at < cutoff).returning(AnalyticsRun.id)
+            delete(AnalyticsRun)
+            .where(AnalyticsRun.created_at < cutoff, ~holds.analytics_run_held())
+            .returning(AnalyticsRun.id)
         )
         counts.analytics_runs = len(result.all())
     keys: list[str] = []
@@ -245,12 +277,14 @@ async def apply_policy(
         policy = await session.scalar(select(RetentionPolicy))
         if policy is None:
             return RunOut(as_of=now, deleted=Counts(), files_deleted=0), False
+        _, kept = await count_expired(session, _policy_in(policy), now)
         deletion = await delete_expired(session, tenant_id, _policy_in(policy), now)
         policy.last_run_at = now
         policy.last_run = {
             "trigger": trigger,
             "deleted": deletion.counts.model_dump(),
             "files": len(deletion.media_keys),
+            "kept_under_hold": kept.model_dump(),
         }
         await record_event(
             session,
@@ -264,6 +298,7 @@ async def apply_policy(
                 "policy": _policy_in(policy).model_dump(),
                 "deleted": deletion.counts.model_dump(),
                 "files": len(deletion.media_keys),
+                "kept_under_hold": kept.model_dump(),
             },
         )
     deleted_files = 0
@@ -273,11 +308,16 @@ async def apply_policy(
             deleted_files += 1
         except OSError as exc:
             log.warning("retention_file_not_deleted", key=key, error=type(exc).__name__)
-    return RunOut(as_of=now, deleted=deletion.counts, files_deleted=deleted_files), True
+    return (
+        RunOut(
+            as_of=now, deleted=deletion.counts, files_deleted=deleted_files, kept_under_hold=kept
+        ),
+        True,
+    )
 
 
 async def apply_all(resources: Resources) -> int:
-    """The daily task: every active tenant that has a policy."""
+    """The daily task: every active tenant's policy and document rules (when it has any)."""
     async with global_transaction(resources.db) as session:
         tenants = list(
             (await session.scalars(select(Tenant.id).where(Tenant.status == "active"))).all()
@@ -287,7 +327,16 @@ async def apply_all(resources: Resources) -> int:
         _, had_policy = await apply_policy(
             resources.db, resources.storage, tenant_id, actor=Actor.system(), trigger="schedule"
         )
-        applied += had_policy
+        _, had_rules = await document_retention.apply_rules(
+            resources.db,
+            resources.storage,
+            resources.qdrant,
+            resources.collection_name,
+            tenant_id,
+            actor=Actor.system(),
+            trigger="schedule",
+        )
+        applied += had_policy or had_rules
     log.info("retention_applied", tenants=applied)
     return applied
 
@@ -350,11 +399,12 @@ async def preview(ctx: AdminContext, request: Request, body: PolicyIn | None = N
     now = datetime.now(UTC)
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         policy = body or _policy_in(await session.scalar(select(RetentionPolicy)))
-        counts = await count_expired(session, policy, now)
+        counts, kept = await count_expired(session, policy, now)
     return PreviewOut(
         as_of=now,
         cutoffs={kind: cutoff for kind, cutoff in cutoffs(policy, now).items()},
         would_delete=counts,
+        kept_under_hold=kept,
     )
 
 

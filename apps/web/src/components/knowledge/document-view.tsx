@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Download, FileQuestion, Layers, RotateCw, Search } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, Download, FileQuestion, Layers, RotateCw, Search } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useId, useMemo, useState } from "react";
@@ -10,6 +10,7 @@ import { EmptyState, ErrorAlert, TableSkeleton } from "@/components/data/states"
 import { DocumentStatusLabel, FileTypeIcon, SensitivityBadge, TrustBadge } from "@/components/knowledge/badges";
 import { DocumentGovernance } from "@/components/knowledge/document-governance";
 import { LiveIndicator } from "@/components/knowledge/live-indicator";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
-import { formatBytes, formatDateTime, formatRelative } from "@/lib/format";
+import { formatBytes, formatDate, formatDateTime, formatRelative } from "@/lib/format";
 import { knowledgeApi, knowledgeKeys, type Chunk, type DocumentDetail } from "@/lib/knowledge/api";
 import { fileTypeLabel, headingTrail } from "@/lib/knowledge/labels";
 
@@ -65,12 +66,57 @@ function DocumentLoader({ documentId, meId }: { documentId: string; meId: string
         Collection
       </Link>
       <Header doc={doc} />
+      {doc.archived_at ? <ArchivedNotice doc={doc} /> : null}
       <LiveIndicator live={live.live} stopped={live.stopped} onResume={live.resume} />
       <DocumentGovernance doc={doc} meId={meId} />
       <Versions doc={doc} />
       {/* Keyed by version + status, so chunks reload when a new version finishes indexing. */}
       <ChunkViewer key={`${doc.version}:${doc.status}`} doc={doc} />
     </>
+  );
+}
+
+/** Archived by a document retention rule (Enterprise): kept, out of search and answers. */
+export function ArchivedNotice({ doc }: { doc: Pick<DocumentDetail, "id" | "collection_id" | "archived_at" | "can_edit"> }) {
+  const [error, setError] = useState<unknown>(null);
+  const [pending, setPending] = useState(false);
+
+  async function restore() {
+    setPending(true);
+    setError(null);
+    try {
+      await knowledgeApi.unarchive(doc.id);
+      await Promise.all([
+        invalidateQueries(knowledgeKeys.document(doc.id)),
+        invalidateQueries(knowledgeKeys.documents(doc.collection_id)),
+      ]);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Alert role="note">
+      <Archive aria-hidden="true" />
+      <AlertTitle>Archived {doc.archived_at ? formatDate(doc.archived_at) : ""}</AlertTitle>
+      <AlertDescription className="flex flex-col gap-2">
+        <span>
+          A retention rule archived it because it had not been updated for a long time. It is kept here, but search and answers
+          leave it out. {doc.can_edit ? "Restore it to use it again; new content restores it too." : "An editor of the collection can restore it."}
+        </span>
+        {doc.can_edit ? (
+          <span>
+            <Button variant="outline" size="sm" onClick={() => void restore()} disabled={pending}>
+              <ArchiveRestore data-icon="inline-start" aria-hidden="true" />
+              {pending ? "Restoring…" : "Restore"}
+            </Button>
+          </span>
+        ) : null}
+        {error ? <ErrorAlert error={error} /> : null}
+      </AlertDescription>
+    </Alert>
   );
 }
 

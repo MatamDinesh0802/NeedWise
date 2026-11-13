@@ -293,6 +293,9 @@ export function statsSummary(stats: SourceStats): string | null {
     if (typeof value === "number" && value > 0) parts.push(`${value} ${key}`);
   }
   if (typeof stats.missing === "number" && stats.missing > 0) parts.push(`${stats.missing} missing upstream`);
+  // Gone from the source, kept because a legal hold covers them (docs/enterprise.md#legal-hold).
+  const kept = stats.kept_under_hold;
+  if (typeof kept === "number" && kept > 0) parts.push(`${kept} kept under legal hold`);
   if (parts.length > 0) return parts.join(" · ");
   return typeof stats.items === "number" ? "Nothing changed" : null;
 }

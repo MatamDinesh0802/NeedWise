@@ -129,6 +129,12 @@ test("Retention: the audit log is never deleted, and the policy is an Enterprise
   await expectGate(page, await editionOf(page), "retention_policies", page.getByText(/^Days to keep each kind of data/));
 });
 
+test("Legal holds: nothing a hold covers can be deleted, and holds are an Enterprise feature", async ({ page }) => {
+  await openPage(page, admin("/admin/legal-holds"));
+  await expect(page.getByRole("note").filter({ hasText: "Nothing a hold covers can be deleted" })).toBeVisible();
+  await expectGate(page, await editionOf(page), "legal_hold", page.getByRole("button", { name: "Place a hold…" }));
+});
+
 test("whatever runs, the Community side of every gate: the edition answered as Community shows each upgrade notice", async ({ page }) => {
   // Only the browser's view of the edition changes (the API keeps its own license check), so
   // a licensed stack also proves what Community users see. In CI this is the real answer.
@@ -141,6 +147,8 @@ test("whatever runs, the Community side of every gate: the edition answered as C
   await expectGate(page, community, "department_budgets", page.getByText("Add a budget for a department"));
   await openPage(page, admin("/admin/audit"));
   await expectGate(page, community, "advanced_audit_export", page.getByRole("link", { name: "Download the full chain (JSON lines)" }));
+  await openPage(page, admin("/admin/legal-holds"));
+  await expectGate(page, community, "legal_hold", page.getByRole("button", { name: "Place a hold…" }));
 });
 
 test("the agent test console renders an answer as markdown, with the chat's safety rules", async ({ page }) => {

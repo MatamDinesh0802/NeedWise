@@ -30,7 +30,7 @@ from workmind.core.tenancy import global_transaction, tenant_transaction
 from workmind.main import create_app
 from workmind.modules.authz.openfga import OpenFgaClient
 from workmind.modules.authz.sync import ensure_store, process_outbox, reconcile
-from workmind.modules.governance.models import AuditEvent
+from workmind.modules.governance.models import AuditEvent, LegalHold
 from workmind.modules.identity import tenant_cli
 from workmind.modules.identity.lifecycle import Stores, tenant_tables, verify_empty
 from workmind.modules.identity.models import Tenant, User
@@ -385,6 +385,68 @@ def test_request_logs_name_the_tenant(
     assert signed_in["tenant_id"] == str(acme.tenant_id)
     assert "tenant_id" not in anonymous
     assert tenant_cli.main(["delete", acme.slug, "--confirm", acme.slug], settings) == 0
+
+
+async def _place_hold(settings: Settings, acme: Acme) -> None:
+    engine = create_engine(settings.migrations_database_url)
+    try:
+        async with tenant_transaction(create_session_factory(engine), acme.tenant_id) as session:
+            session.add(
+                LegalHold(
+                    tenant_id=acme.tenant_id,
+                    matter="Smith v. Acme",
+                    reason="Litigation hold",
+                    target_type="user",
+                    target_id=acme.users["bob"],
+                    placed_by=acme.users["erin"],
+                )
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _blocked_events(settings: Settings, tenant_id: uuid.UUID) -> list[AuditEvent]:
+    engine = create_engine(settings.migrations_database_url)
+    try:
+        async with tenant_transaction(create_session_factory(engine), tenant_id) as session:
+            rows = await session.scalars(
+                select(AuditEvent).where(AuditEvent.action == "legal_hold.deletion_blocked")
+            )
+            return list(rows.all())
+    finally:
+        await engine.dispose()
+
+
+def test_a_tenant_under_legal_hold_is_deleted_only_with_the_typed_override(
+    settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    acme = _run(_control(settings))
+    _run(_place_hold(settings, acme))
+    slug = acme.slug
+
+    refused = tenant_cli.main(["delete", slug, "--confirm", slug], settings)
+    message = capsys.readouterr().err
+    still_there = _run(_tenant(settings, slug))
+    events = _run(_blocked_events(settings, acme.tenant_id))
+    mistyped = tenant_cli.main(
+        ["delete", slug, "--confirm", slug, "--override-legal-holds", "yes"], settings
+    )
+    overridden = tenant_cli.main(
+        ["delete", slug, "--confirm", slug, "--override-legal-holds", slug], settings
+    )
+
+    assert refused == 1
+    assert "1 active legal hold(s)" in message
+    assert "Smith v. Acme" in message
+    assert f"--override-legal-holds {slug}" in message
+    assert still_there is not None
+    assert still_there.status == "active"  # refused before anything was suspended or deleted
+    assert [(e.resource_type, e.details["via"], e.details["matters"]) for e in events] == [
+        ("tenant", "tenant_deletion", ["Smith v. Acme"])
+    ]
+    assert mistyped == 1
+    assert overridden == 0
+    assert _run(_tenant(settings, slug)) is None
 
 
 def test_the_wm_command_routes_to_the_tenant_commands(capsys: pytest.CaptureFixture[str]) -> None:

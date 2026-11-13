@@ -2011,6 +2011,7 @@
           "knowledge"
         ],
         "summary": "Delete Document",
+        "description": "Editors delete a document, its versions and its search entries. A document under a legal\nhold is refused (409 legal_hold) and the attempt is audited.",
         "operationId": "delete_document_api_v1_documents__document_id__delete",
         "parameters": [
           {
@@ -2325,6 +2326,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DocumentDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/{document_id}/unarchive": {
+      "post": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Unarchive Document",
+        "description": "Editors bring back a document a retention rule archived: it is searchable again at once,\nand retention counts from now, as if it had been updated (docs/enterprise.md).",
+        "operationId": "unarchive_document_api_v1_documents__document_id__unarchive_post",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentOut"
                 }
               }
             }
@@ -2952,6 +2997,7 @@
           "conversations"
         ],
         "summary": "Delete Conversation",
+        "description": "The owner deletes a conversation and its messages, unless a legal hold keeps it (409\nlegal_hold; the attempt is audited).",
         "operationId": "delete_conversation_api_v1_conversations__conversation_id__delete",
         "parameters": [
           {
@@ -3752,7 +3798,7 @@
           "admin"
         ],
         "summary": "Delete Source",
-        "description": "Disconnects the source: removes it, its credentials, its run history and every document\nit synced (and their search index entries).",
+        "description": "Disconnects the source: removes it, its credentials, its run history and every document\nit synced (and their search index entries). While a legal hold keeps any of those\ndocuments, nothing is deleted (409 legal_hold) and each held document's refusal is audited;\npausing the source stops its syncs instead.",
         "operationId": "delete_source_api_v1_admin_sources__key__delete",
         "parameters": [
           {
@@ -5897,7 +5943,7 @@
           "meetings"
         ],
         "summary": "Remove Meeting",
-        "description": "Deletes the meeting, its recording or transcript file, and its indexed transcript (search\nincluded). For the person who uploaded it and the collection's editors. Tasks made from its\naction items stay with their assignees, without the link.",
+        "description": "Deletes the meeting, its recording or transcript file, and its indexed transcript (search\nincluded). For the person who uploaded it and the collection's editors. Tasks made from its\naction items stay with their assignees, without the link. A meeting under a legal hold is\nrefused (409 legal_hold) and the attempt is audited.",
         "operationId": "remove_meeting_api_v1_meetings__meeting_id__delete",
         "parameters": [
           {
@@ -7901,6 +7947,21 @@
               }
             ],
             "title": "Review Interval Days"
+          },
+          "review_escalation_days": {
+            "type": "integer",
+            "title": "Review Escalation Days"
+          },
+          "review_auto_demote_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Auto Demote Days"
           }
         },
         "type": "object",
@@ -7916,7 +7977,9 @@
           "document_count",
           "grants",
           "owner",
-          "review_interval_days"
+          "review_interval_days",
+          "review_escalation_days",
+          "review_auto_demote_days"
         ],
         "title": "AdminCollectionOut"
       },
@@ -9754,11 +9817,33 @@
               }
             ],
             "title": "Review Interval Days"
+          },
+          "review_escalation_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Review Escalation Days",
+            "description": "days an official document's review may be overdue before the collection's owner is told; as many days later, the admins",
+            "default": 14
+          },
+          "review_auto_demote_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Auto Demote Days",
+            "description": "days after the admins were told before it is demoted to reference (null: never)"
           }
         },
         "type": "object",
         "title": "CollectionGovernanceUpdate",
-        "description": "Fields left out stay as they are; null clears them."
+        "description": "Fields left out stay as they are; null clears them (the escalation period cannot be\ncleared: every collection has one)."
       },
       "CollectionOption": {
         "properties": {
@@ -9903,6 +9988,21 @@
               }
             ],
             "title": "Review Interval Days"
+          },
+          "review_escalation_days": {
+            "type": "integer",
+            "title": "Review Escalation Days"
+          },
+          "review_auto_demote_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Auto Demote Days"
           }
         },
         "type": "object",
@@ -9911,7 +10011,9 @@
           "name",
           "can_view",
           "owner_id",
-          "review_interval_days"
+          "review_interval_days",
+          "review_escalation_days",
+          "review_auto_demote_days"
         ],
         "title": "CollectionRef"
       },
@@ -10508,6 +10610,17 @@
               }
             ],
             "title": "Note"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "type": "object",
@@ -10855,6 +10968,18 @@
             "format": "date-time",
             "title": "Updated At"
           },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
           "owner": {
             "anyOf": [
               {
@@ -10903,6 +11028,17 @@
             "type": "boolean",
             "title": "Review Overdue",
             "default": false
+          },
+          "review_escalation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Escalation"
           },
           "official_request": {
             "anyOf": [
@@ -11030,6 +11166,18 @@
             "format": "date-time",
             "title": "Updated At"
           },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
           "owner": {
             "anyOf": [
               {
@@ -11078,6 +11226,17 @@
             "type": "boolean",
             "title": "Review Overdue",
             "default": false
+          },
+          "review_escalation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Escalation"
           },
           "official_request": {
             "anyOf": [
@@ -11331,6 +11490,29 @@
               }
             ],
             "title": "Next Review At"
+          },
+          "review_escalation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Escalation"
+          },
+          "review_escalated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Escalated At"
           }
         },
         "type": "object",
@@ -11343,7 +11525,9 @@
           "owner_inactive",
           "reviewed_at",
           "reviewed_by",
-          "next_review_at"
+          "next_review_at",
+          "review_escalation",
+          "review_escalated_at"
         ],
         "title": "GovernedDocument"
       },

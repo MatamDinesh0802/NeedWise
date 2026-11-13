@@ -4,7 +4,9 @@ import { formatDate } from "@/lib/format";
 
 import type { OfficialRequest } from "./api";
 import {
+  demotedBy,
   documentLabel,
+  escalationLabel,
   joinOr,
   noteError,
   officialBlocker,
@@ -102,7 +104,15 @@ describe("official requests", () => {
 });
 
 describe("overview", () => {
-  const collection = { id: "c1", name: "Board Papers", can_view: false, owner_id: null, review_interval_days: 365 };
+  const collection = {
+    id: "c1",
+    name: "Board Papers",
+    can_view: false,
+    owner_id: null,
+    review_interval_days: 365,
+    review_escalation_days: 14,
+    review_auto_demote_days: null,
+  };
   const doc = {
     id: "d1",
     title: null,
@@ -113,6 +123,8 @@ describe("overview", () => {
     reviewed_at: null,
     reviewed_by: null,
     next_review_at: day(-1),
+    review_escalation: null,
+    review_escalated_at: null,
   };
   const empty: GovernanceOverview = {
     scope: "all",
@@ -134,6 +146,17 @@ describe("overview", () => {
     const busy = { ...empty, overdue: [doc], without_owner: [doc, doc] };
     expect(overviewCounts(busy)).toEqual({ overdue: 1, due_soon: 0, without_owner: 2, pending_official: 0, recent_demotions: 0 });
     expect(overviewIsClear(busy)).toBe(false);
+  });
+
+  it("names each escalation stage, and who demoted a document", () => {
+    expect(escalationLabel(null)).toBeNull();
+    expect(escalationLabel("collection_owner")).toBe("Escalated to the collection's owner");
+    expect(escalationLabel("admins")).toBe("Escalated to the administrators");
+    expect(escalationLabel("demoted")).toBe("Demoted: review overdue");
+    expect(demotedBy({ by: priya, reason: null })).toBe("Priya Raman");
+    expect(demotedBy({ by: null, reason: "review_overdue" })).toBe("Automatic: review overdue");
+    expect(demotedBy({ by: null, reason: "new_version" })).toBe("Automatic: new content");
+    expect(demotedBy({ by: null })).toBe("Someone");
   });
 
   it("marks owners who left", () => {

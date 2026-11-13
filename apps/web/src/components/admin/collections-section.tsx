@@ -35,7 +35,15 @@ import {
   type Trust,
 } from "@/lib/knowledge/api";
 import { SCOPE_LABELS, SENSITIVITY_LABELS, TRUST_LABELS } from "@/lib/knowledge/labels";
-import { intervalError, intervalText, parseInterval } from "@/lib/knowledge/review-interval";
+import {
+  demoteError,
+  ESCALATION_DEFAULT,
+  escalationError,
+  escalationText,
+  intervalError,
+  intervalText,
+  parseInterval,
+} from "@/lib/knowledge/review-interval";
 import {
   buildSharingPayload,
   grantsToEntries,
@@ -153,6 +161,9 @@ function Collections({ me }: { me: Me }) {
                   <TableCell className="max-w-48 text-sm">
                     {c.owner ? <p>{c.owner.display_name}</p> : <p className="text-muted-foreground">No owner</p>}
                     <p className="text-xs text-muted-foreground">{intervalText(c.review_interval_days)}</p>
+                    {c.review_interval_days ? (
+                      <p className="text-xs text-muted-foreground">{escalationText(c.review_escalation_days, c.review_auto_demote_days)}</p>
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col items-stretch gap-1.5">
@@ -449,16 +460,26 @@ function EditSharingForm({ collection, dir, onDone }: { collection: AdminCollect
 export function EditGovernanceForm({ collection, onDone }: { collection: AdminCollection; onDone: () => void }) {
   const [owner, setOwner] = useState(collection.owner);
   const [days, setDays] = useState(collection.review_interval_days?.toString() ?? "");
+  const [escalation, setEscalation] = useState((collection.review_escalation_days ?? ESCALATION_DEFAULT).toString());
+  const [demote, setDemote] = useState(collection.review_auto_demote_days?.toString() ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const problem = intervalError(days);
+  const escalationProblem = escalationError(escalation);
+  const demoteProblem = demoteError(demote);
+  const invalid = problem !== null || escalationProblem !== null || demoteProblem !== null;
 
   async function save() {
-    if (problem) return;
+    if (invalid) return;
     setPending(true);
     setError(null);
     try {
-      await knowledgeApi.updateGovernance(collection.id, { owner_id: owner?.id ?? null, review_interval_days: parseInterval(days) });
+      await knowledgeApi.updateGovernance(collection.id, {
+        owner_id: owner?.id ?? null,
+        review_interval_days: parseInterval(days),
+        review_escalation_days: Number(escalation.trim()),
+        review_auto_demote_days: parseInterval(demote),
+      });
       await refreshCollections();
       onDone();
     } catch (err) {
@@ -522,12 +543,49 @@ export function EditGovernanceForm({ collection, onDone }: { collection: AdminCo
           />
         )}
       </Field>
+      <Field
+        label="Escalate overdue official reviews after (days)"
+        hint="An official document this many days past its review is escalated to the collection's owner, and as many days later to the administrators. Each is told once."
+        error={escalationProblem}
+      >
+        {({ id, describedBy, invalid: bad }) => (
+          <Input
+            id={id}
+            inputMode="numeric"
+            value={escalation}
+            onChange={(e) => setEscalation(e.target.value)}
+            aria-describedby={describedBy}
+            aria-invalid={bad || undefined}
+            disabled={pending}
+            className="max-w-40"
+          />
+        )}
+      </Field>
+      <Field
+        label="Then demote to reference after (days)"
+        hint="Counted from when the administrators were told. Leave empty to never demote automatically."
+        error={demoteProblem}
+      >
+        {({ id, describedBy, invalid: bad }) => (
+          <Input
+            id={id}
+            inputMode="numeric"
+            value={demote}
+            onChange={(e) => setDemote(e.target.value)}
+            aria-describedby={describedBy}
+            aria-invalid={bad || undefined}
+            disabled={pending}
+            placeholder="Never"
+            className="max-w-40"
+          />
+        )}
+      </Field>
       {error ? <ErrorAlert error={error} /> : null}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone} disabled={pending}>
           Cancel
         </Button>
-        <Button type="submit" disabled={pending || problem !== null}>
+        <Button type="submit" disabled={pending || invalid}>
           {pending ? "Saving…" : "Save"}
         </Button>
       </DialogFooter>

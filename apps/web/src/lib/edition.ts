@@ -14,7 +14,8 @@ export type EnterpriseFeature =
   | "department_budgets"
   | "chargeback_reports"
   | "advanced_audit_export"
-  | "permission_sync";
+  | "permission_sync"
+  | "legal_hold";
 
 export const ENTERPRISE_FEATURES: Readonly<Record<EnterpriseFeature, { label: string; description: string }>> = {
   retention_policies: {
@@ -36,6 +37,10 @@ export const ENTERPRISE_FEATURES: Readonly<Record<EnterpriseFeature, { label: st
   permission_sync: {
     label: "Permission sync",
     description: "Each synced document gets its source's access list (Drive, Slack, GitHub), within its collection.",
+  },
+  legal_hold: {
+    label: "Legal hold",
+    description: "Keep documents, collections, people's conversations, meetings and Insights questions from being deleted while a legal matter is open.",
   },
 };
 

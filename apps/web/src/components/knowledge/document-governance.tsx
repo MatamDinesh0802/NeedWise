@@ -16,6 +16,7 @@ import { invalidateQueries } from "@/hooks/use-api-query";
 import { knowledgeApi, knowledgeKeys, type DocumentDetail, type Trust } from "@/lib/knowledge/api";
 import {
   DEMOTE_TO,
+  escalationLabel,
   governanceKeys,
   NOTE_MAX,
   noteError,
@@ -101,6 +102,9 @@ export function DocumentGovernance({ doc, meId, now }: { doc: DocumentDetail; me
                   <Clock data-icon="inline-start" aria-hidden="true" />
                   {badge}
                 </Badge>
+              ) : null}
+              {escalationLabel(doc.review_escalation) ? (
+                <span className="text-xs text-amber-700 dark:text-amber-400">{escalationLabel(doc.review_escalation)}</span>
               ) : null}
             </span>
           </Row>

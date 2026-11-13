@@ -55,12 +55,16 @@ export interface KnowledgeDocument {
   size_bytes: number;
   version: number;
   updated_at: string;
+  /** Archived by a document retention rule: kept, but out of search and answers. */
+  archived_at?: string | null;
   /** Governance (docs/governance.md). */
   owner: PersonRef | null;
   reviewed_at: string | null;
   reviewed_by: PersonRef | null;
   next_review_at: string | null;
   review_overdue: boolean;
+  /** How far an overdue official review escalated this cycle (docs/governance.md). */
+  review_escalation?: "collection_owner" | "admins" | "demoted" | null;
   official_request: OfficialRequest | null;
 }
 
@@ -120,12 +124,18 @@ export interface AdminCollection {
   grants: Grant[];
   owner: PersonRef | null;
   review_interval_days: number | null;
+  /** Days an official review may be overdue before the collection's owner is told (1 to 365). */
+  review_escalation_days: number;
+  /** Days after the administrators were told before it is demoted to reference (null: never). */
+  review_auto_demote_days: number | null;
 }
 
 /** Fields left out stay as they are; null clears them. */
 export interface CollectionGovernanceUpdate {
   owner_id?: string | null;
   review_interval_days?: number | null;
+  review_escalation_days?: number;
+  review_auto_demote_days?: number | null;
 }
 
 export interface CollectionCreate {
@@ -155,6 +165,9 @@ export const knowledgeApi = {
   listChunks: (documentId: string) => apiJson<Items<Chunk>>(`/api/v1/documents/${id(documentId)}/chunks`),
   reindex: (documentId: string) =>
     apiJson<KnowledgeDocument>(`/api/v1/documents/${id(documentId)}/reindex`, { method: "POST" }),
+  /** Brings back a document a retention rule archived (docs/enterprise.md). */
+  unarchive: (documentId: string) =>
+    apiJson<KnowledgeDocument>(`/api/v1/documents/${id(documentId)}/unarchive`, { method: "POST" }),
   deleteDocument: (documentId: string) => apiJson<void>(`/api/v1/documents/${id(documentId)}`, { method: "DELETE" }),
   /** Trust "official" needs `requestOfficial`; demoting from official takes a note. */
   updateLabels: (documentId: string, body: { trust?: Exclude<Trust, "official">; sensitivity?: Sensitivity; note?: string }) =>

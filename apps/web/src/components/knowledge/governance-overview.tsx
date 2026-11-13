@@ -12,8 +12,10 @@ import { formatDate, formatRelative } from "@/lib/format";
 import type { Trust } from "@/lib/knowledge/api";
 import {
   daysUntil,
+  demotedBy,
   documentHref,
   documentLabel,
+  escalationLabel,
   governanceApi,
   governanceKeys,
   joinOr,
@@ -174,7 +176,7 @@ export function GovernanceOverviewView({ overview, now, footer }: { overview: Go
       <List
         id={`${baseId}-recent_demotions`}
         title="No longer official (30 days)"
-        description="An editor removed official status. That is immediate and recorded in the audit log."
+        description="An editor removed official status, new content ended it, or an overdue review demoted it automatically. Each is recorded in the audit log."
         empty="Nothing was demoted in the last 30 days."
       >
         {overview.recent_demotions.length ? (
@@ -194,7 +196,7 @@ export function GovernanceOverviewView({ overview, now, footer }: { overview: Go
                   <TableCell className="max-w-72">
                     <DocumentCell doc={{ id: d.document_id, title: d.title }} collection={collections.get(d.collection_id)} />
                   </TableCell>
-                  <TableCell>{d.by?.display_name ?? "Someone"}</TableCell>
+                  <TableCell>{demotedBy(d)}</TableCell>
                   <TableCell className="whitespace-nowrap">{formatDate(d.at)}</TableCell>
                   <TableCell>{isTrust(d.to) ? <TrustBadge trust={d.to} /> : d.to}</TableCell>
                   <TableCell className="max-w-72 text-sm whitespace-pre-wrap text-muted-foreground">{d.note || "—"}</TableCell>
@@ -278,6 +280,12 @@ function ReviewTable({
                   <DocumentCell doc={doc} collection={collections.get(doc.collection_id)} />
                   {doc.trust === "official" ? <TrustBadge trust="official" /> : null}
                 </span>
+                {escalationLabel(doc.review_escalation) ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    {escalationLabel(doc.review_escalation)}
+                    {doc.review_escalated_at ? ` on ${formatDate(doc.review_escalated_at)}` : ""}
+                  </p>
+                ) : null}
               </TableCell>
               <TableCell>{collections.get(doc.collection_id)?.name ?? "—"}</TableCell>
               <TableCell className={doc.owner && !doc.owner_inactive ? undefined : "text-muted-foreground"}>{ownerText(doc)}</TableCell>

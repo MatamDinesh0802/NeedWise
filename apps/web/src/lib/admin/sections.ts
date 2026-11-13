@@ -20,7 +20,8 @@ export type AdminSectionKey =
   | "models"
   | "budgets"
   | "audit"
-  | "retention";
+  | "retention"
+  | "legal-holds";
 
 export interface AdminSection {
   key: AdminSectionKey;
@@ -128,7 +129,14 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     key: "retention",
     title: "Retention",
     href: "/admin/retention",
-    description: "How long conversations, BI runs, meeting recordings and read notifications are kept. Enterprise.",
+    description: "How long conversations, BI runs, meeting recordings, read notifications and each collection's documents are kept. Enterprise.",
+    roles: MANAGERS,
+  },
+  {
+    key: "legal-holds",
+    title: "Legal holds",
+    href: "/admin/legal-holds",
+    description: "Keep a person's conversations, meetings and Insights questions, a collection, a document or a meeting from being deleted while a legal matter is open. Enterprise.",
     roles: MANAGERS,
   },
 ];

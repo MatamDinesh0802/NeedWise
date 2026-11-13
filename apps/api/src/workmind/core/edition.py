@@ -39,6 +39,7 @@ Feature = Literal[
     "chargeback_reports",
     "advanced_audit_export",
     "permission_sync",
+    "legal_hold",
 ]
 # Every Enterprise feature the core knows about (the Feature names), with a name people read.
 FEATURES: Final[Mapping[str, str]] = {
@@ -47,6 +48,7 @@ FEATURES: Final[Mapping[str, str]] = {
     "chargeback_reports": "Chargeback reports",
     "advanced_audit_export": "Advanced audit export",
     "permission_sync": "Permission sync",
+    "legal_hold": "Legal hold",
 }
 
 # Ed25519 public keys (raw 32 bytes, base64url) that sign official licenses, by key id.

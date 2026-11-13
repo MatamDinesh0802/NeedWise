@@ -23,7 +23,14 @@ ROUTES: tuple[tuple[str, str, Feature], ...] = (
     ("PUT", "/admin/retention", "retention_policies"),
     ("POST", "/admin/retention/preview", "retention_policies"),
     ("POST", "/admin/retention/run", "retention_policies"),
+    ("GET", "/admin/retention/documents", "retention_policies"),
+    ("PUT", "/admin/retention/documents", "retention_policies"),
+    ("POST", "/admin/retention/documents/preview", "retention_policies"),
+    ("POST", "/admin/retention/documents/run", "retention_policies"),
     ("GET", "/admin/audit-events/export.jsonl", "advanced_audit_export"),
+    ("GET", "/admin/legal-holds", "legal_hold"),
+    ("POST", "/admin/legal-holds", "legal_hold"),
+    ("POST", "/admin/legal-holds/{hold_id}/release", "legal_hold"),
 )
 
 

@@ -15,6 +15,7 @@ from workmind.modules.work.events import DocumentReady, listens_to
 from workmind.modules.work.links import (
     approval_link,
     document_link,
+    governance_link,
     meeting_link,
     source_link,
     task_link,
@@ -99,6 +100,7 @@ def _page_exists(path: str) -> bool:
         usage_link(),
         source_link("handbook-site", admin=True),
         source_link("handbook-site", admin=False),
+        governance_link(),
     ],
 )
 def test_every_notification_link_opens_a_page_that_exists(link: str) -> None:
@@ -127,6 +129,7 @@ def test_notifications_take_their_links_from_the_links_module() -> None:
         "document_link(",
         "usage_link(",
         "source_link(",
+        "governance_link(",
     )
     passthrough = {"link", "n.link"}  # notify() itself, and the notifications API
     offenders = [

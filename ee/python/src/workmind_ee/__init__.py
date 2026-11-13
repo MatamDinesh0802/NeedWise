@@ -13,7 +13,7 @@ from workmind.core.extensions import ExtensionRegistry
 from workmind.modules.connectors.extensions import PERMISSION_SYNC
 from workmind.modules.usage.extensions import CHARGEBACK_REPORT, DEPARTMENT_BUDGETS
 
-from workmind_ee import audit_export, permission_sync, retention
+from workmind_ee import audit_export, document_retention, legal_hold, permission_sync, retention
 from workmind_ee.budgets import department_budgets
 from workmind_ee.chargeback import chargeback_csv
 
@@ -21,7 +21,7 @@ __version__ = "0.0.1"
 
 log = structlog.get_logger("workmind_ee")
 
-# The features this package implements: all five in workmind.core.edition.FEATURES
+# The features this package implements: every one in workmind.core.edition.FEATURES
 # (docs/enterprise.md).
 IMPLEMENTED: tuple[str, ...] = (
     "department_budgets",
@@ -29,6 +29,7 @@ IMPLEMENTED: tuple[str, ...] = (
     retention.FEATURE,
     audit_export.FEATURE,
     permission_sync.FEATURE,
+    legal_hold.FEATURE,
 )
 
 
@@ -40,6 +41,7 @@ def setup(registry: ExtensionRegistry, edition: Edition) -> None:
     registry.add_hook(CHARGEBACK_REPORT, chargeback_csv, feature="chargeback_reports")
     # Retention: the policy API and the daily task that applies every tenant's policy.
     registry.add_router(retention.router, feature="retention_policies")
+    registry.add_router(document_retention.router, feature="retention_policies")
     registry.add_scheduled_task(
         retention.TASK_NAME,
         retention.apply_all,
@@ -57,6 +59,8 @@ def setup(registry: ExtensionRegistry, edition: Edition) -> None:
         every_s=permission_sync.CHANGES_EVERY_S,
         feature="permission_sync",
     )
+    # Placing and releasing legal holds; the core enforces them on every deletion path.
+    registry.add_router(legal_hold.router, feature="legal_hold")
     log.info(
         "workmind_ee_loaded",
         version=__version__,

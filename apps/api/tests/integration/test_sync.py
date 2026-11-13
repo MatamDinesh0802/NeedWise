@@ -1,12 +1,12 @@
 """The sync engine against a scripted connector, with real PostgreSQL and Qdrant: adds, skips
 unchanged items without fetching them, versions changed ones, propagates deletions only after a
-complete scan or when the source reports them (delta tombstones), records failures without
-deleting anything (and without moving an incremental source's cursor past them), keeps where
-an item sits in its source, and runs one sync at a time. Every sync is a run in the history; a
-source that keeps failing alerts its managers once per episode; items a cut-short scan no
-longer lists are flagged, not deleted; stale synced documents remind their owners once per
-staleness episode. The last tests run the real Confluence and SharePoint connectors against
-their documented-API fakes through the engine.
+complete scan (except for documents under a legal hold) or when the source reports them (delta
+tombstones), records failures without deleting anything (and without moving an incremental
+source's cursor past them), keeps where an item sits in its source, and runs one sync at a
+time. Every sync is a run in the history; a source that keeps failing alerts its managers once
+per episode; items a cut-short scan no longer lists are flagged, not deleted; stale synced
+documents remind their owners once per staleness episode. The last tests run the real
+Confluence and SharePoint connectors against their documented-API fakes through the engine.
 
 Needs TEST_QDRANT_URL (and the test database)."""
 
@@ -36,7 +36,7 @@ from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sharepoint import SharePointConnector
 from workmind.modules.connectors.sync import SyncDeps, sync_source
 from workmind.modules.governance.audit import Actor
-from workmind.modules.governance.models import AuditEvent
+from workmind.modules.governance.models import AuditEvent, LegalHold
 from workmind.modules.identity.models import User
 from workmind.modules.knowledge import document_acl
 from workmind.modules.knowledge.dispatch import InlineDispatcher
@@ -315,6 +315,81 @@ async def test_slack_messages_are_discussion_even_in_an_official_collection(
 
     synced = (await documents(deps, source))["general"]
     assert synced.trust == "discussion"
+
+
+async def test_a_held_document_gone_from_the_source_stays(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, qdrant, name = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")
+    await run(deps, source)
+    held = (await documents(deps, source))["leave"]
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        hold = LegalHold(
+            tenant_id=source.tenant_id,
+            matter="Smith v. Acme",
+            reason="Preserve the leave policy as it was",
+            target_type="document",
+            target_id=held.id,
+        )
+        session.add(hold)
+        await session.flush()
+        hold_id = hold.id
+
+    connector.items.clear()  # both pages were removed from the intranet
+    first = await run(deps, source)
+    second = await run(deps, source)
+
+    left = await documents(deps, source)
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        events = (
+            await session.scalars(
+                select(AuditEvent)
+                .where(AuditEvent.action == "legal_hold.deletion_blocked")
+                .order_by(AuditEvent.seq)
+            )
+        ).all()
+    assert (first.deleted, first.kept_under_hold) == (1, 1)
+    assert (second.deleted, second.kept_under_hold) == (0, 1)
+    assert set(left) == {"leave"}
+    assert await qdrant.count(name, tenant_id=source.tenant_id) == leave_chunks(left["leave"])
+    # One event per sync that would have deleted it, naming the documents it kept.
+    assert [(e.resource_type, e.details["via"]) for e in events] == [
+        ("source", "connector"),
+        ("source", "connector"),
+    ]
+    assert events[0].details["documents"] == {str(held.id): [str(hold_id)]}
+    assert events[0].details["matters"] == ["Smith v. Acme"]
+
+
+async def test_a_held_document_the_source_reports_deleted_stays(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """A delta tombstone (SharePoint) is a deletion too: a legal hold keeps the document."""
+    deps, connector, source, _, _ = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")
+    await run(deps, source)
+    held = (await documents(deps, source))["leave"]
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        session.add(
+            LegalHold(
+                tenant_id=source.tenant_id,
+                matter="Smith v. Acme",
+                reason="Preserve the leave policy as it was",
+                target_type="document",
+                target_id=held.id,
+            )
+        )
+
+    connector.complete = False  # an incremental scan: only the tombstones say what went
+    connector.items.clear()
+    connector.deleted = ["leave", "travel"]
+    report = await run(deps, source)
+
+    assert (report.deleted, report.kept_under_hold) == (1, 1)
+    assert set(await documents(deps, source)) == {"leave"}
 
 
 async def test_only_one_sync_runs_at_a_time(
@@ -698,6 +773,34 @@ async def test_an_owner_left_out_of_a_documents_own_list_is_not_reminded(
     assert (report.reminded, report.without_owner) == ([docs["travel"].id], 1)
     notes = await notifications(deps, source, "source.stale_documents")
     assert [n.title for n in notes] == ["Check “Travel”: it looks stale"]
+
+
+async def test_an_archived_synced_document_is_never_stale(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """Document retention can archive a synced document: it is out of use, so neither the
+    reminders nor the Sources page count it as stale (docs/enterprise.md#document-retention)."""
+    deps, connector, source, _, _ = setup
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+        assert stored is not None
+        stored.stale_after_days = 30
+    connector.put("leave", "x", "v1")
+    connector.put("travel", "y", "v1")
+    await run(deps, source)
+    await age(deps, source, "leave", 60)
+    await age(deps, source, "travel", 60)
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        await session.execute(
+            update(Document)
+            .where(Document.source_id == source.id, Document.external_id == "leave")
+            .values(archived_at=datetime.now(UTC))
+        )
+
+    report = await reminders(deps, source)
+
+    docs = await documents(deps, source)
+    assert report.reminded == [docs["travel"].id]
 
 
 async def test_the_daily_task_alerts_a_failing_source_the_engine_did_not(

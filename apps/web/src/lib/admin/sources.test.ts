@@ -139,6 +139,7 @@ describe("stats", () => {
     expect(statsSummary({ added: 12, updated: 3, unchanged: 40, deleted: 0, failed: 1, items: 56 })).toBe("12 added · 3 updated · 40 unchanged · 1 failed");
     expect(statsSummary({ added: 0, unchanged: 0, items: 0 })).toBe("Nothing changed");
     expect(statsSummary({})).toBeNull();
+    expect(statsSummary({ deleted: 2, kept_under_hold: 1, items: 9 })).toBe("2 deleted · 1 kept under legal hold");
   });
 });
 

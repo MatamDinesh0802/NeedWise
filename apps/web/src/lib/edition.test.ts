@@ -65,6 +65,7 @@ describe("feature names", () => {
       "chargeback_reports",
       "advanced_audit_export",
       "permission_sync",
+      "legal_hold",
     ]);
     expect(featureLabel("advanced_audit_export")).toBe("Advanced audit export");
     expect(featureLabel("permission_sync")).toBe("Permission sync");

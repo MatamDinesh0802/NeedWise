@@ -69,12 +69,15 @@ export interface RetentionPreview {
   /** Items older than this are deleted; null: kept forever. */
   cutoffs: Record<RetentionKind, string | null>;
   would_delete: RetentionCounts;
+  /** Expired, but a legal hold keeps them (docs/enterprise.md#legal-hold). */
+  kept_under_hold?: RetentionCounts;
 }
 
 export interface RetentionRun {
   as_of: string;
   deleted: RetentionCounts;
   files_deleted: number;
+  kept_under_hold?: RetentionCounts;
 }
 
 const BASE = "/api/v1/admin/retention";
@@ -157,6 +160,146 @@ export function lastRunSummary(policy: Pick<RetentionPolicy, "last_run_at" | "la
   return `Last run ${formatDateTime(policy.last_run_at)} (${how}): deleted ${countsSummary(policy.last_run.deleted)}.`;
 }
 
+/** Whether a legal hold kept anything that had expired. */
+export function anyKept(counts: Partial<RetentionCounts> | undefined): boolean {
+  return RETENTION_KINDS.some(({ kind }) => (counts?.[kind] ?? 0) > 0);
+}
+
 export function confirmMatches(text: string): boolean {
   return text.trim() === CONFIRM_WORD;
+}
+
+// --- Documents, per collection (ee/python/src/workmind_ee/document_retention.py) ------------------
+
+export type DocumentAction = "archive" | "delete";
+
+export const DOCUMENT_ACTIONS: readonly { value: DocumentAction; label: string }[] = [
+  { value: "archive", label: "Archive (out of search, kept)" },
+  { value: "delete", label: "Delete" },
+];
+
+export interface DocumentRule {
+  collection_id: string;
+  days: number;
+  action: DocumentAction;
+}
+
+export interface DocumentKept {
+  legal_hold: number;
+  official: number;
+  meeting_transcript: number;
+  synced: number;
+}
+
+export interface DocumentRuleOut extends DocumentRule {
+  collection: string;
+  updated_at: string;
+  updated_by: PersonRef | null;
+  last_run_at: string | null;
+  last_run: { trigger?: "manual" | "schedule"; action?: DocumentAction; count?: number; kept?: Partial<DocumentKept> };
+}
+
+export interface DocumentRules {
+  minimum_days: number;
+  rules: DocumentRuleOut[];
+}
+
+export interface DocumentOutcome extends DocumentRule {
+  collection: string;
+  /** Documents not updated since this are deleted or archived. */
+  cutoff: string;
+  /** Deleted or archived (in a preview: would be). */
+  count: number;
+  kept: DocumentKept;
+}
+
+export interface DocumentPreview {
+  as_of: string;
+  collections: DocumentOutcome[];
+  would_delete: number;
+  would_archive: number;
+  kept: DocumentKept;
+}
+
+export interface DocumentRun {
+  as_of: string;
+  collections: DocumentOutcome[];
+  deleted: number;
+  archived: number;
+  kept: DocumentKept;
+  files_deleted: number;
+}
+
+const DOCUMENTS = `${BASE}/documents`;
+
+export const documentRetentionApi = {
+  get: () => apiJson<DocumentRules>(DOCUMENTS),
+  save: (rules: DocumentRule[]) => apiJson<DocumentRules>(DOCUMENTS, { method: "PUT", json: { rules } }),
+  /** With rules: what that draft would do now, without saving it. */
+  preview: (rules?: DocumentRule[]) =>
+    apiJson<DocumentPreview>(`${DOCUMENTS}/preview`, rules ? { method: "POST", json: { rules } } : { method: "POST" }),
+  run: () => apiJson<DocumentRun>(`${DOCUMENTS}/run`, { method: "POST", json: { confirm: CONFIRM_WORD } }),
+};
+
+export const documentRetentionKeys = {
+  rules: "admin/retention/documents",
+};
+
+/** One row per collection: days (empty: keep forever) and what happens. */
+export type DocumentDraft = Record<string, { days: string; action: DocumentAction }>;
+
+export function documentDraftFromRules(rules: readonly DocumentRule[], collectionIds: readonly string[]): DocumentDraft {
+  const draft: DocumentDraft = {};
+  for (const id of collectionIds) draft[id] = { days: "", action: "archive" };
+  for (const rule of rules) draft[rule.collection_id] = { days: String(rule.days), action: rule.action };
+  return draft;
+}
+
+export function documentDraftErrors(draft: DocumentDraft, minimum: number = RETENTION_MIN_DAYS): Record<string, string> {
+  const errors: Record<string, string> = {};
+  for (const [id, row] of Object.entries(draft)) {
+    const text = row.days.trim();
+    if (text === "") continue;
+    if (!/^\d+$/.test(text)) errors[id] = "Enter a whole number of days, or leave it empty to keep every document.";
+    else if (Number(text) < minimum) errors[id] = `At least ${minimum} days.`;
+    else if (Number(text) > RETENTION_MAX_DAYS) errors[id] = `At most ${RETENTION_MAX_DAYS.toLocaleString("en-US")} days.`;
+  }
+  return errors;
+}
+
+/** Call only when documentDraftErrors() is empty. Collections left empty get no rule. */
+export function documentDraftToRules(draft: DocumentDraft): DocumentRule[] {
+  return Object.entries(draft)
+    .filter(([, row]) => row.days.trim() !== "")
+    .map(([collection_id, row]) => ({ collection_id, days: Number(row.days.trim()), action: row.action }));
+}
+
+export function documentDraftChanged(draft: DocumentDraft, saved: readonly DocumentRule[]): boolean {
+  const key = (rules: readonly DocumentRule[]) =>
+    rules
+      .map((r) => `${r.collection_id}:${r.days}:${r.action}`)
+      .sort()
+      .join("|");
+  return key(documentDraftToRules(draft)) !== key(saved);
+}
+
+const KEPT_REASONS: readonly { key: keyof DocumentKept; one: string; many: string }[] = [
+  { key: "legal_hold", one: "under a legal hold", many: "under a legal hold" },
+  { key: "official", one: "official or awaiting approval", many: "official or awaiting approval" },
+  { key: "meeting_transcript", one: "a meeting transcript", many: "meeting transcripts" },
+  { key: "synced", one: "synced from a source", many: "synced from a source" },
+];
+
+/** "2 under a legal hold and 1 official or awaiting approval", or null when nothing was kept. */
+export function keptSummary(kept: Partial<DocumentKept> | undefined): string | null {
+  const parts = KEPT_REASONS.filter(({ key }) => (kept?.[key] ?? 0) > 0).map(
+    ({ key, one, many }) => `${kept![key]!.toLocaleString("en-US")} ${kept![key] === 1 ? one : many}`,
+  );
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+export function documentCount(n: number): string {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? "document" : "documents"}`;
 }

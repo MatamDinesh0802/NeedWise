@@ -39,8 +39,13 @@ from workmind.modules.connectors.sync import SyncDeps, sync_source
 from workmind.modules.identity.models import Tenant
 from workmind.modules.identity.service import tenant_is_active
 from workmind.modules.knowledge.dispatch import CeleryDispatcher
-from workmind.modules.knowledge.governance import send_review_reminders
-from workmind.modules.knowledge.pipeline import IngestionDeps, PermanentIngestionError, ingest
+from workmind.modules.knowledge.governance import escalate_overdue_reviews, send_review_reminders
+from workmind.modules.knowledge.pipeline import (
+    IngestionDeps,
+    PermanentIngestionError,
+    ingest,
+    set_document_labels,
+)
 from workmind.modules.knowledge.storage import LocalObjectStorage
 from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
 from workmind.modules.model_catalog.secrets import KeyRing
@@ -92,7 +97,8 @@ app.conf.update(
         "sync-due-sources": {"task": SCHEDULE_TASK, "schedule": 60.0},
         "run-due-workflows": {"task": WORKFLOWS_TASK, "schedule": 60.0},
         "expire-approvals": {"task": EXPIRE_TASK, "schedule": 300.0},
-        # Daily: documents past their review date get one reminder per review cycle.
+        # Daily: documents past their review date get one reminder per review cycle, and
+        # official ones still overdue escalate one stage (docs/governance.md).
         "review-reminders": {"task": REVIEWS_TASK, "schedule": 86_400.0},
         # Daily: stale synced documents (once per staleness episode), failing sources.
         "source-reminders": {"task": SOURCE_REMINDERS_TASK, "schedule": 86_400.0},
@@ -301,13 +307,32 @@ def expire_approvals() -> int:
     return asyncio.run(_expire_approvals())
 
 
+async def review_tenant(resources: Resources, tenant_id: uuid.UUID) -> tuple[int, int]:
+    """One tenant's daily review run: reminders, then escalation of overdue official documents.
+    A document demoted by the escalation leaves official status in the search index at once."""
+    report = await send_review_reminders(resources.db, tenant_id)
+    escalated = await escalate_overdue_reviews(resources.db, tenant_id)
+    for document_id in escalated.demoted:
+        await set_document_labels(
+            resources.qdrant,
+            resources.collection_name,
+            tenant_id,
+            document_id,
+            {"trust": "reference"},
+        )
+    moved = len(escalated.to_collection_owner) + len(escalated.to_admins) + len(escalated.demoted)
+    return len(report.reminded), moved
+
+
 async def _send_review_reminders() -> int:
     resources = Resources.create(settings, extensions=extensions)
     reminded = 0
     try:
         for tenant_id in await _active_tenants(resources):
-            report = await send_review_reminders(resources.db, tenant_id)
-            reminded += len(report.reminded)
+            count, escalated = await review_tenant(resources, tenant_id)
+            reminded += count
+            if escalated:
+                log.info("reviews_escalated", tenant_id=str(tenant_id), documents=escalated)
     finally:
         await resources.aclose()
     return reminded
@@ -315,7 +340,8 @@ async def _send_review_reminders() -> int:
 
 @app.task(name=REVIEWS_TASK)
 def review_reminders() -> int:
-    """Idempotent: a document is reminded once per review cycle, however often this runs."""
+    """Idempotent: a document is reminded once per review cycle and escalates once per stage,
+    however often this runs."""
     return asyncio.run(_send_review_reminders())
 
 

@@ -31,6 +31,8 @@ class CollectionRef(BaseModel):
     can_view: bool
     owner_id: uuid.UUID | None
     review_interval_days: int | None
+    review_escalation_days: int
+    review_auto_demote_days: int | None
 
 
 class GovernedDocument(BaseModel):
@@ -44,6 +46,9 @@ class GovernedDocument(BaseModel):
     reviewed_at: datetime | None
     reviewed_by: PersonRef | None
     next_review_at: datetime | None
+    # How far an overdue official review escalated this cycle, and when that stage was reached.
+    review_escalation: str | None
+    review_escalated_at: datetime | None
 
 
 class PendingOfficial(BaseModel):
@@ -58,10 +63,12 @@ class Demotion(BaseModel):
     document_id: uuid.UUID
     title: str | None
     collection_id: uuid.UUID
-    by: PersonRef | None
+    by: PersonRef | None  # None: the system (an automatic demotion)
     at: datetime
     to: str
     note: str | None
+    # Why, when it was not an editor's choice: new_version or review_overdue.
+    reason: str | None = None
 
 
 class OverviewOut(BaseModel):
@@ -100,6 +107,8 @@ async def get_overview(ctx: ReadContext, request: Request) -> OverviewOut:
             reviewed_at=document.reviewed_at,
             reviewed_by=_person(people, document.reviewed_by),
             next_review_at=document.next_review_at,
+            review_escalation=document.review_escalation,
+            review_escalated_at=document.review_escalated_at,
         )
 
     demotions: list[Demotion] = []
@@ -116,6 +125,7 @@ async def get_overview(ctx: ReadContext, request: Request) -> OverviewOut:
                 at=event.occurred_at,
                 to=str(event.details.get("after") or ""),
                 note=event.details.get("note") if shown else None,
+                reason=event.details.get("reason"),
             )
         )
     return OverviewOut(
@@ -127,6 +137,8 @@ async def get_overview(ctx: ReadContext, request: Request) -> OverviewOut:
                 can_view=c.id in scope.viewable,
                 owner_id=c.owner_id,
                 review_interval_days=c.review_interval_days,
+                review_escalation_days=c.review_escalation_days,
+                review_auto_demote_days=c.review_auto_demote_days,
             )
             for c in scope.collections.values()
         ],

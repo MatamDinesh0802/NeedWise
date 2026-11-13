@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.modules.authz.sync import enqueue
+from workmind.modules.governance import holds
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.knowledge import document_acl, governance
 from workmind.modules.knowledge.acl import acl_principals, document_tuples
@@ -261,6 +262,8 @@ async def upload(
             )
             is not None
         )
+        # New content is an update: an archived document comes back (indexed as active).
+        document.archived_at = None
     await record_event(
         session,
         tenant_id=ctx.tenant_id,
@@ -279,10 +282,20 @@ async def upload(
 
 
 async def delete_document(
-    session: AsyncSession, ctx: RequestContext, document: Document
+    session: AsyncSession,
+    ctx: RequestContext,
+    document: Document,
+    *,
+    actor: Actor | None = None,
+    reason: str | None = None,
 ) -> list[str]:
     """Deletes the document, its versions and chunks. Returns storage keys the caller may remove
-    once no other version references them (content-addressed keys can be shared)."""
+    once no other version references them (content-addressed keys can be shared).
+
+    A document under a legal hold is never deleted (409 legal_hold). Callers check first with
+    holds.covering, so the refusal is audited; this is the last line of defence."""
+    if await holds.covering(session, "document", document):
+        raise holds.held_error("document")
     keys = list(
         (
             await session.scalars(
@@ -300,11 +313,11 @@ async def delete_document(
     await record_event(
         session,
         tenant_id=ctx.tenant_id,
-        actor=Actor(type="user", id=ctx.user_id),
+        actor=actor or Actor(type="user", id=ctx.user_id),
         action="knowledge.document.deleted",
         resource_type="document",
         resource_id=str(document.id),
-        details={"filename": document.filename},
+        details={"filename": document.filename, **({"reason": reason} if reason else {})},
     )
     still_used = set(
         (

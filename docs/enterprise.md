@@ -20,25 +20,26 @@ only with a valid license key. The Enterprise features the core knows about:
 
 | Feature name | What it is for | Status |
 |---|---|---|
-| `retention_policies` | Rules for how long data is kept before it is deleted | Built: [Retention policies](#retention-policies) |
+| `retention_policies` | Rules for how long data is kept before it is deleted | Built: [Retention policies](#retention-policies), with [document retention](#document-retention) per collection |
 | `department_budgets` | Spending limits on model usage per department | Built ([docs/usage.md](usage.md#enterprise)) |
 | `chargeback_reports` | Usage and model costs per department, for internal billing | Built: `GET /api/v1/usage/export.csv` ([docs/usage.md](usage.md#enterprise)) |
 | `advanced_audit_export` | Audit log exports for security tools and long-term retention | Built: [Audit export for a SIEM](#audit-export-for-a-siem) |
 | `permission_sync` | Each synced document gets its source's access list (Drive, Slack, GitHub), within its collection | Built: [Permission sync](#permission-sync) |
+| `legal_hold` | Keeping what a legal matter needs from being deleted | Built: [Legal hold](#legal-hold) |
 
 ### What exists today
 
 Built: license verification, the edition object, `GET /api/v1/edition`, the `require_feature`
 dependency (402), the extension registry, the `workmind-ee` package, development licenses
-(`make ee-dev-license`), the web components `EnterpriseGate` and `EnterpriseBadge`, and five
+(`make ee-dev-license`), the web components `EnterpriseGate` and `EnterpriseBadge`, and six
 features, all registered in `workmind_ee.setup`: department budgets and the chargeback report
 (`ee/python/src/workmind_ee/budgets.py` and `chargeback.py`, on the usage hooks), retention
-policies and the SIEM audit export (`retention.py` and `audit_export.py`, as routers and a
-scheduled task), and permission sync (`permission_sync.py`, on the connectors hook and a
-scheduled task).
+policies, the SIEM audit export, permission sync and legal holds (`retention.py`,
+`audit_export.py`, `permission_sync.py` and `legal_hold.py`, as routers, the connectors hook
+and scheduled tasks; document retention rules are in `document_retention.py`).
 
-Not built: the rest of the paid column in the ROADMAP (SCIM, legal hold, DLP rules and the
-others have no feature name or code yet); official licenses
+Not built: the rest of the paid column in the ROADMAP (SCIM, DLP rules and the others have no
+feature name or code yet); official licenses
 (no production signing key is published, so `PRODUCTION_PUBLIC_KEYS` is empty and only development
 licenses exist); license revocation, online activation, seat counts; a screen to upload a
 license. A valid license shows "enterprise" and its features in `/api/v1/edition` and turns on
@@ -58,6 +59,10 @@ Feature `retention_policies`, code in `ee/python/src/workmind_ee/retention.py`, 
 
 Every period is at least 30 days (checked by the API and by a database constraint) and at most
 36,500. An empty period keeps that data forever; with no policy saved, nothing is deleted.
+
+Items under a [legal hold](#legal-hold) are kept however old they are: the preview and the run
+report them as `kept_under_hold` (per kind), the run's audit event lists the same counts, and
+**Admin > Retention** shows them next to what would be deleted.
 
 | Route | What it does |
 |---|---|
@@ -87,9 +92,110 @@ Without the license, the four routes answer `402 enterprise_feature` (the core's
 the Enterprise notice. The `retention_policies` table and the meetings' `media_deleted_at`
 column exist in both editions (migration `0018`).
 
-Not built: legal hold (keeping something past its period on purpose), retention of documents
-and their versions, per-department or per-collection periods, and a dry-run report by
-department.
+### Document retention
+
+Part of the same feature, code in `ee/python/src/workmind_ee/document_retention.py`, in
+**Admin > Retention > Documents, by collection**. Per collection, an org owner or admin sets how
+many days a document may go **without an update** (30 to 36,500) and what happens then:
+
+- **Archive** (the default in the form): the document, its versions, files and chunks stay; it
+  leaves search and answers at once (`is_active` false on its points in the index, which
+  retrieval filters on) and the Knowledge Hub marks it **Archived**. A collection editor
+  restores it from the document page (`POST /api/v1/documents/{id}/unarchive`, Community, so a
+  lapsed license never strands an archive; audited as `knowledge.document.unarchived`), and new
+  content restores it too. Re-indexing keeps it archived.
+- **Delete**: what an editor's delete does: the document, its versions and chunks, its search
+  entries, and its files when nothing else uses them.
+
+"Updated" means the latest of: new content (its newest version), a review (**Mark reviewed**, or
+an approval of official status) and a restore from the archive. A document never updated counts
+from when it was added. Edits of labels, owners or escalation stages do not count.
+
+**Never touched**, and counted with the reason in the preview, the run and the audit event:
+
+| Reason | What |
+|---|---|
+| `legal_hold` | A [legal hold](#legal-hold) covers it |
+| `official` | It is official, or waiting for an official-status approval: approved content leaves through a demotion (by an editor, or an [overdue review](governance.md#escalation-of-overdue-reviews)), never through a timer |
+| `meeting_transcript` | (delete only) A meeting's transcript goes with its meeting |
+| `synced` | (delete only) A document synced from a source would come back at the next sync; deletion propagation removes it when the source does. Archiving a synced document works |
+
+| Route | What it does |
+|---|---|
+| `GET /api/v1/admin/retention/documents` | The rules, who saved each, and what each one's last run did |
+| `PUT /api/v1/admin/retention/documents` | Replaces every rule: `{"rules": [{"collection_id", "days", "action"}]}`. A collection left out keeps every document. One rule per collection, collections of this organization only (`422 unknown_collection`). Audited as `admin.retention.documents_updated`, before and after |
+| `POST /api/v1/admin/retention/documents/preview` | Per collection: the cutoff, exactly how many documents a run would delete or archive now, and how many it would keep and why. Changes nothing. Without a body the saved rules; with rules in the body, that draft |
+| `POST /api/v1/admin/retention/documents/run` | Applies the saved rules now, with `{"confirm": "delete"}` (`409 no_rules` without any). Each document is audited (`knowledge.document.deleted` with `reason: retention`, or `knowledge.document.archived`), and the run as `admin.retention.documents_run` with the counts per collection |
+
+The daily task `workmind_ee.retention.apply` applies the rules too, after the policy, as the
+system. The preview and the run select with the same query, and the tests check that a run
+deletes and archives exactly what the preview counted. The `document_retention_rules` table and
+the documents' `archived_at` and `restored_at` columns are in the core schema (migration
+`0026`, forced row-level security). Archived documents get no review reminders or escalations
+and are left out of the governance overview.
+
+Not built: retention of a document's older versions (all versions are kept while the document
+is), per-department periods, rules by label or trust level, a dry-run report by department, and
+notices to owners before their documents are archived or deleted.
+
+## Legal hold
+
+Feature `legal_hold`, code in `ee/python/src/workmind_ee/legal_hold.py` (placing, listing and
+releasing) and `apps/api/src/workmind/modules/governance/holds.py` (enforcement, in the core),
+screen **Admin > Legal holds**. An org owner or admin places a hold on one thing, naming the
+**matter** (the case or investigation, up to 200 characters; holds are grouped by it) and saying
+**why** (up to 2,000). What a hold keeps:
+
+| A hold on | Keeps, including what is added later |
+|---|---|
+| A person | Their conversations, the meetings they uploaded (with their transcripts), their Insights questions |
+| A collection | Its documents and its meetings |
+| A document | That document; for a meeting's transcript, its meeting too (deleting a meeting deletes its transcript) |
+| A meeting | That meeting and its transcript |
+| An Insights question | That question, its SQL and its answer |
+
+While a hold is active, **nothing it covers is deleted**, whoever or whatever asks:
+
+| Deletion path | What happens |
+|---|---|
+| A person deletes a document, a conversation or a meeting | `409 legal_hold` ("This document is under a legal hold"; the matter is not named), nothing changes |
+| An admin deletes a source whose synced documents include a held one | `409 legal_hold`, nothing is deleted (disable the source to stop its syncs) |
+| A connector's deletion propagation (the item is gone from the source) | The held document stays, searchable as before; the sync reports it as `kept_under_hold` and **Admin > Sources** shows "1 kept under legal hold" |
+| A retention run, by hand or daily | Held conversations, Insights questions and meeting recordings are kept and counted as `kept_under_hold`; the preview counts them the same way |
+| `wm tenant delete` | Refused before anything is suspended or deleted, unless the operator types `--override-legal-holds <tenant>` ([multi-tenancy.md](multi-tenancy.md#deleting-a-tenant-completely)) |
+
+**Every attempt is audited** as `legal_hold.deletion_blocked`, with who or what tried (`via`:
+`user`, `connector` or `tenant_deletion`), the holds and their matters: one event per refused
+request, one per held document of a refused source deletion, and one per sync that kept
+documents (listing them). A retention run records what holds kept in its own event
+(`admin.retention.run`, `kept_under_hold`). Placing a hold is audited as `legal_hold.placed`
+(with what it covered at that moment), releasing it as `legal_hold.released` (with the
+reason), and a tenant deleted under the override as `legal_hold.overridden`.
+
+| Route | Who | What it does |
+|---|---|---|
+| `GET /api/v1/admin/legal-holds?status=active\|released\|all` | Org owners, admins and auditors | The holds, newest first (at most 500), each with what it names and what it keeps now (`covers`: documents, conversations, meetings, Insights questions) |
+| `POST /api/v1/admin/legal-holds` | Org owners and admins | Places a hold: `{"matter", "reason", "target_type", "target_id"}`. What it names must exist in the organization (`422 unknown_target`); the same matter cannot hold the same thing twice (`409 already_held`) |
+| `POST /api/v1/admin/legal-holds/{id}/release` | Org owners and admins | Releases it: `{"reason"}` is required. It stays listed as released (`409 already_released` the second time) |
+
+What a hold names is described without content the reader cannot open (separation of duties,
+ARCHITECTURE 7.1): a document or meeting in a collection the admin cannot open is "A document
+in “HR Guidance (internal)” you can't open"; an Insights question is "An Insights question by
+Carol Lindqvist, 2026-11-10", never its text; a person is their name and email. In the web
+app, collections are picked from a list and people by a search; a document, a meeting or an
+Insights question by pasting its id or a link to it (the id is taken from the link).
+
+**Enforcement does not depend on the license.** The `legal_holds` table is in the core schema
+(migration `0026`, forced row-level security), and the core checks it on every deletion path
+whatever the edition: a hold is an obligation to preserve, so a license that expires must not
+quietly release one. Without the license the three routes answer `402 enterprise_feature`, so
+existing holds cannot be listed, placed or released until a license is installed again; they
+still keep what they cover (tested in Community). Deleting the whole tenant with the override is
+the only way past them without a license.
+
+Not built: notices to the people whose data is held; holds that expire on a date; holds on a
+search query, a date range or a department; an export of what a hold keeps (for discovery,
+the data is read where it is); a hold placed through the assistant or MCP.
 
 ## Audit export for a SIEM
 
@@ -365,8 +471,19 @@ isolation, hooks, mounting), `tests/test_enterprise_tasks.py`, `tests/test_dev_l
 (`/edition` is Community without a license; a gated route answers 402),
 `tests/integration/test_retention.py` (every route 402 without a license; with one, the 30-day
 minimum, exact preview counts, a run that deletes only its own tenant's expired rows and files,
-the daily task), `tests/integration/test_audit_explorer.py` (the SIEM export is Enterprise
-only, and its chain verifies), `tests/integration/test_permission_sync.py` (a Drive source
-synced with and without the license) and `ee/python/tests/test_permission_sync.py` (what is read
-from Drive, Slack and GitHub). Lint `ee/python` with
+the daily task), `tests/integration/test_document_retention.py` (routes 402 without a license;
+rules of at least 30 days for this organization's collections; a preview whose counts a run
+then matches, with held, official, pending-official, synced and transcript documents kept and
+counted; a draft previewed without saving; the daily task; archived documents out of the index
+until restored or updated, and not due again after either), `tests/integration/test_legal_hold.py` (routes 402 without a license and holds
+still enforced in Community; documents, conversations, meetings, transcripts and sources refused
+and audited; placing, listing and releasing with their audit events and permissions; labels that
+withhold what the reader cannot open; retention keeping held items with matching preview and
+run counts; the single-item check and the bulk clauses agreeing), `tests/integration/test_sync.py`
+(a held document gone from its source, or reported deleted by it, stays),
+`tests/integration/test_tenant_lifecycle.py` (a tenant under hold is deleted only with the typed
+override), `tests/integration/test_audit_explorer.py` (the SIEM export is Enterprise only, and
+its chain verifies), `tests/integration/test_permission_sync.py` (a Drive source synced with and
+without the license) and `ee/python/tests/test_permission_sync.py` (what is read from Drive,
+Slack and GitHub). Lint `ee/python` with
 `make lint`, which runs ruff on it too; pyright checks it in strict mode.

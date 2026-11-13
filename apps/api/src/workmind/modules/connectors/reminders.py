@@ -151,7 +151,8 @@ def stale_condition(
     sources: Sequence[Source], now: datetime, days: int | None = None
 ) -> ColumnElement[bool]:
     """Synced documents of `sources` that are stale now: missing upstream, or not changed in
-    the source for `days` (default: each source's own threshold; none: only missing)."""
+    the source for `days` (default: each source's own threshold; none: only missing). An
+    archived document (document retention, docs/enterprise.md) is out of use: never stale."""
     not_updated = [
         and_(
             Document.source_id == s.id,
@@ -165,6 +166,7 @@ def stale_condition(
         return false()
     return and_(
         Document.source_id.in_(ids),
+        Document.archived_at.is_(None),
         or_(Document.source_missing_since.is_not(None), *not_updated),
     )
 
