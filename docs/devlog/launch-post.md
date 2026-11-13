@@ -28,7 +28,7 @@ What it does:
 → Admin tools: usage, budgets, audit log, retention and legal hold (some in the Enterprise edition)
 → Self-hosted: runs with Claude, or fully on local models
 
-Measured, not claimed (on a fictional 47-document company):
+Measured, not claimed (on a fictional demo company):
 • 0 permission leaks across 68 attacks. A single leak fails CI.
 • 81 of 82 answers had every required fact, and 6 of 6 times it said "I don't know" when the documents didn't have the answer
 • First words in 0.9 s (median), about $0.007 per answer
