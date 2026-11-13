@@ -84,6 +84,7 @@ ingress), [backups](../operations/backup-restore.md) and [upgrades](../operation
 | Route questions to department agents | `ASSISTANT_MODE=auto` or `agents` | [Agents](../agents.md) |
 | Send email (after approval) | `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_STARTTLS` | [Automation](../automation.md#email) |
 | Sync Google Drive | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | [Connectors](../connectors.md) |
+| Connect Slack with OAuth (instead of pasting a bot token) | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | [Connectors](../connectors.md) |
 | Give the research agent web search | `SEARXNG_URL` | [Configuration reference](../reference/configuration.md#searxng_url) |
 | Give agents tools from other MCP servers | `MCP_SERVERS` | [MCP](../mcp.md#the-other-direction-workmind-using-mcp-tools) |
 | Transcribe meetings elsewhere, or not at all | `TRANSCRIPTION_PROVIDER`, `TRANSCRIPTION_MODEL`, `TRANSCRIPTION_BASE_URL` | [Meetings](../meetings.md) |

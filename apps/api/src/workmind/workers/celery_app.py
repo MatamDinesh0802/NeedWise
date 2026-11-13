@@ -31,6 +31,7 @@ from workmind.core.extensions import load_extensions
 from workmind.core.resources import Resources
 from workmind.core.tenancy import global_transaction
 from workmind.modules.connectors.registry import build_connector
+from workmind.modules.connectors.reminders import send_source_reminders
 from workmind.modules.connectors.schedule import due_sources
 from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sync import SyncDeps, sync_source
@@ -63,6 +64,7 @@ EXPIRE_TASK = "workmind.expire_approvals"
 MEETING_TASK = "workmind.process_meeting"
 WORKFLOW_RUN_TASK = "workmind.start_workflow_run"
 REVIEWS_TASK = "workmind.send_review_reminders"
+SOURCE_REMINDERS_TASK = "workmind.send_source_reminders"
 
 log = structlog.get_logger("workmind.workers")
 settings = get_settings()
@@ -85,6 +87,8 @@ app.conf.update(
         "expire-approvals": {"task": EXPIRE_TASK, "schedule": 300.0},
         # Daily: documents past their review date get one reminder per review cycle.
         "review-reminders": {"task": REVIEWS_TASK, "schedule": 86_400.0},
+        # Daily: stale synced documents (once per staleness episode), failing sources.
+        "source-reminders": {"task": SOURCE_REMINDERS_TASK, "schedule": 86_400.0},
     },
     broker_connection_retry_on_startup=True,
     task_ignore_result=True,
@@ -156,7 +160,9 @@ def ingest_document(tenant_id: str, document_id: str, version_id: str) -> dict[s
         return None  # already recorded on the document; retrying cannot help
 
 
-async def _run_sync(tenant_id: str, source_id: str) -> dict[str, Any]:
+async def _run_sync(
+    tenant_id: str, source_id: str, trigger: str, requested_by: str | None
+) -> dict[str, Any]:
     tenant = tenant_of(tenant_id)
     engine = create_engine(settings.database_url)
     if not await _tenant_active(create_session_factory(engine), tenant, SYNC_TASK):
@@ -177,18 +183,27 @@ async def _run_sync(tenant_id: str, source_id: str) -> dict[str, Any]:
                 google_client=(settings.google_client_id, secret(settings.google_client_secret)),
             ),
             max_bytes=settings.max_upload_bytes,
+            failure_alert_after=settings.source_failure_alert_after,
         )
         try:
-            report = await sync_source(deps, tenant, uuid.UUID(source_id))
+            report = await sync_source(
+                deps,
+                tenant,
+                uuid.UUID(source_id),
+                trigger="manual" if trigger == "manual" else "schedule",
+                requested_by=uuid.UUID(requested_by) if requested_by else None,
+            )
         finally:
             await engine.dispose()
     return {"source_id": source_id, "status": report.status, **report.stats()}
 
 
 @app.task(name=SYNC_TASK)
-def sync_source_task(tenant_id: str, source_id: str) -> dict[str, Any]:
-    """Failures are recorded on the source; the next interval retries."""
-    return asyncio.run(_run_sync(tenant_id, source_id))
+def sync_source_task(
+    tenant_id: str, source_id: str, trigger: str = "schedule", requested_by: str | None = None
+) -> dict[str, Any]:
+    """Failures are recorded on the source and as a run; the next interval retries."""
+    return asyncio.run(_run_sync(tenant_id, source_id, trigger, requested_by))
 
 
 async def _due() -> list[tuple[uuid.UUID, uuid.UUID]]:
@@ -293,6 +308,29 @@ async def _send_review_reminders() -> int:
 def review_reminders() -> int:
     """Idempotent: a document is reminded once per review cycle, however often this runs."""
     return asyncio.run(_send_review_reminders())
+
+
+async def _send_source_reminders() -> int:
+    resources = Resources.create(settings, extensions=extensions)
+    reminded = 0
+    try:
+        for tenant_id in await _active_tenants(resources):
+            report = await send_source_reminders(
+                resources.db,
+                tenant_id,
+                failure_alert_after=settings.source_failure_alert_after,
+            )
+            reminded += len(report.reminded)
+    finally:
+        await resources.aclose()
+    return reminded
+
+
+@app.task(name=SOURCE_REMINDERS_TASK)
+def source_reminders() -> int:
+    """Idempotent: a stale document is reminded once per staleness episode, a failing source
+    once per failure episode, however often this runs."""
+    return asyncio.run(_send_source_reminders())
 
 
 async def _process_meeting(tenant_id: str, meeting_id: str) -> None:

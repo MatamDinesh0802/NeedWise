@@ -97,6 +97,10 @@ config:
   google:
     # Google Drive sources (docs/connectors.md); the secret is credentials.googleClientSecret.
     clientId: ""
+  slack:
+    # "Connect Slack" for Slack sources (docs/connectors.md); the secret is
+    # credentials.slackClientSecret. Empty: Slack sources take a pasted bot token.
+    clientId: ""
   searxngUrl: ""
   # A license issued for one deployment is valid only where DEPLOYMENT_ID matches it.
   deploymentId: ""
@@ -224,6 +228,10 @@ credentials:
     value: ""
     existingSecret: ""
     key: google-client-secret
+  slackClientSecret:
+    value: ""
+    existingSecret: ""
+    key: slack-client-secret
   # The Enterprise license token (LICENSE_KEY, docs/enterprise.md). Empty: Community edition.
   licenseKey:
     value: ""

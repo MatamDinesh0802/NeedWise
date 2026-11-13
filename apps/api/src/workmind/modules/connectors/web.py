@@ -12,6 +12,8 @@ import hashlib
 import re
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urldefrag, urljoin, urlsplit
@@ -62,6 +64,17 @@ class _Links(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._in_title:
             self.title += data
+
+
+def _last_modified(value: str | None) -> datetime | None:
+    """The Last-Modified header, when the server sends a valid one."""
+    if not value:
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _filename(url: str, extension: str) -> str:
@@ -205,10 +218,11 @@ class WebConnector:
                     filename=_filename(url, extension),
                     version=response.headers.get("etag") or hashlib.sha256(body).hexdigest()[:32],
                     url=url,
+                    modified_at=_last_modified(response.headers.get("last-modified")),
                 )
             )
         # Cut short by max_pages: the pages beyond the limit were not seen, not deleted.
-        return ScanResult(items=items, complete=not queue)
+        return ScanResult(items=items, complete=not queue, truncated=bool(queue))
 
     async def fetch(self, item: RemoteItem) -> bytes:
         if item.external_id in self._cache:

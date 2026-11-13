@@ -116,6 +116,7 @@ PHRASES = {
         "drive",
         "token",
         "review",
+        "slack",
     )
 }
 SECRET_PROVIDER_KEY = f"sk-{uuid.uuid4().hex}{uuid.uuid4().hex}"
@@ -464,6 +465,29 @@ def _build_a(client: TestClient, a: Side) -> None:
     assert started_oauth.status_code == 302, started_oauth.text
     v["table"] = TABLE
     v["oauth_state"] = re.findall(r"[?&]state=([^&]+)", started_oauth.headers["location"])[0]
+    v["slack_key"] = f"{CANARY}-slack"
+    _check(
+        client.post(
+            "/api/v1/admin/sources",
+            json={
+                "key": v["slack_key"],
+                "name": PHRASES["slack"],
+                "kind": "slack",
+                "collection": "company-handbook",
+                "config": {"channels": ["C0123ABCD"]},
+                "enabled": False,
+            },
+            headers=erin,
+        ),
+        201,
+    )
+    started_slack = client.get(
+        f"/api/v1/admin/sources/{v['slack_key']}/oauth/slack/start",
+        headers=acme.as_("erin"),
+        follow_redirects=False,
+    )
+    assert started_slack.status_code == 302, started_slack.text
+    v["slack_state"] = re.findall(r"[?&]state=([^&]+)", started_slack.headers["location"])[0]
 
     _check(
         client.post(
@@ -713,6 +737,8 @@ def world(database: Database, tmp_path_factory: pytest.TempPathFactory) -> Itera
         keycloak_url="http://127.0.0.1:9/auth",  # never the running stack's Keycloak
         google_client_id="test-google-client",
         google_client_secret="test-google-secret",
+        slack_client_id="test-slack-client",
+        slack_client_secret="test-slack-secret",
     )
     now = datetime.now(UTC)
     license_ = License(
@@ -1053,9 +1079,21 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
     ("POST", "/api/v1/admin/sources/{key}/sync"): [deny(params={"key": "source_key"})],
     ("GET", "/api/v1/admin/sources/{key}/oauth/google/start"): [deny(params={"key": "gdrive_key"})],
     ("GET", "/api/v1/admin/sources/stale"): [own(query={"days": 0})],
+    ("GET", "/api/v1/admin/sources/options"): [own()],
+    ("POST", "/api/v1/admin/sources/{key}/pause"): [deny(params={"key": "source_key"})],
+    ("POST", "/api/v1/admin/sources/{key}/resume"): [deny(params={"key": "source_key"})],
+    ("GET", "/api/v1/admin/sources/{key}/runs"): [deny(params={"key": "source_key"})],
+    ("GET", "/api/v1/admin/sources/{key}/oauth/slack/start"): [deny(params={"key": "slack_key"})],
+    ("GET", "/api/v1/admin/sources/stale-documents"): [
+        own(query={"days": 1}),
+        refuse(404, query=lambda w: {"source": w.a.values["source_key"]}),
+    ],
     # Another tenant's OAuth state: the callback fails, and A's flow is left alone.
     ("GET", "/api/v1/oauth/google/callback"): [
         own(303, query=lambda w: {"code": "x", "state": w.a.values["oauth_state"]})
+    ],
+    ("GET", "/api/v1/oauth/slack/callback"): [
+        own(303, query=lambda w: {"code": "x", "state": w.a.values["slack_state"]})
     ],
     # Approvals, tasks, notifications, workflows
     ("GET", "/api/v1/approvals"): [
@@ -1561,6 +1599,7 @@ def test_every_valkey_key_written_is_under_a_tenant_prefix(world: World) -> None
     assert f"t:{a_tenant}:sessions:by-expiry" in a_keys
     # B's callback with A's state neither found nor consumed A's OAuth flow.
     assert f"t:{a_tenant}:oauth:google:{v['oauth_state']}" in a_keys
+    assert f"t:{a_tenant}:oauth:slack:{v['slack_state']}" in a_keys
     assert any(k.startswith(f"t:{a_tenant}:usage:spent:") for k in a_keys)
 
 

@@ -125,10 +125,37 @@ export function taskOrigin(task: Pick<Task, "origin">): TaskOrigin | null {
     // A review reminder (docs/governance.md): the document to check and mark reviewed.
     return { kind: "document", label: "Open the document to review", href: `/knowledge/documents/${encodeURIComponent(task.origin.document_id)}` };
   }
+  if (via === "connectors") {
+    // A stale-document reminder (docs/connectors.md): the documents are listed in the task.
+    return { kind: "document", label: "Stale synced documents", href: null };
+  }
   if (via === "assistant") return { kind: "assistant", label: "From the assistant", href: null };
   if (via === "research") return { kind: "research", label: "From the assistant", href: null };
   if (via === "workflow") return { kind: "workflow", label: "From a workflow", href: null };
   return null;
+}
+
+export interface TaskDocument {
+  id: string;
+  title: string;
+  reason: "not_updated" | "missing_upstream";
+}
+
+/**
+ * The documents a stale-document reminder lists (origin.documents, written by
+ * modules/connectors/reminders.py), and how many more it counted; empty for any other task.
+ */
+export function taskDocuments(task: Pick<Task, "origin">): { documents: TaskDocument[]; more: number } {
+  const { via, documents, more } = task.origin;
+  if (via !== "connectors" || !Array.isArray(documents)) return { documents: [], more: 0 };
+  const listed: TaskDocument[] = [];
+  for (const entry of documents as unknown[]) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { id, title, reason } = entry as Record<string, unknown>;
+    if (typeof id !== "string" || typeof title !== "string") continue;
+    listed.push({ id, title, reason: reason === "missing_upstream" ? "missing_upstream" : "not_updated" });
+  }
+  return { documents: listed, more: typeof more === "number" && more > 0 ? more : 0 };
 }
 
 /**

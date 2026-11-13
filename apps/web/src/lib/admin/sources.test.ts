@@ -1,19 +1,37 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api";
+import { runFixture, sourceFixture, staleFixture } from "@/test/sources-fixtures";
 
 import {
+  accessSummary,
+  afterCreate,
+  changeCounts,
   configFieldKey,
   configPayload,
+  disconnectConfirmed,
   driveFolderId,
   emptySourceForm,
+  failureText,
   formFromSource,
+  healthCounts,
+  nextSyncText,
+  oauthResult,
+  runDuration,
+  sortSources,
   sourcesApi,
+  staleAfterFromValue,
+  staleAfterLabel,
+  staleAfterOptions,
+  staleAfterValue,
+  staleReasonText,
   statsSummary,
   toCreatePayload,
-  toggledSource,
   toUpdatePayload,
+  triggerLabel,
   validateSourceForm,
+  whatSyncs,
+  withKind,
   withSourceName,
   type Source,
   type SourceForm,
@@ -36,6 +54,7 @@ describe("per-kind config forms → payload", () => {
       config: { start_urls: ["http://host.docker.internal:8090/handbook/", "https://intranet.example/hr/"], max_pages: 50 },
       interval_minutes: 60,
       enabled: true,
+      stale_after_days: 180,
     });
     expect(configPayload({ ...f, web: { ...f.web, pathPrefix: " /handbook/ " } }).config).toMatchObject({ path_prefix: "/handbook/" });
   });
@@ -93,32 +112,20 @@ describe("per-kind config forms → payload", () => {
     expect(validateSourceForm({ ...f, name: "Site" }, { creating: false })).toEqual({});
   });
 
-  it("round-trips a stored source into the edit form and back", () => {
-    const source: Source = {
-      id: "s1",
-      key: "handbook-site",
-      name: "Handbook site",
-      kind: "web",
-      collection: "company-handbook",
+  it("round-trips a stored source into the edit form and back, threshold included", () => {
+    const source: Source = sourceFixture({
       config: { start_urls: ["https://intranet.example/handbook/"], max_pages: 100, path_prefix: null },
-      has_credentials: false,
-      needs: [],
       interval_minutes: 1440,
-      enabled: true,
-      status: "ok",
-      last_sync_at: null,
-      last_success_at: null,
-      last_error: null,
-      stats: {},
-      documents: 12,
-    };
+      stale_after_days: 90,
+    });
     expect(toUpdatePayload(formFromSource(source))).toEqual({
       name: "Handbook site",
       config: { start_urls: ["https://intranet.example/handbook/"], max_pages: 100 },
       interval_minutes: 1440,
       enabled: true,
+      stale_after_days: 90,
     });
-    expect(toggledSource(source, false)).toEqual({ name: "Handbook site", config: source.config, interval_minutes: 1440, enabled: false });
+    expect(toUpdatePayload(formFromSource({ ...source, stale_after_days: null })).stale_after_days).toBeNull();
   });
 
   it("maps API config fields back to form fields", () => {
@@ -148,5 +155,106 @@ describe("Connect Google Drive", () => {
     const error = await sourcesApi.checkGoogleStart("drive-finance", fetcher).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ status: 409, code: "oauth_not_configured" });
+  });
+});
+
+describe("health and schedule", () => {
+  const now = new Date("2026-11-13T08:30:00Z");
+
+  it("says when the next sync is due", () => {
+    expect(nextSyncText(sourceFixture(), now)).toBe("In 30 min");
+    expect(nextSyncText(sourceFixture({ next_sync_at: "2026-11-13T08:00:00Z" }), now)).toBe("Due now (within a minute)");
+    expect(nextSyncText(sourceFixture({ next_sync_at: "2026-11-14T08:30:00Z" }), now)).toBe("In 24 hours");
+    expect(nextSyncText(sourceFixture({ enabled: false, next_sync_at: null }), now)).toBe("Paused");
+    expect(nextSyncText(sourceFixture({ syncing: true, next_sync_at: null }), now)).toBe("Syncing now");
+  });
+
+  it("counts failures in a row and whether the managers were told", () => {
+    expect(failureText(sourceFixture(), 3)).toBeNull();
+    expect(failureText(sourceFixture({ consecutive_failures: 1 }), 3)).toBe("Failed once · they're notified after 3 in a row");
+    expect(failureText(sourceFixture({ consecutive_failures: 4, failure_alerted_at: "2026-11-13T08:00:00Z" }), 3)).toBe(
+      "Failed 4 times in a row · the people who manage it were notified",
+    );
+  });
+
+  it("counts and sorts by health, failing first", () => {
+    const sources = [
+      sourceFixture({ name: "B", health: "healthy" }),
+      sourceFixture({ name: "A", health: "paused" }),
+      sourceFixture({ name: "C", health: "failing" }),
+      sourceFixture({ name: "D", health: "never_synced" }),
+    ];
+    expect(healthCounts(sources)).toEqual({ healthy: 1, failing: 1, paused: 1, never_synced: 1 });
+    expect(sortSources(sources).map((s) => s.name)).toEqual(["C", "D", "A", "B"]);
+  });
+
+  it("describes the mapping: what syncs, and who can see it", () => {
+    expect(whatSyncs(sourceFixture())).toBe("https://intranet.example/handbook/");
+    expect(whatSyncs(sourceFixture({ kind: "github", config: { repo: "acme/handbook", branch: "main" } }))).toBe("acme/handbook (main)");
+    expect(whatSyncs(sourceFixture({ kind: "slack", config: { channels: ["C1", "C2"] } }))).toBe("2 Slack channels");
+    expect(accessSummary(sourceFixture().access)).toBe("Alice Moreau (owner) · People & HR (department) can edit · Everyone in the organization can view");
+    expect(accessSummary([])).toBe("Nobody but org admins");
+  });
+
+  it("summarizes runs: trigger, duration, and what changed", () => {
+    expect(triggerLabel(runFixture({ trigger: "manual", requested_by: { id: "u", display_name: "Erin" } }))).toBe("Sync now by Erin");
+    expect(triggerLabel(runFixture())).toBe("Scheduled");
+    expect(runDuration(runFixture())).toBe("12 s");
+    expect(runDuration(runFixture({ finished_at: "2026-11-13T08:02:05Z" }))).toBe("2 min 5 s");
+    expect(runDuration(runFixture({ status: "running", finished_at: null }))).toBeNull();
+    expect(changeCounts({ added: 2, deleted: 1 })).toEqual({ added: 2, updated: 0, deleted: 1 });
+    expect(statsSummary({ added: 1, missing: 3, items: 5 })).toBe("1 added · 3 missing upstream");
+  });
+});
+
+describe("stale threshold, disconnect, OAuth", () => {
+  it("defaults by kind (Slack history is an archive) and survives a kind change", () => {
+    expect(emptySourceForm("web").staleAfterDays).toBe(180);
+    expect(emptySourceForm("slack").staleAfterDays).toBeNull();
+    expect(withKind(emptySourceForm("web"), "slack").staleAfterDays).toBeNull();
+    expect(staleAfterValue(null)).toBe("never");
+    expect(staleAfterFromValue("never")).toBeNull();
+    expect(staleAfterFromValue("365")).toBe(365);
+    expect(staleAfterOptions(45).at(-1)).toEqual({ value: "45", label: "Unchanged for 45 days" });
+    expect(staleAfterLabel(90)).toBe("Unchanged for 3 months");
+  });
+
+  it("a Slack source may skip the bot token when the deployment can Connect Slack", () => {
+    const f = form("slack", { slack: { channels: "C0123ABCD", days: "30" } });
+    expect(validateSourceForm(f, { creating: true })).toEqual({ "credentials.bot_token": "Slack needs a bot token." });
+    expect(validateSourceForm(f, { creating: true, slackOAuth: true })).toEqual({});
+  });
+
+  it("connects first when OAuth has no tokens yet, else syncs at once", () => {
+    expect(afterCreate({ kind: "gdrive", enabled: true, has_credentials: false, oauth: "google" })).toBe("connect");
+    expect(afterCreate({ kind: "slack", enabled: true, has_credentials: false, oauth: "slack" })).toBe("connect");
+    expect(afterCreate({ kind: "slack", enabled: true, has_credentials: true, oauth: "slack" })).toBe("sync");
+    expect(afterCreate({ kind: "web", enabled: false, has_credentials: false, oauth: null })).toBe("nothing");
+  });
+
+  it("disconnects only after the exact key is typed", () => {
+    expect(disconnectConfirmed("handbook-site", sourceFixture())).toBe(true);
+    expect(disconnectConfirmed(" handbook-site ", sourceFixture())).toBe(true);
+    expect(disconnectConfirmed("Handbook site", sourceFixture())).toBe(false);
+    expect(disconnectConfirmed("", sourceFixture())).toBe(false);
+  });
+
+  it("reads the OAuth result for either provider", () => {
+    expect(oauthResult(new URLSearchParams("oauth=connected&provider=slack&source=chat"))).toEqual({ ok: true, provider: "slack", source: "chat" });
+    expect(oauthResult(new URLSearchParams("oauth=failed"))).toEqual({ ok: false, provider: "google", source: null });
+    expect(oauthResult(new URLSearchParams("source=chat"))).toBeNull();
+  });
+
+  it("builds the start URL with where to come back", () => {
+    expect(sourcesApi.oauthStartUrl("slack", "team chat", "knowledge")).toBe("/api/v1/admin/sources/team%20chat/oauth/slack/start?back=knowledge");
+    expect(sourcesApi.oauthStartUrl("google", "drive")).toBe("/api/v1/admin/sources/drive/oauth/google/start");
+  });
+
+  it("explains stale reasons", () => {
+    const format = (iso: string) => iso.slice(0, 10);
+    expect(staleReasonText(staleFixture(), format)).toBe("Unchanged in the source since 2025-09-01");
+    expect(staleReasonText(staleFixture({ reason: "missing_upstream", missing_since: "2026-11-10T00:00:00Z" }), format)).toBe(
+      "Not listed by the source since 2026-11-10",
+    );
   });
 });

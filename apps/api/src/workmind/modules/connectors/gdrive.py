@@ -31,6 +31,16 @@ READABLE = {".pdf", ".docx", ".xlsx", ".pptx", ".md", ".txt", ".html", ".csv"}
 FIELDS = "nextPageToken, files(id, name, mimeType, modifiedTime, version, webViewLink, size)"
 
 
+def _timestamp(value: object) -> datetime | None:
+    """Drive's RFC 3339 modifiedTime ("2026-11-02T09:15:00.000Z")."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 class GoogleDriveConnector:
     kind = "gdrive"
 
@@ -146,6 +156,7 @@ class GoogleDriveConnector:
             filename=filename,
             version=str(f.get("version") or f.get("modifiedTime")),
             url=f.get("webViewLink"),
+            modified_at=_timestamp(f.get("modifiedTime")),
         )
 
     async def fetch(self, item: RemoteItem) -> bytes:

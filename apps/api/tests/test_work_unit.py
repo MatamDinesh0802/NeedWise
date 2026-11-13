@@ -16,6 +16,7 @@ from workmind.modules.work.links import (
     approval_link,
     document_link,
     meeting_link,
+    source_link,
     task_link,
     usage_link,
     workflow_link,
@@ -96,6 +97,8 @@ def _page_exists(path: str) -> bool:
         workflow_link("weekly-ops-report"),
         workflow_link("weekly-ops-report", ID),
         usage_link(),
+        source_link("handbook-site", admin=True),
+        source_link("handbook-site", admin=False),
     ],
 )
 def test_every_notification_link_opens_a_page_that_exists(link: str) -> None:
@@ -110,6 +113,11 @@ def test_the_workflow_link_names_the_workflow_and_the_run() -> None:
     )
 
 
+def test_a_source_link_opens_the_page_of_whoever_manages_it() -> None:
+    assert source_link("handbook site", admin=True) == "/admin/sources?source=handbook+site"
+    assert source_link("handbook", admin=False) == "/knowledge/sources?source=handbook"
+
+
 def test_notifications_take_their_links_from_the_links_module() -> None:
     helpers = (
         "approval_link(",
@@ -118,6 +126,7 @@ def test_notifications_take_their_links_from_the_links_module() -> None:
         "workflow_link(",
         "document_link(",
         "usage_link(",
+        "source_link(",
     )
     passthrough = {"link", "n.link"}  # notify() itself, and the notifications API
     offenders = [

@@ -23,7 +23,33 @@ import { getQueryCache } from "@/lib/stores/query-cache";
 import { toast } from "@/lib/stores/toasts";
 import { cn } from "@/lib/utils";
 import { workApi, workKeys, type Task, type TaskStatus, type TaskUpdate } from "@/lib/work/api";
-import { assigneeText, canClaim, canSeeTask, dueText, TASK_CHANGE_KEYS, TASK_STATUS_LABELS, TASK_STATUSES } from "@/lib/work/tasks";
+import { assigneeText, canClaim, canSeeTask, dueText, TASK_CHANGE_KEYS, TASK_STATUS_LABELS, TASK_STATUSES, taskDocuments } from "@/lib/work/tasks";
+
+/** The description; a stale-document reminder lists its documents as links instead of text. */
+export function TaskBody({ task }: { task: Pick<Task, "description" | "origin"> }) {
+  const { documents, more } = taskDocuments(task);
+  if (documents.length === 0) {
+    return task.description ? <p className="text-sm whitespace-pre-line">{task.description}</p> : null;
+  }
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      {task.description ? <p className="whitespace-pre-line">{task.description.split("\n\n")[0]}</p> : null}
+      <ul className="flex flex-col gap-1" aria-label="Documents to check">
+        {documents.map((doc) => (
+          <li key={doc.id} className="flex flex-wrap items-center gap-2">
+            <Link href={`/knowledge/documents/${encodeURIComponent(doc.id)}`} className="font-medium underline-offset-2 hover:underline">
+              {doc.title}
+            </Link>
+            <span className="text-xs text-muted-foreground">
+              {doc.reason === "missing_upstream" ? "no longer listed by the source" : "unchanged in the source for a long time"}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {more > 0 ? <p className="text-xs text-muted-foreground">…and {more} more, listed under Sources › Stale synced documents.</p> : null}
+    </div>
+  );
+}
 
 /** /tasks/[id] (notification and meeting links): one task, read with GET /tasks/{id}. */
 export function TaskRoute() {
@@ -120,7 +146,7 @@ function TaskCard({ task, me, names, refreshing }: { task: Task; me: Me; names: 
         </div>
       </header>
 
-      {task.description ? <p className="text-sm whitespace-pre-line">{task.description}</p> : null}
+      <TaskBody task={task} />
 
       <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-2 text-sm">
         <dt className="text-muted-foreground">For</dt>

@@ -231,8 +231,12 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > scans, failures recorded, one sync per source), Celery beat scheduling, AES-GCM credentials,
 > web crawler (tested against a live site), GitHub (tested against a public repository), Slack and
 > Google Drive with OAuth (tested against their documented APIs), collection-level permission
-> mapping, stale-document listing. Pending: a test Drive and Slack workspace (DoD), the Sources UI,
-> Confluence and SharePoint, and owner reminders (Phase 11 notifications).
+> mapping, stale-document listing. The source health dashboard (Admin › Sources, and Knowledge
+> Hub › Sources for collection owners: health, mapping, last and next sync, run history, plain
+> errors, pause/resume, disconnect), "missing upstream" flags after cut-short scans, and daily
+> stale-document reminders to owners plus failing-source alerts, each once per episode. Pending: a
+> test Drive and Slack workspace (DoD), Confluence and SharePoint, and moving a source to another
+> collection.
 
 **Goal:** knowledge flows in automatically from the tools companies already use.
 

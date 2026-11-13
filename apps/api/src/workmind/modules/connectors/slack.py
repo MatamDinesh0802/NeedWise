@@ -94,6 +94,7 @@ class SlackConnector:
                 )
             for month, entries in sorted(months.items()):
                 body = json.dumps({"channel": name, "messages": entries}, sort_keys=True).encode()
+                latest = max(float(e["edited"] or e["ts"]) for e in entries)
                 external_id = f"{channel}:{month}"
                 self._cache[external_id] = body
                 items.append(
@@ -103,6 +104,7 @@ class SlackConnector:
                         filename=f"slack-{name}-{month}.json",
                         version=hashlib.sha256(body).hexdigest()[:32],
                         url=f"https://slack.com/app_redirect?channel={channel}",
+                        modified_at=datetime.fromtimestamp(latest, UTC),
                     )
                 )
         # Only a window of history is read: older months are kept, not treated as deleted.

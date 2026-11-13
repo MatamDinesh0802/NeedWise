@@ -31,3 +31,10 @@ def workflow_link(key: str, run_id: uuid.UUID | None = None) -> str:
     """Admin > Workflows with this workflow's runs open (the run, when given, expanded)."""
     query = {"workflow": key, **({"run": str(run_id)} if run_id else {})}
     return f"/admin/workflows?{urlencode(query)}"
+
+
+def source_link(key: str, *, admin: bool) -> str:
+    """A source in Admin > Sources (org admins), or in Knowledge Hub > Sources (the owner of the
+    collection it syncs into). Both pages open the source named in `source`."""
+    page = "/admin/sources" if admin else "/knowledge/sources"
+    return f"{page}?{urlencode({'source': key})}"

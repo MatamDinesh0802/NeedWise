@@ -34,6 +34,7 @@
   "EMBEDDING_BASE_URL" (include "workmind.embeddingBaseUrl" .)
   "TRANSCRIPTION_BASE_URL" $c.transcription.baseUrl
   "GOOGLE_CLIENT_ID" $c.google.clientId
+  "SLACK_CLIENT_ID" $c.slack.clientId
   "SEARXNG_URL" $c.searxngUrl
   "DEPLOYMENT_ID" $c.deploymentId
   "LICENSE_DEV_PUBLIC_KEY" $c.licenseDevPublicKey

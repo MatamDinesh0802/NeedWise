@@ -17,6 +17,7 @@ export const WORKSPACE_PAGES: readonly AppPage[] = [
   { path: "/chat", section: "Assistant", heading: { name: "What do you want to know?", level: 2 } },
   { path: "/knowledge", section: "Knowledge Hub", heading: { name: "Knowledge Hub", level: 2 } },
   { path: "/knowledge/governance", section: "Knowledge Hub", heading: { name: "Governance", level: 2 } },
+  { path: "/knowledge/sources", section: "Knowledge Hub", heading: { name: "Sources", level: 2 } },
   { path: "/agents", section: "AI Agents", heading: { name: "AI Agents", level: 2 } },
   { path: "/approvals", section: "Approvals", heading: { name: "Approvals", level: 2 } },
   { path: "/tasks", section: "Tasks", heading: { name: "Tasks", level: 2 } },

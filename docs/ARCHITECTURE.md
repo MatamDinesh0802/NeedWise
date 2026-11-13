@@ -622,7 +622,7 @@ flowchart TD
 
 - Each stage is a Celery task with retries and exponential backoff. After N failures the job goes to a dead-letter state that is visible in the UI and can be retried.
 - Deleting a document in the source (or the UI) removes its chunks from Qdrant and Postgres, its cache entries and its OpenFGA tuples.
-- **Freshness:** `valid_until` and `last_reviewed_at` drive a nightly stale-document job that flags old documents to their owners and lowers their ranking.
+- **Freshness:** `valid_until` and `last_reviewed_at` drive a nightly stale-document job that flags old documents to their owners and lowers their ranking. As built: daily review reminders per review cycle ([governance.md](governance.md#review-cycles)), and daily reminders for synced documents unchanged in their source or missing upstream, once per staleness episode ([connectors.md](connectors.md#stale-documents-and-reminders)); ranking is not lowered.
 - Citation anchors: page numbers and bounding boxes from Docling let the UI highlight the exact passage in a PDF viewer.
 
 ---

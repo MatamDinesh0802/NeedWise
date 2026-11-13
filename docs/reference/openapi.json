@@ -3366,6 +3366,7 @@
           "admin"
         ],
         "summary": "List Sources",
+        "description": "Org admins: every source. Collection owners: the sources of the collections they own.\nAnyone else: 403.",
         "operationId": "list_sources_api_v1_admin_sources_get",
         "responses": {
           "200": {
@@ -3424,12 +3425,35 @@
         }
       }
     },
+    "/api/v1/admin/sources/options": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Source Options",
+        "description": "What the \"New source\" form offers this caller: every kind (with whether its OAuth is set\nup on this deployment) and the collections they may sync into.",
+        "operationId": "source_options_api_v1_admin_sources_options_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOptions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/sources/{key}": {
       "put": {
         "tags": [
           "admin"
         ],
         "summary": "Update Source",
+        "description": "What the source syncs (its configuration), the schedule, enabled, and the staleness\nthreshold. The collection it syncs into is fixed (docs/connectors.md).",
         "operationId": "update_source_api_v1_admin_sources__key__put",
         "parameters": [
           {
@@ -3480,7 +3504,7 @@
           "admin"
         ],
         "summary": "Delete Source",
-        "description": "Removes the source and every document it synced (and their search index entries).",
+        "description": "Disconnects the source: removes it, its credentials, its run history and every document\nit synced (and their search index entries).",
         "operationId": "delete_source_api_v1_admin_sources__key__delete",
         "parameters": [
           {
@@ -3496,6 +3520,92 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/sources/{key}/pause": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Pause Source",
+        "description": "No scheduled syncs (and no \"Sync now\") until resumed. The documents stay searchable.",
+        "operationId": "pause_source_api_v1_admin_sources__key__pause_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/sources/{key}/resume": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Resume Source",
+        "description": "Scheduled syncs again; one is due at once when the interval has passed while paused.",
+        "operationId": "resume_source_api_v1_admin_sources__key__resume_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -3599,13 +3709,14 @@
         }
       }
     },
-    "/api/v1/admin/sources/{key}/oauth/google/start": {
+    "/api/v1/admin/sources/{key}/runs": {
       "get": {
         "tags": [
           "admin"
         ],
-        "summary": "Google Start",
-        "operationId": "google_start_api_v1_admin_sources__key__oauth_google_start_get",
+        "summary": "Source Runs",
+        "description": "The source's run history, newest first (the newest 100 runs are kept).",
+        "operationId": "source_runs_api_v1_admin_sources__key__runs_get",
         "parameters": [
           {
             "name": "key",
@@ -3615,6 +3726,18 @@
               "type": "string",
               "title": "Key"
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
           }
         ],
         "responses": {
@@ -3622,7 +3745,101 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/workmind__api__v1__sources__RunOut"
+                  },
+                  "title": "Response Source Runs Api V1 Admin Sources  Key  Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/sources/stale-documents": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Stale Synced Documents",
+        "description": "Synced documents that look stale: missing upstream (a scan cut short no longer lists\nthem; kept until a complete scan decides), or not changed in the source for `days` (default:\nthe source's own threshold). Missing ones first, then the oldest. Like the governance\noverview, an admin who cannot open a collection sees that its documents are stale, never\ntheir titles or links.",
+        "operationId": "stale_synced_documents_api_v1_admin_sources_stale_documents_get",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "one source's key",
+              "title": "Source"
+            },
+            "description": "one source's key"
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 3650,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "not changed for this long; default: each source's own",
+              "title": "Days"
+            },
+            "description": "not changed for this long; default: each source's own"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaleSyncedDocument"
+                  },
+                  "title": "Response Stale Synced Documents Api V1 Admin Sources Stale Documents Get"
+                }
               }
             }
           },
@@ -3646,7 +3863,7 @@
           "admin"
         ],
         "summary": "Stale Documents",
-        "description": "Documents past their `valid_until`, or not updated for `days`: candidates for review.\nAdmins see titles only, never content.",
+        "description": "Every document (uploads too) past its `valid_until`, or not updated in WorkMind for\n`days`: candidates for review. Org admins only; titles only, never content. Synced documents\nthat are stale in their source: `GET /admin/sources/stale-documents`.",
         "operationId": "stale_documents_api_v1_admin_sources_stale_get",
         "parameters": [
           {
@@ -3688,6 +3905,115 @@
         }
       }
     },
+    "/api/v1/admin/sources/{key}/oauth/google/start": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Google Start",
+        "operationId": "google_start_api_v1_admin_sources__key__oauth_google_start_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "admin",
+                "knowledge"
+              ],
+              "type": "string",
+              "default": "admin",
+              "title": "Back"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/sources/{key}/oauth/slack/start": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Slack Start",
+        "description": "Slack's consent screen for the workspace: the bot token it grants (read-only channel\nhistory) is stored encrypted, like a pasted one.",
+        "operationId": "slack_start_api_v1_admin_sources__key__oauth_slack_start_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "admin",
+                "knowledge"
+              ],
+              "type": "string",
+              "default": "admin",
+              "title": "Back"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/oauth/google/callback": {
       "get": {
         "tags": [
@@ -3695,6 +4021,67 @@
         ],
         "summary": "Google Callback",
         "operationId": "google_callback_api_v1_oauth_google_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "State"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/oauth/slack/callback": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Slack Callback",
+        "operationId": "slack_callback_api_v1_oauth_slack_callback_get",
         "parameters": [
           {
             "name": "code",
@@ -4313,7 +4700,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunOut"
+                  "$ref": "#/components/schemas/workmind__api__v1__work__RunOut"
                 }
               }
             }
@@ -4357,7 +4744,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/RunOut"
+                    "$ref": "#/components/schemas/workmind__api__v1__work__RunOut"
                   },
                   "title": "Response List Runs Api V1 Admin Workflows  Key  Runs Get"
                 }
@@ -5937,6 +6324,35 @@
   },
   "components": {
     "schemas": {
+      "AccessOut": {
+        "properties": {
+          "principal": {
+            "type": "string",
+            "title": "Principal"
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Relation"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "principal",
+          "relation",
+          "label"
+        ],
+        "title": "AccessOut",
+        "description": "Who can see what this source syncs: the collection's access, as names."
+      },
       "ActionEdit": {
         "properties": {
           "text": {
@@ -7707,6 +8123,35 @@
         "title": "CollectionGovernanceUpdate",
         "description": "Fields left out stay as they are; null clears them."
       },
+      "CollectionOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "name",
+          "scope"
+        ],
+        "title": "CollectionOption"
+      },
       "CollectionOut": {
         "properties": {
           "id": {
@@ -9330,6 +9775,66 @@
         "title": "Items[GroupOut]"
       },
       "JsonValue": {},
+      "KindOption": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "web",
+              "github",
+              "slack",
+              "gdrive"
+            ],
+            "title": "Kind"
+          },
+          "credentials": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Credentials"
+          },
+          "oauth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "google",
+                  "slack"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth"
+          },
+          "oauth_configured": {
+            "type": "boolean",
+            "title": "Oauth Configured"
+          },
+          "default_stale_after_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Stale After Days"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "credentials",
+          "oauth",
+          "oauth_configured",
+          "default_stale_after_days"
+        ],
+        "title": "KindOption"
+      },
       "LabelsUpdate": {
         "properties": {
           "trust": {
@@ -11057,6 +11562,36 @@
         ],
         "title": "RoutingOut"
       },
+      "RunError": {
+        "properties": {
+          "item": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "plain": {
+            "type": "string",
+            "title": "Plain"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item",
+          "message",
+          "plain"
+        ],
+        "title": "RunError"
+      },
       "RunItem": {
         "properties": {
           "id": {
@@ -11096,79 +11631,6 @@
           "created_at"
         ],
         "title": "RunItem"
-      },
-      "RunOut": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "trigger": {
-            "type": "string",
-            "title": "Trigger"
-          },
-          "steps": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Steps"
-          },
-          "current_step": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Step"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "finished_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Finished At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "status",
-          "trigger",
-          "steps",
-          "current_step",
-          "error",
-          "created_at",
-          "finished_at"
-        ],
-        "title": "RunOut"
       },
       "RunStarted": {
         "properties": {
@@ -11300,6 +11762,20 @@
             "type": "boolean",
             "title": "Enabled",
             "default": true
+          },
+          "stale_after_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale After Days",
+            "description": "days without a change in the source before a document is stale; null: never. Left out: 180, or never for Slack."
           }
         },
         "type": "object",
@@ -11311,6 +11787,44 @@
           "config"
         ],
         "title": "SourceCreate"
+      },
+      "SourceOptions": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "owned"
+            ],
+            "title": "Scope"
+          },
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/KindOption"
+            },
+            "type": "array",
+            "title": "Kinds"
+          },
+          "collections": {
+            "items": {
+              "$ref": "#/components/schemas/CollectionOption"
+            },
+            "type": "array",
+            "title": "Collections"
+          },
+          "failure_alert_after": {
+            "type": "integer",
+            "title": "Failure Alert After"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope",
+          "kinds",
+          "collections",
+          "failure_alert_after"
+        ],
+        "title": "SourceOptions"
       },
       "SourceOut": {
         "properties": {
@@ -11335,6 +11849,36 @@
             "type": "string",
             "title": "Collection"
           },
+          "collection_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Collection Id"
+          },
+          "collection_name": {
+            "type": "string",
+            "title": "Collection Name"
+          },
+          "collection_scope": {
+            "type": "string",
+            "title": "Collection Scope"
+          },
+          "access": {
+            "items": {
+              "$ref": "#/components/schemas/AccessOut"
+            },
+            "type": "array",
+            "title": "Access"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "config": {
             "additionalProperties": true,
             "type": "object",
@@ -11351,6 +11895,21 @@
             "type": "array",
             "title": "Needs"
           },
+          "oauth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "google",
+                  "slack"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth"
+          },
           "interval_minutes": {
             "type": "integer",
             "title": "Interval Minutes"
@@ -11362,6 +11921,36 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "health": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "failing",
+              "paused",
+              "never_synced"
+            ],
+            "title": "Health"
+          },
+          "syncing": {
+            "type": "boolean",
+            "title": "Syncing"
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "title": "Consecutive Failures"
+          },
+          "failure_alerted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Alerted At"
           },
           "last_sync_at": {
             "anyOf": [
@@ -11387,6 +11976,18 @@
             ],
             "title": "Last Success At"
           },
+          "next_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Sync At"
+          },
           "last_error": {
             "anyOf": [
               {
@@ -11398,6 +11999,27 @@
             ],
             "title": "Last Error"
           },
+          "last_error_plain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Plain"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/workmind__api__v1__sources__RunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "stats": {
             "additionalProperties": true,
             "type": "object",
@@ -11406,6 +12028,20 @@
           "documents": {
             "type": "integer",
             "title": "Documents"
+          },
+          "stale_after_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale After Days"
+          },
+          "stale": {
+            "$ref": "#/components/schemas/StaleCounts"
           }
         },
         "type": "object",
@@ -11415,17 +12051,32 @@
           "name",
           "kind",
           "collection",
+          "collection_id",
+          "collection_name",
+          "collection_scope",
+          "access",
+          "owner",
           "config",
           "has_credentials",
           "needs",
+          "oauth",
           "interval_minutes",
           "enabled",
           "status",
+          "health",
+          "syncing",
+          "consecutive_failures",
+          "failure_alerted_at",
           "last_sync_at",
           "last_success_at",
+          "next_sync_at",
           "last_error",
+          "last_error_plain",
+          "last_run",
           "stats",
-          "documents"
+          "documents",
+          "stale_after_days",
+          "stale"
         ],
         "title": "SourceOut"
       },
@@ -11451,6 +12102,20 @@
           "enabled": {
             "type": "boolean",
             "title": "Enabled"
+          },
+          "stale_after_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale After Days",
+            "description": "left out: unchanged; null: never stale"
           }
         },
         "type": "object",
@@ -11486,6 +12151,24 @@
           "speakers"
         ],
         "title": "SpeakerMap"
+      },
+      "StaleCounts": {
+        "properties": {
+          "not_updated": {
+            "type": "integer",
+            "title": "Not Updated"
+          },
+          "missing_upstream": {
+            "type": "integer",
+            "title": "Missing Upstream"
+          }
+        },
+        "type": "object",
+        "required": [
+          "not_updated",
+          "missing_upstream"
+        ],
+        "title": "StaleCounts"
       },
       "StaleDocument": {
         "properties": {
@@ -11538,6 +12221,124 @@
           "valid_until"
         ],
         "title": "StaleDocument"
+      },
+      "StaleSyncedDocument": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "collection_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Collection Id"
+          },
+          "collection_name": {
+            "type": "string",
+            "title": "Collection Name"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_updated",
+              "missing_upstream"
+            ],
+            "title": "Reason"
+          },
+          "changed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed At"
+          },
+          "missing_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Since"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reminded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminded At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "url",
+          "collection_id",
+          "collection_name",
+          "source",
+          "source_name",
+          "reason",
+          "changed_at",
+          "missing_since",
+          "owner",
+          "reminded_at"
+        ],
+        "title": "StaleSyncedDocument"
       },
       "SystemStatus": {
         "properties": {
@@ -13204,6 +14005,168 @@
           "model"
         ],
         "title": "TestOut"
+      },
+      "workmind__api__v1__sources__RunOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "schedule",
+              "manual"
+            ],
+            "title": "Trigger"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "ok",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complete"
+          },
+          "stats": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Stats"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/RunError"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "trigger",
+          "requested_by",
+          "status",
+          "started_at",
+          "finished_at",
+          "complete",
+          "stats",
+          "errors"
+        ],
+        "title": "RunOut"
+      },
+      "workmind__api__v1__work__RunOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "trigger": {
+            "type": "string",
+            "title": "Trigger"
+          },
+          "steps": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Steps"
+          },
+          "current_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "trigger",
+          "steps",
+          "current_step",
+          "error",
+          "created_at",
+          "finished_at"
+        ],
+        "title": "RunOut"
       }
     }
   }

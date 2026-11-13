@@ -86,8 +86,9 @@ class GitHubConnector:
             if entry.get("type") == "blob" and self._wanted(entry["path"])
         ]
         # GitHub truncates very large trees: then some files were not listed, not deleted.
+        truncated = bool(tree.get("truncated"))
         return ScanResult(
-            items=items, complete=not tree.get("truncated"), cursor={"branch": branch}
+            items=items, complete=not truncated, cursor={"branch": branch}, truncated=truncated
         )
 
     async def fetch(self, item: RemoteItem) -> bytes:

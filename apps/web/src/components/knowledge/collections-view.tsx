@@ -1,6 +1,6 @@
 "use client";
 
-import { BadgeCheck, FileText, LibraryBig, PencilLine } from "lucide-react";
+import { BadgeCheck, FileText, LibraryBig, PencilLine, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 import { SignedInGate } from "@/components/auth/signed-in-gate";
@@ -56,10 +56,16 @@ function CollectionGrid({ me }: { me: Me }) {
     <>
       <RefreshingHint active={state.refreshing} />
       {governs ? (
-        <Link href="/knowledge/governance" className={buttonVariants({ variant: "outline", size: "sm", className: "w-fit" })}>
-          <BadgeCheck data-icon="inline-start" aria-hidden="true" />
-          Governance: reviews, owners and official requests
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/knowledge/governance" className={buttonVariants({ variant: "outline", size: "sm", className: "w-fit" })}>
+            <BadgeCheck data-icon="inline-start" aria-hidden="true" />
+            Governance: reviews, owners and official requests
+          </Link>
+          <Link href="/knowledge/sources" className={buttonVariants({ variant: "outline", size: "sm", className: "w-fit" })}>
+            <RefreshCw data-icon="inline-start" aria-hidden="true" />
+            Sources: what syncs into your collections
+          </Link>
+        </div>
       ) : null}
       <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {state.data.items.map((collection) => (

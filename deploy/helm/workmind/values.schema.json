@@ -406,6 +406,15 @@
           },
           "additionalProperties": false
         },
+        "slack": {
+          "type": "object",
+          "properties": {
+            "clientId": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
         "searxngUrl": {
           "$ref": "#/definitions/url"
         },
@@ -503,6 +512,9 @@
           "$ref": "#/definitions/credential"
         },
         "googleClientSecret": {
+          "$ref": "#/definitions/credential"
+        },
+        "slackClientSecret": {
           "$ref": "#/definitions/credential"
         },
         "licenseKey": {
