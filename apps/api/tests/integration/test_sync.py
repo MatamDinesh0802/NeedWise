@@ -2,13 +2,15 @@
 unchanged items without fetching them, versions changed ones, propagates deletions only after a
 complete scan or when the source reports them (delta tombstones), records failures without
 deleting anything (and without moving an incremental source's cursor past them), keeps where
-an item sits in its source, and runs one sync at a time.
+an item sits in its source, and runs one sync at a time. The last tests run the real
+Confluence and SharePoint connectors against their documented-API fakes through the engine.
 
 Needs TEST_QDRANT_URL (and the test database)."""
 
 import os
 import uuid
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -17,11 +19,17 @@ import httpx
 import pytest
 from sqlalchemy import select
 
+from tests import fake_confluence
+from tests.fake_confluence import FakeConfluence, Page
+from tests.fake_graph import ROOT_ID, SITE_URL, FakeGraph, Item
 from tests.integration.conftest import SessionFactory, seed_acme
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
+from workmind.modules.connectors.confluence import ConfluenceConnector
 from workmind.modules.connectors.models import Source
+from workmind.modules.connectors.oauth import OAuthApp
 from workmind.modules.connectors.secrets import SecretBox
+from workmind.modules.connectors.sharepoint import SharePointConnector
 from workmind.modules.connectors.sync import SyncDeps, sync_source
 from workmind.modules.knowledge.dispatch import InlineDispatcher
 from workmind.modules.knowledge.models import Collection, Document
@@ -306,3 +314,108 @@ async def test_only_one_sync_runs_at_a_time(
 
     assert report.status == "skipped"
     assert connector.fetched == []
+
+
+async def connect(deps: SyncDeps, source: Source, kind: str, credentials: dict[str, Any]) -> None:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+        assert stored is not None
+        stored.kind = kind
+        stored.credentials = deps.secrets.seal(source.id, credentials)
+
+
+async def stored_credentials(deps: SyncDeps, source: Source) -> dict[str, Any]:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+    assert stored is not None
+    assert stored.credentials is not None
+    return deps.secrets.open(source.id, stored.credentials)
+
+
+async def test_a_sharepoint_folder_stays_in_sync_through_its_delta_feed(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, _, source, qdrant, name = setup
+    fake = FakeGraph()
+    fake.put(Item("01POLICIES", "Policies", ROOT_ID, folder=True))
+    fake.put(Item("01LEAVE", "leave.md", "01POLICIES", data=b"# Leave\n\nParental leave: 16 w.\n"))
+    fake.put(Item("01TRAVEL", "travel.md", "01POLICIES", data=b"# Travel\n\nHotels: 250.\n"))
+    fake.put(Item("01ARCHIVE", "Archive", "01POLICIES", folder=True))
+    fake.put(Item("01OLD", "old.md", "01ARCHIVE", data=b"# Old\n\nOld rules.\n"))
+    fake.put(Item("01BUDGET", "budget.md", ROOT_ID, data=b"# Budget\n\nNot in Policies.\n"))
+    await connect(deps, source, "sharepoint", {"refresh_token": fake.refresh_token})
+    deps = replace(
+        deps,
+        connectors=lambda source, credentials: SharePointConnector(
+            fake.client(),
+            site_url=SITE_URL,
+            library=None,
+            folder="Policies",
+            credentials=credentials,
+            app=OAuthApp("client", "secret", "contoso.onmicrosoft.com"),
+        ),
+    )
+
+    first = await run(deps, source)
+    fake.write("01LEAVE", b"# Leave\n\nParental leave: 18 w.\n")
+    fake.delete("01TRAVEL")
+    second = await run(deps, source)
+    fake.move("01ARCHIVE", ROOT_ID)  # Graph reports the folder, not the file inside it
+    third = await run(deps, source)
+
+    docs = await documents(deps, source)
+    assert (first.status, first.added, first.items) == ("ok", 3, 3)
+    assert (second.items, second.updated, second.deleted) == (1, 1, 1)  # a tombstone
+    assert (third.status, third.deleted, third.unchanged) == ("ok", 1, 1)  # a full listing
+    assert set(docs) == {"01LEAVE"}
+    leave = docs["01LEAVE"]
+    assert (leave.source, leave.status) == ("sharepoint", "ready")
+    assert leave.source_meta is not None
+    assert (leave.source_meta["path"], leave.source_meta["site_url"]) == ("Policies", SITE_URL)
+    assert leave.url == f"{SITE_URL}/Shared%20Documents/Policies/leave.md"
+    assert await qdrant.count(name, tenant_id=source.tenant_id) == 1
+    # Microsoft rotated the refresh token at the first sync: the new one was stored.
+    assert (await stored_credentials(deps, source))["refresh_token"] == fake.refresh_token
+    assert (await stored_cursor(deps, source))["delta_link"].startswith("https://graph.microsoft")
+
+
+async def test_a_confluence_space_stays_in_sync(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, _, source, _, _ = setup
+    fake = FakeConfluence()
+    fake.space("98306", "HR", "People")
+    fake.page(Page("1001", "98306", "People home", "<p>Everything about working here.</p>"))
+    fake.page(Page("1002", "98306", "Leave", "<p>Parental leave is 16 weeks.</p>", "1001", "page"))
+    fake.page(Page("1003", "98306", "Travel", "<p>Hotels are capped.</p>", "1001", "page"))
+    await connect(
+        deps,
+        source,
+        "confluence",
+        {"email": fake_confluence.EMAIL, "api_token": fake_confluence.API_TOKEN},
+    )
+    deps = replace(
+        deps,
+        connectors=lambda source, credentials: ConfluenceConnector(
+            fake.client(),
+            site_url=fake_confluence.SITE,
+            spaces=["HR"],
+            credentials=credentials,
+            app=OAuthApp(),
+        ),
+    )
+
+    first = await run(deps, source)
+    fake.edit("1002", "<p>Parental leave is 18 weeks.</p>")
+    fake.pages["1003"].status = "trashed"
+    second = await run(deps, source)
+
+    docs = await documents(deps, source)
+    assert (first.status, first.added) == ("ok", 3)
+    assert (second.updated, second.unchanged, second.deleted) == (1, 1, 1)
+    assert set(docs) == {"page:1001", "page:1002"}
+    leave = docs["page:1002"]
+    assert leave.title == "Leave"
+    assert leave.url == f"{fake_confluence.SITE}/wiki/spaces/HR/pages/1002/Leave"
+    assert leave.source_meta is not None
+    assert leave.source_meta["path"] == ["People", "People home", "Leave"]
