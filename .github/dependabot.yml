@@ -2,7 +2,8 @@
 # proposed (cooldown), so a release that is pulled soon after publishing never reaches a PR;
 # security updates are not delayed. Not covered here: the scanner images pinned in
 # scripts/security-scan.sh (docs/security/supply-chain.md, "Updating the scanners"), and the
-# docs site's docs/requirements.txt, which `make docs-lock` re-pins by date.
+# docs site's docs/requirements.txt, which `make docs-lock` re-pins by date. Major upgrades are
+# not proposed (below): they are planned by hand, with their own PR and tests.
 version: 2
 updates:
   # The API, and the load-test harness (its own uv project).
@@ -10,6 +11,10 @@ updates:
     directories: [/apps/api, /loadtests]
     schedule: { interval: weekly, day: monday }
     cooldown: { default-days: 7 }
+    ignore:
+      # Major upgrades change behaviour and are planned by hand; patch and minor ones come weekly.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       python:
         applies-to: version-updates
@@ -23,6 +28,10 @@ updates:
     directories: [/apps/web, /e2e/browser]
     schedule: { interval: weekly, day: monday }
     cooldown: { default-days: 7 }
+    ignore:
+      # Major upgrades change behaviour and are planned by hand; patch and minor ones come weekly.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       web:
         applies-to: version-updates
@@ -36,6 +45,16 @@ updates:
     directories: [/apps/api, /apps/web]
     schedule: { interval: weekly, day: monday }
     cooldown: { default-days: 7 }
+    ignore:
+      # Major upgrades change behaviour and are planned by hand; patch and minor ones come weekly.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # The Python minor version is the runtime (requires-python): moved by hand.
+      - dependency-name: python
+        versions: [">=3.14"]
+      # uv 0.x minor releases can change behaviour: moved by hand.
+      - dependency-name: astral-sh/uv
+        update-types: ["version-update:semver-minor"]
     groups:
       base-images: { patterns: ["*"] }
 
@@ -44,6 +63,10 @@ updates:
     directory: /
     schedule: { interval: weekly, day: monday }
     cooldown: { default-days: 7 }
+    ignore:
+      # Major upgrades change behaviour and are planned by hand; patch and minor ones come weekly.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       compose-images: { patterns: ["*"] }
 
@@ -52,5 +75,9 @@ updates:
     directory: /
     schedule: { interval: weekly, day: monday }
     cooldown: { default-days: 7 }
+    ignore:
+      # Major upgrades change behaviour and are planned by hand; patch and minor ones come weekly.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       actions: { patterns: ["*"] }
