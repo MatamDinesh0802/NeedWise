@@ -12,6 +12,7 @@ import {
   fileKind,
   formatDay,
   formatDuration,
+  formatSpoken,
   formatTimestamp,
   isCommitmentClosed,
   jumpTarget,
@@ -339,6 +340,14 @@ describe("speakers and owners", () => {
     expect(speakerName("SPEAKER_4", { SPEAKER_4: { name: "SPEAKER_4", user_id: null } })).toBe("Speaker 4");
     expect(speakerName("SPEAKER_4", { SPEAKER_4: { name: "Lena Ortiz", user_id: null, guest: true } })).toBe("Lena Ortiz");
     expect(ownerText(item({ owner: "SPEAKER_2", owner_user_id: null }), "u-me")).toBe("Speaker 2");
+  });
+
+  it("says how long someone spoke, in seconds under a minute", () => {
+    expect(formatSpoken(3.5)).toBe("4 s");
+    expect(formatSpoken(0.2)).toBe("1 s");
+    expect(formatSpoken(59.4)).toBe("59 s");
+    expect(formatSpoken(75)).toBe("1 min");
+    expect(formatSpoken(1385)).toBe("23 min");
   });
 
   it("sums up each speaker: how much they said and where they first spoke, in order of appearance", () => {

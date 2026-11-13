@@ -44,6 +44,7 @@ import {
   dueOf,
   formatDay,
   formatDuration,
+  formatSpoken,
   formatTimestamp,
   GUEST_NAME_MAX,
   isProcessing,
@@ -411,7 +412,7 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
                   )}
                 >
                   {starts.has(segment.id) ? (
-                    <p className="w-full pt-1 text-xs font-semibold text-muted-foreground">
+                    <p className="w-full pt-1 text-xs font-semibold">
                       <span className="sr-only">Topic: </span>
                       {labelText(starts.get(segment.id)?.title ?? "")}
                     </p>
@@ -419,14 +420,24 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
                   {meeting.has_media ? (
                     <button
                       type="button"
-                      className="h-fit shrink-0 rounded font-mono text-xs text-muted-foreground tabular-nums hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                      className={cn(
+                        "h-fit shrink-0 rounded font-mono text-xs tabular-nums hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+                        current === segment.id || flash === segment.id ? "text-foreground" : "text-muted-foreground",
+                      )}
                       aria-label={`Play from ${formatTimestamp(segment.start)}`}
                       onClick={() => jump({ kind: "media", seconds: segment.start, segment: segment.id })}
                     >
                       {formatTimestamp(segment.start)}
                     </button>
                   ) : (
-                    <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">{formatTimestamp(segment.start)}</span>
+                    <span
+                      className={cn(
+                        "shrink-0 font-mono text-xs tabular-nums",
+                        current === segment.id || flash === segment.id ? "text-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      {formatTimestamp(segment.start)}
+                    </span>
                   )}
                   <p className="min-w-0 flex-1">
                     {segment.speaker ? <span className="font-medium">{speakerName(segment.speaker, meeting.speakers)}: </span> : null}
@@ -462,13 +473,17 @@ function Topics({ topics, hasMedia, current, onJump }: { topics: Topic[]; hasMed
                   "flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
                   current === index && "bg-sky-500/10",
                 )}
-                aria-label={`${title}, ${topicRange(topic)}: ${hasMedia ? "play from here" : "show in the transcript"}`}
                 onClick={() =>
                   onJump(hasMedia ? { kind: "media", seconds: topic.start, segment: topic.segment } : { kind: "segment", segment: topic.segment })
                 }
               >
-                <span className="w-24 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">{topicRange(topic)}</span>
-                <span className="min-w-0 flex-1">{title}</span>
+                <span className={cn("w-24 shrink-0 font-mono text-xs tabular-nums", current === index ? "text-foreground" : "text-muted-foreground")}>
+                  {topicRange(topic)}
+                </span>{" "}
+                <span className="min-w-0 flex-1">
+                  {title}
+                  <span className="sr-only">{hasMedia ? ": play from here" : ": show in the transcript"}</span>
+                </span>
               </button>
             </li>
           );
@@ -813,7 +828,7 @@ function SpeakerMapping({
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {segments === 1 ? "1 segment" : `${segments} segments`}
-                      {seconds > 0 ? `, ${formatDuration(seconds)}` : ""}
+                      {seconds > 0 ? `, ${formatSpoken(seconds)}` : ""}
                     </p>
                     {first ? <p className="mt-1 line-clamp-2 text-xs text-muted-foreground italic">“{first.text}”</p> : null}
                   </div>
@@ -831,14 +846,19 @@ function SpeakerMapping({
                     </Button>
                   ) : null}
                 </div>
-                <SimpleSelect
-                  size="sm"
-                  ariaLabel={`Who is ${shown}?`}
-                  value={draftValue(draft)}
-                  disabled={pending}
-                  onChange={(value) => setDrafts({ ...drafts, [label]: draftFromValue(value, draft) })}
-                  options={speakerOptions(people, speaker)}
-                />
+                <Field label={`Who is ${shown}?`}>
+                  {({ id, describedBy }) => (
+                    <SimpleSelect
+                      id={id}
+                      describedBy={describedBy}
+                      size="sm"
+                      value={draftValue(draft)}
+                      disabled={pending}
+                      onChange={(value) => setDrafts({ ...drafts, [label]: draftFromValue(value, draft) })}
+                      options={speakerOptions(people, speaker)}
+                    />
+                  )}
+                </Field>
                 {draft.kind === "guest" ? (
                   <Field label={`Guest's name for ${shown}`} error={errors[label] ?? null}>
                     {({ id, describedBy, invalid }) => (

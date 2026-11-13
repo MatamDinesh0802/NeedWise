@@ -105,7 +105,7 @@ describe("ReadyMeeting", () => {
       }),
     );
     expect(html).toContain('id="topics-heading"');
-    expect(html).toContain('aria-label="Safety drill, 0:01–0:05: show in the transcript"');
+    expect(html).toContain('0:01–0:05</span> <span class="min-w-0 flex-1">Safety drill<span class="sr-only">: show in the transcript</span>');
     expect(html).toContain("Battery alerts for Speaker 2"); // a label nobody named yet reads as a speaker
     expect(html).toContain('<span class="sr-only">Topic: </span>Safety drill');
     expect(html).not.toContain("Worked out from the transcript");
@@ -117,7 +117,7 @@ describe("ReadyMeeting", () => {
         topics: [{ title: "Part, coffee, machine", segment: "T1", start: 1, end: 10, source: "words" }],
       }),
     );
-    expect(recording).toContain('aria-label="Part, coffee, machine, 0:01–0:10: play from here"');
+    expect(recording).toContain('Part, coffee, machine<span class="sr-only">: play from here</span>');
     expect(recording).toContain("Worked out from the transcript&#x27;s words");
   });
 
@@ -142,7 +142,7 @@ describe("ReadyMeeting", () => {
     expect(html).toContain("Speaker 1 asked Speaker 2 for the quote.");
     expect(html).toContain("Speaker 1: </span>Can you send the quote?");
     expect(html).toContain("Jonas Brandt: </span>Yes, by Friday.");
-    expect(html).toContain('aria-label="Who is Speaker 1?"');
+    expect(html).toContain(">Who is Speaker 1?</label>");
     expect(html).toContain('aria-label="Listen to Speaker 1 from 0:01"');
     expect(html).toContain("“Can you send the quote?”");
     expect(html).toContain("Guest&#x27;s name for Speaker 2");

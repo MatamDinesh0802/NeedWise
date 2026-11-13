@@ -196,6 +196,11 @@ export function formatTimestamp(seconds: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
 }
 
+/** How long someone spoke: 4.2 → "4 s", 75 → "1 min" (formatDuration above a minute). */
+export function formatSpoken(seconds: number): string {
+  return seconds < 59.5 ? `${Math.max(1, Math.round(seconds))} s` : (formatDuration(seconds) ?? "");
+}
+
 /** 1385 → "23 min", 45 → "1 min", 3900 → "1 h 5 min". */
 export function formatDuration(seconds: number | null): string | null {
   if (seconds == null || !Number.isFinite(seconds)) return null;
