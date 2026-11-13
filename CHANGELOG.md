@@ -211,6 +211,38 @@ More upgrade notes (2026-11-13 merges):
 - With the default 14-day grace period, the seeded Company Handbook's overdue official documents
   reach the org admins' escalation stage at the first daily run from 2026-11-17.
 
+Final review fixes (2026-11-13), each with a regression test:
+
+- Sources: a collection owner's web source can no longer reach private or loopback addresses
+  (only an org admin's configuration can; checked when saved, at every sync and on the address
+  an answer came from); a change to what a source reads by anyone but the person whose
+  credentials are stored removes those credentials; Connect (OAuth) starts with a POST.
+  Run errors name items by id, not title. Migration `0027` adds `sources.credentials_by`,
+  `sources.private_network` and `documents.source_deleted_at`.
+- Approvals: a chain needs a different person at every step, also through escalations; a step
+  approved on an escalated copy gives the next step the full time; an edit updates the summary;
+  the assistant tells the requester who decides an action a rule sent elsewhere, and the
+  approver sees that the requester has not confirmed it.
+- Request routing: the router model works with Claude (its schema carried `minimum`/`maximum`,
+  which the API refuses, so every request no rule matched went to triage); a chosen category
+  outweighs any number of keywords; 0.696 no longer counts as 0.70. Measured: 36/39 to the
+  right queue, 1 to a wrong department ([report](evals/results/2026-11-13-request-routing.md)).
+- Documents' own access lists: an upload never updates a document the uploader cannot see;
+  legal hold labels, review escalations and demotion notices no longer name such a document to
+  people it leaves out.
+- Legal holds: a document a delta source deleted while a hold kept it is deleted at the first
+  sync after the release.
+- Notifications: one Slack channel post per thing (legal holds, budgets, source failure
+  episodes no longer swallowed after the first), and Slack text escaped.
+- MCP `ask` and `list_collections` are audited; Run now on a workflow is audited with who
+  pressed it; the workflow editor flags unknown tools and approvers before saving; JSON
+  definitions may use tabs and exponents; research steps in workflows ask for a plain-text
+  report.
+- Insights on PostgreSQL: casts to `reg*` types and `version()` are refused; weakening a source's
+  TLS needs its password again.
+- Docs: what the design describes and is not built is listed in ARCHITECTURE and per phase in the
+  ROADMAP; a new guide for people, departments, groups and roles.
+
 ## v0.11 — Phase 11: admin, governance and usage analytics (2026-11-12, not tagged)
 
 - **Open-core boundary** ([ADR 0011](docs/adr/0011-open-core-boundary-and-license-keys.md)):
