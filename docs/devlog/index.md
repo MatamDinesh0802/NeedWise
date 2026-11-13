@@ -11,7 +11,8 @@ sources are in `docs/devlog/assets/`). Posts 7 to 13 suggest a visual instead: t
 not made yet. The links in the posts' first comments point to the repository,
 `https://github.com/MatamDinesh0802/NeedWise`, and open once it is public.
 
-**For the launch, one post:** [the launch post](launch-post.md). The thirteen below are the
+**For the launch, one post:** [the launch post](launch-post.md). The app screenshots in posts
+1, 2 and 5 were taken at those milestones, when the project was still called WorkMind. The thirteen below are the
 development log, one per milestone.
 
 | Post | Milestone | About |
