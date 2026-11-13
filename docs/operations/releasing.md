@@ -1,14 +1,17 @@
 # Releasing WorkMind
 
 How a version gets from `main` to a GitHub Release with images on GHCR, what a release
-contains, and how to cut v1.0.0. The policy is [ROADMAP §6](../ROADMAP.md#6-release-process);
+contains, and how v1.0.0 was cut and is published. The policy is [ROADMAP §6](../ROADMAP.md#6-release-process);
 the checks the images pass are in [docs/security/supply-chain.md](../security/supply-chain.md).
 
 > **Status:** not run on GitHub yet, because there is no repository to run it in
-> ([ROADMAP §8](../ROADMAP.md#8-checklist-before-going-public)). Checked so far: the workflows
-> pass actionlint, zizmor and the GitHub workflow schema; release-please 17.6.0's own updaters,
-> run on the repository's files, bump all five version entries and leave `uv lock --check`
-> passing; and the `permission-gate` job's commands, run locally against images built from this
+> ([ROADMAP §8](../ROADMAP.md#8-checklist-before-going-public)); v1.0.0 was tagged by hand
+> ([below](#v100)). Checked so far: the workflows pass actionlint, zizmor and the GitHub workflow
+> schema; release-please 17.6.0's own updaters, run on the repository's files on 2026-11-13, bump
+> all nine version entries (the chart's `appVersion` through its marker comment: release-please's
+> YAML updater rewrites the whole file and drops the comments, so it is not used); the release
+> workflow's version check, run locally, passes for 1.0.0 and names every file for another
+> version; and the `permission-gate` job's commands, run locally against images built from this
 > branch (their own compose project and tags, started with `--no-build` through
 > `WORKMIND_API_IMAGE` and `WORKMIND_WEB_IMAGE`), gave a healthy stack, the seeded Acme corpus
 > and 0 leaks in 48 retrieval checks. Building for arm64 under QEMU, pushing to GHCR, the
@@ -20,12 +23,17 @@ SemVer. Before 1.0, a minor version is a phase (0.1, 0.2…) and patch versions 
 version for the whole repository, kept in:
 
 - `apps/api/pyproject.toml` and `ee/python/pyproject.toml`, and their two entries in
-  `apps/api/uv.lock` (otherwise `uv sync --locked` fails after a bump),
-- `apps/web/package.json`,
+  `apps/api/uv.lock` (otherwise `uv sync --locked` fails after a bump); both packages read their
+  `__version__` from this metadata,
+- `apps/web/package.json` and `e2e/browser/package.json`,
+- `loadtests/pyproject.toml` and its entry in `loadtests/uv.lock`,
+- `appVersion` in `deploy/helm/workmind/Chart.yaml` (the image tag the chart deploys by default;
+  the chart's own `version` is bumped by hand whenever the chart changes),
 - `.release-please-manifest.json` (the last released version).
 
 release-please changes all of them together ([`release-please-config.json`](../../release-please-config.json)).
-The API reports its version in `GET /api/v1/system/status` and in the OpenAPI document.
+The release workflow's `prepare` job refuses a tag whose version the API, Enterprise and web
+packages or the chart's `appVersion` do not carry. The API reports its version in `GET /api/v1/system/status` and in the OpenAPI document.
 
 ## The flow
 
@@ -89,33 +97,39 @@ commands above. In production, pin the digest from the release notes as well
 API starts: migrations only go forward, and the release notes call out breaking ones. Take a
 backup before upgrading.
 
-## Cutting v1.0.0
+## v1.0.0
 
-The only tag so far is `v0.1.0` (Phase 1). Phases 2 to 11 were finished on `main` but never
-tagged or published, so `.release-please-manifest.json` says `0.1.0` and the package files still
-say `0.0.1`. Left alone, the first release PR would propose 0.2.0. For v1.0.0:
+v1.0.0 was cut by hand on 2026-11-13, without release-please, because there is no GitHub
+repository to run it in. Before it, the only tag was `v0.1.0` (Phase 1); Phases 2 to 11 were
+finished on `main` without tags.
 
-1. Before the release, run the full evaluation with real models (`uv run wm eval --judge`, and
-   the suites in [evals/README.md](../../evals/README.md)) on the release candidate and commit
-   the reports to `evals/results/`, so `eval-reports-v1.0.0.tar.gz` has numbers for this version.
-2. Push a commit to `main` with a `Release-As` footer:
+1. **The release-candidate evaluation** ran on `144afd2` with Claude Sonnet 5.5 and its reports
+   are in `evals/results/` (`2026-11-13-v1.0.0-*`). The model provider's credit ran out during
+   the third run, so only the permission gate, the core suites and the request-routing rules
+   completed; the other suites' latest numbers are the full v1.0 benchmark of 2026-11-12
+   ([v1.0 benchmarks](../benchmarks/v1.0.md#v100-release-check-2026-11-13)).
+2. **Versions** were set to 1.0.0 by hand in every file listed [above](#versions), the chart to
+   0.2.0, and the manifest to 1.0.0; `uv lock` updated the two lockfiles.
+3. **The changelog entry and the release notes** were written by hand: the v1.0.0 section of
+   [`CHANGELOG.md`](../../CHANGELOG.md) and [docs/releases/v1.0.0.md](../releases/v1.0.0.md).
+4. **The tag:** an annotated `v1.0.0` on the release commit, in the maintainer's repository only.
 
-   ```bash
-   git commit --allow-empty -s -m "chore: release 1.0.0" -m "Release-As: 1.0.0"
-   ```
+### Publishing v1.0.0 once the repository exists
 
-   release-please then proposes 1.0.0 and bumps all the version files from 0.0.1.
-3. In the release PR, replace the hand-written "Unreleased (Phase 12)" section of `CHANGELOG.md`
-   with the generated entry (release-please inserts its entry below that section, above v0.11),
-   keeping what the generated list lacks: upgrade notes and the measured numbers. Every commit
-   on the PR needs a `Signed-off-by:` line (CI's DCO job): release-please's own commit gets one
-   from `signoff` in `release-please-config.json`; an edit in GitHub's web editor gets one only
-   with the repository setting below, so otherwise make the edit locally with `git commit -s`.
-4. Close and reopen the PR so CI runs, then merge.
-
-`bootstrap-sha` in `release-please-config.json` points at the last Phase 11 commit, so the first
-generated entry lists Phase 12's commits only. Once v1.0.0 exists, release-please finds the last
-release from its tag and `bootstrap-sha` is no longer used.
+1. Do the [repository settings](#repository-settings-this-needs) first.
+2. Push `main` and the tag: `git push origin main v1.0.0`. The pushed tag runs
+   [`release.yml`](../../.github/workflows/release.yml) directly ([below](#other-ways-to-start-a-release)):
+   `prepare` checks the versions against the tag, then the images are built, scanned, put
+   through the permission gate and tagged `1.0.0` and `1.0`, and `github-release` creates the
+   GitHub Release with generated notes, since none exists. Replace those notes with
+   [docs/releases/v1.0.0.md](../releases/v1.0.0.md).
+3. The release attaches `evals/README.md` and the committed reports as of the tag, so its
+   `eval-reports-v1.0.0.tar.gz` holds the release check and the full v1.0 benchmark.
+4. From then on release-please takes over: it reads 1.0.0 from the manifest, finds that release
+   (from the GitHub Release, or the tag), and the next release PR lists only the commits after
+   it. Not tested; if its first PR lists older commits, set `last-release-sha` in
+   `release-please-config.json` to the tagged commit. `bootstrap-sha` is no longer used once a
+   release is found.
 
 ## Other ways to start a release
 

@@ -181,6 +181,8 @@ nav:
       - Load testing: load-testing.md
       - Load benchmarks: benchmarks/load.md
   - Case study: case-study.md
+  - Releases:
+      - v1.0.0 release notes: releases/v1.0.0.md
   - Roadmap: ROADMAP.md
   - Devlog:
       - devlog/index.md

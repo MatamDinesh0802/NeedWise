@@ -5,12 +5,44 @@ Notable changes to WorkMind AI. Versions follow [Semantic Versioning](https://se
 with release-please on, entries are generated from Conventional Commits and edited in the release
 PR ([docs/operations/releasing.md](docs/operations/releasing.md)).
 
-**About v0.2 to v0.11:** only v0.1.0 was tagged. Phases 2 to 11 were finished on `main` without a
-tag, a GitHub Release or published images, and the package files still say 0.0.1. Their sections
-were written afterwards from the git history and the roadmap; the numbers in them come from the
-committed evaluation reports in [evals/results](evals/results).
+**About v0.2 to v0.11:** only v0.1.0 and v1.0.0 were tagged. Phases 2 to 11 were finished on
+`main` without a tag, a GitHub Release or published images (the package files said 0.0.1 until
+v1.0.0). Their sections were written afterwards from the git history and the roadmap; the
+numbers in them come from the committed evaluation reports in [evals/results](evals/results).
 
-## Unreleased: Phase 12, production hardening (v1.0)
+## v1.0.0 — Phase 12: production hardening (2026-11-13)
+
+The first release since v0.1.0: everything of Phases 2 to 11 below, plus production hardening
+and a final review. Release notes, with the upgrade path, security notes and what is not built:
+[docs/releases/v1.0.0.md](docs/releases/v1.0.0.md). The tag `v1.0.0` exists in the
+maintainer's repository only: there is no public repository yet, so no GitHub Release and no
+published images.
+
+Summary:
+
+- **Hardening:** a security review against the OWASP Top 10 for LLM Applications and a threat
+  model (11 fixes), a red team of 68 attacks on four surfaces, supply-chain scanning and pinning,
+  multi-tenant hardening with rate limits, backup and restore, upgrades tested from v0.1.0, a
+  Helm chart tested on kind, load tests up to 800 simulated users, a browser end-to-end suite and
+  the docs site.
+- **What Phases 7 to 11 still lacked:** the source health dashboard, Confluence and
+  SharePoint/OneDrive connectors, documents' own access lists and Enterprise permission sync,
+  approver rules, escalation, email and Slack notifications, request routing, YAML workflows,
+  speaker diarization, PostgreSQL and MySQL sources for Insights, review escalation, legal holds
+  and document retention.
+- **The final review** (2026-11-13): 2 high security findings and a set of medium and low ones
+  fixed, each with a regression test (below).
+- **Measured for the release** ([benchmarks](docs/benchmarks/v1.0.md)): on the release candidate
+  `144afd2` with Claude Sonnet 5.5, 0 leaks in 183 retrieval checks and 68 red-team answers, 0
+  violations, 81/82 answers with every required fact, faithfulness 99.4%, abstention 6/6,
+  0.9 s to the first token (p50) and $0.0071 per answer. The model provider's credit ran out
+  during the next run, so the other suites were not repeated: their latest numbers are the full
+  v1.0 benchmark of 2026-11-12 (`1b62d52`): cross-department 14/15 with one search and 15/15
+  with agents, routing 53/56, text-to-SQL 33/36 with 0 leaks in 51 answers.
+- **Versions:** 1.0.0 in the API, the Enterprise package (which now reads it from its metadata),
+  the web app, the browser suite and the load tests; Helm chart 0.2.0 with `appVersion` 1.0.0;
+  release-please also bumps the browser suite, the load tests and the chart's `appVersion`, and
+  the release workflow checks the chart against the tag.
 
 Supply chain and releases ([docs/security/supply-chain.md](docs/security/supply-chain.md)):
 
@@ -210,6 +242,8 @@ More upgrade notes (2026-11-13 merges):
   request-routing rules.
 - With the default 14-day grace period, the seeded Company Handbook's overdue official documents
   reach the org admins' escalation stage at the first daily run from 2026-11-17.
+- Helm: chart 0.2.0 deploys image tag `1.0.0` by default (0.1.x deployed `0.0.1`). If your images
+  carry another tag, set `images.api.tag` and `images.web.tag` (or a digest).
 
 Final review fixes (2026-11-13), each with a regression test:
 

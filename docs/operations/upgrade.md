@@ -9,7 +9,13 @@ back. Backups are in [backup-restore.md](backup-restore.md).
 - **From any release to a later one, directly.** The database migrations are one linear chain
   (`0001` to `0027` today) and the `migrate` service applies every missing step in order, so
   there is no need to stop at intermediate versions.
-- **Tested:** v0.1.0 (the only tag so far, 2026-11-04; alembic `0004`) to the code of
+- **Tested for v1.0.0:** on 2026-11-13, `scripts/upgrade-test.sh v0.1.0` upgraded v0.1.0 to the
+  v1.0.0 release code (commit `9b9fe52`; the tag adds documentation to it): alembic `0004` to
+  `0027`, 10 tables before and 45 after with no row lost, `wm authz sync` wrote and removed 0
+  tuples, and all 17 checks of [the table below](#measured-v010-to-this-code) passed. The new
+  version's build took 54 s (with the build cache), `up` to healthy 22 s, the whole test 115 s,
+  on the laptop below. Restore and rollback were not repeated for v1.0.0.
+- **Tested before:** v0.1.0 (2026-11-04; alembic `0004`) to the code of
   2026-11-12 (alembic `0019`), four times on 2026-11-12, with `scripts/upgrade-test.sh`
   ([below](#measured-v010-to-this-code)). Restoring a v0.1.0 backup into that code, and rolling
   an upgraded stack back to v0.1.0, were tested too. Migrations `0020` to `0026` (the Phase 7 to
