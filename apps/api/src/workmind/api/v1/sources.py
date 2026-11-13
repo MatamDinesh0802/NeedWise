@@ -690,6 +690,8 @@ async def sync_now(ctx: ManagerContext, request: Request, key: str) -> Response:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         source = await _source(session, await _scope(session, ctx), key)
         source_id = source.id
+        if not source.enabled:  # the scheduler and workers skip it: say so instead of a no-op
+            raise ApiError(409, "source_paused", "The source is paused", "Resume it to sync.")
     if settings_of(request).ingestion_mode == "celery":
         from workmind.workers.celery_app import SYNC_TASK, app
 

@@ -217,7 +217,7 @@ All under `/api/v1/admin/sources`, for org admins and collection owners as descr
 | `PUT /admin/sources/{key}` | Name, configuration, schedule, enabled, `stale_after_days` (left out: unchanged) |
 | `POST /admin/sources/{key}/pause`, `/resume` | Pause or resume (audited) |
 | `PUT /admin/sources/{key}/credentials` | Replace (or with `{}` remove) the credentials; write-only |
-| `POST /admin/sources/{key}/sync` | Sync now (rate limited: `sync`) |
+| `POST /admin/sources/{key}/sync` | Sync now (rate limited: `sync`; `409 source_paused` while paused) |
 | `GET /admin/sources/{key}/runs?limit=` | The run history, newest first, errors with `plain` explanations |
 | `GET /admin/sources/stale-documents?source=&days=` | Stale synced documents (titles and links withheld where the caller cannot open the collection) |
 | `DELETE /admin/sources/{key}` | Disconnect: the source, its runs and its documents |

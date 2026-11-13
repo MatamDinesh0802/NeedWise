@@ -307,7 +307,7 @@ async def test_pause_and_resume(api: TestClient, acme: Acme) -> None:
     assert paused.status_code == 200
     assert (paused.json()["enabled"], paused.json()["health"]) == (False, "paused")
     assert paused.json()["next_sync_at"] is None
-    assert refused.status_code == 202  # accepted, but a paused source is never claimed
+    assert (refused.status_code, refused.json()["code"]) == (409, "source_paused")
     assert (resumed.json()["enabled"], resumed.json()["health"]) == (True, "never_synced")
 
 
