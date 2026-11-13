@@ -23,7 +23,9 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 PRINCIPAL = r"^(user|group|dept|dept-manager|org):[0-9a-f-]{36}$"
-EXTERNAL = r"^(anyone|(email|group|domain|slack-user|github-user|github-team|github-org):[^\s:]{1,320})$"
+EXTERNAL = (
+    r"^(anyone|(email|group|domain|slack-user|github-user|github-team|github-org):[^\s:]{1,255})$"
+)
 
 
 def _rls(table: str) -> None:

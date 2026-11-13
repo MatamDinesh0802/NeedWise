@@ -37,7 +37,7 @@ STATUSES = ("idle", "syncing", "ok", "error")
 #   slack-user:<id>        a Slack member whose e-mail Slack did not give
 #   github-user:<login>, github-team:<org>/<slug>, github-org:<org>
 EXTERNAL_PATTERN = (
-    r"^(anyone|(email|group|domain|slack-user|github-user|github-team|github-org):[^\s:]{1,320})$"
+    r"^(anyone|(email|group|domain|slack-user|github-user|github-team|github-org):[^\s:]{1,255})$"
 )
 
 
