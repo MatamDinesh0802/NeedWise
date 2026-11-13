@@ -2,7 +2,8 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
-HTTP_PORT ?= 8480
+# The app's port for status, e2e and the `make up` message: the environment, then .env, then 8480.
+HTTP_PORT ?= $(or $(shell sed -n 's/^HTTP_PORT=\([0-9][0-9]*\).*/\1/p' .env 2>/dev/null | tail -n 1),8480)
 
 .PHONY: help objects-dir up down reset logs ps status infra api-dev web-dev install lint fmt test e2e e2e-browser seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check backup restore upgrade-test helm-check helm-kind-test
 
