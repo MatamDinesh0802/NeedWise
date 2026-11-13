@@ -1,15 +1,19 @@
 """The sync engine against a scripted connector, with real PostgreSQL and Qdrant: adds, skips
 unchanged items without fetching them, versions changed ones, propagates deletions only after a
-complete scan, records failures without deleting anything, and runs one sync at a time. Every
-sync is a run in the history; a source that keeps failing alerts its managers once per episode;
-items a cut-short scan no longer lists are flagged, not deleted; stale synced documents remind
-their owners once per staleness episode.
+complete scan or when the source reports them (delta tombstones), records failures without
+deleting anything (and without moving an incremental source's cursor past them), keeps where
+an item sits in its source, and runs one sync at a time. Every sync is a run in the history; a
+source that keeps failing alerts its managers once per episode; items a cut-short scan no
+longer lists are flagged, not deleted; stale synced documents remind their owners once per
+staleness episode. The last tests run the real Confluence and SharePoint connectors against
+their documented-API fakes through the engine.
 
 Needs TEST_QDRANT_URL (and the test database)."""
 
 import os
 import uuid
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -18,12 +22,18 @@ import httpx
 import pytest
 from sqlalchemy import select, update
 
+from tests import fake_confluence
+from tests.fake_confluence import FakeConfluence, Page
+from tests.fake_graph import ROOT_ID, SITE_URL, FakeGraph, Item
 from tests.integration.conftest import SessionFactory, seed_acme
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
+from workmind.modules.connectors.confluence import ConfluenceConnector
 from workmind.modules.connectors.models import Source, SourceRun
+from workmind.modules.connectors.oauth import OAuthApp
 from workmind.modules.connectors.reminders import StaleReminderReport, send_source_reminders
 from workmind.modules.connectors.secrets import SecretBox
+from workmind.modules.connectors.sharepoint import SharePointConnector
 from workmind.modules.connectors.sync import SyncDeps, sync_source
 from workmind.modules.governance.models import AuditEvent
 from workmind.modules.identity.models import User
@@ -49,9 +59,17 @@ class ScriptedConnector:
         self.truncated = False
         self.fail = False
         self.fetched: list[str] = []
+        self.deleted: list[str] = []  # tombstones the next scan reports
+        self.unreachable: set[str] = set()  # items whose download fails
+        self.cursor: dict[str, Any] | None = None
 
     def put(
-        self, external_id: str, text: str, version: str, modified_at: datetime | None = None
+        self,
+        external_id: str,
+        text: str,
+        version: str,
+        meta: dict[str, Any] | None = None,
+        modified_at: datetime | None = None,
     ) -> None:
         item = RemoteItem(
             external_id,
@@ -60,6 +78,7 @@ class ScriptedConnector:
             version,
             f"https://intranet/{external_id}",
             modified_at,
+            meta=meta or {},
         )
         self.items[external_id] = (item, f"# {external_id.title()}\n\n{text}\n".encode())
 
@@ -69,12 +88,15 @@ class ScriptedConnector:
         return ScanResult(
             [i for i, _ in self.items.values()],
             self.complete,
-            {"seen": len(self.items)},
+            self.cursor if self.cursor is not None else {"seen": len(self.items)},
             truncated=self.truncated,
+            deleted=list(self.deleted),
         )
 
     async def fetch(self, item: RemoteItem) -> bytes:
         self.fetched.append(item.external_id)
+        if item.external_id in self.unreachable:
+            raise ConnectorError("intranet answered HTTP 502")
         return self.items[item.external_id][1]
 
 
@@ -135,6 +157,13 @@ async def documents(deps: SyncDeps, source: Source) -> dict[str, Document]:
             await session.scalars(select(Document).where(Document.source_id == source.id))
         ).all()
     return {d.external_id or "": d for d in rows}
+
+
+async def stored_cursor(deps: SyncDeps, source: Source) -> dict[str, Any]:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+    assert stored is not None
+    return stored.cursor
 
 
 async def run(deps: SyncDeps, source: Source) -> Any:
@@ -200,6 +229,72 @@ async def test_an_incomplete_scan_or_a_failure_never_deletes(
     assert failed.status == "error"
     assert set(await documents(deps, source)) == {"leave", "travel"}
     assert (stored.status, stored.last_error) == ("error", "intranet answered HTTP 503")
+
+
+async def test_deletions_the_source_reports_apply_to_incremental_scans(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """A delta feed (SharePoint) lists only changes, so missing items mean nothing; its
+    tombstones are explicit deletions."""
+    deps, connector, source, qdrant, name = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")
+    await run(deps, source)
+
+    connector.complete = False
+    del connector.items["leave"]  # not in this delta page set: unchanged, not deleted
+    del connector.items["travel"]
+    connector.deleted = ["travel", "never-synced"]
+    report = await run(deps, source)
+
+    assert (report.status, report.deleted) == ("ok", 1)
+    assert set(await documents(deps, source)) == {"leave"}
+    assert await qdrant.count(name, tenant_id=source.tenant_id) == 1
+
+
+async def test_a_failed_download_does_not_move_the_cursor_past_it(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """With a delta feed, an item whose download failed is not listed again unless it changes:
+    the cursor stays where it was, so the next sync sees the same changes once more."""
+    deps, connector, source, _, _ = setup
+    connector.complete = False
+    connector.cursor = {"delta": "link-1"}
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    await run(deps, source)
+    connector.cursor = {"delta": "link-2"}
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")
+    connector.unreachable = {"travel"}
+
+    failed = await run(deps, source)
+    kept = await stored_cursor(deps, source)
+    connector.unreachable = set()
+    connector.fetched.clear()
+    retried = await run(deps, source)
+    moved = await stored_cursor(deps, source)
+
+    assert (failed.failed, failed.unchanged, kept) == (1, 1, {"delta": "link-1"})
+    assert (retried.added, retried.unchanged, connector.fetched) == (1, 1, ["travel"])
+    assert moved == {"delta": "link-2"}
+
+
+async def test_where_an_item_sits_is_kept_and_follows_moves(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "7:a", {"path": ["HR", "Policies"]})
+    await run(deps, source)
+    before = (await documents(deps, source))["leave"]
+
+    # Moved under another parent: a new version marker, the same content.
+    connector.put("leave", "Parental leave is 16 weeks.", "7:b", {"path": ["HR", "Archive"]})
+    report = await run(deps, source)
+    after = (await documents(deps, source))["leave"]
+
+    assert before.source_meta == {"path": ["HR", "Policies"]}
+    assert after.source_meta == {"path": ["HR", "Archive"]}
+    assert (report.unchanged, after.current_version_id) == (1, before.current_version_id)
+    assert after.source_version == "7:b"
 
 
 async def test_slack_messages_are_discussion_even_in_an_official_collection(
@@ -585,3 +680,108 @@ async def test_the_daily_task_alerts_a_failing_source_the_engine_did_not(
     assert report.failing_alerted == []
     assert (later.failing_alerted, twice.failing_alerted) == (["intranet"], [])
     assert len(await notifications(deps, source, "source.failing")) == 2  # Erin and Alice
+
+
+async def connect(deps: SyncDeps, source: Source, kind: str, credentials: dict[str, Any]) -> None:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+        assert stored is not None
+        stored.kind = kind
+        stored.credentials = deps.secrets.seal(source.id, credentials)
+
+
+async def stored_credentials(deps: SyncDeps, source: Source) -> dict[str, Any]:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+    assert stored is not None
+    assert stored.credentials is not None
+    return deps.secrets.open(source.id, stored.credentials)
+
+
+async def test_a_sharepoint_folder_stays_in_sync_through_its_delta_feed(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, _, source, qdrant, name = setup
+    fake = FakeGraph()
+    fake.put(Item("01POLICIES", "Policies", ROOT_ID, folder=True))
+    fake.put(Item("01LEAVE", "leave.md", "01POLICIES", data=b"# Leave\n\nParental leave: 16 w.\n"))
+    fake.put(Item("01TRAVEL", "travel.md", "01POLICIES", data=b"# Travel\n\nHotels: 250.\n"))
+    fake.put(Item("01ARCHIVE", "Archive", "01POLICIES", folder=True))
+    fake.put(Item("01OLD", "old.md", "01ARCHIVE", data=b"# Old\n\nOld rules.\n"))
+    fake.put(Item("01BUDGET", "budget.md", ROOT_ID, data=b"# Budget\n\nNot in Policies.\n"))
+    await connect(deps, source, "sharepoint", {"refresh_token": fake.refresh_token})
+    deps = replace(
+        deps,
+        connectors=lambda source, credentials: SharePointConnector(
+            fake.client(),
+            site_url=SITE_URL,
+            library=None,
+            folder="Policies",
+            credentials=credentials,
+            app=OAuthApp("client", "secret", "contoso.onmicrosoft.com"),
+        ),
+    )
+
+    first = await run(deps, source)
+    fake.write("01LEAVE", b"# Leave\n\nParental leave: 18 w.\n")
+    fake.delete("01TRAVEL")
+    second = await run(deps, source)
+    fake.move("01ARCHIVE", ROOT_ID)  # Graph reports the folder, not the file inside it
+    third = await run(deps, source)
+
+    docs = await documents(deps, source)
+    assert (first.status, first.added, first.items) == ("ok", 3, 3)
+    assert (second.items, second.updated, second.deleted) == (1, 1, 1)  # a tombstone
+    assert (third.status, third.deleted, third.unchanged) == ("ok", 1, 1)  # a full listing
+    assert set(docs) == {"01LEAVE"}
+    leave = docs["01LEAVE"]
+    assert (leave.source, leave.status) == ("sharepoint", "ready")
+    assert leave.source_meta is not None
+    assert (leave.source_meta["path"], leave.source_meta["site_url"]) == ("Policies", SITE_URL)
+    assert leave.url == f"{SITE_URL}/Shared%20Documents/Policies/leave.md"
+    assert await qdrant.count(name, tenant_id=source.tenant_id) == 1
+    # Microsoft rotated the refresh token at the first sync: the new one was stored.
+    assert (await stored_credentials(deps, source))["refresh_token"] == fake.refresh_token
+    assert (await stored_cursor(deps, source))["delta_link"].startswith("https://graph.microsoft")
+
+
+async def test_a_confluence_space_stays_in_sync(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, _, source, _, _ = setup
+    fake = FakeConfluence()
+    fake.space("98306", "HR", "People")
+    fake.page(Page("1001", "98306", "People home", "<p>Everything about working here.</p>"))
+    fake.page(Page("1002", "98306", "Leave", "<p>Parental leave is 16 weeks.</p>", "1001", "page"))
+    fake.page(Page("1003", "98306", "Travel", "<p>Hotels are capped.</p>", "1001", "page"))
+    await connect(
+        deps,
+        source,
+        "confluence",
+        {"email": fake_confluence.EMAIL, "api_token": fake_confluence.API_TOKEN},
+    )
+    deps = replace(
+        deps,
+        connectors=lambda source, credentials: ConfluenceConnector(
+            fake.client(),
+            site_url=fake_confluence.SITE,
+            spaces=["HR"],
+            credentials=credentials,
+            app=OAuthApp(),
+        ),
+    )
+
+    first = await run(deps, source)
+    fake.edit("1002", "<p>Parental leave is 18 weeks.</p>")
+    fake.pages["1003"].status = "trashed"
+    second = await run(deps, source)
+
+    docs = await documents(deps, source)
+    assert (first.status, first.added) == ("ok", 3)
+    assert (second.updated, second.unchanged, second.deleted) == (1, 1, 1)
+    assert set(docs) == {"page:1001", "page:1002"}
+    leave = docs["page:1002"]
+    assert leave.title == "Leave"
+    assert leave.url == f"{fake_confluence.SITE}/wiki/spaces/HR/pages/1002/Leave"
+    assert leave.source_meta is not None
+    assert leave.source_meta["path"] == ["People", "People home", "Leave"]

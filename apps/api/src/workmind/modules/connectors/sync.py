@@ -1,6 +1,7 @@
 """Incremental sync of one source (ARCHITECTURE section 10.3).
 
     scan -> per item: unchanged (skip) | new or changed (fetch, new version, ingest)
+         -> items the source reported deleted (delta tombstones) are deleted everywhere
          -> if the scan was complete: items that disappeared are deleted everywhere
             if it was cut short: they are kept and flagged "missing upstream"
          -> health recorded on the source and as a run (the run history); a source that keeps
@@ -8,7 +9,9 @@
 
 Safe by construction:
 - one sync per source at a time (a conditional status update acts as the lock);
-- a failed scan deletes nothing; a failed item is counted and retried next time;
+- a failed scan deletes nothing; a failed item is counted and retried next time: when a
+  download fails, the source's cursor does not advance, so an incremental source (a delta
+  feed) reports the item again;
 - every synced document lands in the source's collection, with that collection's access.
 """
 
@@ -161,20 +164,21 @@ async def sync_source(
     source, run_id = claim
     report = SyncReport()
     cursor: dict[str, Any] = dict(source.cursor)
+    connector: Connector | None = None
     try:
         credentials = deps.secrets.open(source.id, source.credentials) if source.credentials else {}
         connector = deps.connectors(source, credentials)
         scan = await connector.scan(source.cursor)
-        refreshed = getattr(connector, "updated_credentials", None)  # e.g. a new OAuth token
-        if isinstance(refreshed, dict):
-            await _store_credentials(deps, source, refreshed)  # pyright: ignore[reportUnknownArgumentType]
         report.items = len(scan.items)
         report.complete = scan.complete
-        cursor = scan.cursor
-        await _apply(deps, source, connector, scan.items, report)
+        retry = await _apply(deps, source, connector, scan.items, report)
+        # A download that failed is retried from the same position, not skipped for good.
+        cursor = dict(source.cursor) if retry else scan.cursor
         present = {i.external_id for i in scan.items}
+        if scan.deleted:
+            await _delete(deps, source, set(scan.deleted) - present, report)
         if scan.complete:
-            await _delete_missing(deps, source, present, report)
+            await _delete(deps, source, None, report, keep=present)
         await _mark_seen(deps, source, present, flag_missing=scan.truncated, report=report)
         report.status = (
             "error"
@@ -188,6 +192,11 @@ async def sync_source(
         log.exception("sync_failed", source=str(source_id))
         report.status = "error"
         report.error(f"{type(exc).__name__}: {exc}")
+    # A renewed OAuth token, kept even when the sync failed afterwards: Atlassian and Microsoft
+    # rotate refresh tokens, so the old one may already be spent.
+    refreshed = getattr(connector, "updated_credentials", None) if connector else None
+    if isinstance(refreshed, dict):
+        await _store_credentials(deps, source, refreshed)  # pyright: ignore[reportUnknownArgumentType]
     await _finish(deps, source, run_id, report, cursor)
     return report
 
@@ -198,8 +207,11 @@ async def _apply(
     connector: Connector,
     items: list[RemoteItem],
     report: SyncReport,
-) -> None:
+) -> bool:
+    """Stores new and changed items. True when a download failed (worth retrying), as
+    opposed to an item that cannot be stored as it is (too large, an unreadable type)."""
     ctx = _owner_context(source)
+    retry = False
     async with tenant_transaction(deps.sessions, source.tenant_id) as session:
         known = {
             d.external_id: d
@@ -215,7 +227,11 @@ async def _apply(
             report.unchanged += 1
             continue
         try:
-            data = await connector.fetch(item)
+            try:
+                data = await connector.fetch(item)
+            except ConnectorError:
+                retry = True
+                raise
             if len(data) > deps.max_bytes:
                 raise ConnectorError(f"{item.title}: larger than {deps.max_bytes // 1_000_000} MB")
             async with tenant_transaction(deps.sessions, source.tenant_id) as session:
@@ -229,7 +245,9 @@ async def _apply(
                     data=data,
                     trust=FIXED_TRUST.get(source.kind),
                     source=source.kind,
-                    synced=service.SyncedItem(source.id, item.external_id, item.title, item.url),
+                    synced=service.SyncedItem(
+                        source.id, item.external_id, item.title, item.url, dict(item.meta)
+                    ),
                 )
                 document = await session.get(Document, result.document.id)
                 assert document is not None  # noqa: S101
@@ -250,18 +268,30 @@ async def _apply(
             report.error(str(exc), item.external_id)
     for document_id, version_id in to_ingest:
         await deps.ingestion.dispatch(source.tenant_id, document_id, version_id)
+    return retry
 
 
-async def _delete_missing(
-    deps: SyncDeps, source: Source, present: set[str], report: SyncReport
+async def _delete(
+    deps: SyncDeps,
+    source: Source,
+    ids: set[str] | None,
+    report: SyncReport,
+    *,
+    keep: set[str] | None = None,
 ) -> None:
-    """Deletion propagation: gone from the source means gone from search."""
+    """Deletion propagation: gone from the source means gone from search. Deletes the
+    source's documents with these external ids, or (ids=None) every one not in `keep`."""
+    if ids is not None and not ids:
+        return
     ctx = _owner_context(source)
+    query = select(Document).where(Document.source_id == source.id)
+    if ids is not None:
+        query = query.where(Document.external_id.in_(sorted(ids)))
     async with tenant_transaction(deps.sessions, source.tenant_id) as session:
         gone = [
             d
-            for d in await session.scalars(select(Document).where(Document.source_id == source.id))
-            if d.external_id not in present
+            for d in await session.scalars(query)
+            if ids is not None or d.external_id not in (keep or set())
         ]
         orphaned: list[str] = []
         for document in gone:
@@ -272,7 +302,7 @@ async def _delete_missing(
         )
     for key in set(orphaned):
         await deps.storage.delete(owned_key(source.tenant_id, key))
-    report.deleted = len(gone)
+    report.deleted += len(gone)
 
 
 async def _mark_seen(

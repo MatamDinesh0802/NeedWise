@@ -3447,6 +3447,32 @@
         }
       }
     },
+    "/api/v1/admin/sources/kinds": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Source Kinds",
+        "description": "Every connector this deployment has: what it is, how it signs in, what to configure.\nFor the people who manage sources (org admins, collection owners).",
+        "operationId": "source_kinds_api_v1_admin_sources_kinds_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SourceKindOut"
+                  },
+                  "type": "array",
+                  "title": "Response Source Kinds Api V1 Admin Sources Kinds Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/sources/{key}": {
       "put": {
         "tags": [
@@ -4014,6 +4040,116 @@
         }
       }
     },
+    "/api/v1/admin/sources/{key}/oauth/atlassian/start": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Atlassian Start",
+        "description": "Connects a Confluence source: redirects to Atlassian's consent screen.",
+        "operationId": "atlassian_start_api_v1_admin_sources__key__oauth_atlassian_start_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "admin",
+                "knowledge"
+              ],
+              "type": "string",
+              "default": "admin",
+              "title": "Back"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/sources/{key}/oauth/microsoft/start": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Microsoft Start",
+        "description": "Connects a SharePoint/OneDrive source: redirects to Microsoft's sign-in. It asks only\nfor the permission the source needs.",
+        "operationId": "microsoft_start_api_v1_admin_sources__key__oauth_microsoft_start_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "admin",
+                "knowledge"
+              ],
+              "type": "string",
+              "default": "admin",
+              "title": "Back"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/oauth/google/callback": {
       "get": {
         "tags": [
@@ -4082,6 +4218,128 @@
         ],
         "summary": "Slack Callback",
         "operationId": "slack_callback_api_v1_oauth_slack_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "State"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/oauth/atlassian/callback": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Atlassian Callback",
+        "operationId": "atlassian_callback_api_v1_oauth_atlassian_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "State"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/oauth/microsoft/callback": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Microsoft Callback",
+        "operationId": "microsoft_callback_api_v1_oauth_microsoft_callback_get",
         "parameters": [
           {
             "name": "code",
@@ -8559,6 +8817,34 @@
         ],
         "title": "ConversationUpdate"
       },
+      "CredentialFieldOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "hint": {
+            "type": "string",
+            "title": "Hint"
+          },
+          "optional": {
+            "type": "boolean",
+            "title": "Optional"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "label",
+          "hint",
+          "optional"
+        ],
+        "title": "CredentialFieldOut"
+      },
       "DatasetColumnOut": {
         "properties": {
           "name": {
@@ -9783,9 +10069,19 @@
               "web",
               "github",
               "slack",
-              "gdrive"
+              "gdrive",
+              "confluence",
+              "sharepoint"
             ],
             "title": "Kind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
           },
           "credentials": {
             "items": {
@@ -9800,7 +10096,9 @@
                 "type": "string",
                 "enum": [
                   "google",
-                  "slack"
+                  "slack",
+                  "atlassian",
+                  "microsoft"
                 ]
               },
               {
@@ -9828,6 +10126,8 @@
         "type": "object",
         "required": [
           "kind",
+          "label",
+          "description",
           "credentials",
           "oauth",
           "oauth_configured",
@@ -10608,6 +10908,40 @@
           "created_at"
         ],
         "title": "NotificationOut"
+      },
+      "OAuthOut": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "google",
+              "slack",
+              "atlassian",
+              "microsoft"
+            ],
+            "title": "Provider"
+          },
+          "start_path": {
+            "type": "string",
+            "title": "Start Path"
+          },
+          "redirect_uri": {
+            "type": "string",
+            "title": "Redirect Uri"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "start_path",
+          "redirect_uri",
+          "configured"
+        ],
+        "title": "OAuthOut"
       },
       "OfficialIn": {
         "properties": {
@@ -11723,7 +12057,9 @@
               "web",
               "github",
               "slack",
-              "gdrive"
+              "gdrive",
+              "confluence",
+              "sharepoint"
             ],
             "title": "Kind"
           },
@@ -11787,6 +12123,65 @@
           "config"
         ],
         "title": "SourceCreate"
+      },
+      "SourceKindOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "auth": {
+            "type": "string",
+            "enum": [
+              "none",
+              "token",
+              "oauth",
+              "oauth_or_token"
+            ],
+            "title": "Auth"
+          },
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialFieldOut"
+            },
+            "type": "array",
+            "title": "Credentials"
+          },
+          "oauth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "config_schema": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config Schema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "label",
+          "description",
+          "auth",
+          "credentials",
+          "oauth",
+          "config_schema"
+        ],
+        "title": "SourceKindOut"
       },
       "SourceOptions": {
         "properties": {
@@ -11901,7 +12296,9 @@
                 "type": "string",
                 "enum": [
                   "google",
-                  "slack"
+                  "slack",
+                  "atlassian",
+                  "microsoft"
                 ]
               },
               {

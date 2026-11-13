@@ -69,6 +69,21 @@ Connectors, the rest of Phase 7 ([docs/connectors.md](docs/connectors.md)):
   notifies the people who manage it once per failure episode, and again when it recovers.
 - Connect Slack with OAuth (`SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`); a pasted bot token still
   works.
+- Confluence Cloud sources (REST API v2): the current pages of one or more spaces as Markdown
+  converted from the storage format, their readable attachments, the page tree as source
+  metadata, links back; signs in with an API token or OAuth 2.0 (3LO). SharePoint and OneDrive
+  sources (Microsoft Graph): a site's library, a drive or the connecting account's OneDrive,
+  optionally one folder; delta queries with the delta link stored, tombstones as deletions, a
+  full listing when a folder leaves or enters the selection; OAuth with PKCE and the least Graph
+  permission for the selection; 429 Retry-After honoured. Both are tested against fakes built
+  from the API documentation, not against a live site or tenant.
+- The sync engine applies deletions the source reports (delta tombstones), keeps the cursor when
+  a download failed, keeps each document's place in its source (`documents.source_meta`), and
+  stores renewed OAuth tokens also after a failed sync.
+- `GET /api/v1/admin/sources/kinds` describes every connector (label, how it signs in, fields,
+  configuration schema). New settings: `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`,
+  `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID` (Helm:
+  `config.atlassian`, `config.microsoft` and the matching credentials).
 
 Operations: `make backup` and `make restore` with a measured restore drill
 ([backup and restore](docs/operations/backup-restore.md)); an upgrade test from a release tag,
@@ -107,6 +122,9 @@ Upgrade notes so far:
   start their staleness clock at their current version's date, so the first daily run after the
   upgrade may remind owners of documents unchanged for more than 180 days (Slack sources have no
   threshold). Collection owners who are not admins can now manage their collections' sources.
+- Migration 0021 adds `documents.source_meta` and the `confluence` and `sharepoint` source
+  kinds. A downgrade below it deletes Confluence and SharePoint sources (their documents stay,
+  as uploads).
 
 ## v0.11 — Phase 11: admin, governance and usage analytics (2026-11-12, not tagged)
 

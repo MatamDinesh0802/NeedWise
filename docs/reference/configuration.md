@@ -143,6 +143,11 @@ not shown here; where one exists it is a development value.
 | <a id="slack_client_id"></a>`SLACK_CLIENT_ID` | string | *unset* | Slack sources: the client id of a Slack app whose redirect URL is `<PUBLIC_URL>/api/v1/oauth/slack/callback` (bot scopes `channels:history`, `channels:read`, `groups:history`, `groups:read`). Unset: Slack sources take a pasted bot token instead of \*\*Connect Slack\*\*. |
 | <a id="slack_client_secret"></a>`SLACK_CLIENT_SECRET` | *secret* | *unset* | That Slack app's client secret. |
 | <a id="source_failure_alert_after"></a>`SOURCE_FAILURE_ALERT_AFTER` | integer, ≥ 1, ≤ 100 | `3` | Failed syncs in a row after which the people who manage a source are notified, once per failure episode (docs/connectors.md). |
+| <a id="atlassian_client_id"></a>`ATLASSIAN_CLIENT_ID` | string | *unset* | Confluence sources that connect with OAuth: an OAuth 2.0 (3LO) app in the Atlassian developer console, with the callback URL `<PUBLIC_URL>/api/v1/oauth/atlassian/callback` and the scopes in docs/connectors.md. Not needed for sources that use an API token. |
+| <a id="atlassian_client_secret"></a>`ATLASSIAN_CLIENT_SECRET` | *secret* | *unset* | That Atlassian app's secret. |
+| <a id="microsoft_client_id"></a>`MICROSOFT_CLIENT_ID` | string | *unset* | SharePoint and OneDrive sources: the application (client) id of a Microsoft Entra app registration with a "Web" redirect URI `<PUBLIC_URL>/api/v1/oauth/microsoft/callback` and the delegated Microsoft Graph permissions in docs/connectors.md. |
+| <a id="microsoft_client_secret"></a>`MICROSOFT_CLIENT_SECRET` | *secret* | *unset* | A client secret of that app registration. |
+| <a id="microsoft_tenant_id"></a>`MICROSOFT_TENANT_ID` | string | `organizations` | The Microsoft Entra directory people sign in with: your tenant id or a verified domain (a single-tenant app), or `organizations` for any work or school account. |
 
 ## Email
 

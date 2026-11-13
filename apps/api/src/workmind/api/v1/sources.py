@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from urllib.parse import urlencode
 
+import structlog
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, ValidationError
@@ -32,6 +33,8 @@ from workmind.api.v1.admin import AdminContext, PersonRef
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_key, tenant_transaction
+from workmind.modules.connectors import oauth
+from workmind.modules.connectors.base import ConnectorError
 from workmind.modules.connectors.health import (
     DEFAULT_STALE_DAYS,
     Health,
@@ -41,7 +44,13 @@ from workmind.modules.connectors.health import (
     next_sync_at,
 )
 from workmind.modules.connectors.models import Source, SourceRun
-from workmind.modules.connectors.registry import CREDENTIALS, build_connector, validate_config
+from workmind.modules.connectors.oauth import OAuthApp, OAuthApps
+from workmind.modules.connectors.registry import (
+    CREDENTIALS,
+    KINDS,
+    build_connector,
+    validate_config,
+)
 from workmind.modules.connectors.reminders import stale_condition, stale_reason
 from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sync import SyncDeps, sync_source
@@ -55,6 +64,7 @@ from workmind.modules.knowledge.pipeline import delete_document_points
 from workmind.modules.knowledge.storage import owned_key
 from workmind.providers.factory import secret
 
+log = structlog.get_logger("workmind.sources")
 router = APIRouter(prefix="/admin/sources", tags=["admin"])
 oauth_router = APIRouter(prefix="/oauth", tags=["admin"])
 GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -64,10 +74,32 @@ SLACK_AUTH = "https://slack.com/oauth/v2/authorize"
 SLACK_TOKEN = "https://slack.com/api/oauth.v2.access"  # noqa: S105  (an endpoint)
 SLACK_SCOPES = "channels:history,channels:read,groups:history,groups:read"
 OAUTH_TTL_S = 600
-Kind = Literal["web", "github", "slack", "gdrive"]
-OAuthProvider = Literal["google", "slack"]
-OAUTH_KIND: dict[str, str] = {"google": "gdrive", "slack": "slack"}
-KIND_OAUTH: dict[str, OAuthProvider] = {"gdrive": "google", "slack": "slack"}
+Kind = Literal["web", "github", "slack", "gdrive", "confluence", "sharepoint"]
+OAuthProvider = Literal["google", "slack", "atlassian", "microsoft"]
+OAUTH_KIND: dict[str, str] = {
+    "google": "gdrive",
+    "slack": "slack",
+    "atlassian": "confluence",
+    "microsoft": "sharepoint",
+}
+KIND_OAUTH: dict[str, OAuthProvider] = {
+    "gdrive": "google",
+    "slack": "slack",
+    "confluence": "atlassian",
+    "sharepoint": "microsoft",
+}
+PROVIDER_NAMES: dict[str, str] = {
+    "google": "Google Drive",
+    "slack": "Slack",
+    "atlassian": "Confluence",
+    "microsoft": "SharePoint/OneDrive",
+}
+OAUTH_SETTINGS: dict[str, str] = {
+    "google": "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET",
+    "slack": "SLACK_CLIENT_ID and SLACK_CLIENT_SECRET",
+    "atlassian": "ATLASSIAN_CLIENT_ID and ATLASSIAN_CLIENT_SECRET",
+    "microsoft": "MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET",
+}
 # Where the browser goes back to after the provider's consent screen.
 BACK_PAGES: dict[str, str] = {"admin": "/admin/sources", "knowledge": "/knowledge/sources"}
 Back = Literal["admin", "knowledge"]
@@ -209,6 +241,8 @@ class SourceOut(BaseModel):
 
 class KindOption(BaseModel):
     kind: Kind
+    label: str
+    description: str
     credentials: list[str]
     oauth: OAuthProvider | None
     oauth_configured: bool  # the deployment has the provider's OAuth client
@@ -519,24 +553,22 @@ async def source_options(ctx: ManagerContext, request: Request) -> SourceOptions
     """What the "New source" form offers this caller: every kind (with whether its OAuth is set
     up on this deployment) and the collections they may sync into."""
     settings = settings_of(request)
-    configured = {
-        "google": bool(settings.google_client_id and settings.google_client_secret),
-        "slack": bool(settings.slack_client_id and settings.slack_client_secret),
-    }
+    apps = OAuthApps.from_settings(settings)
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         scope = await _scope(session, ctx)
-    kinds: list[Kind] = ["web", "github", "slack", "gdrive"]
     return SourceOptions(
         scope="all" if scope.everything else "owned",
         kinds=[
             KindOption(
-                kind=kind,
-                credentials=list(CREDENTIALS.get(kind, ())),
-                oauth=KIND_OAUTH.get(kind),
-                oauth_configured=configured.get(KIND_OAUTH.get(kind) or "", False),
-                default_stale_after_days=default_stale_after(kind),
+                kind=info.kind,  # pyright: ignore[reportArgumentType]  (KINDS keys are Kind)
+                label=info.label,
+                description=info.description,
+                credentials=list(CREDENTIALS.get(info.kind, ())),
+                oauth=KIND_OAUTH.get(info.kind),
+                oauth_configured=info.oauth is not None and _app(apps, info.oauth).configured,
+                default_stale_after_days=default_stale_after(info.kind),
             )
-            for kind in kinds
+            for info in KINDS.values()
         ],
         collections=[
             CollectionOption(id=c.id, key=c.key, name=c.name, scope=c.scope)
@@ -544,6 +576,76 @@ async def source_options(ctx: ManagerContext, request: Request) -> SourceOptions
         ],
         failure_alert_after=settings.source_failure_alert_after,
     )
+
+
+class CredentialFieldOut(BaseModel):
+    name: str
+    label: str
+    hint: str
+    optional: bool
+
+
+class OAuthOut(BaseModel):
+    provider: OAuthProvider
+    # Navigate the browser here to connect: it redirects to the provider's consent screen.
+    start_path: str  # with {key} for the source's key
+    redirect_uri: str  # what the operator registers with the provider
+    configured: bool  # the operator set the client id and secret
+
+
+class SourceKindOut(BaseModel):
+    kind: str
+    label: str
+    description: str
+    auth: Literal["none", "token", "oauth", "oauth_or_token"]
+    credentials: list[CredentialFieldOut]  # typed by an admin; write-only
+    oauth: OAuthOut | None
+    config_schema: dict[str, Any]  # JSON Schema of `config`
+
+
+@router.get("/kinds")
+async def source_kinds(ctx: ManagerContext, request: Request) -> list[SourceKindOut]:
+    """Every connector this deployment has: what it is, how it signs in, what to configure.
+    For the people who manage sources (org admins, collection owners)."""
+    settings = settings_of(request)
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        await _scope(session, ctx)
+    apps = OAuthApps.from_settings(settings)
+    return [
+        SourceKindOut(
+            kind=info.kind,
+            label=info.label,
+            description=info.description,
+            auth=info.auth,
+            credentials=[
+                CredentialFieldOut(name=c.name, label=c.label, hint=c.hint, optional=c.optional)
+                for c in info.credentials
+            ],
+            oauth=OAuthOut(
+                provider=info.oauth,
+                start_path=f"/api/v1/admin/sources/{{key}}/oauth/{info.oauth}/start",
+                redirect_uri=_redirect_uri(settings.public_url, info.oauth),
+                configured=_app(apps, info.oauth).configured,
+            )
+            if info.oauth
+            else None,
+            config_schema=info.config.model_json_schema(),
+        )
+        for info in KINDS.values()
+    ]
+
+
+def _app(apps: OAuthApps, provider: str) -> OAuthApp:
+    return {
+        "google": apps.google,
+        "slack": apps.slack,
+        "atlassian": apps.atlassian,
+        "microsoft": apps.microsoft,
+    }[provider]
+
+
+def _redirect_uri(public_url: str, provider: str) -> str:
+    return f"{public_url.rstrip('/')}/api/v1/oauth/{provider}/callback"
 
 
 @router.post("", status_code=201)
@@ -675,10 +777,7 @@ def sync_deps(request: Request) -> SyncDeps:
         collection_name=resources.collection_name,
         secrets=_secrets(request),
         connectors=lambda source, credentials: build_connector(
-            source,
-            credentials,
-            http=resources.http,
-            google_client=(settings.google_client_id, secret(settings.google_client_secret)),
+            source, credentials, http=resources.http, apps=OAuthApps.from_settings(settings)
         ),
         max_bytes=settings.max_upload_bytes,
         failure_alert_after=settings.source_failure_alert_after,
@@ -861,18 +960,30 @@ def _back_page(ctx: RequestContext, back: str | None) -> str:
     return BACK_PAGES["admin" if is_org_admin(ctx) else "knowledge"]
 
 
+async def _oauth_source(
+    ctx: RequestContext, request: Request, key: str, provider: OAuthProvider
+) -> dict[str, Any]:
+    """Checks the caller manages the source and that it uses this provider; its config."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        source = await _source(session, await _scope(session, ctx), key)
+        if source.kind != OAUTH_KIND[provider]:
+            name = PROVIDER_NAMES[provider]
+            raise ApiError(409, "wrong_kind", f"Only {name} sources connect this way")
+        return dict(source.config)
+
+
 async def _start_flow(
-    ctx: RequestContext, request: Request, key: str, provider: OAuthProvider, back: Back
+    ctx: RequestContext,
+    request: Request,
+    key: str,
+    provider: OAuthProvider,
+    back: Back,
+    **extra: str,
 ) -> tuple[str, str]:
     """Checks the caller manages the source and that it uses this provider, then stores the
     flow (single use, ten minutes, under the tenant's prefix: a callback in another tenant's
     session never even finds it). Returns (state, PKCE verifier)."""
-    resources = resources_of(request)
-    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
-        source = await _source(session, await _scope(session, ctx), key)
-        if source.kind != OAUTH_KIND[provider]:
-            name = "Google Drive" if provider == "google" else "Slack"
-            raise ApiError(409, "wrong_kind", f"Only {name} sources use {name} OAuth")
+    await _oauth_source(ctx, request, key, provider)
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
     flow = {
         "tenant_id": str(ctx.tenant_id),
@@ -880,8 +991,11 @@ async def _start_flow(
         "source": key,
         "verifier": verifier,
         "back": back,
+        **extra,
     }
-    await resources.valkey.set(_oauth_key(ctx, provider, state), json.dumps(flow), ex=OAUTH_TTL_S)
+    await resources_of(request).valkey.set(
+        _oauth_key(ctx, provider, state), json.dumps(flow), ex=OAUTH_TTL_S
+    )
     return state, verifier
 
 
@@ -903,7 +1017,7 @@ async def _connect(
     request: Request,
     flow: dict[str, Any],
     provider: OAuthProvider,
-    credentials: dict[str, str],
+    credentials: dict[str, Any],
 ) -> bool:
     """Stores the tokens, if the person still manages the source."""
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
@@ -1044,3 +1158,122 @@ async def slack_callback(
     return _redirect(
         ctx, flow["back"], oauth="connected", provider="slack", source=str(flow["source"])
     )
+
+
+# --- Confluence (Atlassian 3LO) and SharePoint/OneDrive (Microsoft, code + PKCE) -------------
+
+
+def _pkce_challenge(verifier: str) -> str:
+    return (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    )
+
+
+@router.get("/{key}/oauth/atlassian/start")
+async def atlassian_start(
+    ctx: ManagerContext, request: Request, key: str, back: Back = "admin"
+) -> RedirectResponse:
+    """Connects a Confluence source: redirects to Atlassian's consent screen."""
+    settings = settings_of(request)
+    await _oauth_source(ctx, request, key, "atlassian")
+    app = OAuthApps.from_settings(settings).atlassian
+    if not app.configured:
+        raise ApiError(409, "oauth_not_configured", f"Set {OAUTH_SETTINGS['atlassian']} first")
+    state, _ = await _start_flow(ctx, request, key, "atlassian", back)
+    query = {
+        "audience": "api.atlassian.com",
+        "client_id": app.client_id or "",
+        "scope": " ".join(oauth.ATLASSIAN_SCOPES),
+        "redirect_uri": _redirect_uri(settings.public_url, "atlassian"),
+        "state": state,
+        "response_type": "code",
+        "prompt": "consent",
+    }
+    return RedirectResponse(f"{oauth.ATLASSIAN_AUTHORIZE}?{urlencode(query)}", status_code=302)
+
+
+@router.get("/{key}/oauth/microsoft/start")
+async def microsoft_start(
+    ctx: ManagerContext, request: Request, key: str, back: Back = "admin"
+) -> RedirectResponse:
+    """Connects a SharePoint/OneDrive source: redirects to Microsoft's sign-in. It asks only
+    for the permission the source needs."""
+    settings = settings_of(request)
+    config = await _oauth_source(ctx, request, key, "microsoft")
+    app = OAuthApps.from_settings(settings).microsoft
+    if not app.configured:
+        raise ApiError(409, "oauth_not_configured", f"Set {OAUTH_SETTINGS['microsoft']} first")
+    scope = " ".join(oauth.microsoft_scopes(config))
+    state, verifier = await _start_flow(ctx, request, key, "microsoft", back, scope=scope)
+    query = {
+        "client_id": app.client_id or "",
+        "response_type": "code",
+        "redirect_uri": _redirect_uri(settings.public_url, "microsoft"),
+        "response_mode": "query",
+        "scope": scope,
+        "state": state,
+        "code_challenge": _pkce_challenge(verifier),
+        "code_challenge_method": "S256",
+    }
+    url = oauth.microsoft_authorize_url(app.tenant)
+    return RedirectResponse(f"{url}?{urlencode(query)}", status_code=302)
+
+
+async def _app_callback(
+    ctx: RequestContext,
+    request: Request,
+    provider: Literal["atlassian", "microsoft"],
+    code: str,
+    state: str,
+    error: str,
+) -> RedirectResponse:
+    settings, resources = settings_of(request), resources_of(request)
+    flow = await _finish_flow(ctx, request, provider, state) if state else None
+    if error or not code or flow is None:
+        return _redirect(ctx, flow["back"] if flow else None, oauth="failed", provider=provider)
+    try:
+        config = await _oauth_source(ctx, request, str(flow["source"]), provider)
+    except ApiError:
+        return _redirect(ctx, flow["back"], oauth="failed", provider=provider)
+    apps = OAuthApps.from_settings(settings)
+    redirect_uri = _redirect_uri(settings.public_url, provider)
+    try:
+        if provider == "atlassian":
+            credentials = await oauth.atlassian_connect(
+                resources.http,
+                apps.atlassian,
+                code=code,
+                redirect_uri=redirect_uri,
+                site_url=str(config.get("site_url", "")),
+            )
+        else:
+            credentials = await oauth.microsoft_connect(
+                resources.http,
+                apps.microsoft,
+                code=code,
+                redirect_uri=redirect_uri,
+                verifier=str(flow["verifier"]),
+                scope=str(flow.get("scope", "")),
+            )
+    except ConnectorError as exc:
+        log.info("oauth_failed", provider=provider, source=flow["source"], reason=str(exc))
+        return _redirect(ctx, flow["back"], oauth="failed", provider=provider)
+    if not await _connect(ctx, request, flow, provider, credentials):
+        return _redirect(ctx, flow["back"], oauth="failed", provider=provider)
+    return _redirect(
+        ctx, flow["back"], oauth="connected", provider=provider, source=str(flow["source"])
+    )
+
+
+@oauth_router.get("/atlassian/callback")
+async def atlassian_callback(
+    ctx: ManagerContext, request: Request, code: str = "", state: str = "", error: str = ""
+) -> RedirectResponse:
+    return await _app_callback(ctx, request, "atlassian", code, state, error)
+
+
+@oauth_router.get("/microsoft/callback")
+async def microsoft_callback(
+    ctx: ManagerContext, request: Request, code: str = "", state: str = "", error: str = ""
+) -> RedirectResponse:
+    return await _app_callback(ctx, request, "microsoft", code, state, error)

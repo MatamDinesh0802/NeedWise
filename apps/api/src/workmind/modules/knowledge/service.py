@@ -7,9 +7,10 @@ see answers 404, never 403, so its existence is not revealed (ARCHITECTURE 7.6).
 
 import hashlib
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePath
+from typing import Any
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -116,6 +117,7 @@ class SyncedItem:
     external_id: str
     title: str
     url: str | None
+    meta: Mapping[str, Any] | None = None  # where it sits in the source (documents.source_meta)
 
 
 @dataclass(frozen=True)
@@ -175,6 +177,8 @@ async def upload(
             and current.content_hash == content_hash
             and document.status != "failed"
         ):
+            if synced and synced.meta is not None:  # moved in its source: nothing to re-index
+                document.source_meta = dict(synced.meta)
             return UploadResult(document, current, unchanged=True)
 
     key = object_key(ctx.tenant_id, content_hash)
@@ -205,6 +209,7 @@ async def upload(
     document.status, document.error, document.mime_type = "pending", None, mime
     if synced:  # the source may rename an item or move its link
         document.title, document.url, document.filename = synced.title, synced.url, filename
+        document.source_meta = dict(synced.meta) if synced.meta is not None else None
     version_no = (
         await session.scalar(
             select(func.coalesce(func.max(DocumentVersion.version_no), 0)).where(

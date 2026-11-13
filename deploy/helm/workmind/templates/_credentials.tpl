@@ -36,6 +36,8 @@ transcriptionApiKey: {generate: "", required: false}
 smtpPassword: {generate: "", required: false}
 googleClientSecret: {generate: "", required: false}
 slackClientSecret: {generate: "", required: false}
+atlassianClientSecret: {generate: "", required: false}
+microsoftClientSecret: {generate: "", required: false}
 licenseKey: {generate: "", required: false}
 mcpServers: {generate: "", required: false}
 {{- end -}}
@@ -123,5 +125,5 @@ render, so every template (and the migrate hook's own Secret) gets the same valu
 {{- end -}}
 
 {{- define "workmind.credentialNames" -}}
-{{- list "databaseAppPassword" "databaseOwnerPassword" "postgresPassword" "keycloakDbPassword" "openfgaDbPassword" "valkeyPassword" "openfgaApiKey" "qdrantApiKey" "oidcClientSecret" "secretsKey" "secretsEncryptionKey" "secretsEncryptionPreviousKeys" "keycloakAdminPassword" "demoPassword" "anthropicApiKey" "llmApiKey" "localLlmApiKey" "embeddingApiKey" "transcriptionApiKey" "smtpPassword" "googleClientSecret" "slackClientSecret" "licenseKey" "mcpServers" | toJson -}}
+{{- list "databaseAppPassword" "databaseOwnerPassword" "postgresPassword" "keycloakDbPassword" "openfgaDbPassword" "valkeyPassword" "openfgaApiKey" "qdrantApiKey" "oidcClientSecret" "secretsKey" "secretsEncryptionKey" "secretsEncryptionPreviousKeys" "keycloakAdminPassword" "demoPassword" "anthropicApiKey" "llmApiKey" "localLlmApiKey" "embeddingApiKey" "transcriptionApiKey" "smtpPassword" "googleClientSecret" "slackClientSecret" "atlassianClientSecret" "microsoftClientSecret" "licenseKey" "mcpServers" | toJson -}}
 {{- end -}}

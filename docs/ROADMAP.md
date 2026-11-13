@@ -36,8 +36,8 @@ Sizes are rough estimates in **weeks of focused work**; part-time takes longer. 
 | — | after 1.0 | Commercial track | ongoing | WorkMind Cloud + Enterprise edition |
 
 ✅ built (4: launch pending the public repository; 8: with the gaps its section lists); 🚧 built
-with work remaining (7: live Drive and Slack verification; 12: the final review and the
-release). Each phase's section below has the details.
+with work remaining (7: live Drive, Slack, Confluence and SharePoint verification; 12: the final
+review and the release). Each phase's section below has the details.
 
 ---
 
@@ -225,18 +225,22 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #7 — "Your company knowledge inside your IDE, with permissions intact."**
 
-### Phase 7 — Connectors and sync (v0.7) 🚧 Built; live Drive/Slack verification pending (see `docs/connectors.md`)
+### Phase 7 — Connectors and sync (v0.7) 🚧 Built; live Drive/Slack/Confluence/SharePoint verification pending (see `docs/connectors.md`)
 
 > Done: connector SDK and contract suite, sync engine (versions, deletion propagation after complete
-> scans, failures recorded, one sync per source), Celery beat scheduling, AES-GCM credentials,
-> web crawler (tested against a live site), GitHub (tested against a public repository), Slack and
-> Google Drive with OAuth (tested against their documented APIs), collection-level permission
-> mapping, stale-document listing. The source health dashboard (Admin › Sources, and Knowledge
-> Hub › Sources for collection owners: health, mapping, last and next sync, run history, plain
-> errors, pause/resume, disconnect), "missing upstream" flags after cut-short scans, and daily
-> stale-document reminders to owners plus failing-source alerts, each once per episode. Pending: a
-> test Drive and Slack workspace (DoD), Confluence and SharePoint, and moving a source to another
-> collection.
+> scans and from delta tombstones, failures recorded and retried from the same cursor, one sync
+> per source, each document's place in its source kept as metadata), Celery beat scheduling,
+> AES-GCM credentials, web crawler (tested against a live site), GitHub (tested against a public
+> repository), Slack and Google Drive with OAuth (tested against their documented APIs),
+> Confluence Cloud (REST API v2, OAuth 2.0 3LO or API token, attachments, page tree) and
+> SharePoint/OneDrive (Microsoft Graph delta queries, OAuth with PKCE, folder selection,
+> throttling), both tested against fakes built from their API documentation and through the sync
+> engine, not against a live site or tenant; collection-level permission mapping. The source
+> health dashboard (Admin › Sources, and Knowledge Hub › Sources for collection owners: health,
+> mapping, last and next sync, run history, plain errors, pause/resume, disconnect), "missing
+> upstream" flags after cut-short scans, and daily stale-document reminders to owners plus
+> failing-source alerts, each once per episode. Pending: a test Drive and Slack workspace (DoD), a
+> live Confluence site and Microsoft 365 tenant, and moving a source to another collection.
 
 **Goal:** knowledge flows in automatically from the tools companies already use.
 
@@ -569,7 +573,7 @@ Earlier drafts proposed a CLA. With Apache-2.0 it isn't needed: the license alre
 | Multi-agent orchestration, agents as configuration | ✅ | ✅ |
 | Local models and bring-your-own API keys | ✅ | ✅ |
 | Login via Keycloak (including connecting your own IdP) | ✅ | ✅ |
-| Standard connectors (upload, Drive, Slack, Confluence, GitHub, web) | ✅ | ✅ |
+| Standard connectors (upload, Drive, Slack, Confluence, SharePoint/OneDrive, GitHub, web) | ✅ | ✅ |
 | MCP server and client, tools, basic workflows and approvals | ✅ | ✅ |
 | Meeting intelligence, basic BI agent | ✅ | ✅ |
 | Eval and red-team suite | ✅ | ✅ |

@@ -31,7 +31,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from workmind.core.db import Base, TenantScoped, Timestamps, uuid_primary_key
 from workmind.modules.identity.models import SLUG_PATTERN
 
-KINDS = ("web", "github", "slack", "gdrive")
+KINDS = ("web", "github", "slack", "gdrive", "confluence", "sharepoint")
 STATUSES = ("idle", "syncing", "ok", "error")
 RUN_STATUSES = ("running", "ok", "error")
 TRIGGERS = ("schedule", "manual")

@@ -114,6 +114,8 @@ PHRASES = {
         "run",
         "source",
         "drive",
+        "wiki",
+        "library",
         "token",
         "review",
         "slack",
@@ -488,6 +490,44 @@ def _build_a(client: TestClient, a: Side) -> None:
     )
     assert started_slack.status_code == 302, started_slack.text
     v["slack_state"] = re.findall(r"[?&]state=([^&]+)", started_slack.headers["location"])[0]
+    # Confluence and SharePoint sources, each with an OAuth flow left open.
+    for provider, kind, phrase, config in (
+        (
+            "atlassian",
+            "confluence",
+            "wiki",
+            {"site_url": "https://acme.atlassian.net", "spaces": [f"X{CANARY.upper()}"]},
+        ),
+        (
+            "microsoft",
+            "sharepoint",
+            "library",
+            {"site_url": "https://contoso.sharepoint.com/sites/acme", "folder": CANARY},
+        ),
+    ):
+        v[f"{kind}_key"] = f"{CANARY}-{kind}"
+        _check(
+            client.post(
+                "/api/v1/admin/sources",
+                json={
+                    "key": v[f"{kind}_key"],
+                    "name": PHRASES[phrase],
+                    "kind": kind,
+                    "collection": "company-handbook",
+                    "config": config,
+                    "enabled": False,
+                },
+                headers=erin,
+            ),
+            201,
+        )
+        started = client.get(
+            f"/api/v1/admin/sources/{v[f'{kind}_key']}/oauth/{provider}/start",
+            headers=acme.as_("erin"),
+            follow_redirects=False,
+        )
+        assert started.status_code == 302, started.text
+        v[f"{provider}_state"] = re.findall(r"[?&]state=([^&]+)", started.headers["location"])[0]
 
     _check(
         client.post(
@@ -739,6 +779,10 @@ def world(database: Database, tmp_path_factory: pytest.TempPathFactory) -> Itera
         google_client_secret="test-google-secret",
         slack_client_id="test-slack-client",
         slack_client_secret="test-slack-secret",
+        atlassian_client_id="test-atlassian-client",
+        atlassian_client_secret="test-atlassian-secret",
+        microsoft_client_id="test-microsoft-client",
+        microsoft_client_secret="test-microsoft-secret",
     )
     now = datetime.now(UTC)
     license_ = License(
@@ -1078,6 +1122,12 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
     ("DELETE", "/api/v1/admin/sources/{key}"): [deny(params={"key": "source_key"})],
     ("POST", "/api/v1/admin/sources/{key}/sync"): [deny(params={"key": "source_key"})],
     ("GET", "/api/v1/admin/sources/{key}/oauth/google/start"): [deny(params={"key": "gdrive_key"})],
+    ("GET", "/api/v1/admin/sources/{key}/oauth/atlassian/start"): [
+        deny(params={"key": "confluence_key"})
+    ],
+    ("GET", "/api/v1/admin/sources/{key}/oauth/microsoft/start"): [
+        deny(params={"key": "sharepoint_key"})
+    ],
     ("GET", "/api/v1/admin/sources/stale"): [own(query={"days": 0})],
     ("GET", "/api/v1/admin/sources/options"): [own()],
     ("POST", "/api/v1/admin/sources/{key}/pause"): [deny(params={"key": "source_key"})],
@@ -1088,12 +1138,19 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
         own(query={"days": 1}),
         refuse(404, query=lambda w: {"source": w.a.values["source_key"]}),
     ],
+    ("GET", "/api/v1/admin/sources/kinds"): [own()],
     # Another tenant's OAuth state: the callback fails, and A's flow is left alone.
     ("GET", "/api/v1/oauth/google/callback"): [
         own(303, query=lambda w: {"code": "x", "state": w.a.values["oauth_state"]})
     ],
     ("GET", "/api/v1/oauth/slack/callback"): [
         own(303, query=lambda w: {"code": "x", "state": w.a.values["slack_state"]})
+    ],
+    ("GET", "/api/v1/oauth/atlassian/callback"): [
+        own(303, query=lambda w: {"code": "x", "state": w.a.values["atlassian_state"]})
+    ],
+    ("GET", "/api/v1/oauth/microsoft/callback"): [
+        own(303, query=lambda w: {"code": "x", "state": w.a.values["microsoft_state"]})
     ],
     # Approvals, tasks, notifications, workflows
     ("GET", "/api/v1/approvals"): [
@@ -1600,6 +1657,8 @@ def test_every_valkey_key_written_is_under_a_tenant_prefix(world: World) -> None
     # B's callback with A's state neither found nor consumed A's OAuth flow.
     assert f"t:{a_tenant}:oauth:google:{v['oauth_state']}" in a_keys
     assert f"t:{a_tenant}:oauth:slack:{v['slack_state']}" in a_keys
+    assert f"t:{a_tenant}:oauth:atlassian:{v['atlassian_state']}" in a_keys
+    assert f"t:{a_tenant}:oauth:microsoft:{v['microsoft_state']}" in a_keys
     assert any(k.startswith(f"t:{a_tenant}:usage:spent:") for k in a_keys)
 
 
