@@ -1408,7 +1408,7 @@ wheels = [
 
 [[package]]
 name = "needwise"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1518,7 +1518,7 @@ dev = [
 
 [[package]]
 name = "needwise-ee"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "../../ee/python" }
 
 [[package]]

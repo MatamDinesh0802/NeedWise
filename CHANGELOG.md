@@ -12,6 +12,13 @@ PR ([docs/operations/releasing.md](docs/operations/releasing.md)).
 v1.0.0). Their sections were written afterwards from the git history and the roadmap; the
 numbers in them come from the committed evaluation reports in [evals/results](evals/results).
 
+## [1.0.1](https://github.com/MatamDinesh0802/NeedWise/compare/v1.0.0...v1.0.1) (2026-11-13)
+
+
+### Documentation
+
+* v1.0.0 is released and the repository is public ([6727891](https://github.com/MatamDinesh0802/NeedWise/commit/672789172cf853f7a42df47c95c36a394119d369))
+
 ## v1.0.0 — Phase 12: production hardening (2026-11-13)
 
 The first release since v0.1.0: everything of Phases 2 to 11 below, plus production hardening

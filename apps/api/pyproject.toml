@@ -1,6 +1,6 @@
 [project]
 name = "needwise"
-version = "1.0.0"
+version = "1.0.1"
 description = "NeedWise API: open-source, permission-aware enterprise AI workspace"
 requires-python = ">=3.12"
 license = "Apache-2.0"
