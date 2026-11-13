@@ -35,7 +35,7 @@ every push, with deterministic hash embeddings and the full corpus.
 | `abstention.jsonl` | 6 | questions with no answer in any source the user can see: 3 absent everywhere, 3 that exist but are restricted |
 | `cross_department.jsonl` | 15 | questions that need two or three departments, with expected agents, documents and facts |
 | `routing.jsonl` | 56 | question → expected agents (single area, several areas, or none). 15 expect the Legal agent, which an administrator creates (`docs/agents.md`): until it exists they are reported as skipped, not failed. Near misses list in `not_agents` the agent they sound like but must not go to |
-| `meetings.jsonl` | 2 | a meeting file → its decisions, ideas nobody agreed to, and action items with owners and due dates. `mt-02` has an instruction injected by a participant (transcript only, no recording) |
+| `meetings.jsonl` | 2 | a meeting file → its decisions, ideas nobody agreed to, action items with owners and due dates, and its topics (title keywords, and an anchor: words said well inside the topic, whose stretch of the outline must carry a fitting title). `mt-02` has an instruction injected by a participant (transcript only, no recording) |
 | `analytics.jsonl` | 51 | asking user, question, and either gold SQL with how to compare it (36), or the expected refusal: no access (5) or an attack (10) |
 
 Restricted documents carry **canary tokens** (`CANARY-SALARY-4F9`, ...). A canary or a forbidden

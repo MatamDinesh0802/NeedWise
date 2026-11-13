@@ -104,7 +104,7 @@ Every default is open source. Paid alternatives plug in through adapters (see §
 | Authorization | OpenFGA | Apache-2.0 | — (kept in-house) |
 | Jobs / scheduling | Celery + beat | BSD | — |
 | Speech-to-text | faster-whisper | MIT | Deepgram, AssemblyAI |
-| Speaker diarization | pyannote.audio | MIT (models gated on Hugging Face) | AssemblyAI |
+| Speaker diarization | sherpa-onnx running pyannote segmentation-3.0 + NeMo TitaNet-S (ONNX, CPU) | Apache-2.0 / MIT / Apache-2.0 (no token) | pyannote.audio (models gated on Hugging Face), AssemblyAI |
 | Web search (Research agent) | SearXNG (separate service) | AGPL-3.0 (not linked into our code) | Tavily, Brave Search API |
 | SQL safety (BI) | sqlglot | MIT | — |
 | Spreadsheet analytics (BI) | DuckDB | MIT | — |
@@ -963,7 +963,7 @@ If workflows later need complex long-running timers, we evaluate Temporal (MIT) 
 
 Clicking a decision or action item jumps to that moment in the recording. Privacy: a consent notice is shown on upload, and visibility defaults to participants only.
 
-> **As built (v0.9, [docs/meetings.md](meetings.md)):** visibility follows the meeting's collection, so the same two permission locks apply and there is no second permission model. Diarization, topic segmentation, open questions and risks are not built yet. Without diarization, owners come from names said in the meeting, with the company directory as a spelling hint for speech to text; that document has the measurements.
+> **As built (v0.9, [docs/meetings.md](meetings.md)):** visibility follows the meeting's collection, so the same two permission locks apply and there is no second permission model. Diarization runs pyannote's segmentation model and NeMo TitaNet-S speaker embeddings as ONNX through sherpa-onnx, on the CPU and without a Hugging Face token (pyannote.audio itself needs PyTorch and gated models: a diarizer with the same interface can replace it). Each transcript segment gets the speaker heard most while it was said. Naming speakers (a colleague or a guest) is for the uploader, attendees who can edit and admins; it relabels the transcript, the notes and the indexed transcript, and is audited. Topics come from a second structured call with the extraction's role, checked against the transcript like citations, with a deterministic outline from the transcript's words when the model's is unusable. Open questions and risks are not extracted yet. That document has the measurements.
 
 ---
 
