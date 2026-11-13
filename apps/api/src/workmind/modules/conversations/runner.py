@@ -43,7 +43,14 @@ from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.retrieval.service import Passage, Retriever
 from workmind.modules.tools.registry import ToolRegistry
 from workmind.modules.usage.budgets import BudgetExceededError
-from workmind.providers.llm import LLMError, LLMMessage, LLMProvider, LLMRequest, LLMUsage
+from workmind.providers.llm import (
+    LLMError,
+    LLMMessage,
+    LLMNotConfiguredError,
+    LLMProvider,
+    LLMRequest,
+    LLMUsage,
+)
 from workmind.providers.pricing import cost_usd
 
 log = structlog.get_logger("workmind.runs")
@@ -51,6 +58,11 @@ log = structlog.get_logger("workmind.runs")
 HISTORY_MESSAGES = 6  # the recent window sent verbatim; older turns live in the summary
 SUMMARIZE_AFTER = 12  # unsummarized messages before the summary is refreshed
 CANCEL_CHECK_EVERY = 16  # tokens between cancellation checks
+# Shown when no model is set up yet, typically the first question on a fresh install.
+NO_MODEL_MESSAGE = (
+    "No language model is set up yet. An administrator can add one in Admin > Models, or set "
+    "ANTHROPIC_API_KEY (or a local model) in the server's .env and restart it."
+)
 
 REWRITE_SYSTEM = """You turn the latest message of a workplace conversation into a standalone \
 search query.
@@ -331,6 +343,9 @@ async def execute_run(
     except BudgetExceededError as exc:
         status, budget = "failed", exc
         log.info("run_budget_exceeded", run_id=str(run_id), budget_id=str(exc.status.id))
+    except LLMNotConfiguredError as exc:
+        status, error = "failed", ("model_not_configured", NO_MODEL_MESSAGE)
+        log.warning("run_model_not_configured", run_id=str(run_id), error=str(exc)[:300])
     except LLMError as exc:
         status, error = "failed", ("model_unavailable", "The language model is unavailable.")
         log.warning("run_model_error", run_id=str(run_id), error=str(exc)[:300])
@@ -482,6 +497,9 @@ async def execute_research_run(
     except BudgetExceededError as exc:
         status, budget = "failed", exc
         log.info("research_budget_exceeded", run_id=str(run_id), budget_id=str(exc.status.id))
+    except LLMNotConfiguredError as exc:
+        status, error = "failed", ("model_not_configured", NO_MODEL_MESSAGE)
+        log.warning("research_model_not_configured", run_id=str(run_id), error=str(exc)[:300])
     except LLMError as exc:
         status, error = "failed", ("model_unavailable", "The language model is unavailable.")
         log.warning("research_model_error", run_id=str(run_id), error=str(exc)[:300])

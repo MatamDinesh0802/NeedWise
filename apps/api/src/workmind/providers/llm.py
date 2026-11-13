@@ -38,6 +38,19 @@ class LLMRefusalError(LLMError):
     """The model (and any fallback) declined the request."""
 
 
+class LLMNotConfiguredError(LLMError):
+    """The provider has no credentials: nobody has set up a model yet, as on a fresh install."""
+
+
+def _missing_credentials(exc: TypeError) -> bool:
+    """The Anthropic SDK raises a TypeError at request time when it finds no API key, auth token
+    or credentials profile; any other TypeError is a bug and is left alone."""
+    return "authentication method" in str(exc)
+
+
+NO_CLAUDE_KEY = "no Anthropic API key is configured (ANTHROPIC_API_KEY)"
+
+
 @dataclass(frozen=True)
 class LLMMessage:
     role: Literal["user", "assistant"]
@@ -229,6 +242,10 @@ class AnthropicLLM:
             )
         except anthropic.APIError as exc:
             raise LLMError(f"Claude API error: {exc}") from exc
+        except TypeError as exc:
+            if not _missing_credentials(exc):
+                raise
+            raise LLMNotConfiguredError(NO_CLAUDE_KEY) from exc
         usage = self._usage(message, request)
         return "".join(b.text for b in message.content if b.type == "text"), usage
 
@@ -245,6 +262,10 @@ class AnthropicLLM:
                 final: BetaMessage = await stream.get_final_message()
         except anthropic.APIError as exc:
             raise LLMError(f"Claude API error: {exc}") from exc
+        except TypeError as exc:
+            if not _missing_credentials(exc):
+                raise
+            raise LLMNotConfiguredError(NO_CLAUDE_KEY) from exc
         yield Done(self._usage(final, request))
 
     async def structured[T: BaseModel](
@@ -259,6 +280,10 @@ class AnthropicLLM:
             message: BetaMessage = await self._client.beta.messages.create(**params)
         except anthropic.APIError as exc:
             raise LLMError(f"Claude API error: {exc}") from exc
+        except TypeError as exc:
+            if not _missing_credentials(exc):
+                raise
+            raise LLMNotConfiguredError(NO_CLAUDE_KEY) from exc
         usage = self._usage(message, request)
         text = next((b.text for b in message.content if b.type == "text"), "")
         return schema.model_validate_json(text), usage
@@ -289,6 +314,10 @@ class AnthropicLLM:
                 message: BetaMessage = await self._client.beta.messages.create(**params)
             except anthropic.APIError as exc:
                 raise LLMError(f"Claude API error: {exc}") from exc
+            except TypeError as exc:
+                if not _missing_credentials(exc):
+                    raise
+                raise LLMNotConfiguredError(NO_CLAUDE_KEY) from exc
             result.usage.append(self._usage(message, request))
             text = "".join(b.text for b in message.content if b.type == "text")
             if message.stop_reason == "pause_turn":

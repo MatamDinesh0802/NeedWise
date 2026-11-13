@@ -378,6 +378,33 @@ async def test_a_failed_agent_shows_a_plain_label_and_the_failed_answer_counts_t
     assert answer["usage"]["input_tokens"] == 30  # the plan was made and paid for
 
 
+class UnconfiguredLLM(FakeLLM):
+    """A fresh install: no model key anywhere."""
+
+    async def stream(self, role: Any, request: Any) -> AsyncIterator[Any]:
+        from workmind.providers.llm import LLMNotConfiguredError
+
+        raise LLMNotConfiguredError("no Anthropic API key is configured (ANTHROPIC_API_KEY)")
+        yield  # pragma: no cover
+
+
+async def test_without_a_model_the_failed_answer_says_how_to_set_one_up(
+    api: TestClient, acme: Acme
+) -> None:
+    use_model(api, UnconfiguredLLM())
+    conversation = start(api, acme, "alice")
+
+    received = events(api, acme, "alice", ask(api, acme, "alice", conversation, "Parental leave?"))
+    detail = api.get(f"/api/v1/conversations/{conversation}", headers=acme.as_("alice")).json()
+
+    assert received[-1][0] == "run.failed"
+    assert received[-1][1]["code"] == "model_not_configured"
+    answer = detail["messages"][-1]
+    assert (answer["status"], answer["error"]["code"]) == ("failed", "model_not_configured")
+    assert "Admin > Models" in answer["error"]["message"]
+    assert "ANTHROPIC_API_KEY" in answer["error"]["message"]
+
+
 async def test_a_cancelled_exchange_does_not_steer_the_next_answer(
     api: TestClient, acme: Acme
 ) -> None:
