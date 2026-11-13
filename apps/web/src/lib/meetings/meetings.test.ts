@@ -27,9 +27,21 @@ import {
   personOptions,
   pipelineSteps,
   sortCommitments,
-  speakerChanges,
+  draftFromValue,
+  draftValue,
+  GUEST,
+  labelText,
+  speakerDraft,
+  speakerMapPayload,
   speakerName,
+  speakerNote,
+  speakerOptions,
+  speakerOverview,
   stepLabel,
+  topicAt,
+  topicRange,
+  topicsNote,
+  topicStarts,
   titleAfterPick,
   titleFromFilename,
   untimedCount,
@@ -272,10 +284,90 @@ describe("speakers and owners", () => {
     expect(personOptions(people, { id: "u-ana", name: "Ana" }, "Nobody")).toHaveLength(2);
   });
 
-  it("sends only the speaker labels that changed", () => {
-    expect(speakerChanges(speakers, { "Olivia Grant": "u-olivia", "Speaker 2": "u-wei" })).toEqual({ "Speaker 2": "u-wei" });
-    expect(speakerChanges(speakers, { "Olivia Grant": null })).toEqual({ "Olivia Grant": null });
-    expect(speakerChanges(speakers, { Nobody: "u-x" })).toEqual({});
+  it("sends only the speaker labels whose name changed: a colleague's id, a guest's name, or null", () => {
+    const current = {
+      ...speakers,
+      SPEAKER_3: { name: "Jonas Brandt", user_id: null, guest: true },
+    };
+    const drafts = {
+      "Olivia Grant": speakerDraft(current["Olivia Grant"]), // unchanged
+      "Speaker 2": { kind: "person", id: "u-wei" } as const,
+      SPEAKER_3: { kind: "guest", name: "  Jonas   Brandt " } as const, // the same guest, retyped
+      Nobody: { kind: "person", id: "u-x" } as const, // not a label of this meeting
+    };
+    expect(speakerMapPayload(current, drafts)).toEqual({ ok: true, body: { "Speaker 2": "u-wei" } });
+    expect(speakerMapPayload(current, { "Olivia Grant": { kind: "nobody" }, "Speaker 2": { kind: "guest", name: "Lena Ortiz" } })).toEqual({
+      ok: true,
+      body: { "Olivia Grant": null, "Speaker 2": { name: "Lena Ortiz" } },
+    });
+    expect(speakerMapPayload(current, { SPEAKER_3: { kind: "nobody" } })).toEqual({ ok: true, body: { SPEAKER_3: null } });
+    expect(speakerMapPayload(current, { "Speaker 2": { kind: "nobody" } })).toEqual({ ok: true, body: {} }); // was nobody already
+  });
+
+  it("needs a guest's name", () => {
+    expect(speakerMapPayload(speakers, { "Speaker 2": { kind: "guest", name: "  " } })).toEqual({
+      ok: false,
+      errors: { "Speaker 2": "Type the guest's name." },
+    });
+    expect(speakerMapPayload(speakers, { "Speaker 2": { kind: "guest", name: "x".repeat(101) } })).toEqual({
+      ok: false,
+      errors: { "Speaker 2": "At most 100 characters." },
+    });
+  });
+
+  it("turns a select value into a draft, keeping a guest's name while switching back and forth", () => {
+    const guest = { kind: "guest", name: "Lena" } as const;
+    expect(draftFromValue(GUEST, guest)).toEqual(guest);
+    expect(draftFromValue(GUEST, { kind: "nobody" })).toEqual({ kind: "guest", name: "" });
+    expect(draftFromValue("u-wei", guest)).toEqual({ kind: "person", id: "u-wei" });
+    expect(draftFromValue("", guest)).toEqual({ kind: "nobody" });
+    expect([guest, { kind: "person", id: "u-wei" } as const, { kind: "nobody" } as const].map(draftValue)).toEqual([GUEST, "u-wei", ""]);
+    expect(speakerDraft({ name: "Lena", user_id: null, guest: true })).toEqual(guest);
+    expect(speakerDraft({ name: "SPEAKER_1", user_id: null })).toEqual({ kind: "nobody" });
+    expect(speakerDraft(undefined)).toEqual({ kind: "nobody" });
+  });
+
+  it("offers nobody, a guest, then colleagues, keeping the current colleague", () => {
+    const options = speakerOptions([{ id: "u-ana", name: "Ana Souza" }], { name: "Former colleague", user_id: "u-gone" });
+    expect(options.map((o) => o.value)).toEqual(["", GUEST, "u-ana", "u-gone"]);
+    expect(options[0].label).toBe("Not named yet");
+  });
+
+  it("reads diarization labels as speakers, in labels and in what the model wrote", () => {
+    expect(labelText("SPEAKER_2")).toBe("Speaker 2");
+    expect(labelText("SPEAKER_1 asked SPEAKER_12; XSPEAKER_3 stays")).toBe("Speaker 1 asked Speaker 12; XSPEAKER_3 stays");
+    expect(speakerName("SPEAKER_4", { SPEAKER_4: { name: "SPEAKER_4", user_id: null } })).toBe("Speaker 4");
+    expect(speakerName("SPEAKER_4", { SPEAKER_4: { name: "Lena Ortiz", user_id: null, guest: true } })).toBe("Lena Ortiz");
+    expect(ownerText(item({ owner: "SPEAKER_2", owner_user_id: null }), "u-me")).toBe("Speaker 2");
+  });
+
+  it("sums up each speaker: how much they said and where they first spoke, in order of appearance", () => {
+    const segments: Segment[] = [
+      { id: "T1", start: 0, end: 10, speaker: "SPEAKER_2", text: "Morning." },
+      { id: "T2", start: 10, end: 14, speaker: "SPEAKER_1", text: "Hi." },
+      { id: "T3", start: 15, end: 75, speaker: "SPEAKER_2", text: "So, the agenda." },
+      { id: "T4", start: 80, end: 81, speaker: null, text: "(unclear)" },
+    ];
+    const labelled = {
+      SPEAKER_1: { name: "SPEAKER_1", user_id: null },
+      SPEAKER_2: { name: "SPEAKER_2", user_id: null },
+      SPEAKER_3: { name: "SPEAKER_3", user_id: null },
+    };
+    expect(speakerOverview(segments, labelled)).toEqual([
+      { label: "SPEAKER_2", segments: 2, seconds: 70, first: segments[0] },
+      { label: "SPEAKER_1", segments: 1, seconds: 4, first: segments[1] },
+      { label: "SPEAKER_3", segments: 0, seconds: 0, first: null },
+    ]);
+  });
+
+  it("says why a recording has no speaker labels", () => {
+    const recording = { filename: "sync.m4a", speakers: {}, timings: {} };
+    expect(speakerNote({ ...recording, timings: { diarization_skipped: "speaker diarization is off (DIARIZATION_PROVIDER=none)" } })).toBe(
+      "Speakers weren't told apart: speaker diarization is off (DIARIZATION_PROVIDER=none).",
+    );
+    expect(speakerNote(recording)).toBe("Speakers weren't told apart in this recording.");
+    expect(speakerNote({ ...recording, speakers })).toBeNull();
+    expect(speakerNote({ ...recording, filename: "sync.vtt" })).toBeNull(); // a transcript names its own
   });
 
   it("says 'You' for my own items", () => {
@@ -353,5 +445,38 @@ describe("deleting a meeting", () => {
 
   it("refreshes the lists it changes, not the deleted meeting itself", () => {
     expect(MEETING_DELETION_KEYS).toEqual(["meetings/list", "meetings/commitments", "work/tasks"]);
+  });
+});
+
+describe("topics", () => {
+  const topics = [
+    { title: "Small talk", segment: "T1", start: 0, end: 96.5, source: "model" as const },
+    { title: "Battery recall at Bluefin", segment: "T15", start: 97.2, end: 603, source: "model" as const },
+    { title: "Warranty claims", segment: "T66", start: 603.4, end: 3725, source: "model" as const },
+  ];
+
+  it("knows which topic is being discussed at a moment", () => {
+    expect(topicAt(topics, 0)).toBe(0);
+    expect(topicAt(topics, 97.1)).toBe(0);
+    expect(topicAt(topics, 97.2)).toBe(1);
+    expect(topicAt(topics, 5000)).toBe(2);
+    expect(topicAt([{ start: 5 }], 1)).toBeNull();
+    expect(topicAt([], 1)).toBeNull();
+  });
+
+  it("shows a topic's time range", () => {
+    expect(topicRange(topics[1])).toBe("1:37–10:03");
+    expect(topicRange(topics[2])).toBe("10:03–1:02:05");
+  });
+
+  it("finds the topic starting at a segment, for headings in the transcript", () => {
+    const starts = topicStarts(topics);
+    expect(starts.get("T15")?.title).toBe("Battery recall at Bluefin");
+    expect(starts.has("T16")).toBe(false);
+  });
+
+  it("says when the outline came from the transcript's words rather than the model", () => {
+    expect(topicsNote(topics)).toBeNull();
+    expect(topicsNote([{ source: "words" }])).toMatch(/^Worked out from the transcript's words/);
   });
 });

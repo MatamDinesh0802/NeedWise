@@ -37,9 +37,11 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
     { text: "Add battery-temperature alerts", owner: "Wei Zhang", owner_user_id: "u-wei", due: "2026-11-13", task_id: null, segment: "T2", start: 6 },
     { text: "Update the operations SOP", owner: "Olivia", owner_user_id: null, due: null, task_id: "task-9", segment: null, start: null },
   ],
+  topics: [],
   document_id: null,
   timings: {},
   can_edit: true,
+  can_map_speakers: true,
   held_on: "2026-11-02",
   created_at: "2026-11-04T09:00:00Z",
   ...overrides,
@@ -81,9 +83,84 @@ describe("ReadyMeeting", () => {
   });
 
   it("shows viewers the notes without the editing controls", () => {
-    const html = render(meeting({ can_edit: false }));
+    const html = render(meeting({ can_edit: false, can_map_speakers: false }));
     expect(html).not.toContain("Make task");
     expect(html).not.toContain("Who is who");
     expect(html).toContain('href="/tasks/task-9"');
+  });
+
+  it("leaves naming speakers to those who may: an editor who wasn't there corrects items only", () => {
+    const html = render(meeting({ can_map_speakers: false }));
+    expect(html).toContain("Make task");
+    expect(html).not.toContain("Who is who");
+  });
+
+  it("outlines the topics, each a button to its moment, and marks where each starts in the transcript", () => {
+    const html = render(
+      meeting({
+        topics: [
+          { title: "Safety drill", segment: "T1", start: 1, end: 5, source: "model" },
+          { title: "Battery alerts for SPEAKER_2", segment: "T2", start: 6, end: 10, source: "model" },
+        ],
+      }),
+    );
+    expect(html).toContain('id="topics-heading"');
+    expect(html).toContain('aria-label="Safety drill, 0:01–0:05: show in the transcript"');
+    expect(html).toContain("Battery alerts for Speaker 2"); // a label nobody named yet reads as a speaker
+    expect(html).toContain('<span class="sr-only">Topic: </span>Safety drill');
+    expect(html).not.toContain("Worked out from the transcript");
+
+    const recording = render(
+      meeting({
+        has_media: true,
+        filename: "weekly-ops.m4a",
+        topics: [{ title: "Part, coffee, machine", segment: "T1", start: 1, end: 10, source: "words" }],
+      }),
+    );
+    expect(recording).toContain('aria-label="Part, coffee, machine, 0:01–0:10: play from here"');
+    expect(recording).toContain("Worked out from the transcript&#x27;s words");
+  });
+
+  it("lets the uploader name diarized voices, with what each said first and a guest option", () => {
+    const html = render(
+      meeting({
+        has_media: true,
+        filename: "call.m4a",
+        summary: "SPEAKER_1 asked SPEAKER_2 for the quote.",
+        segments: [
+          { id: "T1", start: 1, end: 5, speaker: "SPEAKER_1", text: "Can you send the quote?" },
+          { id: "T2", start: 6, end: 10, speaker: "SPEAKER_2", text: "Yes, by Friday." },
+        ],
+        speakers: {
+          SPEAKER_1: { name: "SPEAKER_1", user_id: null },
+          SPEAKER_2: { name: "Jonas Brandt", user_id: null, guest: true },
+        },
+        decisions: [],
+        action_items: [],
+      }),
+    );
+    expect(html).toContain("Speaker 1 asked Speaker 2 for the quote.");
+    expect(html).toContain("Speaker 1: </span>Can you send the quote?");
+    expect(html).toContain("Jonas Brandt: </span>Yes, by Friday.");
+    expect(html).toContain('aria-label="Who is Speaker 1?"');
+    expect(html).toContain('aria-label="Listen to Speaker 1 from 0:01"');
+    expect(html).toContain("“Can you send the quote?”");
+    expect(html).toContain("Guest&#x27;s name for Speaker 2");
+    expect(html).toContain('value="Jonas Brandt"');
+    expect(html).toContain("Save names");
+  });
+
+  it("says why a recording has no speaker labels", () => {
+    const html = render(
+      meeting({
+        has_media: true,
+        filename: "call.m4a",
+        segments: [{ id: "T1", start: 1, end: 5, speaker: null, text: "Hello." }],
+        speakers: {},
+        timings: { diarization_skipped: "speaker diarization is off (DIARIZATION_PROVIDER=none)" },
+      }),
+    );
+    expect(html).toContain("Speakers weren&#x27;t told apart: speaker diarization is off (DIARIZATION_PROVIDER=none).");
+    expect(html).not.toContain("Who is who");
   });
 });
