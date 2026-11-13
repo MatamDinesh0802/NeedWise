@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { meetingsKeys } from "@/lib/meetings/api";
 import { workKeys, type Task } from "@/lib/work/api";
 
-import { assigneeText, canClaim, canSeeTask, dueText, emptyTaskForm, sortTasks, TASK_CHANGE_KEYS, taskOrigin, toTaskCreate, validateTaskForm } from "./tasks";
+import { assigneeText, canClaim, canSeeTask, dueText, emptyTaskForm, sortTasks, TASK_CHANGE_KEYS, taskDocuments, taskOrigin, toTaskCreate, validateTaskForm } from "./tasks";
 
 const task = (overrides: Partial<Task> = {}): Task => ({
   id: "t1",
@@ -92,6 +92,30 @@ describe("one task", () => {
     expect(taskOrigin(task({ origin: { via: "assistant" } }))?.label).toBe("From the assistant");
     expect(taskOrigin(task({ origin: { via: "workflow", workflow_run_id: "r1" } }))?.href).toBeNull();
     expect(taskOrigin(task({ origin: { via: "web" } }))).toBeNull();
+    expect(taskOrigin(task({ origin: { via: "connectors", kind: "stale_documents", documents: [] } }))).toEqual({
+      kind: "document",
+      label: "Stale synced documents",
+      href: null,
+    });
+  });
+
+  it("reads the documents a stale-document reminder lists, ignoring malformed entries", () => {
+    const reminder = task({
+      origin: {
+        via: "connectors",
+        kind: "stale_documents",
+        documents: [{ id: "d1", title: "Travel policy", reason: "missing_upstream" }, { id: "d2", title: "Leave policy", reason: "not_updated" }, { title: "no id" }, null],
+        more: 3,
+      },
+    });
+    expect(taskDocuments(reminder)).toEqual({
+      documents: [
+        { id: "d1", title: "Travel policy", reason: "missing_upstream" },
+        { id: "d2", title: "Leave policy", reason: "not_updated" },
+      ],
+      more: 3,
+    });
+    expect(taskDocuments(task())).toEqual({ documents: [], more: 0 });
   });
 
   it("is visible to its assignee, its creator and its team queue, like the API's rule", () => {
