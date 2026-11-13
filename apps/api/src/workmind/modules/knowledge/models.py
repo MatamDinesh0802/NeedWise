@@ -34,6 +34,12 @@ _ = _sources  # documents reference sources: keep the table registered
 SCOPES = ("personal", "department", "enterprise", "restricted")
 TRUST_LEVELS = ("official", "reference", "discussion")
 SENSITIVITIES = ("internal", "confidential", "restricted")
+# How far an overdue review of an official document has escalated (docs/governance.md): the
+# collection's owner was told, then the org admins, then it was demoted to reference.
+ESCALATION_STAGES = ("collection_owner", "admins", "demoted")
+ESCALATION_DAYS_DEFAULT = 14
+ESCALATION_DAYS_MAX = 365
+AUTO_DEMOTE_DAYS_MAX = 3650
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -57,6 +63,15 @@ class Collection(Base, TenantScoped, Timestamps):
             "review_interval_days IS NULL OR review_interval_days BETWEEN 1 AND 3650",
             name="review_interval_days",
         ),
+        CheckConstraint(
+            f"review_escalation_days BETWEEN 1 AND {ESCALATION_DAYS_MAX}",
+            name="review_escalation_days",
+        ),
+        CheckConstraint(
+            "review_auto_demote_days IS NULL OR review_auto_demote_days "
+            f"BETWEEN 1 AND {AUTO_DEMOTE_DAYS_MAX}",
+            name="review_auto_demote_days",
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_primary_key()
@@ -70,6 +85,13 @@ class Collection(Base, TenantScoped, Timestamps):
     default_sensitivity: Mapped[str] = mapped_column(String(16), server_default="internal")
     # Documents are due for review this many days after their last review (None: never).
     review_interval_days: Mapped[int | None] = mapped_column(Integer)
+    # An official document this many days past its review escalates to the collection's owner,
+    # and as many days later to the org admins.
+    review_escalation_days: Mapped[int] = mapped_column(
+        Integer, server_default=str(ESCALATION_DAYS_DEFAULT)
+    )
+    # This many days after the admins were told, it is demoted to reference (None: never).
+    review_auto_demote_days: Mapped[int | None] = mapped_column(Integer)
 
 
 class CollectionGrant(Base, TenantScoped):
@@ -109,6 +131,10 @@ class Document(Base, TenantScoped, Timestamps):
         CheckConstraint(_in("trust", TRUST_LEVELS), name="trust"),
         CheckConstraint(_in("sensitivity", SENSITIVITIES), name="sensitivity"),
         CheckConstraint("status IN ('pending', 'processing', 'ready', 'failed')", name="status"),
+        CheckConstraint(
+            f"review_escalation IS NULL OR {_in('review_escalation', ESCALATION_STAGES)}",
+            name="review_escalation",
+        ),
         Index("ix_documents_collection_id", "tenant_id", "collection_id"),
         # A synced item is one document, whatever its title or file name becomes.
         Index(
@@ -170,6 +196,10 @@ class Document(Base, TenantScoped, Timestamps):
     next_review_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The open reminder task of the current review cycle; cleared when the document is reviewed.
     review_task_id: Mapped[uuid.UUID | None]
+    # How far an overdue review has escalated this cycle (ESCALATION_STAGES), and when the last
+    # stage was reached; cleared by a review, an approval or a new schedule.
+    review_escalation: Mapped[str | None] = mapped_column(String(16))
+    review_escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DocumentVersion(Base, TenantScoped):

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { intervalError, intervalText, parseInterval } from "./review-interval";
+import { demoteError, escalationError, escalationText, intervalError, intervalText, parseInterval } from "./review-interval";
 
 describe("review interval", () => {
   it("treats an empty field as no reviews", () => {
@@ -21,5 +21,27 @@ describe("review interval", () => {
     expect(intervalError("a year")).toContain("whole number");
     expect(intervalError("0")).toBe("Between 1 and 3,650 days.");
     expect(intervalError("3651")).toBe("Between 1 and 3,650 days.");
+  });
+});
+
+describe("escalation of overdue official reviews", () => {
+  it("needs a grace period between 1 and 365 days", () => {
+    expect(escalationError("14")).toBeNull();
+    expect(escalationError("")).toContain("every collection escalates");
+    expect(escalationError("0")).toBe("Between 1 and 365 days.");
+    expect(escalationError("366")).toBe("Between 1 and 365 days.");
+    expect(escalationError("two weeks")).toContain("whole number");
+  });
+
+  it("demotes only when a period is set", () => {
+    expect(demoteError("")).toBeNull();
+    expect(demoteError("30")).toBeNull();
+    expect(demoteError("0")).toBe("Between 1 and 3,650 days.");
+    expect(demoteError("3651")).toBe("Between 1 and 3,650 days.");
+  });
+
+  it("says what happens in words", () => {
+    expect(escalationText(14, null)).toBe("Overdue official reviews escalate after 14 days; never demoted automatically.");
+    expect(escalationText(1, 1)).toBe("Overdue official reviews escalate after 1 day; demoted 1 day after the administrators are told.");
   });
 });

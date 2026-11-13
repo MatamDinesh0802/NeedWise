@@ -2,8 +2,9 @@
 
 Answers are only as good as the documents behind them. Knowledge governance makes three things
 explicit for every document: **who answers for it** (its owner), **when it was last checked**
-(its review cycle), and **whether answers may treat it as official** (an approval, not a
-checkbox). The audit explorer is how an administrator or auditor reads what happened.
+(its review cycle, with an escalation when an official document's review is ignored), and
+**whether answers may treat it as official** (an approval, not a checkbox). The audit explorer is
+how an administrator or auditor reads what happened.
 
 Everything on this page is in the Community edition. Two related features are Enterprise:
 retention policies and the SIEM export of the audit chain ([enterprise.md](enterprise.md)).
@@ -22,7 +23,7 @@ Permissions are checked in code on every request (`api/v1/knowledge.py`,
 | Ask for official status | Collection editors | `POST /api/v1/documents/{id}/official` |
 | Approve or reject official status | The collection's owner; org owners and admins who can open the collection when the owner is the one asking or there is none. Never the person who asked. In a browser session only (an access token gets `403 session_required`). | `POST /api/v1/approvals/{id}/decision` |
 | Remove official status | Collection editors (immediate) | `PATCH /api/v1/documents/{id}` |
-| Set a collection's owner and review interval | Org owners and admins | `PATCH /api/v1/admin/collections/{id}` |
+| Set a collection's owner, review interval and escalation periods | Org owners and admins | `PATCH /api/v1/admin/collections/{id}` |
 | See the governance overview | Org owners and admins: every collection. Anyone else: the collections they own. | `GET /api/v1/governance/overview` |
 | Read, filter and export the audit log | Org owners, admins and auditors | `GET /api/v1/admin/audit-events`, `.../export.csv` |
 
@@ -86,6 +87,49 @@ and source carry `review_overdue: true`, and the Sources panel shows **Review ov
 the trust badge. The document is still used and still ranked as official; the label tells the
 reader that nobody has confirmed it recently. Answers stored before this existed have no flag
 and show nothing.
+
+## Escalation of overdue reviews
+
+A reminder goes to the document's owner. When the owner ignores it and the document is
+**official** (answers rank it first), the same daily task (`workmind.send_review_reminders`,
+right after the reminders) escalates it, one stage at a time:
+
+| Stage | When | Who is told |
+|---|---|---|
+| `collection_owner` | `review_escalation_days` after the review date | The collection's owner |
+| `admins` | `review_escalation_days` after the collection's owner was told | Every active org owner and admin |
+| `demoted` | `review_auto_demote_days` after the admins were told, **only when the collection sets it** | The document's owner and the collection's owner |
+
+Both periods are set per collection in **Admin > Collections > Owner and reviews**
+(`PATCH /api/v1/admin/collections/{id}`): `review_escalation_days` from 1 to 365, default 14,
+and `review_auto_demote_days` from 1 to 3650, default empty (never demoted automatically).
+
+- Each stage waits its full period after the one before was reached, so a daily run that came
+  late (beat stopped for a few days) never skips a stage. A run moves a document at most one
+  stage. The stage and when it was reached are kept on the document (`review_escalation`,
+  `review_escalated_at`; migration `0026`) and the rows are locked while the task runs, so
+  running it twice tells nobody twice: **one notification per person and one audit event per
+  stage and review cycle** (`knowledge.document.review_escalated`, with the stage, who was told
+  and how many days overdue; actor: system).
+- When the collection has no active owner who can open it, or its owner is the document's
+  owner (who was already reminded), the first stage goes to the admins directly; the event
+  says why (`collection_owner_skipped`).
+- The admins' stage leaves out the document's owner and a collection owner told before. An
+  admin who cannot open the collection is told which collection, not which document: "Overdue
+  review in “HR Guidance (internal)”", linking to **Admin > Governance**, which also withholds
+  the title (separation of duties, ARCHITECTURE 7.1).
+- **Demotion** sets the trust to `reference` at once in PostgreSQL and in the search index, is
+  audited as `knowledge.document.demoted` with `reason: review_overdue` (actor: system; "No
+  longer official" in the overview shows "Automatic: review overdue"), and tells the document's
+  owner and the collection's owner. Making it official again needs a review and a new approval.
+- **A review ends the escalation**: marking the document reviewed, an approval of official
+  status, a demotion by an editor, new content, or a change of the collection's review interval
+  clears the stage, so the next cycle starts afresh. Changing the escalation periods applies
+  from the next daily run; stages already reached stay.
+- Documents that are not official are only reminded, never escalated.
+
+The governance overview shows the stage under each overdue document ("Escalated to the
+administrators on 10 Nov 2026"), and the document page next to "Review overdue".
 
 ## Official status
 
@@ -199,13 +243,14 @@ The complete chain with its hashes, as JSON lines for a SIEM, is the Enterprise 
 |---|---|
 | `knowledge.document.owner_changed` | A document got another owner |
 | `knowledge.document.review_reminded` | The daily task reminded an owner (actor: system) |
+| `knowledge.document.review_escalated` | An official document's overdue review reached the next stage: `collection_owner`, `admins` or `demoted` (actor: system) |
 | `knowledge.document.reviewed` | Someone marked a document reviewed |
 | `knowledge.document.official_requested` | An editor asked for official status |
 | `knowledge.document.official_rerouted` | The collection's owner changed and a pending request went to whoever decides now |
 | `approval.approved`, `approval.rejected` | The approver decided (`approval.rejectd` before 2026-11-12) |
 | `knowledge.document.official_approved` | The document became official |
-| `knowledge.document.demoted` | An editor removed official status, or new content ended it (`reason: new_version`) |
-| `admin.collection.governance_changed` | An admin changed a collection's owner or review interval |
+| `knowledge.document.demoted` | An editor removed official status, new content ended it (`reason: new_version`), or an overdue review did (`reason: review_overdue`, actor: system) |
+| `admin.collection.governance_changed` | An admin changed a collection's owner, review interval or escalation periods (before and after) |
 | `audit.export` | Someone exported the audit log (CSV or JSON lines) |
 
 ## The demo data
@@ -231,8 +276,8 @@ and never undoes a review or an owner chosen in the app.
 
 ## What is not built
 
-- No escalation: an overdue review stays with its owner; nobody else is told when the owner
-  ignores the task.
+- Escalation covers official documents only, and tells people in the app only (no email or
+  chat message). It does not reassign the review task: the owner keeps it.
 - No review history beyond the audit log: the document keeps only its latest review.
 - Overdue reviews do not lower a document's ranking; they are only labelled.
 - No bulk actions (hand over every document of a person who leaves, mark many reviewed).
@@ -241,7 +286,9 @@ and never undoes a review or an owner chosen in the app.
 ## Tests
 
 `tests/integration/test_governance.py` (owners and defaults, reminders once per cycle and
-idempotent, reviews closing the task, the reminder following a new owner, interval changes,
+idempotent, reviews closing the task, escalation once per stage with each stage's full period,
+admins who cannot open the collection told without the title, demotion only when the collection
+sets it, a review ending the escalation, the limits of the periods, the reminder following a new owner, interval changes,
 official requests: approvers who can read the collection, no self-approval, editors cannot set
 official directly, new content ending official status and voiding a pending request, the
 version an approval is for, requests following a new collection owner, a refused decider
@@ -281,5 +328,5 @@ Before the fix, the browser walkthrough had Erin approve official status for "Pe
 Review Process" in HR Guidance, a collection she cannot open; that document has since been set
 back to `reference` (it still names Erin as its last reviewer).
 
-Not checked yet: a reminder sent by the daily task on the running stack (it first runs a day
-after beat starts).
+Not checked yet: a reminder or an escalation sent by the daily task on the running stack (it
+first runs a day after beat starts).

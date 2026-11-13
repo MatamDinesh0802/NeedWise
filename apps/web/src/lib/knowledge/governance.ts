@@ -67,6 +67,27 @@ export function reviewSummary(doc: ReviewFields, meId?: string | null): string {
   return doc.reviewed_at ? `${reviewed}; next review ${next}.` : `${reviewed}; first review due ${next}.`;
 }
 
+// --- Escalation of overdue reviews --------------------------------------------------------------
+
+/** modules/knowledge/models.py ESCALATION_STAGES. */
+export type EscalationStage = "collection_owner" | "admins" | "demoted";
+
+/** What a stage means, for a badge or a line under the document. */
+export function escalationLabel(stage: EscalationStage | null | undefined): string | null {
+  if (stage === "collection_owner") return "Escalated to the collection's owner";
+  if (stage === "admins") return "Escalated to the administrators";
+  if (stage === "demoted") return "Demoted: review overdue";
+  return null;
+}
+
+/** Who demoted it, in words: a person, or why it happened on its own. */
+export function demotedBy(demotion: Pick<Demotion, "by" | "reason">): string {
+  if (demotion.by) return demotion.by.display_name;
+  if (demotion.reason === "review_overdue") return "Automatic: review overdue";
+  if (demotion.reason === "new_version") return "Automatic: new content";
+  return "Someone";
+}
+
 // --- Official status ---------------------------------------------------------------------------
 
 /** "Priya Raman", "Erin or Amara", "Erin, Amara or Sam". */
@@ -112,6 +133,8 @@ export interface GovernanceCollection {
   can_view: boolean;
   owner_id: string | null;
   review_interval_days: number | null;
+  review_escalation_days: number;
+  review_auto_demote_days: number | null;
 }
 
 export interface GovernedDocument {
@@ -126,6 +149,9 @@ export interface GovernedDocument {
   reviewed_at: string | null;
   reviewed_by: PersonRef | null;
   next_review_at: string | null;
+  /** How far an overdue official review escalated this cycle (null: not escalated). */
+  review_escalation: EscalationStage | null;
+  review_escalated_at: string | null;
 }
 
 export interface PendingOfficial {
@@ -140,10 +166,13 @@ export interface Demotion {
   document_id: string;
   title: string | null;
   collection_id: string;
+  /** null: the system demoted it (see reason). */
   by: PersonRef | null;
   at: string;
   to: string;
   note: string | null;
+  /** new_version or review_overdue when it was not an editor's choice. */
+  reason?: string | null;
 }
 
 export interface GovernanceOverview {

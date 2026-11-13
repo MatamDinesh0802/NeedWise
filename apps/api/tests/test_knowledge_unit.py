@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -12,7 +13,8 @@ from workmind.modules.knowledge.chunking import (
     embedding_text,
     estimate_tokens,
 )
-from workmind.modules.knowledge.models import Collection, CollectionGrant
+from workmind.modules.knowledge.governance import escalation_due
+from workmind.modules.knowledge.models import Collection, CollectionGrant, Document
 from workmind.modules.knowledge.parsing import UnsupportedFormatError, detect_mime, parse
 from workmind.modules.knowledge.sensitivity import scan, suggest
 from workmind.modules.retrieval.sparse import encode_document, encode_query, tokenize
@@ -208,3 +210,31 @@ def test_corpus_fact_checker_spots_missing_values() -> None:
     ]
     assert missing_values("16 weeks, CANARY-SALARY-4F9 and 182 400 euros", facts) == []
     assert missing_values("16 weeks only", facts) == ["182,400", "CANARY-SALARY-4F9"]
+
+
+def test_an_overdue_official_review_escalates_one_stage_per_full_period() -> None:
+    due = datetime(2026, 11, 1, tzinfo=UTC)
+    collection = Collection(review_escalation_days=7, review_auto_demote_days=None)
+    document = Document(trust="official", next_review_at=due)
+
+    def stage_at(days: float) -> str | None:
+        return escalation_due(document, collection, due + timedelta(days=days))
+
+    assert stage_at(6.9) is None
+    assert stage_at(7) == "collection_owner"
+    document.trust = "reference"
+    assert stage_at(30) is None  # only official documents escalate
+    document.trust = "official"
+    # The admins' period starts when the owner was told, even when that daily run came late.
+    document.review_escalation = "collection_owner"
+    document.review_escalated_at = due + timedelta(days=10)
+    assert stage_at(16.9) is None
+    assert stage_at(17) == "admins"
+    document.review_escalation = "admins"
+    document.review_escalated_at = due + timedelta(days=17)
+    assert stage_at(1000) is None  # demotion is off unless the collection sets it
+    collection.review_auto_demote_days = 30
+    assert stage_at(46.9) is None
+    assert stage_at(47) == "demoted"
+    document.review_escalation = "demoted"
+    assert stage_at(2000) is None  # the last stage

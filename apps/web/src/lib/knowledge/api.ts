@@ -61,6 +61,8 @@ export interface KnowledgeDocument {
   reviewed_by: PersonRef | null;
   next_review_at: string | null;
   review_overdue: boolean;
+  /** How far an overdue official review escalated this cycle (docs/governance.md). */
+  review_escalation?: "collection_owner" | "admins" | "demoted" | null;
   official_request: OfficialRequest | null;
 }
 
@@ -120,12 +122,18 @@ export interface AdminCollection {
   grants: Grant[];
   owner: PersonRef | null;
   review_interval_days: number | null;
+  /** Days an official review may be overdue before the collection's owner is told (1 to 365). */
+  review_escalation_days: number;
+  /** Days after the administrators were told before it is demoted to reference (null: never). */
+  review_auto_demote_days: number | null;
 }
 
 /** Fields left out stay as they are; null clears them. */
 export interface CollectionGovernanceUpdate {
   owner_id?: string | null;
   review_interval_days?: number | null;
+  review_escalation_days?: number;
+  review_auto_demote_days?: number | null;
 }
 
 export interface CollectionCreate {

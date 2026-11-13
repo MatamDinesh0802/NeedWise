@@ -34,6 +34,8 @@ from workmind.modules.identity.models import Department, Group, User
 from workmind.modules.knowledge import governance, service
 from workmind.modules.knowledge.acl import collection_tuples
 from workmind.modules.knowledge.models import (
+    AUTO_DEMOTE_DAYS_MAX,
+    ESCALATION_DAYS_MAX,
     Chunk,
     Collection,
     CollectionGrant,
@@ -104,6 +106,9 @@ class DocumentOut(BaseModel):
     reviewed_by: PersonRef | None = None
     next_review_at: datetime | None = None
     review_overdue: bool = False
+    # How far an overdue review of this official document has escalated this cycle:
+    # collection_owner, admins or demoted (docs/governance.md).
+    review_escalation: str | None = None
     official_request: OfficialRequestOut | None = None
 
 
@@ -193,6 +198,7 @@ async def _governed(
         out.reviewed_by = _person(people, document.reviewed_by)
         out.next_review_at = document.next_review_at
         out.review_overdue = governance.review_overdue(document, now)
+        out.review_escalation = document.review_escalation
         request = requests.get(document.id)
         out.official_request = (
             OfficialRequestOut(
@@ -682,13 +688,30 @@ class AdminCollectionOut(BaseModel):
     grants: list[GrantOut]
     owner: PersonRef | None
     review_interval_days: int | None
+    review_escalation_days: int
+    review_auto_demote_days: int | None
 
 
 class CollectionGovernanceUpdate(BaseModel):
-    """Fields left out stay as they are; null clears them."""
+    """Fields left out stay as they are; null clears them (the escalation period cannot be
+    cleared: every collection has one)."""
 
     owner_id: uuid.UUID | None = None
     review_interval_days: int | None = Field(default=None, ge=1, le=3650)
+    review_escalation_days: int = Field(
+        default=14,
+        ge=1,
+        le=ESCALATION_DAYS_MAX,
+        description="days an official document's review may be overdue before the collection's "
+        "owner is told; as many days later, the admins",
+    )
+    review_auto_demote_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=AUTO_DEMOTE_DAYS_MAX,
+        description="days after the admins were told before it is demoted to reference "
+        "(null: never)",
+    )
 
 
 def _admin_collection_out(
@@ -711,6 +734,8 @@ def _admin_collection_out(
         ],
         owner=_person(people, c.owner_id),
         review_interval_days=c.review_interval_days,
+        review_escalation_days=c.review_escalation_days,
+        review_auto_demote_days=c.review_auto_demote_days,
     )
 
 
@@ -751,10 +776,16 @@ async def update_collection_governance(
                 )
             ).all()
         )
-        before = {
-            "owner_id": str(collection.owner_id) if collection.owner_id else None,
-            "review_interval_days": collection.review_interval_days,
-        }
+
+        def governance_state() -> dict[str, object]:
+            return {
+                "owner_id": str(collection.owner_id) if collection.owner_id else None,
+                "review_interval_days": collection.review_interval_days,
+                "review_escalation_days": collection.review_escalation_days,
+                "review_auto_demote_days": collection.review_auto_demote_days,
+            }
+
+        before = governance_state()
         owner_changed = "owner_id" in sent and body.owner_id != collection.owner_id
         rerouted = 0
         if owner_changed:
@@ -782,6 +813,11 @@ async def update_collection_governance(
             collection.review_interval_days = body.review_interval_days
             await session.flush()
             rescheduled = await governance.reschedule_collection(session, collection)
+        # Escalation periods apply from the next daily run; stages already reached stay.
+        if "review_escalation_days" in sent:
+            collection.review_escalation_days = body.review_escalation_days
+        if "review_auto_demote_days" in sent:
+            collection.review_auto_demote_days = body.review_auto_demote_days
         await session.flush()
         await record_event(
             session,
@@ -792,10 +828,7 @@ async def update_collection_governance(
             resource_id=str(collection_id),
             details={
                 "before": before,
-                "after": {
-                    "owner_id": str(collection.owner_id) if collection.owner_id else None,
-                    "review_interval_days": collection.review_interval_days,
-                },
+                "after": governance_state(),
                 "documents_rescheduled": rescheduled,
                 "official_requests_rerouted": rerouted,
             },

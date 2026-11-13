@@ -6,6 +6,10 @@ and the "official" approval flow.
 - A collection may set a review interval. Each document is then due for review that many days
   after its last review. A daily task reminds the owner once per review cycle (a notification
   and a task); marking the document reviewed starts the next cycle and closes the task.
+- An official document whose review stays overdue escalates, once per stage and cycle: to the
+  collection's owner after the collection's grace period, to the org admins one grace period
+  later, and, only when the collection asks for it, it is demoted to reference after a second
+  period. Each stage is audited and notified.
 - Trust "official" is reached only through an approval: an editor asks, the collection's owner
   (or, when the owner is the one asking or there is none, the org admins who can open the
   collection) decides. Nobody ever approves their own request, and nobody approves what they
@@ -40,7 +44,7 @@ from workmind.modules.knowledge.models import (
     DocumentVersion,
 )
 from workmind.modules.work.approvals import ApprovalKind, propose
-from workmind.modules.work.links import approval_link, document_link
+from workmind.modules.work.links import approval_link, document_link, governance_link
 from workmind.modules.work.models import Approval, Task
 from workmind.modules.work.notifications import notify
 
@@ -73,6 +77,11 @@ def next_review(after: datetime, interval_days: int | None) -> datetime | None:
 def review_overdue(document: Document, now: datetime) -> bool:
     """Past its review date. The Sources panel shows this for official documents."""
     return document.next_review_at is not None and document.next_review_at < now
+
+
+def clear_escalation(document: Document) -> None:
+    """A review, an approval or a new schedule starts the escalation of the next cycle afresh."""
+    document.review_escalation, document.review_escalated_at = None, None
 
 
 async def _grants(session: AsyncSession, collection_id: uuid.UUID) -> Sequence[CollectionGrant]:
@@ -198,7 +207,7 @@ async def reschedule_collection(session: AsyncSession, collection: Collection) -
     result = await session.execute(
         update(Document)
         .where(Document.collection_id == collection.id)
-        .values(next_review_at=value)
+        .values(next_review_at=value, review_escalation=None, review_escalated_at=None)
         .execution_options(synchronize_session=False)
     )
     return int(getattr(result, "rowcount", 0) or 0)
@@ -218,6 +227,7 @@ async def mark_reviewed(
     now = now or utcnow()
     document.reviewed_at, document.reviewed_by = now, ctx.user_id
     document.next_review_at = next_review(now, collection.review_interval_days)
+    clear_escalation(document)
     closed = await _close_review_task(session, document)
     await record_event(
         session,
@@ -336,6 +346,239 @@ async def send_review_reminders(
             )
             report.reminded.append(document.id)
     return report
+
+
+# --- Escalation of overdue reviews --------------------------------------------------------------
+
+EscalationStage = Literal["collection_owner", "admins", "demoted"]
+
+
+@dataclass
+class EscalationReport:
+    to_collection_owner: list[uuid.UUID] = field(default_factory=list[uuid.UUID])
+    to_admins: list[uuid.UUID] = field(default_factory=list[uuid.UUID])
+    # Demoted to reference: the caller updates the search index after the commit.
+    demoted: list[uuid.UUID] = field(default_factory=list[uuid.UUID])
+
+
+def escalation_due(
+    document: Document, collection: Collection, now: datetime
+) -> EscalationStage | None:
+    """The stage an official document's overdue review reaches now, or None. Each stage waits
+    its full period after the one before was reached, so a daily run that came late never
+    skips one: the collection's owner `review_escalation_days` after the review date, the org
+    admins as many days later, and demotion `review_auto_demote_days` after the admins were
+    told (only when the collection sets it)."""
+    if document.trust != "official" or document.next_review_at is None:
+        return None
+    grace = timedelta(days=collection.review_escalation_days)
+    stage = document.review_escalation
+    if stage is None:
+        return "collection_owner" if now >= document.next_review_at + grace else None
+    since = document.review_escalated_at or document.next_review_at
+    if stage == "collection_owner":
+        return "admins" if now >= since + grace else None
+    if stage == "admins" and collection.review_auto_demote_days:
+        demote_after = timedelta(days=collection.review_auto_demote_days)
+        return "demoted" if now >= since + demote_after else None
+    return None
+
+
+async def _active(session: AsyncSession, user_id: uuid.UUID | None) -> User | None:
+    user = await session.get(User, user_id) if user_id else None
+    return user if user is not None and user.status == "active" else None
+
+
+async def escalate_overdue_reviews(
+    sessions: async_sessionmaker[AsyncSession],
+    tenant_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> EscalationReport:
+    """Daily (Celery beat, after the reminders). Moves each overdue official document at most
+    one stage further (escalation_due), audits the stage and tells its people once. The stage
+    is kept on the document, and rows are locked, so running it twice escalates once.
+
+    - collection_owner: the collection's owner is told. When the collection has no active
+      owner who can open it, or its owner is the document's owner (already reminded), the
+      admins are told instead, and the document goes straight to the admins stage.
+    - admins: every active org owner and admin, except the document's owner and a collection
+      owner told before. Those who cannot open the collection are told which collection, not
+      which document (separation of duties, ARCHITECTURE 7.1).
+    - demoted: trust becomes reference; the owners are told and it is audited as a demotion
+      (`reason: review_overdue`)."""
+    now = now or utcnow()
+    report = EscalationReport()
+    async with tenant_transaction(sessions, tenant_id) as session:
+        rows = (
+            await session.execute(
+                select(Document, Collection)
+                .join(Collection, Collection.id == Document.collection_id)
+                .where(
+                    Document.trust == "official",
+                    Document.next_review_at.is_not(None),
+                    Document.next_review_at <= now,
+                )
+                .order_by(Document.next_review_at)
+                .with_for_update(of=Document, skip_locked=True)
+            )
+        ).all()
+        for document, collection in rows:
+            stage = escalation_due(document, collection, now)
+            if stage is None:
+                continue
+            assert document.next_review_at is not None  # noqa: S101 (filtered above)
+            overdue_days = (now - document.next_review_at).days
+            told: list[uuid.UUID] = []
+            details: dict[str, Any] = {}
+            if stage == "collection_owner":
+                owner = await _active(session, collection.owner_id)
+                if (
+                    owner is not None
+                    and owner.id != document.owner_id
+                    and await can_view_as(session, owner.id, collection)
+                ):
+                    told = [owner.id]
+                    await notify(
+                        session,
+                        tenant_id,
+                        owner.id,
+                        kind="document.review_escalated",
+                        title=f"Overdue review: {document.title[:150]}",
+                        body=_escalation_body(document, overdue_days, "the collection's owner"),
+                        link=document_link(document.id),
+                    )
+                    report.to_collection_owner.append(document.id)
+                else:
+                    stage = "admins"  # nobody else answers for the collection
+                    details["collection_owner_skipped"] = (
+                        "the collection's owner owns the document and was reminded"
+                        if owner is not None and owner.id == document.owner_id
+                        else "no active owner who can open the collection"
+                    )
+            if stage == "admins":
+                told = await _tell_admins(session, document, collection, overdue_days)
+                report.to_admins.append(document.id)
+            if stage == "demoted":
+                told = await _demote_overdue(session, document, collection, overdue_days)
+                report.demoted.append(document.id)
+            document.review_escalation, document.review_escalated_at = stage, now
+            await record_event(
+                session,
+                tenant_id=tenant_id,
+                actor=Actor.system(),
+                action="knowledge.document.review_escalated",
+                resource_type="document",
+                resource_id=str(document.id),
+                details={
+                    "collection_id": str(collection.id),
+                    "stage": stage,
+                    "told": [str(t) for t in told],
+                    "owner": str(document.owner_id) if document.owner_id else None,
+                    "cycle": document.next_review_at.isoformat(),
+                    "overdue_days": overdue_days,
+                    **details,
+                },
+            )
+    return report
+
+
+def _escalation_body(document: Document, overdue_days: int, you: str) -> str:
+    assert document.next_review_at is not None  # noqa: S101 (only overdue documents escalate)
+    return (
+        f"This official document is {overdue_days} days past its review date "
+        f"({document.next_review_at.date().isoformat()}) and its owner was reminded. As {you}, "
+        "make sure someone reviews it: open it and choose Mark reviewed, or give it an owner "
+        "who will."
+    )
+
+
+async def _tell_admins(
+    session: AsyncSession, document: Document, collection: Collection, overdue_days: int
+) -> list[uuid.UUID]:
+    told_before: set[uuid.UUID | None] = (
+        {collection.owner_id} if document.review_escalation == "collection_owner" else set()
+    )
+    admins = (
+        await session.scalars(
+            select(User)
+            .where(User.org_role.in_(ADMIN_ROLES), User.status == "active")
+            .order_by(User.display_name)
+        )
+    ).all()
+    grants = await _grants(session, collection.id)
+    told: list[uuid.UUID] = []
+    for admin in admins:
+        if admin.id == document.owner_id or admin.id in told_before:
+            continue
+        if await can_view_as(session, admin.id, collection, grants):
+            await notify(
+                session,
+                document.tenant_id,
+                admin.id,
+                kind="document.review_escalated",
+                title=f"Overdue review: {document.title[:150]}",
+                body=_escalation_body(document, overdue_days, "an administrator"),
+                link=document_link(document.id),
+            )
+        else:
+            await notify(
+                session,
+                document.tenant_id,
+                admin.id,
+                kind="document.review_escalated",
+                title=f"Overdue review in “{collection.name[:150]}”",
+                body=(
+                    f"An official document in a collection you can't open is {overdue_days} "
+                    "days past its review date, and its owner was reminded. Make sure someone "
+                    "who can open it reviews it, or give the collection an owner."
+                ),
+                link=governance_link(),
+            )
+        told.append(admin.id)
+    return told
+
+
+async def _demote_overdue(
+    session: AsyncSession, document: Document, collection: Collection, overdue_days: int
+) -> list[uuid.UUID]:
+    document.trust = "reference"
+    note = (
+        f"Demoted automatically: its review was {overdue_days} days overdue, and the collection "
+        f"demotes official documents {collection.review_auto_demote_days} days after the "
+        "administrators were told. A review and a new approval make it official again."
+    )
+    await record_event(
+        session,
+        tenant_id=document.tenant_id,
+        actor=Actor.system(),
+        action="knowledge.document.demoted",
+        resource_type="document",
+        resource_id=str(document.id),
+        details={
+            "collection_id": str(collection.id),
+            "title": document.title,
+            "before": "official",
+            "after": "reference",
+            "note": note,
+            "reason": "review_overdue",
+        },
+    )
+    told: list[uuid.UUID] = []
+    for person in (document.owner_id, collection.owner_id):
+        if person is None or person in told or await _active(session, person) is None:
+            continue
+        await notify(
+            session,
+            document.tenant_id,
+            person,
+            kind="document.demoted",
+            title=f"No longer official: {document.title[:150]}",
+            body=note,
+            link=document_link(document.id),
+        )
+        told.append(person)
+    return told
 
 
 # --- Official status ---------------------------------------------------------------------------
@@ -588,6 +831,7 @@ def official_status_kind(
             document.trust = "official"
             document.reviewed_at, document.reviewed_by = now, decider.user_id
             document.next_review_at = next_review(now, collection.review_interval_days)
+            clear_escalation(document)
             await _close_review_task(session, document)
             await record_event(
                 session,
@@ -684,6 +928,7 @@ async def new_version_stored(
     after = collection.default_trust if collection.default_trust != "official" else "reference"
     document.trust = after
     document.reviewed_at, document.reviewed_by = None, None
+    clear_escalation(document)
     note = (
         f"Version {version_no} was uploaded. Official status and the last review were for "
         "the earlier content: the new content needs a new approval."
@@ -814,6 +1059,7 @@ async def demote(
     """An editor takes official status away (checked by the API): immediate, audited, and the
     owner is told."""
     document.trust = trust
+    clear_escalation(document)
     clean_note = (note or "").strip()[:2000] or None
     await record_event(
         session,

@@ -22,6 +22,11 @@ def document_link(document_id: uuid.UUID) -> str:
     return f"/knowledge/documents/{document_id}"
 
 
+def governance_link() -> str:
+    """Admin > Governance: what needs attention, for administrators (docs/governance.md)."""
+    return "/admin/governance"
+
+
 def usage_link() -> str:
     """The usage page: everyone sees the budgets that apply to them there (docs/usage.md)."""
     return "/analytics"

@@ -20,14 +20,16 @@ const doc = (overrides: Partial<GovernedDocument> = {}): GovernedDocument => ({
   reviewed_at: day(-400),
   reviewed_by: priya,
   next_review_at: day(-35),
+  review_escalation: null,
+  review_escalated_at: null,
   ...overrides,
 });
 
 const overview = (overrides: Partial<GovernanceOverview> = {}): GovernanceOverview => ({
   scope: "all",
   collections: [
-    { id: "c-hr", name: "HR Policies", can_view: true, owner_id: "u-priya", review_interval_days: 365 },
-    { id: "c-board", name: "Board Papers", can_view: false, owner_id: null, review_interval_days: 180 },
+    { id: "c-hr", name: "HR Policies", can_view: true, owner_id: "u-priya", review_interval_days: 365, review_escalation_days: 14, review_auto_demote_days: null },
+    { id: "c-board", name: "Board Papers", can_view: false, owner_id: null, review_interval_days: 180, review_escalation_days: 14, review_auto_demote_days: 30 },
   ],
   overdue: [doc(), doc({ id: "d-board", title: null, collection_id: "c-board", trust: "reference", owner: null, next_review_at: day(-3) })],
   due_soon: [doc({ id: "d-leave", title: "Leave policy", next_review_at: day(9) })],
@@ -72,6 +74,19 @@ describe("GovernanceOverviewView", () => {
     expect(html).toContain("Signed off by finance");
     expect(html).toContain("Superseded");
     expect(html).toContain("Gifts policy");
+  });
+
+  it("says how far an overdue review escalated, and who demoted automatically", () => {
+    const html = render(
+      overview({
+        overdue: [doc({ review_escalation: "admins", review_escalated_at: "2026-11-10T08:00:00Z" })],
+        recent_demotions: [
+          { document_id: "d-travel", title: "Travel policy", collection_id: "c-hr", by: null, at: day(-1), to: "reference", note: null, reason: "review_overdue" },
+        ],
+      }),
+    );
+    expect(html).toContain("Escalated to the administrators on 10 Nov 2026");
+    expect(html).toContain("Automatic: review overdue");
   });
 
   it("says when a list is empty", () => {

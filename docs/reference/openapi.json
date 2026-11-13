@@ -6079,6 +6079,21 @@
               }
             ],
             "title": "Review Interval Days"
+          },
+          "review_escalation_days": {
+            "type": "integer",
+            "title": "Review Escalation Days"
+          },
+          "review_auto_demote_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Auto Demote Days"
           }
         },
         "type": "object",
@@ -6094,7 +6109,9 @@
           "document_count",
           "grants",
           "owner",
-          "review_interval_days"
+          "review_interval_days",
+          "review_escalation_days",
+          "review_auto_demote_days"
         ],
         "title": "AdminCollectionOut"
       },
@@ -7701,11 +7718,33 @@
               }
             ],
             "title": "Review Interval Days"
+          },
+          "review_escalation_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Review Escalation Days",
+            "description": "days an official document's review may be overdue before the collection's owner is told; as many days later, the admins",
+            "default": 14
+          },
+          "review_auto_demote_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Auto Demote Days",
+            "description": "days after the admins were told before it is demoted to reference (null: never)"
           }
         },
         "type": "object",
         "title": "CollectionGovernanceUpdate",
-        "description": "Fields left out stay as they are; null clears them."
+        "description": "Fields left out stay as they are; null clears them (the escalation period cannot be\ncleared: every collection has one)."
       },
       "CollectionOut": {
         "properties": {
@@ -7821,6 +7860,21 @@
               }
             ],
             "title": "Review Interval Days"
+          },
+          "review_escalation_days": {
+            "type": "integer",
+            "title": "Review Escalation Days"
+          },
+          "review_auto_demote_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Auto Demote Days"
           }
         },
         "type": "object",
@@ -7829,7 +7883,9 @@
           "name",
           "can_view",
           "owner_id",
-          "review_interval_days"
+          "review_interval_days",
+          "review_escalation_days",
+          "review_auto_demote_days"
         ],
         "title": "CollectionRef"
       },
@@ -8297,6 +8353,17 @@
               }
             ],
             "title": "Note"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "type": "object",
@@ -8593,6 +8660,17 @@
             "title": "Review Overdue",
             "default": false
           },
+          "review_escalation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Escalation"
+          },
           "official_request": {
             "anyOf": [
               {
@@ -8762,6 +8840,17 @@
             "type": "boolean",
             "title": "Review Overdue",
             "default": false
+          },
+          "review_escalation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Escalation"
           },
           "official_request": {
             "anyOf": [
@@ -8953,6 +9042,29 @@
               }
             ],
             "title": "Next Review At"
+          },
+          "review_escalation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Escalation"
+          },
+          "review_escalated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Escalated At"
           }
         },
         "type": "object",
@@ -8965,7 +9077,9 @@
           "owner_inactive",
           "reviewed_at",
           "reviewed_by",
-          "next_review_at"
+          "next_review_at",
+          "review_escalation",
+          "review_escalated_at"
         ],
         "title": "GovernedDocument"
       },
