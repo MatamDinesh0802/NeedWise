@@ -463,6 +463,29 @@ async def test_a_held_item_that_comes_back_upstream_is_no_longer_marked_deleted(
     assert (await documents(deps, source))["leave"].source_deleted_at is None
 
 
+async def test_run_errors_name_the_item_by_its_id_never_its_title(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """Run errors are shown to everyone who manages the source, whom an item's own access list
+    may leave out: "<title>: larger than 50 MB" showed the title of a file shared only with HR."""
+    deps, connector, source, _, _ = setup
+    connector.put("reorg-2027", "x" * 200, "v1")
+    connector.items["reorg-2027"] = (
+        replace(connector.items["reorg-2027"][0], title="Confidential reorg plan 2027"),
+        connector.items["reorg-2027"][1],
+    )
+    report = await run(replace(deps, max_bytes=50), source)
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+        (latest,) = (
+            await session.scalars(select(SourceRun).where(SourceRun.source_id == source.id))
+        ).all()
+    assert report.failed == 1
+    assert latest.errors == [{"item": "reorg-2027", "message": "larger than 0 MB"}]
+    assert stored is not None
+    assert "reorg plan" not in (stored.last_error or "")
+
+
 async def test_only_one_sync_runs_at_a_time(
     setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
 ) -> None:

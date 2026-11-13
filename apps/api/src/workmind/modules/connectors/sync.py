@@ -358,7 +358,9 @@ async def _apply(
                 retry = True
                 raise
             if len(data) > deps.max_bytes:
-                raise ConnectorError(f"{item.title}: larger than {deps.max_bytes // 1_000_000} MB")
+                # The run names the item by its id (`item`), never its title: the people who
+                # manage the source may be left out of the item's own access list.
+                raise ConnectorError(f"larger than {deps.max_bytes // 1_000_000} MB")
             async with tenant_transaction(deps.sessions, source.tenant_id) as session:
                 entries: list[document_acl.AclEntry] | None = None
                 if acls is not None:

@@ -338,16 +338,14 @@ class ConfluenceConnector:
             location = response.headers.get("location", "")
             target = httpx.URL(url).join(location)
             if target.scheme != "https":
-                raise ConnectorError(f"{item.title}: Confluence redirected to a non-https URL")
+                raise ConnectorError("Confluence redirected the download to a non-https URL")
             try:
                 check_url(str(target))
             except UnsafeUrlError as exc:
-                raise ConnectorError(f"{item.title}: download refused ({exc})") from exc
+                raise ConnectorError(f"download refused ({exc})") from exc
             response = await send(
                 self._http, "GET", str(target), service=SERVICE, sleep=self._sleep
             )
             if response.is_error or response.status_code in REDIRECTS:
-                raise ConnectorError(
-                    f"could not download {item.title} (HTTP {response.status_code})"
-                )
+                raise ConnectorError(f"could not download the item (HTTP {response.status_code})")
         return response.content

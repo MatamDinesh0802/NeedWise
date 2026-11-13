@@ -357,7 +357,7 @@ class SharePointConnector:
     async def fetch(self, item: RemoteItem) -> bytes:
         drive_id = str(item.meta.get("drive_id") or self._drive_id or "")
         if not drive_id:
-            raise ConnectorError(f"{item.title}: unknown drive")
+            raise ConnectorError("the item's drive is unknown")
         url = (
             f"{GRAPH}/drives/{quote(drive_id, safe='')}"
             f"/items/{quote(item.external_id, safe='')}/content"
@@ -367,18 +367,18 @@ class SharePointConnector:
             # A pre-authenticated download URL (valid for a few minutes): no token goes there.
             target = httpx.URL(url).join(response.headers.get("location", ""))
             if target.scheme != "https":
-                raise ConnectorError(f"{item.title}: Graph redirected to a non-https URL")
+                raise ConnectorError("Graph redirected the download to a non-https URL")
             try:
                 check_url(str(target))
             except UnsafeUrlError as exc:
-                raise ConnectorError(f"{item.title}: download refused ({exc})") from exc
+                raise ConnectorError(f"download refused ({exc})") from exc
             response = await send(
                 self._http, "GET", str(target), service=SERVICE, sleep=self._sleep
             )
         if response.status_code == 404:
-            raise ConnectorError(f"{item.title}: not found (deleted since the scan?)")
+            raise ConnectorError("not found (deleted since the scan?)")
         if response.is_error or response.status_code in REDIRECTS:
-            raise ConnectorError(f"could not download {item.title} (HTTP {response.status_code})")
+            raise ConnectorError(f"could not download the item (HTTP {response.status_code})")
         return response.content
 
 
