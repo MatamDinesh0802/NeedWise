@@ -4,6 +4,7 @@ as a document of the meeting's collection, so it is searchable with that collect
 import re
 import time
 import uuid
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
 import structlog
@@ -22,6 +23,7 @@ from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.extract import clock, extract, speaker_name
 from workmind.modules.meetings.models import Meeting, held_on
 from workmind.modules.usage.calls import attribute
+from workmind.modules.work.events import meeting_processed
 from workmind.modules.work.links import meeting_link
 from workmind.modules.work.notifications import notify
 from workmind.providers.llm import LLMError, LLMProvider
@@ -38,6 +40,9 @@ class MeetingDeps:
     llm: LLMProvider
     transcriber: Transcriber
     ingestion: Dispatcher
+    # Starts the workflow runs `meeting.processed` queued (the API process); without it the
+    # caller starts them, or the beat task does within a minute.
+    start_runs: Callable[[uuid.UUID, Sequence[uuid.UUID]], Awaitable[None]] | None = None
 
 
 class MeetingDeletedError(RuntimeError):
@@ -104,19 +109,28 @@ def transcript_markdown(meeting: Meeting) -> str:
     return "\n".join(lines) + "\n"
 
 
-async def process_meeting(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
+async def process_meeting(
+    deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUID
+) -> list[uuid.UUID]:
     """The extraction's model calls count for the person who uploaded the meeting. A budget
-    that is used up fails the meeting, and its error says which budget and when it resets."""
+    that is used up fails the meeting, and its error says which budget and when it resets.
+    Returns the workflow runs `meeting.processed` queued."""
     async with tenant_transaction(deps.sessions, tenant_id) as session:
         owner_id = await session.scalar(select(Meeting.owner_id).where(Meeting.id == meeting_id))
+    runs: list[uuid.UUID] = []
     try:
         with attribute("meetings", user_id=owner_id, ref=("meeting", meeting_id)):
-            await _process(deps, tenant_id, meeting_id)
+            runs = await _process(deps, tenant_id, meeting_id)
     except MeetingDeletedError:
         log.info("meeting_deleted_while_processing", meeting_id=str(meeting_id))
+    if runs and deps.start_runs is not None:
+        await deps.start_runs(tenant_id, runs)
+    return runs
 
 
-async def _process(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
+async def _process(
+    deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUID
+) -> list[uuid.UUID]:
     async with tenant_transaction(deps.sessions, tenant_id) as session:
         meeting = _still_there(await session.get(Meeting, meeting_id))
         tenant = await session.get(Tenant, tenant_id)
@@ -207,10 +221,23 @@ async def _process(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUI
                     **timings,
                 },
             )
+            # Exactly once per meeting, in the same transaction as "ready" (events.py).
+            runs = await meeting_processed(
+                session,
+                tenant_id,
+                meeting_id=meeting_id,
+                title=stored.title,
+                collection_id=stored.collection_id,
+                summary=stored.summary,
+                decisions=len(outcome["decisions"]),
+                action_items=len(outcome["action_items"]),
+            )
         log.info("meeting_processed", meeting_id=str(meeting_id), segments=len(segments), **timings)
+        return runs
     except (TranscriptionError, LLMError, ValueError) as exc:
         await _status(deps, meeting, "failed", str(exc)[:500])
         log.warning("meeting_failed", meeting_id=str(meeting_id), error=str(exc)[:300])
+        return []
 
 
 async def _index(deps: MeetingDeps, meeting: Meeting) -> uuid.UUID:

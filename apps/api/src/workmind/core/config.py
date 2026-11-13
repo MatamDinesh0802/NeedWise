@@ -132,6 +132,11 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: SecretStr | None = None
     smtp_starttls: bool = False
+    # Slack notifications (docs/automation.md): the bot token and incoming webhook are set per
+    # tenant by its admins (Admin > Automation); these say where they may point. The Web API's
+    # base URL (a stub's in tests), and the prefix every incoming webhook URL must start with.
+    slack_api_url: str = "https://slack.com/api"
+    slack_webhook_prefix: str = "https://hooks.slack.com/"
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
     agent_fast_path: bool = True

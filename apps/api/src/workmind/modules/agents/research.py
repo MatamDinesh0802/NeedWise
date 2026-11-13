@@ -17,6 +17,8 @@ from workmind.modules.assistant.safety import without_images
 from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError, ToolRegistry
 from workmind.modules.work.approvals import propose
+from workmind.modules.work.approvers import RuleError
+from workmind.modules.work.policy import load_policy
 from workmind.providers.llm import (
     LLMMessage,
     LLMProvider,
@@ -105,16 +107,24 @@ async def research(
             tool = registry.get(call.name)
             if exc.code == "approval_required" and propose_actions and tool is not None:
                 # Store the action for a person to approve (or edit, or reject). Nothing runs now.
+                # Who approves: the tenant's rule for this tool (Admin > Automation), else the
+                # person who asked.
                 summary = tool.describe(call.arguments)
-                async with tenant_transaction(sessions, ctx.tenant_id) as session:
-                    approval = await propose(
-                        session,
-                        ctx,
-                        tool=call.name,
-                        arguments=call.arguments,
-                        summary=summary,
-                        origin={"via": "research", **(origin or {})},
-                    )
+                try:
+                    async with tenant_transaction(sessions, ctx.tenant_id) as session:
+                        policy = await load_policy(session)
+                        approval = await propose(
+                            session,
+                            ctx,
+                            tool=call.name,
+                            arguments=call.arguments,
+                            summary=summary,
+                            origin={"via": "research", **(origin or {})},
+                            rule=policy.approver_rules.rule_for(call.name),
+                        )
+                except RuleError as problem:
+                    await record(ResearchStep(call.name, ok=False, error="no_approver"))
+                    return f"no_approver: {problem}. Tell the person it cannot be proposed.", True
                 await record(
                     ResearchStep(
                         call.name,

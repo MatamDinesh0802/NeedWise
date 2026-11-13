@@ -168,12 +168,14 @@ async def _rotate_secrets() -> int:
     from workmind.core.db import create_engine, create_session_factory
     from workmind.modules.model_catalog.rotation import rotate_keys
     from workmind.modules.model_catalog.secrets import KeyRing
+    from workmind.modules.work.delivery import rotate_slack_secrets
 
     settings = Settings()
     keyring = KeyRing.from_settings(settings)
     engine = create_engine(settings.database_url)
     try:
         report = await rotate_keys(create_session_factory(engine), keyring)
+        slack = await rotate_slack_secrets(create_session_factory(engine), keyring)
     finally:
         await engine.dispose()
     print(
@@ -181,7 +183,12 @@ async def _rotate_secrets() -> int:
         f"{report.current} already on it, {report.failed} could not be decrypted",
         file=sys.stderr,
     )
-    return 1 if report.failed else 0
+    print(
+        f"Slack secrets: {slack.rotated} re-encrypted, {slack.current} already on it, "
+        f"{slack.failed} could not be decrypted",
+        file=sys.stderr,
+    )
+    return 1 if report.failed or slack.failed else 0
 
 
 if __name__ == "__main__":
