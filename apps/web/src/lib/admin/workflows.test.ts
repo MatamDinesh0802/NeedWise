@@ -3,66 +3,69 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api";
 
 import {
-  definitionText,
+  describeSourcePath,
   isRunActive,
+  lineRange,
   linkedWorkflow,
-  parseDefinition,
   runSteps,
   runTriggerText,
+  sourceProblems,
   triggerText,
   waitingApprovalId,
   WEEKLY_OPS_TEMPLATE,
-  workflowProblems,
   workflowRunHref,
   type WorkflowDefinition,
   type WorkflowRun,
 } from "./workflows";
 
-const definition = WEEKLY_OPS_TEMPLATE.definition as unknown as WorkflowDefinition;
+const definition: WorkflowDefinition = {
+  trigger: { schedule: "0 8 * * MON" },
+  steps: [
+    { id: "gather", research: "Summarize this week's operations." },
+    { id: "send", tool: "send_email", arguments: {}, approver: "olivia.grant@acme.test" },
+  ],
+};
 
 describe("definition editor", () => {
-  it("round-trips the weekly-ops template", () => {
-    const parsed = parseDefinition(definitionText(WEEKLY_OPS_TEMPLATE.definition));
-    expect(parsed).toEqual({ ok: true, definition: WEEKLY_OPS_TEMPLATE.definition });
+  it("offers the weekly-ops example as commented YAML", () => {
+    expect(WEEKLY_OPS_TEMPLATE.source).toContain('schedule: "0 8 * * MON"');
+    expect(WEEKLY_OPS_TEMPLATE.source).toContain("approver: olivia.grant@acme.test");
+    expect(WEEKLY_OPS_TEMPLATE.source).toContain("# Olivia approves");
   });
 
-  it("points at the line and column of a JSON mistake", () => {
-    const text = '{\n  "steps": [\n    { "id": "gather", }\n  ]\n}';
-    const parsed = parseDefinition(text);
-    expect(parsed.ok).toBe(false);
-    if (!parsed.ok) {
-      expect(parsed.message).toMatch(/^Not valid JSON/);
-      expect(parsed.line).toBe(3);
-      expect(parsed.column).toBeGreaterThan(1);
-    }
+  it("selects a whole line to jump to a problem", () => {
+    const text = "steps:\n  - id: a\n    research: b";
+    expect(lineRange(text, 1)).toEqual({ start: 0, end: 6 });
+    expect(text.slice(lineRange(text, 2).start, lineRange(text, 2).end)).toBe("  - id: a");
+    expect(lineRange(text, 3).end).toBe(text.length);
+    expect(lineRange(text, 9)).toEqual({ start: text.length, end: text.length });
   });
 
-  it("asks for an object with at least one step", () => {
-    expect(parseDefinition("")).toMatchObject({ ok: false, message: "The definition is empty." });
-    expect(parseDefinition("[]")).toMatchObject({ ok: false, message: "The definition must be a JSON object with `steps`." });
-    expect(parseDefinition('{"steps": []}')).toMatchObject({ ok: false, message: "Add at least one step to `steps`." });
+  it("names steps by their id", () => {
+    expect(describeSourcePath("steps[1].tool", definition.steps)).toBe("Step “send” › tool");
+    expect(describeSourcePath("steps[4]", definition.steps)).toBe("Step 5");
+    expect(describeSourcePath("trigger.schedule")).toBe("trigger › schedule");
+    expect(describeSourcePath("(definition)")).toBe("");
   });
 });
 
 describe("422 invalid_workflow display", () => {
-  it("names the failing step by its id", () => {
-    const detail = `2 validation errors for Definition
-steps.1
-  Value error, step send: give either \`research\` or \`tool\` [type=value_error, input_value={'id': 'send'}, input_type=dict]
-trigger.schedule
-  Value error, invalid cron expression '0 8 * MON' [type=value_error, input_value='0 8 * MON', input_type=str]`;
-    const error = new ApiError({ status: 422, title: "The workflow definition is invalid", code: "invalid_workflow", detail });
-    expect(workflowProblems(error, WEEKLY_OPS_TEMPLATE.definition)).toEqual([
-      { where: "Step “send”", message: "Give either `research` or `tool`" },
-      { where: "trigger › schedule", message: "Invalid cron expression '0 8 * MON'" },
-    ]);
+  it("lists the API's problems at their lines", () => {
+    const errors = [{ line: 7, column: 5, path: "steps[1]", message: "step send: give either `research` or `tool`" }];
+    const error = new ApiError({
+      status: 422,
+      title: "The workflow definition is invalid",
+      code: "invalid_workflow",
+      detail: "line 7: steps[1]: step send: give either `research` or `tool`",
+      problem: { type: "about:blank", title: "x", status: 422, code: "invalid_workflow", errors },
+    });
+    expect(sourceProblems(error)).toEqual(errors);
   });
 
-  it("names a field inside a step, and ignores other errors", () => {
-    const detail = "1 validation error for Definition\nsteps.0.id\n  String should match pattern '^[a-z0-9]+(-[a-z0-9]+)*$' [type=string_pattern_mismatch]";
-    const error = new ApiError({ status: 422, title: "Invalid", code: "invalid_workflow", detail });
-    expect(workflowProblems(error, { steps: [{ id: "Gather" }] })).toEqual([{ where: "Step “Gather” › id", message: "Not in the expected format." }]);
-    expect(workflowProblems(new ApiError({ status: 409, title: "x", code: "slug_taken" }), null)).toEqual([]);
+  it("falls back to the detail, and ignores other errors", () => {
+    const error = new ApiError({ status: 422, title: "Invalid", code: "invalid_workflow", detail: "Give the definition or its source, not both" });
+    expect(sourceProblems(error)).toEqual([{ line: null, column: null, path: "(definition)", message: "Give the definition or its source, not both" }]);
+    expect(sourceProblems(new ApiError({ status: 409, title: "x", code: "slug_taken" }))).toEqual([]);
   });
 });
 
@@ -105,12 +108,17 @@ describe("run history", () => {
   it("describes triggers", () => {
     expect(triggerText(definition)).toBe("Schedule: 0 8 * * MON (UTC)");
     expect(triggerText({ steps: [], trigger: { event: "document.ready", collection: "finance" } })).toBe("When a document is ready in finance");
+    expect(triggerText({ steps: [], trigger: { event: "task.completed", department: "finance" } })).toBe(
+      "When a task is completed in the finance queue",
+    );
+    expect(triggerText({ steps: [], trigger: { event: "approval.decided", tool: "send_email" } })).toBe("When an approval is decided (send_email)");
+    expect(triggerText({ steps: [], trigger: { event: "meeting.processed" } })).toBe("When a meeting's notes are ready");
     expect(triggerText({ steps: [] })).toBe("Manual only");
   });
 });
 
 describe("links to a workflow run", () => {
-  const workflow = { id: "w1", key: "weekly-ops-report", name: "Weekly", definition, enabled: true, owner_id: "u1" };
+  const workflow = { id: "w1", key: "weekly-ops-report", name: "Weekly", definition, source: "", enabled: true, owner_id: "u1" };
 
   it("builds the same link as the API's notifications (modules/work/links.py)", () => {
     expect(workflowRunHref("weekly-ops-report", "r1")).toBe("/admin/workflows?workflow=weekly-ops-report&run=r1");
@@ -131,7 +139,7 @@ describe("links to a workflow run", () => {
   it("counts a queued (event) run as active, and says what started a run", () => {
     expect(isRunActive({ status: "queued" })).toBe(true);
     expect(isRunActive({ status: "cancelled" })).toBe(false);
-    expect(runTriggerText("event")).toBe("A document became ready");
+    expect(runTriggerText("event")).toBe("An event");
     expect(runTriggerText("manual")).toBe("Run now");
     expect(runTriggerText("schedule")).toBe("Schedule");
   });

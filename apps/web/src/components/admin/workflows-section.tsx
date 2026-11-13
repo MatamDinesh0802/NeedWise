@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
+import { CodeEditor, type EditorProblem } from "@/components/data/code-editor";
 import { ConfirmDialog } from "@/components/data/confirm-dialog";
 import { Field } from "@/components/data/form";
 import { EmptyState, ErrorAlert, RefreshingHint, TableSkeleton } from "@/components/data/states";
@@ -15,26 +16,27 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { usePolling } from "@/hooks/use-polling";
 import {
-  BLANK_DEFINITION,
-  definitionText,
+  BLANK_SOURCE,
+  describeSourcePath,
   isRunActive,
   linkedWorkflow,
-  parseDefinition,
   RUN_STATUS_LABELS,
   runSteps,
   runTriggerText,
   STEP_STATUS_LABELS,
   triggerText,
   waitingApprovalId,
+  sourceProblems,
   WEEKLY_OPS_TEMPLATE,
-  workflowProblems,
   workflowsApi,
   workflowsKeys,
   type RunStatus,
+  type SourceCheck,
+  type SourceProblem,
   type Workflow,
   type WorkflowRun,
 } from "@/lib/admin/workflows";
@@ -268,32 +270,66 @@ function OpenLinkedWorkflow({
   return null;
 }
 
+/**
+ * The definition is checked by the API as you type (a moment after you stop), and every problem
+ * is shown at its line. Saving checks it again, and also the people, departments and
+ * collections it names.
+ */
+function useSourceCheck(text: string): { check: SourceCheck | null; checking: boolean } {
+  const settled = useDebouncedValue(text, 500);
+  const [result, setResult] = useState<{ text: string; check: SourceCheck } | null>(null);
+  useEffect(() => {
+    let current = true;
+    workflowsApi
+      .validate(settled)
+      .then((check) => {
+        if (current) setResult({ text: settled, check });
+      })
+      .catch(() => {
+        // Offline or signed out: saving reports the problems instead.
+      });
+    return () => {
+      current = false;
+    };
+  }, [settled]);
+  return { check: result?.check ?? null, checking: result?.text !== text };
+}
+
+function editorProblems(problems: readonly SourceProblem[], steps: readonly { id?: unknown }[]): EditorProblem[] {
+  return problems.map((p) => ({ line: p.line, where: describeSourcePath(p.path, steps), message: p.message }));
+}
+
 function WorkflowEditor({ workflow, template, onDone }: { workflow: Workflow | null; template: boolean; onDone: () => void }) {
   const creating = workflow === null;
-  const start = workflow ?? (template ? WEEKLY_OPS_TEMPLATE : { key: "", name: "", definition: BLANK_DEFINITION });
+  const start = workflow ?? (template ? WEEKLY_OPS_TEMPLATE : { key: "", name: "", source: BLANK_SOURCE });
   const [name, setName] = useState<string>(start.name);
   const [key, setKey] = useState<string>(start.key);
   const [keyEdited, setKeyEdited] = useState(!creating || template);
   const [enabled, setEnabled] = useState(workflow?.enabled ?? true);
-  const [text, setText] = useState(() => definitionText(start.definition));
+  const [text, setText] = useState<string>(start.source);
   const [showErrors, setShowErrors] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const { check, checking } = useSourceCheck(text);
 
-  const parsed = parseDefinition(text);
   const keyProblem = creating ? (key.length > 60 ? "At most 60 characters." : slugError(key)) : null;
   const nameProblem = name.trim() ? null : "Add a name.";
-  const problems = workflowProblems(error, parsed.ok ? parsed.definition : null);
+  const saveProblems = sourceProblems(error);
+  const steps = check?.definition?.steps ?? workflow?.definition.steps ?? [];
+  // The latest check while typing; the save's answer until the text changes after it.
+  const shown = saveProblems.length > 0 ? saveProblems : (check?.errors ?? []);
+  const problems = editorProblems(shown, steps);
   const server = Object.fromEntries(fieldErrors(error).map((f) => [f.field, f.message]));
   const code = errorMessage(error).code;
+  const emptyText = text.trim() ? null : "Write the definition: at least one step.";
 
   async function save() {
     setShowErrors(true);
-    if (!parsed.ok || keyProblem || nameProblem) return;
+    if (emptyText || keyProblem || nameProblem) return;
     setPending(true);
     setError(null);
     try {
-      const saved = await workflowsApi.save({ key, name: name.trim(), definition: parsed.definition, enabled });
+      const saved = await workflowsApi.save({ key, name: name.trim(), source: text, enabled });
       await invalidateQueries(workflowsKeys.all);
       toast({ title: creating ? `${saved.name} created` : `${saved.name} saved`, description: "It runs as you, with your current access." });
       onDone();
@@ -362,30 +398,24 @@ function WorkflowEditor({ workflow, template, onDone }: { workflow: Workflow | n
         </div>
 
         <Field
-          label="Definition (JSON)"
+          label="Definition (YAML or JSON)"
           hint={
             <>
-              <code>trigger.schedule</code> is a cron expression in UTC; <code>{'{"event": "document.ready", "collection": "…"}'}</code>{" "}
-              runs it when a document version is ready (in that collection, if given, and only for documents you can view); omit
-              the trigger for manual only. Each step has an <code>id</code> and either <code>research</code> (a question) or{" "}
-              <code>tool</code> with <code>arguments</code>; <code>approver</code> is an email. Templates:{" "}
-              <code>{"{{ steps.gather.text }}"}</code>, <code>{"{{ today }}"}</code>, and for events <code>{"{{ event.title }}"}</code>,{" "}
-              <code>{"{{ event.link }}"}</code>, <code>{"{{ event.collection }}"}</code>.
+              <code>trigger: {"{"}schedule: &quot;0 8 * * MON&quot;{"}"}</code> is a cron expression in UTC;{" "}
+              <code>trigger: {"{"}event: …{"}"}</code> runs it on <code>document.ready</code>, <code>document.updated</code>,{" "}
+              <code>meeting.processed</code> (filter: <code>collection</code>), <code>task.completed</code> (<code>department</code>) or{" "}
+              <code>approval.decided</code> (<code>tool</code>), only for what you can open; leave the trigger out for manual only.
+              Each step has an <code>id</code> and either <code>research</code> (a question) or <code>tool</code> with{" "}
+              <code>arguments</code>. <code>approver</code> is an email or a rule: <code>{"{role: org_admins}"}</code>,{" "}
+              <code>{"{department_manager: requester}"}</code>, <code>{"{any_of: [...]}"}</code>, <code>{"{chain: [...]}"}</code>. Templates:{" "}
+              <code>{"{{ steps.gather.text }}"}</code>, <code>{"{{ today }}"}</code>, <code>{"{{ event.title }}"}</code>,{" "}
+              <code>{"{{ event.link }}"}</code>.
             </>
           }
-          error={showErrors && !parsed.ok ? `${parsed.message}${parsed.line ? ` (line ${parsed.line}, column ${parsed.column})` : ""}` : null}
+          error={showErrors ? emptyText : null}
         >
-          {({ id, describedBy, invalid }) => (
-            <Textarea
-              id={id}
-              rows={18}
-              spellCheck={false}
-              className="font-mono text-xs leading-relaxed"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              aria-describedby={describedBy}
-              aria-invalid={invalid || undefined}
-            />
+          {({ id, describedBy }) => (
+            <CodeEditor id={id} value={text} onChange={setText} problems={problems} checking={checking} describedBy={describedBy} disabled={pending} />
           )}
         </Field>
         {creating && !template ? (
@@ -395,7 +425,7 @@ function WorkflowEditor({ workflow, template, onDone }: { workflow: Workflow | n
             size="sm"
             className="-mt-2 w-fit"
             onClick={() => {
-              setText(definitionText(WEEKLY_OPS_TEMPLATE.definition));
+              setText(WEEKLY_OPS_TEMPLATE.source);
               if (!name.trim()) {
                 setName(WEEKLY_OPS_TEMPLATE.name);
                 if (!keyEdited) setKey(WEEKLY_OPS_TEMPLATE.key);
@@ -407,25 +437,16 @@ function WorkflowEditor({ workflow, template, onDone }: { workflow: Workflow | n
           </Button>
         ) : null}
 
-        {problems.length > 0 ? (
+        {saveProblems.length > 0 ? (
           <Alert variant="destructive">
             <CircleAlert aria-hidden="true" />
             <AlertTitle>The workflow isn&apos;t valid yet</AlertTitle>
-            <AlertDescription>
-              <ul className="list-disc pl-4">
-                {problems.map((p, i) => (
-                  <li key={i}>
-                    {p.where ? <span className="font-medium">{p.where}: </span> : null}
-                    {p.message}
-                  </li>
-                ))}
-              </ul>
-            </AlertDescription>
+            <AlertDescription>Fix the problems marked in the definition, then save again.</AlertDescription>
           </Alert>
         ) : null}
       </div>
-      {error && problems.length === 0 && !server.key ? <ErrorAlert error={error} /> : null}
-      {code === "invalid_workflow" && problems.length === 0 ? <p className="text-xs text-destructive">{errorMessage(error).description}</p> : null}
+      {error && saveProblems.length === 0 && !server.key ? <ErrorAlert error={error} /> : null}
+      {code === "invalid_workflow" && saveProblems.length === 0 ? <p className="text-xs text-destructive">{errorMessage(error).description}</p> : null}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone} disabled={pending}>
           Cancel

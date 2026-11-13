@@ -1,23 +1,30 @@
 /**
  * Admin → Workflows. Shapes mirror apps/api/src/workmind/api/v1/work.py (admin_router) and
- * modules/work/workflows.py (Definition, Step). The editor takes the definition as JSON; the API
- * validates it and answers 422 `invalid_workflow` with Pydantic's message, shown per step.
+ * modules/work/workflows.py (Definition, Step). The editor takes the definition as YAML (or JSON,
+ * which is YAML too); the API checks it (POST /admin/workflows/validate while typing, and on
+ * saving) and reports each problem at its line (modules/work/workflow_source.py).
  */
 
-import { apiJson } from "@/lib/api";
-import { describePath, detailErrors, type DetailError } from "@/lib/validation-detail";
+import { ApiError, apiJson } from "@/lib/api";
 
 export interface WorkflowStep {
   id: string;
   research?: string;
   tool?: string;
   arguments?: Record<string, unknown>;
-  approver?: string;
+  /** An email, or an approver rule ({role: org_admins}, {chain: [...]}, ...). */
+  approver?: unknown;
 }
 
 export interface WorkflowDefinition {
   description?: string;
-  trigger?: { schedule?: string | null; event?: string | null; collection?: string | null };
+  trigger?: {
+    schedule?: string | null;
+    event?: string | null;
+    collection?: string | null;
+    department?: string | null;
+    tool?: string | null;
+  };
   steps: WorkflowStep[];
 }
 
@@ -26,6 +33,8 @@ export interface Workflow {
   key: string;
   name: string;
   definition: WorkflowDefinition;
+  /** The definition as written (comments kept), or as YAML when it was saved as an object. */
+  source: string;
   enabled: boolean;
   owner_id: string;
 }
@@ -56,8 +65,24 @@ export interface WorkflowRun {
 export interface WorkflowSave {
   key: string;
   name: string;
-  definition: Record<string, unknown>;
+  /** YAML or JSON text. */
+  source: string;
   enabled: boolean;
+}
+
+/** One problem in the definition, at its line and column (1-based) when it has one. */
+export interface SourceProblem {
+  line: number | null;
+  column: number | null;
+  /** Where in the definition, e.g. "steps[1].tool"; "(definition)" for the whole text. */
+  path: string;
+  message: string;
+}
+
+export interface SourceCheck {
+  valid: boolean;
+  errors: SourceProblem[];
+  definition: WorkflowDefinition | null;
 }
 
 const id = (value: string) => encodeURIComponent(value);
@@ -65,6 +90,8 @@ const id = (value: string) => encodeURIComponent(value);
 export const workflowsApi = {
   list: () => apiJson<Workflow[]>("/api/v1/admin/workflows"),
   save: (body: WorkflowSave) => apiJson<Workflow>(`/api/v1/admin/workflows/${id(body.key)}`, { method: "PUT", json: body }),
+  /** Checks a definition without saving it (people, departments and collections it names are checked on saving). */
+  validate: (source: string) => apiJson<SourceCheck>("/api/v1/admin/workflows/validate", { method: "POST", json: { source } }),
   run: (key: string) => apiJson<WorkflowRun>(`/api/v1/admin/workflows/${id(key)}/run`, { method: "POST" }),
   runs: (key: string) => apiJson<WorkflowRun[]>(`/api/v1/admin/workflows/${id(key)}/runs`),
   /** 409 runs_in_progress while a run is queued, running or waiting for an approval. */
@@ -77,107 +104,73 @@ export const workflowsKeys = {
   runs: (key: string) => `admin/workflows/runs/${key}`,
 };
 
-/** The example from docs/automation.md: research, then an email that waits for Olivia. */
+/** The example from docs/automation.md: research, then an email that waits for two approvers. */
 export const WEEKLY_OPS_TEMPLATE = {
   key: "weekly-ops-report",
   name: "Weekly operations report",
-  definition: {
-    description: "Every Monday: a summary of last week's operations, emailed to leadership after Olivia approves it.",
-    trigger: { schedule: "0 8 * * MON" },
-    steps: [
-      {
-        id: "gather",
-        research: "Summarize this week's operations: safety, shipping lead times, returns, incidents.",
-      },
-      {
-        id: "send",
-        tool: "send_email",
-        arguments: {
-          to: ["leadership@acme.test"],
-          subject: "Weekly operations report {{ today }}",
-          body: "{{ steps.gather.text }}",
-        },
-        approver: "olivia.grant@acme.test",
-      },
-    ],
-  },
+  source: `description: Every Monday, last week's operations, emailed to leadership once approved.
+trigger:
+  schedule: "0 8 * * MON"        # cron, UTC; leave the trigger out for manual only
+steps:
+  - id: gather
+    research: >-
+      Summarize this week's operations: safety, shipping lead times, returns, incidents.
+  - id: send
+    tool: send_email
+    arguments:
+      to: [leadership@acme.test]
+      subject: "Weekly operations report {{ today }}"
+      body: "{{ steps.gather.text }}"
+    # Olivia approves; or a rule, e.g. {role: org_admins} or
+    # {chain: [{department_manager: requester}, priya.raman@acme.test]}
+    approver: olivia.grant@acme.test
+`,
 } as const;
 
-export const BLANK_DEFINITION = {
-  trigger: {},
-  steps: [{ id: "gather", research: "What should this workflow find out?" }],
-};
+export const BLANK_SOURCE = `# Leave the trigger out to run it only by hand.
+trigger:
+  schedule: "0 8 * * MON"
+steps:
+  - id: gather
+    research: What should this workflow find out?
+`;
 
-export function definitionText(definition: unknown): string {
-  return JSON.stringify(definition, null, 2);
-}
-
-export type ParsedDefinition =
-  | { ok: true; definition: Record<string, unknown> }
-  | { ok: false; message: string; line: number | null; column: number | null };
-
-/** "Unexpected token } in JSON at position 41" → line and column, for the editor. */
-export function lineColumn(text: string, position: number): { line: number; column: number } {
-  const before = text.slice(0, Math.max(0, position));
-  const line = before.split("\n").length;
-  const column = position - before.lastIndexOf("\n");
-  return { line, column };
-}
-
-export function parseDefinition(text: string): ParsedDefinition {
-  if (!text.trim()) return { ok: false, message: "The definition is empty.", line: null, column: null };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Not valid JSON.";
-    const at = /position (\d+)/.exec(message);
-    const lc = /line (\d+) column (\d+)/.exec(message);
-    if (lc) return { ok: false, message: `Not valid JSON: ${message}`, line: Number(lc[1]), column: Number(lc[2]) };
-    if (at) {
-      const { line, column } = lineColumn(text, Number(at[1]));
-      return { ok: false, message: `Not valid JSON: ${message}`, line, column };
-    }
-    return { ok: false, message: `Not valid JSON: ${message}`, line: null, column: null };
+/** 422 invalid_workflow → the problems at their lines (the API's `errors`); [] for other errors. */
+export function sourceProblems(error: unknown): SourceProblem[] {
+  if (!(error instanceof ApiError) || error.code !== "invalid_workflow") return [];
+  const listed = error.problem?.errors;
+  if (Array.isArray(listed)) {
+    return listed.filter(isProblem);
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return { ok: false, message: "The definition must be a JSON object with `steps`.", line: null, column: null };
+  return [{ line: null, column: null, path: "(definition)", message: error.detail ?? error.title }];
+}
+
+function isProblem(value: unknown): value is SourceProblem {
+  return typeof value === "object" && value !== null && typeof (value as SourceProblem).message === "string" && typeof (value as SourceProblem).path === "string";
+}
+
+/** "steps[1].tool" → "Step “send” › tool" (the step's id when the definition has it). */
+export function describeSourcePath(path: string, steps: readonly { id?: unknown }[] = []): string {
+  if (path === "(definition)") return "";
+  const match = /^steps\[(\d+)\](?:\.(.+))?$/.exec(path);
+  if (match) {
+    const step = steps[Number(match[1])];
+    const name = typeof step?.id === "string" && step.id ? `Step “${step.id}”` : `Step ${Number(match[1]) + 1}`;
+    return match[2] ? `${name} › ${match[2].replace(/\./g, " › ")}` : name;
   }
-  const steps = (parsed as { steps?: unknown }).steps;
-  if (!Array.isArray(steps) || steps.length === 0) {
-    return { ok: false, message: "Add at least one step to `steps`.", line: null, column: null };
+  return path.replace(/\./g, " › ");
+}
+
+/** The character range of a 1-based line, to select it in the editor. */
+export function lineRange(text: string, line: number): { start: number; end: number } {
+  let start = 0;
+  for (let current = 1; current < line; current += 1) {
+    const next = text.indexOf("\n", start);
+    if (next === -1) return { start: text.length, end: text.length };
+    start = next + 1;
   }
-  return { ok: true, definition: parsed as Record<string, unknown> };
-}
-
-export interface DefinitionProblem {
-  /** "Step 2 › tool", or "" for the whole definition. */
-  where: string;
-  message: string;
-}
-
-/** 422 invalid_workflow → readable problems, naming the step by its id when we know it. */
-export function workflowProblems(error: unknown, definition: Record<string, unknown> | null): DefinitionProblem[] {
-  const errors: DetailError[] = detailErrors(error, ["invalid_workflow"]);
-  const steps = Array.isArray(definition?.steps) ? (definition.steps as { id?: unknown }[]) : [];
-  return errors.map((e) => {
-    const match = /^steps\.(\d+)(?:\.(.+))?$/.exec(e.path);
-    if (match) {
-      const step = steps[Number(match[1])];
-      const stepId = typeof step?.id === "string" && step.id ? step.id : null;
-      const name = stepId ? `Step “${stepId}”` : `Step ${Number(match[1]) + 1}`;
-      return { where: match[2] ? `${name} › ${match[2]}` : name, message: withoutStepPrefix(e.message, stepId) };
-    }
-    return { where: describePath(e.path), message: e.message };
-  });
-}
-
-/** "Step send: give either …" under "Step “send”" → "Give either …". */
-function withoutStepPrefix(message: string, stepId: string | null): string {
-  if (!stepId) return message;
-  const escaped = stepId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const rest = message.replace(new RegExp(`^step ${escaped}:\\s*`, "i"), "");
-  return rest === message ? message : rest.charAt(0).toUpperCase() + rest.slice(1);
+  const end = text.indexOf("\n", start);
+  return { start, end: end === -1 ? text.length : end };
 }
 
 export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
@@ -206,7 +199,7 @@ export function isRunActive(run: Pick<WorkflowRun, "status">): boolean {
 export function runTriggerText(trigger: string): string {
   if (trigger === "manual") return "Run now";
   if (trigger === "schedule") return "Schedule";
-  if (trigger === "event") return "A document became ready";
+  if (trigger === "event") return "An event";
   return trigger;
 }
 
@@ -263,11 +256,26 @@ export function runSteps(run: WorkflowRun, definition: WorkflowDefinition | null
   return views;
 }
 
+/** Each event a workflow can wait for, in words (modules/work/events.py). */
+export const EVENT_TEXT: Record<string, string> = {
+  "document.ready": "When a document is ready",
+  "document.updated": "When a document gets a new version",
+  "meeting.processed": "When a meeting's notes are ready",
+  "task.completed": "When a task is completed",
+  "approval.decided": "When an approval is decided",
+};
+
 /** "Every Monday 08:00 UTC"-ish summary of the trigger; cron stays visible for precision. */
 export function triggerText(definition: WorkflowDefinition): string {
   const t = definition.trigger ?? {};
   if (t.schedule) return `Schedule: ${t.schedule} (UTC)`;
-  if (t.event) return t.collection ? `When a document is ready in ${t.collection}` : "When a document is ready";
+  if (t.event) {
+    const base = EVENT_TEXT[t.event] ?? `On ${t.event}`;
+    if (t.collection) return `${base} in ${t.collection}`;
+    if (t.department) return `${base} in the ${t.department} queue`;
+    if (t.tool) return `${base} (${t.tool})`;
+    return base;
+  }
   return "Manual only";
 }
 
