@@ -13,7 +13,8 @@ export type EnterpriseFeature =
   | "retention_policies"
   | "department_budgets"
   | "chargeback_reports"
-  | "advanced_audit_export";
+  | "advanced_audit_export"
+  | "legal_hold";
 
 export const ENTERPRISE_FEATURES: Readonly<Record<EnterpriseFeature, { label: string; description: string }>> = {
   retention_policies: {
@@ -31,6 +32,10 @@ export const ENTERPRISE_FEATURES: Readonly<Record<EnterpriseFeature, { label: st
   advanced_audit_export: {
     label: "Advanced audit export",
     description: "Audit log exports for security tools and long-term retention.",
+  },
+  legal_hold: {
+    label: "Legal hold",
+    description: "Keep documents, collections, people's conversations, meetings and Insights questions from being deleted while a legal matter is open.",
   },
 };
 

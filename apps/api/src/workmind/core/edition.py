@@ -34,7 +34,11 @@ from workmind.core.errors import ApiError
 log = structlog.get_logger("workmind.edition")
 
 Feature = Literal[
-    "retention_policies", "department_budgets", "chargeback_reports", "advanced_audit_export"
+    "retention_policies",
+    "department_budgets",
+    "chargeback_reports",
+    "advanced_audit_export",
+    "legal_hold",
 ]
 # Every Enterprise feature the core knows about (the Feature names), with a name people read.
 FEATURES: Final[Mapping[str, str]] = {
@@ -42,6 +46,7 @@ FEATURES: Final[Mapping[str, str]] = {
     "department_budgets": "Department budgets",
     "chargeback_reports": "Chargeback reports",
     "advanced_audit_export": "Advanced audit export",
+    "legal_hold": "Legal hold",
 }
 
 # Ed25519 public keys (raw 32 bytes, base64url) that sign official licenses, by key id.

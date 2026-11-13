@@ -75,6 +75,14 @@ between tenants at sign-in is not built.
 wm tenant delete globex --confirm globex [--keycloak]
 ```
 
+A tenant with an active legal hold is refused before anything happens (nothing is suspended or
+deleted), and the refusal is recorded in its audit log (`legal_hold.deletion_blocked`). Release
+the holds first, or type the override, which repeats the tenant again:
+`wm tenant delete globex --confirm globex --override-legal-holds globex`. The override is
+recorded in the tenant's audit log (`legal_hold.overridden`), which is deleted with the tenant,
+and in the command's log (`tenant_deleted_under_legal_hold`, with the matters), which is not
+([enterprise.md](enterprise.md#legal-hold)).
+
 The steps, in an order that can be run again after a failure:
 
 1. **Suspend** the tenant: from now on its sign-ins, sessions and access tokens are refused and

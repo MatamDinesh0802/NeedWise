@@ -18,6 +18,7 @@ from workmind.api.deps import rate_limit, require_scope, resources_of, settings_
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
+from workmind.modules.governance import holds
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import User
 from workmind.modules.knowledge.models import Collection
@@ -284,7 +285,8 @@ async def get_meeting(ctx: AskContext, request: Request, meeting_id: uuid.UUID) 
 async def remove_meeting(ctx: AskContext, request: Request, meeting_id: uuid.UUID) -> Response:
     """Deletes the meeting, its recording or transcript file, and its indexed transcript (search
     included). For the person who uploaded it and the collection's editors. Tasks made from its
-    action items stay with their assignees, without the link."""
+    action items stay with their assignees, without the link. A meeting under a legal hold is
+    refused (409 legal_hold) and the attempt is audited."""
     resources = resources_of(request)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         meeting, can_edit = await _meeting(session, ctx, meeting_id)
@@ -295,7 +297,17 @@ async def remove_meeting(ctx: AskContext, request: Request, meeting_id: uuid.UUI
                 "Only the person who uploaded it or the collection's editors can delete it",
             )
         await session.refresh(meeting, with_for_update=True)  # processing may still be running
-        deleted = await delete_meeting(session, ctx, meeting)
+        blocking = await holds.covering(session, "meeting", meeting)
+        deleted = None if blocking else await delete_meeting(session, ctx, meeting)
+    if deleted is None:
+        raise await holds.refuse(
+            resources.db,
+            ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            kind="meeting",
+            resource_id=meeting_id,
+            holds=blocking,
+        )
     if deleted.document_id is not None:
         await delete_document_points(
             resources.qdrant, resources.collection_name, ctx.tenant_id, deleted.document_id

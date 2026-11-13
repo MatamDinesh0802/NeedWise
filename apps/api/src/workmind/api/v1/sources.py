@@ -26,7 +26,9 @@ from workmind.modules.connectors.models import Source
 from workmind.modules.connectors.registry import CREDENTIALS, build_connector, validate_config
 from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sync import SyncDeps, sync_source
+from workmind.modules.governance import holds
 from workmind.modules.governance.audit import Actor, record_event
+from workmind.modules.governance.models import LegalHold
 from workmind.modules.identity.models import SLUG_PATTERN
 from workmind.modules.knowledge import service
 from workmind.modules.knowledge.models import Collection, Document
@@ -209,19 +211,47 @@ async def set_credentials(
 
 @router.delete("/{key}", status_code=204)
 async def delete_source(ctx: AdminContext, request: Request, key: str) -> Response:
-    """Removes the source and every document it synced (and their search index entries)."""
+    """Removes the source and every document it synced (and their search index entries). While
+    a legal hold keeps any of those documents, nothing is deleted (409 legal_hold) and each
+    held document's refusal is audited; disabling the source stops its syncs instead."""
     resources = resources_of(request)
+    held: dict[uuid.UUID, list[LegalHold]] = {}
+    orphaned: list[str] = []
+    ids: list[uuid.UUID] = []
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         source = await _source(session, key)
         documents = (
             await session.scalars(select(Document).where(Document.source_id == source.id))
         ).all()
-        orphaned: list[str] = []
         for document in documents:
-            orphaned += await service.delete_document(session, ctx, document)
-        await _audit(session, ctx, "admin.source.deleted", source)
-        await session.delete(source)
-        ids = [d.id for d in documents]
+            if blocking := await holds.covering(session, "document", document):
+                held[document.id] = blocking
+        # Refused: only the attempts are recorded (this transaction commits nothing else).
+        for document_id, blocking in held.items():
+            await holds.record_blocked(
+                session,
+                ctx.tenant_id,
+                actor=Actor(type="user", id=ctx.user_id),
+                kind="document",
+                resource_id=document_id,
+                holds=blocking,
+                via="user",
+                source=key,
+            )
+        if not held:
+            for document in documents:
+                orphaned += await service.delete_document(session, ctx, document)
+            await _audit(session, ctx, "admin.source.deleted", source)
+            await session.delete(source)
+            ids = [d.id for d in documents]
+    if held:
+        raise ApiError(
+            409,
+            "legal_hold",
+            f"{len(held)} of this source's documents are under a legal hold",
+            "Nothing was deleted. Disable the source to stop its syncs; it can be deleted once "
+            "the holds are released.",
+        )
     for document_id in ids:
         await delete_document_points(
             resources.qdrant, resources.collection_name, ctx.tenant_id, document_id

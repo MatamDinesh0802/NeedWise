@@ -9,6 +9,11 @@ run finds what the first left. `verify_empty` then checks every layer and lists 
 
 Everything here runs with the owner database role (MIGRATIONS_DATABASE_URL): the runtime role
 can neither create nor delete tenants.
+
+A tenant with an active legal hold is not deleted unless the operator overrides it explicitly
+(`wm tenant delete <slug> --confirm <slug> --override-legal-holds <slug>`). The refusal is
+audited in the tenant's log; an override is audited there too, just before the log goes with
+the tenant, and logged as `tenant_deleted_under_legal_hold` with the matters.
 """
 
 import json
@@ -27,6 +32,7 @@ from workmind.core.tenancy import global_transaction, tenant_key_pattern, tenant
 from workmind.modules.analytics import dataset
 from workmind.modules.authz.openfga import OpenFgaClient
 from workmind.modules.authz.sync import ensure_store, reconcile
+from workmind.modules.governance import holds
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN, Tenant, User
 from workmind.modules.identity.sessions import SessionData, SessionStore
@@ -41,6 +47,10 @@ _SLUG = re.compile(SLUG_PATTERN)
 
 class TenantError(ValueError):
     """A request the lifecycle refuses; the message says why."""
+
+
+class LegalHoldError(TenantError):
+    """The tenant has active legal holds and the deletion was not overridden."""
 
 
 @dataclass
@@ -174,11 +184,16 @@ async def find_tenant(owner: SessionFactory, ref: str) -> Tenant | None:
         return await session.get(Tenant, by_id)
 
 
-async def delete_tenant(stores: Stores, ref: str) -> DeletionReport:
+async def delete_tenant(
+    stores: Stores, ref: str, *, override_legal_holds: bool = False
+) -> DeletionReport:
     tenant = await find_tenant(stores.owner, ref)
     if tenant is None:
         raise TenantError(f"no tenant {ref!r}")
     tenant_id, slug, store_id = tenant.id, tenant.slug, tenant.openfga_store_id
+
+    # 0. Legal holds: refused while any is active, unless overridden. Either way, audited.
+    await _check_legal_holds(stores.owner, tenant_id, slug, override=override_legal_holds)
 
     # 1. Suspend: sign-in, sessions, tokens and background tasks stop for this tenant.
     async with global_transaction(stores.owner) as session:
@@ -234,6 +249,54 @@ async def delete_tenant(stores: Stores, ref: str) -> DeletionReport:
         collections=collections,
         keycloak_users=keycloak_users,
         remaining=remaining,
+    )
+
+
+async def _check_legal_holds(
+    owner: SessionFactory, tenant_id: uuid.UUID, slug: str, *, override: bool
+) -> None:
+    async with tenant_transaction(owner, tenant_id) as session:
+        active = await holds.active_holds(session)
+        if not active:
+            return
+        matters = sorted({h.matter for h in active})
+        if override:
+            await record_event(
+                session,
+                tenant_id=tenant_id,
+                actor=Actor.system(),
+                action="legal_hold.overridden",
+                resource_type="tenant",
+                resource_id=str(tenant_id),
+                details={
+                    "via": "tenant_deletion",
+                    "holds": [str(h.id) for h in active],
+                    "matters": matters,
+                },
+            )
+        else:
+            await holds.record_blocked(
+                session,
+                tenant_id,
+                actor=Actor.system(),
+                kind="tenant",
+                resource_id=tenant_id,
+                holds=active,
+                via="tenant_deletion",
+            )
+    if not override:
+        raise LegalHoldError(
+            f"tenant {slug!r} has {len(active)} active legal hold(s) (matters: "
+            f"{'; '.join(matters)}). Release them first, or delete anyway with "
+            f"--override-legal-holds {slug}"
+        )
+    # The tenant's audit log is deleted with the tenant: the operator's log keeps the override.
+    log.warning(
+        "tenant_deleted_under_legal_hold",
+        tenant_id=str(tenant_id),
+        slug=slug,
+        holds=len(active),
+        matters=matters,
     )
 
 

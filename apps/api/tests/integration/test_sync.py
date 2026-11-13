@@ -1,6 +1,7 @@
 """The sync engine against a scripted connector, with real PostgreSQL and Qdrant: adds, skips
 unchanged items without fetching them, versions changed ones, propagates deletions only after a
-complete scan, records failures without deleting anything, and runs one sync at a time.
+complete scan (except for documents under a legal hold), records failures without deleting
+anything, and runs one sync at a time.
 
 Needs TEST_QDRANT_URL (and the test database)."""
 
@@ -21,6 +22,7 @@ from workmind.modules.connectors.base import ConnectorError, RemoteItem, ScanRes
 from workmind.modules.connectors.models import Source
 from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sync import SyncDeps, sync_source
+from workmind.modules.governance.models import AuditEvent, LegalHold
 from workmind.modules.knowledge.dispatch import InlineDispatcher
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import IngestionDeps
@@ -204,6 +206,52 @@ async def test_slack_messages_are_discussion_even_in_an_official_collection(
 
     synced = (await documents(deps, source))["general"]
     assert synced.trust == "discussion"
+
+
+async def test_a_held_document_gone_from_the_source_stays(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, qdrant, name = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")
+    await run(deps, source)
+    held = (await documents(deps, source))["leave"]
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        hold = LegalHold(
+            tenant_id=source.tenant_id,
+            matter="Smith v. Acme",
+            reason="Preserve the leave policy as it was",
+            target_type="document",
+            target_id=held.id,
+        )
+        session.add(hold)
+        await session.flush()
+        hold_id = hold.id
+
+    connector.items.clear()  # both pages were removed from the intranet
+    first = await run(deps, source)
+    second = await run(deps, source)
+
+    left = await documents(deps, source)
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        events = (
+            await session.scalars(
+                select(AuditEvent)
+                .where(AuditEvent.action == "legal_hold.deletion_blocked")
+                .order_by(AuditEvent.seq)
+            )
+        ).all()
+    assert (first.deleted, first.kept_under_hold) == (1, 1)
+    assert (second.deleted, second.kept_under_hold) == (0, 1)
+    assert set(left) == {"leave"}
+    assert await qdrant.count(name, tenant_id=source.tenant_id) == leave_chunks(left["leave"])
+    # One event per sync that would have deleted it, naming the documents it kept.
+    assert [(e.resource_type, e.details["via"]) for e in events] == [
+        ("source", "connector"),
+        ("source", "connector"),
+    ]
+    assert events[0].details["documents"] == {str(held.id): [str(hold_id)]}
+    assert events[0].details["matters"] == ["Smith v. Acme"]
 
 
 async def test_only_one_sync_runs_at_a_time(

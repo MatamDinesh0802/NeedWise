@@ -29,6 +29,7 @@ from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.authz.sync import enqueue
+from workmind.modules.governance import holds
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import Department, Group, User
 from workmind.modules.knowledge import governance, service
@@ -593,10 +594,24 @@ async def request_official(
 async def delete_document(
     ctx: SessionContext, request: Request, document_id: uuid.UUID
 ) -> Response:
+    """Editors delete a document, its versions and its search entries. A document under a legal
+    hold is refused (409 legal_hold) and the attempt is audited."""
     resources = resources_of(request)
+    orphaned: list[str] = []
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         document, _ = await _document_for(session, ctx, document_id, edit=True)
-        orphaned = await service.delete_document(session, ctx, document)
+        blocking = await holds.covering(session, "document", document)
+        if not blocking:
+            orphaned = await service.delete_document(session, ctx, document)
+    if blocking:
+        raise await holds.refuse(
+            resources.db,
+            ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            kind="document",
+            resource_id=document_id,
+            holds=blocking,
+        )
     await delete_document_points(
         resources.qdrant, resources.collection_name, ctx.tenant_id, document_id
     )

@@ -1885,6 +1885,7 @@
           "knowledge"
         ],
         "summary": "Delete Document",
+        "description": "Editors delete a document, its versions and its search entries. A document under a legal\nhold is refused (409 legal_hold) and the attempt is audited.",
         "operationId": "delete_document_api_v1_documents__document_id__delete",
         "parameters": [
           {
@@ -2730,6 +2731,7 @@
           "conversations"
         ],
         "summary": "Delete Conversation",
+        "description": "The owner deletes a conversation and its messages, unless a legal hold keeps it (409\nlegal_hold; the attempt is audited).",
         "operationId": "delete_conversation_api_v1_conversations__conversation_id__delete",
         "parameters": [
           {
@@ -3480,7 +3482,7 @@
           "admin"
         ],
         "summary": "Delete Source",
-        "description": "Removes the source and every document it synced (and their search index entries).",
+        "description": "Removes the source and every document it synced (and their search index entries). While\na legal hold keeps any of those documents, nothing is deleted (409 legal_hold) and each\nheld document's refusal is audited; disabling the source stops its syncs instead.",
         "operationId": "delete_source_api_v1_admin_sources__key__delete",
         "parameters": [
           {
@@ -4520,7 +4522,7 @@
           "meetings"
         ],
         "summary": "Remove Meeting",
-        "description": "Deletes the meeting, its recording or transcript file, and its indexed transcript (search\nincluded). For the person who uploaded it and the collection's editors. Tasks made from its\naction items stay with their assignees, without the link.",
+        "description": "Deletes the meeting, its recording or transcript file, and its indexed transcript (search\nincluded). For the person who uploaded it and the collection's editors. Tasks made from its\naction items stay with their assignees, without the link. A meeting under a legal hold is\nrefused (409 legal_hold) and the attempt is audited.",
         "operationId": "remove_meeting_api_v1_meetings__meeting_id__delete",
         "parameters": [
           {

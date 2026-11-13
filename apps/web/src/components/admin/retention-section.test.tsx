@@ -67,6 +67,15 @@ describe("PreviewResult", () => {
     expect(html).toContain("2 conversations, 1 meeting recording and 40 read notifications");
     expect(html).toContain("Kept forever");
     expect(html).toContain("Nothing was deleted.");
+    expect(html).not.toContain("Kept (legal hold)");
+  });
+
+  it("says what a legal hold keeps", () => {
+    const html = renderToStaticMarkup(
+      <PreviewResult preview={{ ...preview, kept_under_hold: { conversations: 3, analytics_runs: 0, meeting_recordings: 0, read_notifications: 0 } }} draft={false} />,
+    );
+    expect(html).toContain("A legal hold keeps 3 conversations that would otherwise go.");
+    expect(html).toContain("Kept (legal hold)");
   });
 });
 

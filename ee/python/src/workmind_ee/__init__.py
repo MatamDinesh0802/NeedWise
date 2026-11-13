@@ -12,7 +12,7 @@ from workmind.core.edition import Edition
 from workmind.core.extensions import ExtensionRegistry
 from workmind.modules.usage.extensions import CHARGEBACK_REPORT, DEPARTMENT_BUDGETS
 
-from workmind_ee import audit_export, retention
+from workmind_ee import audit_export, legal_hold, retention
 from workmind_ee.budgets import department_budgets
 from workmind_ee.chargeback import chargeback_csv
 
@@ -20,13 +20,14 @@ __version__ = "0.0.1"
 
 log = structlog.get_logger("workmind_ee")
 
-# The features this package implements: all four in workmind.core.edition.FEATURES
+# The features this package implements: all five in workmind.core.edition.FEATURES
 # (docs/enterprise.md).
 IMPLEMENTED: tuple[str, ...] = (
     "department_budgets",
     "chargeback_reports",
     retention.FEATURE,
     audit_export.FEATURE,
+    legal_hold.FEATURE,
 )
 
 
@@ -46,6 +47,8 @@ def setup(registry: ExtensionRegistry, edition: Edition) -> None:
     )
     # The complete, verifiable audit chain as JSON lines, for a SIEM.
     registry.add_router(audit_export.router, feature="advanced_audit_export")
+    # Placing and releasing legal holds; the core enforces them on every deletion path.
+    registry.add_router(legal_hold.router, feature="legal_hold")
     log.info(
         "workmind_ee_loaded",
         version=__version__,

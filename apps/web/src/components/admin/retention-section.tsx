@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useApiQuery } from "@/hooks/use-api-query";
 import {
+  anyKept,
   CONFIRM_WORD,
   confirmMatches,
   countsSummary,
@@ -216,18 +217,23 @@ export function RetentionEditor({ policy, initialPreview = null }: { policy: Ret
 }
 
 export function PreviewResult({ preview, draft }: { preview: RetentionPreview; draft: boolean }) {
+  const kept = anyKept(preview.kept_under_hold);
   return (
     <section aria-labelledby="retention-preview-heading" className="flex flex-col gap-2 rounded-xl border p-4" aria-live="polite">
       <h4 id="retention-preview-heading" className="font-medium">
         {draft ? "If you saved these changes, a run now would delete" : "A run now would delete"}: {countsSummary(preview.would_delete)}
       </h4>
-      <p className="text-sm text-muted-foreground">Counted {formatDateTime(preview.as_of)}. Nothing was deleted.</p>
+      <p className="text-sm text-muted-foreground">
+        Counted {formatDateTime(preview.as_of)}. Nothing was deleted.
+        {kept ? ` A legal hold keeps ${countsSummary(preview.kept_under_hold)} that would otherwise go.` : ""}
+      </p>
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Data</TableHead>
             <TableHead>Deleted when older than</TableHead>
             <TableHead className="text-right">Would delete</TableHead>
+            {kept ? <TableHead className="text-right">Kept (legal hold)</TableHead> : null}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -236,6 +242,7 @@ export function PreviewResult({ preview, draft }: { preview: RetentionPreview; d
               <TableCell>{label}</TableCell>
               <TableCell className="text-muted-foreground">{preview.cutoffs[kind] ? formatDate(preview.cutoffs[kind]) : "Kept forever"}</TableCell>
               <TableCell className="text-right tabular-nums">{preview.would_delete[kind].toLocaleString("en-US")}</TableCell>
+              {kept ? <TableCell className="text-right tabular-nums">{(preview.kept_under_hold?.[kind] ?? 0).toLocaleString("en-US")}</TableCell> : null}
             </TableRow>
           ))}
         </TableBody>
@@ -273,7 +280,8 @@ export function RunForm({ onDone, initialResult = null }: { onDone: () => void; 
           <DialogDescription>
             Deleted {countsSummary(result.deleted)}
             {result.deleted.meeting_recordings ? `; ${result.files_deleted.toLocaleString("en-US")} recording files removed from storage` : ""}.
-            The run is recorded in the audit log.
+            {anyKept(result.kept_under_hold) ? ` A legal hold kept ${countsSummary(result.kept_under_hold)}.` : ""} The run is recorded in
+            the audit log.
           </DialogDescription>
         </DialogHeader>
         <ul className="list-disc pl-5 text-sm">

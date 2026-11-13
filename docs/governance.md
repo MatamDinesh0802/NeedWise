@@ -6,8 +6,11 @@ explicit for every document: **who answers for it** (its owner), **when it was l
 **whether answers may treat it as official** (an approval, not a checkbox). The audit explorer is
 how an administrator or auditor reads what happened.
 
-Everything on this page is in the Community edition. Two related features are Enterprise:
-retention policies and the SIEM export of the audit chain ([enterprise.md](enterprise.md)).
+Everything on this page is in the Community edition. Three related features are Enterprise:
+retention policies (including per-collection document retention), legal holds, and the SIEM
+export of the audit chain ([enterprise.md](enterprise.md)). A document under a legal hold
+cannot be deleted by anyone; that is enforced in both editions
+([enterprise.md](enterprise.md#legal-hold)).
 Design background: [ARCHITECTURE 7.3](ARCHITECTURE.md#73-trust-levels-and-sensitivity-labels)
 (trust levels).
 

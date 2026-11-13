@@ -29,6 +29,8 @@ from workmind.core.tenancy import tenant_transaction
 from workmind.modules.conversations.events import RunMeta
 from workmind.modules.conversations.models import Conversation, Message
 from workmind.modules.conversations.runner import RunDeps, execute_research_run, execute_run
+from workmind.modules.governance import holds
+from workmind.modules.governance.audit import Actor
 from workmind.modules.identity.models import Tenant
 from workmind.modules.usage.calls import Feature, attribute
 
@@ -209,8 +211,23 @@ async def rename_conversation(
 async def delete_conversation(
     ctx: AskContext, request: Request, conversation_id: uuid.UUID
 ) -> Response:
-    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
-        await session.delete(await _owned(session, ctx, conversation_id))
+    """The owner deletes a conversation and its messages, unless a legal hold keeps it (409
+    legal_hold; the attempt is audited)."""
+    sessions = resources_of(request).db
+    async with tenant_transaction(sessions, ctx.tenant_id) as session:
+        conversation = await _owned(session, ctx, conversation_id)
+        blocking = await holds.covering(session, "conversation", conversation)
+        if not blocking:
+            await session.delete(conversation)
+    if blocking:
+        raise await holds.refuse(
+            sessions,
+            ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            kind="conversation",
+            resource_id=conversation_id,
+            holds=blocking,
+        )
     return Response(status_code=204)
 
 

@@ -2,12 +2,14 @@
 
     wm tenant list
     wm tenant create <slug> --name NAME [--owner-email E [--owner-name N]] [--keycloak [--domain D]]
-    wm tenant delete <slug> --confirm <slug> [--keycloak]
+    wm tenant delete <slug> --confirm <slug> [--keycloak] [--override-legal-holds <slug>]
     wm tenant verify-empty <tenant-id> [--slug S] [--store STORE_ID] [--keycloak]
 
 Runs with the owner database role (MIGRATIONS_DATABASE_URL). `--keycloak` also manages the
-tenant's Keycloak organization with KEYCLOAK_ADMIN_USER / KEYCLOAK_ADMIN_PASSWORD. Exit codes:
-0 done, 1 refused or something remains after a deletion, 2 bad arguments.
+tenant's Keycloak organization with KEYCLOAK_ADMIN_USER / KEYCLOAK_ADMIN_PASSWORD. A tenant
+with an active legal hold is refused unless `--override-legal-holds` repeats the tenant too
+(docs/enterprise.md#legal-hold). Exit codes: 0 done, 1 refused or something remains after a
+deletion, 2 bad arguments.
 """
 
 import argparse
@@ -55,6 +57,11 @@ def _parser() -> argparse.ArgumentParser:
     remove.add_argument("tenant", help="slug or id")
     remove.add_argument("--confirm", required=True, help="the slug again, to confirm")
     remove.add_argument("--keycloak", action="store_true", help="also delete the organization")
+    remove.add_argument(
+        "--override-legal-holds",
+        metavar="TENANT",
+        help="delete even though legal holds are active: the tenant again, typed on purpose",
+    )
     verify = commands.add_parser("verify-empty", help="list what remains of a deleted tenant")
     verify.add_argument("tenant_id", type=uuid.UUID)
     verify.add_argument("--slug", help="also look for stores and organizations named after it")
@@ -124,7 +131,16 @@ async def _run(args: argparse.Namespace, settings: Settings) -> int:
             if args.confirm != args.tenant:
                 print("refused: --confirm must repeat the tenant exactly", file=sys.stderr)
                 return 1
-            report = await delete_tenant(stores, args.tenant)
+            override = args.override_legal_holds
+            if override is not None and override != args.tenant:
+                print(
+                    "refused: --override-legal-holds must repeat the tenant exactly",
+                    file=sys.stderr,
+                )
+                return 1
+            report = await delete_tenant(
+                stores, args.tenant, override_legal_holds=override is not None
+            )
             print(
                 f"deleted tenant {report.slug} ({report.tenant_id}): {report.sessions} sessions, "
                 f"{report.keys} Valkey keys, {report.files} files, points in "

@@ -69,12 +69,15 @@ export interface RetentionPreview {
   /** Items older than this are deleted; null: kept forever. */
   cutoffs: Record<RetentionKind, string | null>;
   would_delete: RetentionCounts;
+  /** Expired, but a legal hold keeps them (docs/enterprise.md#legal-hold). */
+  kept_under_hold?: RetentionCounts;
 }
 
 export interface RetentionRun {
   as_of: string;
   deleted: RetentionCounts;
   files_deleted: number;
+  kept_under_hold?: RetentionCounts;
 }
 
 const BASE = "/api/v1/admin/retention";
@@ -155,6 +158,11 @@ export function lastRunSummary(policy: Pick<RetentionPolicy, "last_run_at" | "la
   if (!policy.last_run_at) return "It has not run yet. The daily task applies the saved policy once a day.";
   const how = policy.last_run.trigger === "manual" ? "run by hand" : "the daily run";
   return `Last run ${formatDateTime(policy.last_run_at)} (${how}): deleted ${countsSummary(policy.last_run.deleted)}.`;
+}
+
+/** Whether a legal hold kept anything that had expired. */
+export function anyKept(counts: Partial<RetentionCounts> | undefined): boolean {
+  return RETENTION_KINDS.some(({ kind }) => (counts?.[kind] ?? 0) > 0);
 }
 
 export function confirmMatches(text: string): boolean {

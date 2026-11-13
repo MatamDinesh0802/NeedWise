@@ -1,7 +1,8 @@
 """Incremental sync of one source (ARCHITECTURE section 10.3).
 
     scan -> per item: unchanged (skip) | new or changed (fetch, new version, ingest)
-         -> if the scan was complete: items that disappeared are deleted everywhere
+         -> if the scan was complete: items that disappeared are deleted everywhere,
+            except documents under a legal hold, which stay (and the attempt is audited)
          -> health recorded on the source
 
 Safe by construction:
@@ -26,6 +27,7 @@ from workmind.core.tenancy import tenant_transaction
 from workmind.modules.connectors.base import Connector, ConnectorError, RemoteItem
 from workmind.modules.connectors.models import Source
 from workmind.modules.connectors.secrets import SecretBox
+from workmind.modules.governance import holds
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.knowledge import service
 from workmind.modules.knowledge.dispatch import Dispatcher
@@ -65,6 +67,8 @@ class SyncReport:
     updated: int = 0
     unchanged: int = 0
     deleted: int = 0
+    # Gone from the source but kept: a legal hold covers them (docs/enterprise.md#legal-hold).
+    kept_under_hold: int = 0
     failed: int = 0
     errors: list[str] = field(default_factory=list[str])
 
@@ -197,17 +201,43 @@ async def _apply(
 async def _delete_missing(
     deps: SyncDeps, source: Source, present: set[str], report: SyncReport
 ) -> None:
-    """Deletion propagation: gone from the source means gone from search."""
+    """Deletion propagation: gone from the source means gone from search. A document under a
+    legal hold stays, searchable as before; each sync that would have deleted it records one
+    audit event listing what it kept."""
     ctx = _owner_context(source)
     async with tenant_transaction(deps.sessions, source.tenant_id) as session:
-        gone = [
+        missing = [
             d
             for d in await session.scalars(select(Document).where(Document.source_id == source.id))
             if d.external_id not in present
         ]
+        gone: list[Document] = []
+        kept: dict[str, list[str]] = {}
+        matters: set[str] = set()
+        for document in missing:
+            if blocking := await holds.covering(session, "document", document):
+                kept[str(document.id)] = [str(h.id) for h in blocking]
+                matters.update(h.matter for h in blocking)
+            else:
+                gone.append(document)
         orphaned: list[str] = []
         for document in gone:
             orphaned += await service.delete_document(session, ctx, document)
+        if kept:
+            await record_event(
+                session,
+                tenant_id=source.tenant_id,
+                actor=Actor(type="service", id=source.owner_id),
+                action=holds.BLOCKED,
+                resource_type="source",
+                resource_id=str(source.id),
+                details={
+                    "via": "connector",
+                    "source": source.key,
+                    "documents": kept,
+                    "matters": sorted(matters),
+                },
+            )
     for document in gone:
         await delete_document_points(
             deps.qdrant, deps.collection_name, source.tenant_id, document.id
@@ -215,6 +245,7 @@ async def _delete_missing(
     for key in set(orphaned):
         await deps.storage.delete(owned_key(source.tenant_id, key))
     report.deleted = len(gone)
+    report.kept_under_hold = len(kept)
 
 
 async def _store_credentials(deps: SyncDeps, source: Source, credentials: dict[str, Any]) -> None:

@@ -64,6 +64,7 @@ describe("feature names", () => {
       "department_budgets",
       "chargeback_reports",
       "advanced_audit_export",
+      "legal_hold",
     ]);
     expect(featureLabel("advanced_audit_export")).toBe("Advanced audit export");
   });

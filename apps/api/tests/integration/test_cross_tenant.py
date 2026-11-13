@@ -62,6 +62,7 @@ from workmind.modules.analytics.models import AnalyticsRun
 from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
 from workmind.modules.authz.sync import ensure_store, process_outbox, reconcile
 from workmind.modules.connectors.models import Source
+from workmind.modules.governance.models import LegalHold
 from workmind.modules.identity.models import Department, Group
 from workmind.modules.knowledge.models import Collection, Document, DocumentVersion
 from workmind.modules.knowledge.storage import (
@@ -116,6 +117,7 @@ PHRASES = {
         "drive",
         "token",
         "review",
+        "hold",
     )
 }
 SECRET_PROVIDER_KEY = f"sk-{uuid.uuid4().hex}{uuid.uuid4().hex}"
@@ -561,6 +563,17 @@ async def _build_a_rows(database: Database, a: Side) -> None:
             session.add_all([run, analytics_run])
             await session.flush()
             v["workflow_run_id"], v["analytics_run_id"] = str(run.id), str(analytics_run.id)
+            hold = LegalHold(
+                tenant_id=acme.tenant_id,
+                matter=PHRASES["hold"],
+                reason=PHRASES["hold"],
+                target_type="analytics_run",
+                target_id=analytics_run.id,
+                placed_by=acme.users["erin"],
+            )
+            session.add(hold)
+            await session.flush()
+            v["hold_id"] = str(hold.id)
             v["notification_id"] = str(
                 (
                     await session.scalars(
@@ -773,6 +786,8 @@ ENTERPRISE_ONLY = frozenset(
         "/api/v1/admin/retention/preview",
         "/api/v1/admin/retention/run",
         "/api/v1/admin/audit-events/export.jsonl",
+        "/api/v1/admin/legal-holds",
+        "/api/v1/admin/legal-holds/{hold_id}/release",
     }
 )
 Body = Callable[["World"], Any] | Any
@@ -1220,6 +1235,27 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
     ("PUT", "/api/v1/admin/retention"): [own(json={})],
     ("POST", "/api/v1/admin/retention/preview"): [own()],
     ("POST", "/api/v1/admin/retention/run"): [own(json={"confirm": "delete"})],
+    # Legal holds: B's own list; a hold on any of A's records is an unknown target.
+    ("GET", "/api/v1/admin/legal-holds"): [own(query={"status": "all"})],
+    ("POST", "/api/v1/admin/legal-holds"): [
+        refuse(
+            422,
+            json=lambda w, kind=kind, name=name: {
+                "matter": "Probe",
+                "reason": "Probe",
+                "target_type": kind,
+                "target_id": w.a.values[name],
+            },
+        )
+        for kind, name in (
+            ("document", "document_id"),
+            ("collection", "collection_id"),
+            ("user", "user_id"),
+            ("meeting", "meeting_id"),
+            ("analytics_run", "analytics_run_id"),
+        )
+    ],
+    ("POST", "/api/v1/admin/legal-holds/{hold_id}/release"): [deny(json={"reason": "probe"})],
     # MCP: B's access token; the tools themselves are probed in test_mcp_as_b_never_reaches_a.
     ("POST", "/mcp"): [
         Probe(
