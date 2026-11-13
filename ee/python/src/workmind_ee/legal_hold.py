@@ -9,8 +9,11 @@ that on every deletion path (workmind.modules.governance.holds), whatever the li
 a license that lapses never quietly releases a hold. Releasing one says why.
 
 Placing and releasing are audited (`legal_hold.placed`, `legal_hold.released`), and so is every
-deletion a hold refused (`legal_hold.deletion_blocked`). Owners, admins and auditors can read the
-holds; what a hold names is described without content the reader cannot open (separation of
+deletion a hold refused (`legal_hold.deletion_blocked`). The other owners, admins and auditors
+are notified when a hold is placed or released (category "legal_holds", so it also goes by email
+or Slack to those who chose that); the notification names the matter and the kind of thing held,
+never its title. The people whose data is held are not told. Owners, admins and auditors can
+read the holds; what a hold names is described without content the reader cannot open (separation of
 duties, ARCHITECTURE 7.1): no conversation or Insights question text, and no titles from
 collections they cannot open.
 """
@@ -37,9 +40,21 @@ from workmind.modules.identity.models import User
 from workmind.modules.knowledge.governance import unreadable_collections
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.meetings.models import Meeting
+from workmind.modules.work.links import legal_holds_link
+from workmind.modules.work.notifications import notify
 
 FEATURE: Final = "legal_hold"
 LIST_LIMIT: Final = 500
+# Who is told when a hold is placed or released: the people who may read holds.
+TOLD_ROLES: Final = ("owner", "admin", "auditor")
+# What a hold names, in a notification: the kind of thing, never its title or text.
+HELD: Final[dict[str, str]] = {
+    "document": "a document",
+    "collection": "a collection",
+    "user": "a person's conversations, uploaded meetings and Insights questions",
+    "meeting": "a meeting",
+    "analytics_run": "an Insights question",
+}
 
 Matter = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
@@ -94,6 +109,31 @@ class HoldsOut(BaseModel):
 
 
 # --- What a hold names and covers ---------------------------------------------------------------
+
+
+async def _tell(
+    session: AsyncSession, ctx: RequestContext, hold: LegalHold, *, kind: str, title: str
+) -> None:
+    """Notifies the other active owners, admins and auditors (not the person who acted)."""
+    actor = await session.get(User, ctx.user_id)
+    who = actor.display_name if actor is not None else "Someone"
+    what = HELD.get(hold.target_type, "something")
+    verb = "placed" if kind == "legal_hold.placed" else "released"
+    people = await session.scalars(
+        select(User.id).where(
+            User.org_role.in_(TOLD_ROLES), User.status == "active", User.id != ctx.user_id
+        )
+    )
+    for user_id in people.all():
+        await notify(
+            session,
+            ctx.tenant_id,
+            user_id,
+            kind=kind,
+            title=title,
+            body=f"{who} {verb} the hold for “{hold.matter[:200]}” on {what}.",
+            link=legal_holds_link(),
+        )
 
 
 async def _count(session: AsyncSession, model: type[object], *where: object) -> int:
@@ -274,6 +314,9 @@ async def place_hold(ctx: AdminContext, request: Request, body: HoldIn) -> HoldO
                 "covers": out.covers.model_dump(),
             },
         )
+        await _tell(
+            session, ctx, hold, kind="legal_hold.placed", title=f"Legal hold placed: {hold.matter}"
+        )
         return out
 
 
@@ -306,5 +349,12 @@ async def release_hold(
                 "reason": body.reason,
                 "placed_at": hold.created_at.isoformat(),
             },
+        )
+        await _tell(
+            session,
+            ctx,
+            hold,
+            kind="legal_hold.released",
+            title=f"Legal hold released: {hold.matter}",
         )
         return await _out(session, ctx, hold)

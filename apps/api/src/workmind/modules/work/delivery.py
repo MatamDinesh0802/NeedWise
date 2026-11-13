@@ -42,13 +42,23 @@ from workmind.providers.email import EmailError, SmtpMailer
 log = structlog.get_logger("workmind.notifications")
 
 Category = Literal[
-    "approvals", "assignments", "escalations", "reviews", "budgets", "mentions", "other"
+    "approvals",
+    "assignments",
+    "escalations",
+    "reviews",
+    "sources",
+    "legal_holds",
+    "budgets",
+    "mentions",
+    "other",
 ]
 CATEGORIES: Final[tuple[Category, ...]] = (
     "approvals",
     "assignments",
     "escalations",
     "reviews",
+    "sources",
+    "legal_holds",
     "budgets",
     "mentions",
     "other",
@@ -65,6 +75,7 @@ DIGEST_ITEMS: Final = 50
 _KINDS: Final[dict[str, Category]] = {
     "approval.escalated": "escalations",
     "task.escalated": "escalations",
+    "document.review_escalated": "escalations",
     "task.assigned": "assignments",
     "task.reminder": "assignments",
     "request.routed": "assignments",
@@ -73,6 +84,11 @@ _KINDS: Final[dict[str, Category]] = {
     "document.review_due": "reviews",
     "document.owner": "reviews",
     "document.demoted": "reviews",
+    "source.stale_documents": "reviews",
+    "source.failing": "sources",
+    "source.recovered": "sources",
+    "legal_hold.placed": "legal_holds",
+    "legal_hold.released": "legal_holds",
     "budget.warning": "budgets",
     "budget.exceeded": "budgets",
     "mention": "mentions",

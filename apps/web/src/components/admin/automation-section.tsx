@@ -695,6 +695,8 @@ const CHANNEL_CATEGORIES: readonly { key: NotificationCategory; label: string }[
   { key: "assignments", label: "Assignments and requests" },
   { key: "escalations", label: "Escalations" },
   { key: "reviews", label: "Document reviews" },
+  { key: "sources", label: "Sources" },
+  { key: "legal_holds", label: "Legal holds" },
   { key: "budgets", label: "Budget warnings" },
   { key: "mentions", label: "Mentions" },
   { key: "other", label: "Everything else" },

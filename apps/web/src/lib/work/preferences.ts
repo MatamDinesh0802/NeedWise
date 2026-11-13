@@ -7,7 +7,7 @@
 
 import { apiJson } from "@/lib/api";
 
-export type NotificationCategory = "approvals" | "assignments" | "escalations" | "reviews" | "budgets" | "mentions" | "other";
+export type NotificationCategory = "approvals" | "assignments" | "escalations" | "reviews" | "sources" | "legal_holds" | "budgets" | "mentions" | "other";
 export type EmailMode = "off" | "immediate" | "digest";
 
 export interface Channels {

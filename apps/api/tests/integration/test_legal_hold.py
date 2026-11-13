@@ -29,6 +29,7 @@ from workmind.modules.governance import holds
 from workmind.modules.governance.models import AuditEvent, LegalHold
 from workmind.modules.knowledge.models import Collection, Document, DocumentVersion
 from workmind.modules.meetings.models import Meeting
+from workmind.modules.work.models import Notification
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(
@@ -410,6 +411,29 @@ async def test_admins_place_and_release_holds_and_every_step_is_audited(
     assert [(e.actor_id, e.details["reason"]) for e in released_events] == [
         (acme.users["erin"], "Case settled")
     ]
+    # The other owners, admins and auditors are told; Erin, who acted, and members are not.
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        told = (
+            await session.scalars(
+                select(Notification)
+                .where(Notification.kind.like("legal_hold.%"))
+                .order_by(Notification.created_at)
+            )
+        ).all()
+    people = {v: k for k, v in acme.users.items()}
+    placed_to = {people[n.user_id] for n in told if n.kind == "legal_hold.placed"}
+    released_to = {people[n.user_id] for n in told if n.kind == "legal_hold.released"}
+    assert "amara.diallo" in placed_to  # the auditor
+    assert "priya.raman" in placed_to  # an owner
+    assert not placed_to & {"erin", "bob"}
+    assert released_to == placed_to
+    note = next(n for n in told if n.kind == "legal_hold.placed")
+    assert note.title == "Legal hold placed: Smith v. Acme"
+    assert note.body == (
+        "Erin Takahashi placed the hold for “Smith v. Acme” on a person's conversations, "
+        "uploaded meetings and Insights questions."
+    )
+    assert note.link == "/admin/legal-holds"
 
 
 async def test_what_a_hold_names_is_described_without_content_the_reader_cannot_open(

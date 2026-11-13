@@ -55,8 +55,13 @@ AskContext = Annotated[RequestContext, require_scope("assistant:ask")]
 CATEGORY_LABELS: dict[Category, tuple[str, str]] = {
     "approvals": ("Approvals", "Approvals waiting for you, decisions on what you asked for"),
     "assignments": ("Assignments", "Tasks given to you, requests for your queue, due dates"),
-    "escalations": ("Escalations", "Approvals and tasks that waited too long"),
-    "reviews": ("Document reviews", "Documents you own that are due for review"),
+    "escalations": ("Escalations", "Approvals, tasks and document reviews that waited too long"),
+    "reviews": (
+        "Document reviews",
+        "Documents you own that are due for review, or that look stale in their source",
+    ),
+    "sources": ("Sources", "Sources you manage that keep failing to sync, or sync again"),
+    "legal_holds": ("Legal holds", "Legal holds placed or released in your organization"),
     "budgets": ("Budget warnings", "Model usage budgets near or over their limit"),
     "mentions": ("Mentions", "Colleagues mentioning you in a task"),
     "other": ("Everything else", "Workflow runs that failed, meeting notes that are ready"),

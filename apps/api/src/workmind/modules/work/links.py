@@ -27,6 +27,11 @@ def governance_link() -> str:
     return "/admin/governance"
 
 
+def legal_holds_link() -> str:
+    """Admin > Legal holds (Enterprise, docs/enterprise.md#legal-hold)."""
+    return "/admin/legal-holds"
+
+
 def usage_link() -> str:
     """The usage page: everyone sees the budgets that apply to them there (docs/usage.md)."""
     return "/analytics"

@@ -366,7 +366,7 @@ async def test_people_choose_their_channels_and_backup_approver(
     url = "/api/v1/me/work-preferences"
     defaults = api.get(url, headers=acme.as_("olivia.grant")).json()
     assert defaults["channels"]["approvals"] == {"email": "off", "slack": False}
-    assert len(defaults["categories"]) == 7
+    assert len(defaults["categories"]) == 9
     assert (defaults["email_available"], defaults["slack_available"]) == (False, False)
 
     me = acme.as_("olivia.grant", write=True)

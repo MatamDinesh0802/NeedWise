@@ -13,7 +13,7 @@ import {
 } from "./preferences";
 
 const OFF = { email: "off", slack: false } as const;
-const CATEGORIES: NotificationCategory[] = ["approvals", "assignments", "escalations", "reviews", "budgets", "mentions", "other"];
+const CATEGORIES: NotificationCategory[] = ["approvals", "assignments", "escalations", "reviews", "sources", "legal_holds", "budgets", "mentions", "other"];
 
 const saved = (): WorkPreferences => ({
   channels: Object.fromEntries(CATEGORIES.map((c) => [c, { ...OFF }])) as WorkPreferences["channels"],
@@ -38,7 +38,7 @@ describe("notification preferences", () => {
     const draft = { ...setChannel(draftFrom(saved()), "mentions", { slack: true }), backupApproverId: "u-ivan", digestHour: 6 };
     const body = toSave(draft);
     expect(body.channels.mentions).toEqual({ email: "off", slack: true });
-    expect(Object.keys(body.channels)).toHaveLength(7);
+    expect(Object.keys(body.channels)).toHaveLength(9);
     expect(body).toMatchObject({ digest_hour: 6, backup_approver_id: "u-ivan" });
   });
 

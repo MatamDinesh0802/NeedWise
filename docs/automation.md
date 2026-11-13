@@ -107,8 +107,10 @@ goes out (Settings › Notifications, `GET/PUT /api/v1/me/work-preferences`):
 |---|---|
 | `approvals` | approvals waiting for you, reminders, decisions on what you asked for |
 | `assignments` | tasks given to you, due-date reminders, requests for your queue or for triage, where your request went |
-| `escalations` | approvals and tasks escalated to you or past you |
-| `reviews` | documents you own that are due for review, ownership changes, demotions |
+| `escalations` | approvals and tasks escalated to you or past you; official documents whose review is overdue (docs/governance.md) |
+| `reviews` | documents you own that are due for review, ownership changes, demotions; synced documents that look stale (docs/connectors.md) |
+| `sources` | a source you manage keeps failing to sync, or syncs again (docs/connectors.md) |
+| `legal_holds` | a legal hold was placed or released (Enterprise, for owners, admins and auditors; docs/enterprise.md#legal-hold) |
 | `budgets` | budget warnings and budgets used up |
 | `mentions` | a colleague mentioned you in a task |
 | `other` | failed workflow runs, meeting notes that are ready |

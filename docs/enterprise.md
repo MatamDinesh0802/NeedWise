@@ -172,6 +172,13 @@ documents (listing them). A retention run records what holds kept in its own eve
 (with what it covered at that moment), releasing it as `legal_hold.released` (with the
 reason), and a tenant deleted under the override as `legal_hold.overridden`.
 
+When a hold is placed or released, the organization's other owners, admins and auditors get a
+notification ("Legal hold placed: Smith v. Acme", "Erin Takahashi placed the hold for “Smith v.
+Acme” on a document.", linking to Admin › Legal holds). It names the matter and the kind of
+thing held, never a title or text. It is in the `legal_holds` notification category, so it also
+goes by email or Slack to those who chose that ([docs/automation.md](automation.md)). The
+people whose data is held are not told.
+
 | Route | Who | What it does |
 |---|---|---|
 | `GET /api/v1/admin/legal-holds?status=active\|released\|all` | Org owners, admins and auditors | The holds, newest first (at most 500), each with what it names and what it keeps now (`covers`: documents, conversations, meetings, Insights questions) |
