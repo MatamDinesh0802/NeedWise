@@ -101,3 +101,13 @@ to the collection's default until it is approved again
 
 Which labels may reach an external model is the organization's data policy
 ([Models and keys](../models.md#the-data-policy-what-may-leave)).
+
+## Documents synced from other tools
+
+Some collections are kept up to date by a **source**: a website, a GitHub repository, Slack
+channels or a Google Drive folder. A synced document changes when it changes in its source, and
+disappears from WorkMind when it is deleted there. If you own a collection, **Knowledge Hub ›
+Sources** shows the sources that sync into it: whether they are healthy, when they last synced,
+what went wrong, and which documents look stale. If you own a synced document that has not
+changed in its source for a long time, or that the source no longer lists, you get a task once
+to check it ([Connectors](../connectors.md#stale-documents-and-reminders)).
