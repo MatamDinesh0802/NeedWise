@@ -2,7 +2,7 @@
 
 - **Status:** Draft, not posted
 - **Milestone:** Phase 12 (production hardening) and the v1.0.0 release
-- **Visual (suggested, not made yet):** a one-page v1.0 scorecard, 1080×1350: the leak count (0 in 68 attacks), answers with every fact (81/82), time to first token (0.9 s), cost per answer ($0.0071), with a "what is not done" column beside it (live Drive and Slack, a cloud cluster, an external penetration test). Build it as HTML in `docs/devlog/assets/` like the earlier images, from `docs/benchmarks/v1.0.md`. Or the 1 min 44 s walkthrough (`docs/media/demo.mp4`) as native video.
+- **Visual (suggested, not made yet):** a one-page v1.0 scorecard, 1080×1350: the leak count (0 in 68 attacks), answers with every fact (81/82), time to first token (0.9 s), cost per answer ($0.0071), with a "what is not done" column beside it (live Drive and Slack, a cloud cluster, an external penetration test). Build it as HTML in `docs/devlog/assets/` like the earlier images, from `docs/benchmarks/v1.0.md`. Or the 1 min 32 s walkthrough (`docs/media/demo.mp4`) as native video.
 - **Numbers from:** `evals/results/2026-11-13-v1.0.0-core.md` (the release check), `docs/benchmarks/v1.0.md` (the full benchmark, costs, the 200-person estimate), `docs/benchmarks/load.md`, `docs/case-study.md`.
 - **Post only after** the repo is public and v1.0.0 is published (the GitHub Release and images).
 - **Before posting:** the release check could not run every suite (the model provider's credit ran out). If they have been re-run on the release by then, update the numbers and drop the sentence about it.

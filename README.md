@@ -19,7 +19,7 @@
 
 <img src="docs/media/demo.gif" alt="Alice, an HR manager, gets the L3 salary band with a citation she can open; Bob, an engineer, asks the same and is told the sources available to him don't contain it" width="860">
 
-<sub>Alice from HR gets the salary band, with a citation she can open. Bob from engineering asks the same question and is told his sources don't contain it.<br><a href="docs/media/demo.mp4">Watch the full 1:44 walkthrough</a>: agents, approvals, meetings, charts and admin.</sub>
+<sub>Alice from HR gets the salary band, with a citation she can open. Bob from engineering asks the same question and is told his sources don't contain it.<br><a href="docs/media/demo.mp4">Watch the full 1:32 walkthrough</a>: agents, approvals, meetings, charts and admin.</sub>
 
 </div>
 

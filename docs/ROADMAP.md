@@ -216,7 +216,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > now fixed: the requirements left out `git` and `make`, a first question without a key failed
 > with "Something went wrong while answering", `make up` and `make status` ignored a moved
 > `HTTP_PORT`, **View as…** did not offer Olivia, whose examples the quickstart uses, and the
-> document count was stale. The [demo video](media/demo.mp4) (1 min 44 s) and the README GIF
+> document count was stale. The [demo video](media/demo.mp4) (1 min 32 s) and the README GIF
 > were recorded with `make demo-video` against the development stack
 > ([how](../e2e/browser/demo/README.md)). These timings were taken before the seed grew to 49
 > documents (two with their own access lists) on 2026-11-13; they were not taken again.

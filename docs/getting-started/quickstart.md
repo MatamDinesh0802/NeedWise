@@ -6,7 +6,7 @@ their own access lists.
 
 ![Alice gets a cited answer about the L3 salary band; Bob, without access, is told the sources available to him don't contain it](../media/demo.gif)
 
-The [full walkthrough](../media/demo.mp4) (1 min 44 s) shows what the steps below lead to.
+The [full walkthrough](../media/demo.mp4) (1 min 32 s) shows what the steps below lead to.
 
 ## Requirements
 

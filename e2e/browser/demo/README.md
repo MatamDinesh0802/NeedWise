@@ -32,7 +32,8 @@ department agents 3x, the research run 8x, Insights 4x; the marks are in `out/ma
 
 You need a running stack seeded with the Acme demo data (`make quickstart`), with:
 
-- a chat model (`ANTHROPIC_API_KEY` in `.env`, [Quickstart](../../../docs/getting-started/quickstart.md));
+- a chat model (`ANTHROPIC_API_KEY` in `.env`, [Quickstart](../../../docs/getting-started/quickstart.md), or Gemini as
+  in [models](../../../docs/models.md));
 - `ASSISTANT_MODE=auto` (or `agents`), so step 4 is answered by department agents; in the default
   `single` mode it is one search and the caption of step 4 is wrong;
 - a meeting that Olivia can open: as `olivia.grant@acme.test`, upload
@@ -65,12 +66,14 @@ DEMO_STOP_AFTER=4 pnpm exec playwright test -c demo/playwright.config.ts   # ste
 | `DEMO_STOP_AFTER` | `8` | Record steps 1 to N only, while working on the script. |
 
 `render.mjs` stops with an error if the MP4 is over 20 MB or the GIF over 8 MB. The recording
-of 2026-11-13: 146 seconds recorded, 104 seconds rendered, a 4.1 MB MP4 and a 1.2 MB GIF.
+of 2026-11-13 (with Gemini 3.1 Flash Lite): 112 seconds recorded, 92 seconds rendered, a 3.8 MB
+MP4 and a 1.1 MB GIF.
 
 ## What it costs and what it leaves behind
 
 One recording makes five model requests (two answers, the department agents, the research run,
-Insights): about $0.20 with Claude Sonnet 5.5, read from the usage each answer shows.
+Insights): about $0.20 with Claude Sonnet 5.5, and about $0.01 with Gemini 3.1 Flash Lite (the
+current recording), read from the usage each answer shows.
 
 At the end, also when a step fails, the test deletes the four conversations, the agent it
 created and the email in Mailpit, and rejects an approval that is still pending. It cannot

@@ -10,7 +10,7 @@ permission checks.
 
 ![Alice gets a cited answer about the L3 salary band; Bob, without access, is told the sources available to him don't contain it](media/demo.gif)
 
-The [full walkthrough](media/demo.mp4) (1 min 44 s): cited answers, the same question without
+The [full walkthrough](media/demo.mp4) (1 min 32 s): cited answers, the same question without
 access, department agents, an approval, a meeting, a chart with its SQL, and an administrator
 adding an agent.
 
