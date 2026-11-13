@@ -40,9 +40,10 @@ from workmind.modules.governance.models import AuditEvent, LegalHold
 from workmind.modules.identity.models import User
 from workmind.modules.knowledge import document_acl
 from workmind.modules.knowledge.dispatch import InlineDispatcher
-from workmind.modules.knowledge.models import Collection, Document
+from workmind.modules.knowledge.models import Collection, Document, DocumentVersion
 from workmind.modules.knowledge.pipeline import IngestionDeps
-from workmind.modules.knowledge.storage import LocalObjectStorage
+from workmind.modules.knowledge.reindex import reindex_tenant
+from workmind.modules.knowledge.storage import LocalObjectStorage, owned_key
 from workmind.modules.retrieval.qdrant import QdrantClient
 from workmind.modules.work.models import Notification, Task
 from workmind.providers.embeddings import HashEmbeddings
@@ -484,6 +485,34 @@ async def test_run_errors_name_the_item_by_its_id_never_its_title(
     assert latest.errors == [{"item": "reorg-2027", "message": "larger than 0 MB"}]
     assert stored is not None
     assert "reorg plan" not in (stored.last_error or "")
+
+
+async def test_wm_reindex_rebuilds_every_document_from_its_stored_original(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """`wm reindex <tenant>` (after changing the embedding model) was untested: every document
+    is indexed again from storage, the index holds the same chunks, and a failure is counted
+    without stopping the rest."""
+    deps, connector, source, qdrant, name = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")
+    await run(deps, source)
+    before = await qdrant.count(name, tenant_id=source.tenant_id)
+    ingestion = IngestionDeps(deps.sessions, deps.storage, HashEmbeddings(32), qdrant, name)
+
+    result = await reindex_tenant(ingestion, source.tenant_id)
+    assert (result.documents, result.failed) == (2, 0)
+    assert result.chunks == before
+    assert await qdrant.count(name, tenant_id=source.tenant_id) == before
+
+    # An original missing from storage fails that document only.
+    travel = (await documents(deps, source))["travel"]
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        version = await session.get(DocumentVersion, travel.current_version_id)
+        assert version is not None
+        await deps.storage.delete(owned_key(source.tenant_id, version.storage_key))
+    partial = await reindex_tenant(ingestion, source.tenant_id)
+    assert (partial.documents, partial.failed) == (1, 1)
 
 
 async def test_only_one_sync_runs_at_a_time(
