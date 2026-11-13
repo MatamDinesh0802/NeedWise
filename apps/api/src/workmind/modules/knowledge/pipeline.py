@@ -101,6 +101,8 @@ async def _ingest(
         # A synced item keeps the name its source gives it (a page title, a Drive file name).
         source_title = document.title if document.source_id is not None else None
         trust, sensitivity = document.trust, document.sensitivity
+        # An archived document is re-indexed out of search, as it was (retention, Enterprise).
+        active = document.archived_at is None
         storage_key = version.storage_key
 
     data = await deps.storage.get(owned_key(tenant_id, storage_key))
@@ -143,7 +145,7 @@ async def _ingest(
                 "heading_path": list(draft.heading_path),
                 "page": draft.page,
                 "text": draft.text,
-                "is_active": True,
+                "is_active": active,
                 "indexed_at": now,
             },
         }
@@ -267,10 +269,11 @@ async def set_document_labels(
     collection_name: str,
     tenant_id: uuid.UUID,
     document_id: uuid.UUID,
-    labels: dict[str, str],
+    labels: dict[str, Any],
 ) -> None:
     """After a trust or sensitivity change: every chunk of the document carries the new labels,
-    so ranking and model routing follow at once."""
+    so ranking and model routing follow at once. Also `{"is_active": False}` when a document is
+    archived (search filters on it), and True when it is restored."""
     if not await qdrant.collection_exists(collection_name):
         return
     await qdrant.set_payload(

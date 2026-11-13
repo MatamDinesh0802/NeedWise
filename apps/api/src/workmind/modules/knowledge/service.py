@@ -234,6 +234,8 @@ async def upload(
             )
             is not None
         )
+        # New content is an update: an archived document comes back (indexed as active).
+        document.archived_at = None
     await record_event(
         session,
         tenant_id=ctx.tenant_id,

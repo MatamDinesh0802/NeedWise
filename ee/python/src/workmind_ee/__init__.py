@@ -12,7 +12,7 @@ from workmind.core.edition import Edition
 from workmind.core.extensions import ExtensionRegistry
 from workmind.modules.usage.extensions import CHARGEBACK_REPORT, DEPARTMENT_BUDGETS
 
-from workmind_ee import audit_export, legal_hold, retention
+from workmind_ee import audit_export, document_retention, legal_hold, retention
 from workmind_ee.budgets import department_budgets
 from workmind_ee.chargeback import chargeback_csv
 
@@ -39,6 +39,7 @@ def setup(registry: ExtensionRegistry, edition: Edition) -> None:
     registry.add_hook(CHARGEBACK_REPORT, chargeback_csv, feature="chargeback_reports")
     # Retention: the policy API and the daily task that applies every tenant's policy.
     registry.add_router(retention.router, feature="retention_policies")
+    registry.add_router(document_retention.router, feature="retention_policies")
     registry.add_scheduled_task(
         retention.TASK_NAME,
         retention.apply_all,

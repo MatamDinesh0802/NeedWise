@@ -121,7 +121,7 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     key: "retention",
     title: "Retention",
     href: "/admin/retention",
-    description: "How long conversations, BI runs, meeting recordings and read notifications are kept. Enterprise.",
+    description: "How long conversations, BI runs, meeting recordings, read notifications and each collection's documents are kept. Enterprise.",
     roles: MANAGERS,
   },
   {

@@ -6,7 +6,7 @@ import { Dialog } from "@/components/ui/dialog";
 import type { RetentionPolicy, RetentionPreview } from "@/lib/admin/retention";
 import type { EditionInfo } from "@/lib/edition";
 
-import { PreviewResult, RetentionEditor, RunForm } from "./retention-section";
+import { DocumentPreviewResult, DocumentRetentionEditor, DocumentRunForm, PreviewResult, RetentionEditor, RunForm } from "./retention-section";
 
 const policy = (overrides: Partial<RetentionPolicy> = {}): RetentionPolicy => ({
   conversations_days: 365,
@@ -102,6 +102,101 @@ describe("RunForm", () => {
     );
     expect(html).toContain("Deleted 2 conversations and 1 meeting recording; 1 recording files removed from storage.");
     expect(html).toContain("0 Insights questions");
+  });
+});
+
+describe("DocumentRetentionEditor", () => {
+  const collections = [
+    { id: "c-eng", name: "Engineering Docs", documents: 120 },
+    { id: "c-ops", name: "Operations SOPs", documents: 1 },
+  ];
+
+  it("lists every collection with its rule and last run", () => {
+    const html = renderToStaticMarkup(
+      <DocumentRetentionEditor
+        collections={collections}
+        rules={{
+          minimum_days: 30,
+          rules: [
+            {
+              collection_id: "c-eng",
+              collection: "Engineering Docs",
+              days: 365,
+              action: "delete",
+              updated_at: "2026-11-01T09:00:00Z",
+              updated_by: { id: "u-erin", display_name: "Erin Takahashi" },
+              last_run_at: "2026-11-12T02:00:00Z",
+              last_run: { trigger: "schedule", action: "delete", count: 3 },
+            },
+          ],
+        }}
+      />,
+    );
+    expect(html).toMatch(/aria-label="Engineering Docs: days without an update"[^>]*value="365"/);
+    expect(html).toMatch(/aria-label="Operations SOPs: days without an update"[^>]*placeholder="Keep"[^>]*value=""|placeholder="Keep"[^>]*aria-label="Operations SOPs: days without an update"/);
+    expect(html).toContain("120 documents");
+    expect(html).toContain("1 document");
+    expect(html).toContain("12 Nov 2026: deleted 3 documents");
+    expect(html).toContain("Documents under a legal hold and official documents are never touched");
+    expect(buttonAttrs(html, "Run the saved rules")).not.toContain('disabled=""');
+  });
+
+  it("offers no run without rules", () => {
+    const html = renderToStaticMarkup(<DocumentRetentionEditor collections={collections} rules={{ minimum_days: 30, rules: [] }} />);
+    expect(html).toContain("No rules: every document is kept.");
+    expect(buttonAttrs(html, "Run the saved rules")).toContain('disabled=""');
+  });
+});
+
+describe("DocumentPreviewResult", () => {
+  it("shows exact counts per collection and what is kept and why", () => {
+    const kept = { legal_hold: 1, official: 2, meeting_transcript: 0, synced: 0 };
+    const html = renderToStaticMarkup(
+      <DocumentPreviewResult
+        draft={false}
+        preview={{
+          as_of: "2026-11-12T12:00:00Z",
+          collections: [
+            { collection_id: "c-eng", collection: "Engineering Docs", days: 365, action: "delete", cutoff: "2025-11-12T12:00:00Z", count: 4, kept },
+          ],
+          would_delete: 4,
+          would_archive: 0,
+          kept,
+        }}
+      />,
+    );
+    expect(html).toContain("A run now would delete 4 documents and archive 0 documents");
+    expect(html).toContain("Kept although not updated: 1 under a legal hold and 2 official or awaiting approval.");
+    expect(html).toContain("delete 4");
+    expect(html).toContain("Nothing was changed.");
+  });
+});
+
+describe("DocumentRunForm", () => {
+  it("asks for the typed confirmation, then reports what happened", () => {
+    const asking = renderToStaticMarkup(
+      <Dialog open>
+        <DocumentRunForm onDone={() => {}} />
+      </Dialog>,
+    );
+    expect(asking).toContain("Type “delete” to confirm");
+    expect(buttonAttrs(asking, "Apply the rules")).toContain('disabled=""');
+    const done = renderToStaticMarkup(
+      <Dialog open>
+        <DocumentRunForm
+          onDone={() => {}}
+          initialResult={{
+            as_of: "2026-11-12T12:00:00Z",
+            collections: [],
+            deleted: 2,
+            archived: 1,
+            kept: { legal_hold: 1, official: 0, meeting_transcript: 0, synced: 0 },
+            files_deleted: 2,
+          }}
+        />
+      </Dialog>,
+    );
+    expect(done).toContain("Deleted 2 documents and archived 1 document. Kept: 1 under a legal hold.");
   });
 });
 

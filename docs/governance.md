@@ -130,6 +130,8 @@ and `review_auto_demote_days` from 1 to 3650, default empty (never demoted autom
   clears the stage, so the next cycle starts afresh. Changing the escalation periods applies
   from the next daily run; stages already reached stay.
 - Documents that are not official are only reminded, never escalated.
+- A document archived by a retention rule (Enterprise, [enterprise.md](enterprise.md#document-retention))
+  is out of use: it gets no reminder and no escalation, and the overview leaves it out.
 
 The governance overview shows the stage under each overdue document ("Escalated to the
 administrators on 10 Nov 2026"), and the document page next to "Review overdue".

@@ -20,7 +20,7 @@ only with a valid license key. The Enterprise features the core knows about:
 
 | Feature name | What it is for | Status |
 |---|---|---|
-| `retention_policies` | Rules for how long data is kept before it is deleted | Built: [Retention policies](#retention-policies) |
+| `retention_policies` | Rules for how long data is kept before it is deleted | Built: [Retention policies](#retention-policies), with [document retention](#document-retention) per collection |
 | `department_budgets` | Spending limits on model usage per department | Built ([docs/usage.md](usage.md#enterprise)) |
 | `chargeback_reports` | Usage and model costs per department, for internal billing | Built: `GET /api/v1/usage/export.csv` ([docs/usage.md](usage.md#enterprise)) |
 | `advanced_audit_export` | Audit log exports for security tools and long-term retention | Built: [Audit export for a SIEM](#audit-export-for-a-siem) |
@@ -90,8 +90,51 @@ Without the license, the four routes answer `402 enterprise_feature` (the core's
 the Enterprise notice. The `retention_policies` table and the meetings' `media_deleted_at`
 column exist in both editions (migration `0018`).
 
-Not built: retention of documents and their versions, per-department periods, and a dry-run
-report by department.
+### Document retention
+
+Part of the same feature, code in `ee/python/src/workmind_ee/document_retention.py`, in
+**Admin > Retention > Documents, by collection**. Per collection, an org owner or admin sets how
+many days a document may go **without an update** (30 to 36,500) and what happens then:
+
+- **Archive** (the default in the form): the document, its versions, files and chunks stay; it
+  leaves search and answers at once (`is_active` false on its points in the index, which
+  retrieval filters on) and the Knowledge Hub marks it **Archived**. A collection editor
+  restores it from the document page (`POST /api/v1/documents/{id}/unarchive`, Community, so a
+  lapsed license never strands an archive; audited as `knowledge.document.unarchived`), and new
+  content restores it too. Re-indexing keeps it archived.
+- **Delete**: what an editor's delete does: the document, its versions and chunks, its search
+  entries, and its files when nothing else uses them.
+
+"Updated" means the latest of: new content (its newest version), a review (**Mark reviewed**, or
+an approval of official status) and a restore from the archive. A document never updated counts
+from when it was added. Edits of labels, owners or escalation stages do not count.
+
+**Never touched**, and counted with the reason in the preview, the run and the audit event:
+
+| Reason | What |
+|---|---|
+| `legal_hold` | A [legal hold](#legal-hold) covers it |
+| `official` | It is official, or waiting for an official-status approval: approved content leaves through a demotion (by an editor, or an [overdue review](governance.md#escalation-of-overdue-reviews)), never through a timer |
+| `meeting_transcript` | (delete only) A meeting's transcript goes with its meeting |
+| `synced` | (delete only) A document synced from a source would come back at the next sync; deletion propagation removes it when the source does. Archiving a synced document works |
+
+| Route | What it does |
+|---|---|
+| `GET /api/v1/admin/retention/documents` | The rules, who saved each, and what each one's last run did |
+| `PUT /api/v1/admin/retention/documents` | Replaces every rule: `{"rules": [{"collection_id", "days", "action"}]}`. A collection left out keeps every document. One rule per collection, collections of this organization only (`422 unknown_collection`). Audited as `admin.retention.documents_updated`, before and after |
+| `POST /api/v1/admin/retention/documents/preview` | Per collection: the cutoff, exactly how many documents a run would delete or archive now, and how many it would keep and why. Changes nothing. Without a body the saved rules; with rules in the body, that draft |
+| `POST /api/v1/admin/retention/documents/run` | Applies the saved rules now, with `{"confirm": "delete"}` (`409 no_rules` without any). Each document is audited (`knowledge.document.deleted` with `reason: retention`, or `knowledge.document.archived`), and the run as `admin.retention.documents_run` with the counts per collection |
+
+The daily task `workmind_ee.retention.apply` applies the rules too, after the policy, as the
+system. The preview and the run select with the same query, and the tests check that a run
+deletes and archives exactly what the preview counted. The `document_retention_rules` table and
+the documents' `archived_at` and `restored_at` columns are in the core schema (migration
+`0026`, forced row-level security). Archived documents get no review reminders or escalations
+and are left out of the governance overview.
+
+Not built: retention of a document's older versions (all versions are kept while the document
+is), per-department periods, rules by label or trust level, a dry-run report by department, and
+notices to owners before their documents are archived or deleted.
 
 ## Legal hold
 
@@ -407,7 +450,11 @@ isolation, hooks, mounting), `tests/test_enterprise_tasks.py`, `tests/test_dev_l
 (`/edition` is Community without a license; a gated route answers 402),
 `tests/integration/test_retention.py` (every route 402 without a license; with one, the 30-day
 minimum, exact preview counts, a run that deletes only its own tenant's expired rows and files,
-the daily task), `tests/integration/test_legal_hold.py` (routes 402 without a license and holds
+the daily task), `tests/integration/test_document_retention.py` (routes 402 without a license;
+rules of at least 30 days for this organization's collections; a preview whose counts a run
+then matches, with held, official, pending-official, synced and transcript documents kept and
+counted; a draft previewed without saving; the daily task; archived documents out of the index
+until restored or updated, and not due again after either), `tests/integration/test_legal_hold.py` (routes 402 without a license and holds
 still enforced in Community; documents, conversations, meetings, transcripts and sources refused
 and audited; placing, listing and releasing with their audit events and permissions; labels that
 withhold what the reader cannot open; retention keeping held items with matching preview and

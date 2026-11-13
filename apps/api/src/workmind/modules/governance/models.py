@@ -91,6 +91,43 @@ class RetentionPolicy(Base, TenantScoped, Timestamps):
     last_run: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
 
 
+RETENTION_ACTIONS: Final = ("delete", "archive")
+
+
+class DocumentRetentionRule(Base, TenantScoped, Timestamps):
+    """Per collection (Enterprise feature "retention_policies"): documents not updated for
+    `days` are deleted or archived. Updated means new content or a review (or a restore from
+    the archive). Legal holds and official status are respected (workmind_ee.retention)."""
+
+    __tablename__ = "document_retention_rules"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "collection_id"),
+        ForeignKeyConstraint(
+            ["tenant_id", "collection_id"],
+            ["collections.tenant_id", "collections.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "updated_by"],
+            ["users.tenant_id", "users.id"],
+            ondelete="SET NULL (updated_by)",
+        ),
+        CheckConstraint(f"days BETWEEN {MIN_RETENTION_DAYS} AND {MAX_RETENTION_DAYS}", name="days"),
+        CheckConstraint(
+            f"action IN ({', '.join(repr(a) for a in RETENTION_ACTIONS)})", name="action"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_primary_key()
+    collection_id: Mapped[uuid.UUID]
+    days: Mapped[int] = mapped_column(Integer)
+    action: Mapped[str] = mapped_column(String(16))
+    updated_by: Mapped[uuid.UUID | None]
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # What the last run did with this collection's documents, and what it kept and why.
+    last_run: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+
+
 # Legal hold (Enterprise feature "legal_hold"; docs/enterprise.md#legal-hold): what a hold can
 # name. A collection covers its documents and meetings; a person covers their conversations, the
 # meetings they uploaded and their Insights questions; a meeting also covers its transcript.

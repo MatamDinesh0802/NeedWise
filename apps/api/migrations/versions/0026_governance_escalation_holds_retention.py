@@ -8,6 +8,9 @@ Create Date: 2026-11-13 10:00:00.000000
   after which it is demoted (null: never); documents: the escalation stage of this cycle.
 - legal_holds (Enterprise feature "legal_hold", one schema for both editions; the core enforces
   active holds on every deletion path), with forced row-level security.
+- document_retention_rules (Enterprise feature "retention_policies": per collection, delete or
+  archive documents not updated for N days), with forced row-level security; documents: when
+  one was archived, and when it was last restored from the archive.
 """
 
 from collections.abc import Sequence
@@ -15,6 +18,7 @@ from datetime import datetime
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0026"
 down_revision: str | None = "0019"
@@ -134,8 +138,63 @@ def upgrade() -> None:
     )
     _enable_rls("legal_holds")
 
+    # --- Document retention (Enterprise) --------------------------------------------------------
+    op.add_column("documents", sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column("documents", sa.Column("restored_at", sa.DateTime(timezone=True), nullable=True))
+    op.create_table(
+        "document_retention_rules",
+        sa.Column("id", sa.Uuid(), server_default=sa.text("uuidv7()"), nullable=False),
+        sa.Column("collection_id", sa.Uuid(), nullable=False),
+        sa.Column("days", sa.Integer(), nullable=False),
+        sa.Column("action", sa.String(16), nullable=False),
+        sa.Column("updated_by", sa.Uuid(), nullable=True),
+        sa.Column("last_run_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "last_run",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'{}'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column("tenant_id", sa.Uuid(), nullable=False),
+        *_timestamps(),
+        sa.CheckConstraint(
+            "days BETWEEN 30 AND 36500", name=op.f("ck_document_retention_rules_days")
+        ),
+        sa.CheckConstraint(
+            "action IN ('delete', 'archive')", name=op.f("ck_document_retention_rules_action")
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "collection_id"],
+            ["collections.tenant_id", "collections.id"],
+            name=op.f("fk_document_retention_rules_tenant_id_collection_id_collections"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "updated_by"],
+            ["users.tenant_id", "users.id"],
+            name=op.f("fk_document_retention_rules_tenant_id_updated_by_users"),
+            ondelete="SET NULL (updated_by)",
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id"],
+            ["tenants.id"],
+            name=op.f("fk_document_retention_rules_tenant_id_tenants"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_document_retention_rules")),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "collection_id",
+            name=op.f("uq_document_retention_rules_tenant_id_collection_id"),
+        ),
+    )
+    _enable_rls("document_retention_rules")
+
 
 def downgrade() -> None:
+    op.drop_table("document_retention_rules")
+    op.drop_column("documents", "restored_at")
+    op.drop_column("documents", "archived_at")
     op.drop_table("legal_holds")
 
     op.drop_constraint(op.f("ck_documents_review_escalation"), "documents", type_="check")

@@ -785,6 +785,9 @@ ENTERPRISE_ONLY = frozenset(
         "/api/v1/admin/retention",
         "/api/v1/admin/retention/preview",
         "/api/v1/admin/retention/run",
+        "/api/v1/admin/retention/documents",
+        "/api/v1/admin/retention/documents/preview",
+        "/api/v1/admin/retention/documents/run",
         "/api/v1/admin/audit-events/export.jsonl",
         "/api/v1/admin/legal-holds",
         "/api/v1/admin/legal-holds/{hold_id}/release",
@@ -952,6 +955,7 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
         ),
     ],
     ("POST", "/api/v1/documents/{document_id}/review"): [deny(json={"note": "probe"})],
+    ("POST", "/api/v1/documents/{document_id}/unarchive"): [deny()],
     ("POST", "/api/v1/documents/{document_id}/official"): [deny(json={"note": "probe"})],
     ("GET", "/api/v1/admin/collections"): [own()],
     ("POST", "/api/v1/admin/collections"): [
@@ -1235,6 +1239,31 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
     ("PUT", "/api/v1/admin/retention"): [own(json={})],
     ("POST", "/api/v1/admin/retention/preview"): [own()],
     ("POST", "/api/v1/admin/retention/run"): [own(json={"confirm": "delete"})],
+    # Document retention: B's own rules; a rule for A's collection is an unknown collection.
+    ("GET", "/api/v1/admin/retention/documents"): [own()],
+    ("PUT", "/api/v1/admin/retention/documents"): [
+        refuse(
+            422,
+            json=lambda w: {
+                "rules": [
+                    {"collection_id": w.a.values["collection_id"], "days": 30, "action": "delete"}
+                ]
+            },
+        ),
+        own(json={"rules": []}),
+    ],
+    ("POST", "/api/v1/admin/retention/documents/preview"): [
+        own(),
+        refuse(
+            422,
+            json=lambda w: {
+                "rules": [
+                    {"collection_id": w.a.values["collection_id"], "days": 30, "action": "archive"}
+                ]
+            },
+        ),
+    ],
+    ("POST", "/api/v1/admin/retention/documents/run"): [own(409, json={"confirm": "delete"})],
     # Legal holds: B's own list; a hold on any of A's records is an unknown target.
     ("GET", "/api/v1/admin/legal-holds"): [own(query={"status": "all"})],
     ("POST", "/api/v1/admin/legal-holds"): [

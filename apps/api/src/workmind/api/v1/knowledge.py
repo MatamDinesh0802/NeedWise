@@ -101,6 +101,8 @@ class DocumentOut(BaseModel):
     size_bytes: int
     version: int
     updated_at: datetime
+    # Archived by a document retention rule: kept, but out of search and answers until restored.
+    archived_at: datetime | None = None
     # Governance: who answers for it, and its review cycle.
     owner: PersonRef | None = None
     reviewed_at: datetime | None = None
@@ -230,6 +232,7 @@ def _document_out(document: Document, version: DocumentVersion | None) -> Docume
         size_bytes=version.size_bytes if version else 0,
         version=version.version_no if version else 0,
         updated_at=document.updated_at,
+        archived_at=document.archived_at,
     )
 
 
@@ -588,6 +591,39 @@ async def request_official(
         document, access = await _document_for(session, ctx, document_id, edit=True)
         await governance.request_official(session, ctx, document, access.collection, note=body.note)
         return await _governance_detail(session, ctx, document, access)
+
+
+@router.post("/documents/{document_id}/unarchive")
+async def unarchive_document(
+    ctx: SessionContext, request: Request, document_id: uuid.UUID
+) -> DocumentOut:
+    """Editors bring back a document a retention rule archived: it is searchable again at once,
+    and retention counts from now, as if it had been updated (docs/enterprise.md)."""
+    resources = resources_of(request)
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        document, _ = await _document_for(session, ctx, document_id, edit=True)
+        if document.archived_at is None:
+            raise ApiError(409, "not_archived", "This document is not archived")
+        archived_at = document.archived_at
+        document.archived_at, document.restored_at = None, governance.utcnow()
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="knowledge.document.unarchived",
+            resource_type="document",
+            resource_id=str(document_id),
+            details={
+                "collection_id": str(document.collection_id),
+                "archived_at": archived_at.isoformat(),
+            },
+        )
+        version = (await _latest_versions(session, [document])).get(document.id)
+        (out,) = await _governed(session, [(document, _document_out(document, version))])
+    await set_document_labels(
+        resources.qdrant, resources.collection_name, ctx.tenant_id, document_id, {"is_active": True}
+    )
+    return out
 
 
 @router.delete("/documents/{document_id}", status_code=204)

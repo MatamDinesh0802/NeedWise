@@ -284,6 +284,7 @@ async def send_review_reminders(
                     Document.next_review_at.is_not(None),
                     Document.next_review_at <= now,
                     Document.review_task_id.is_(None),
+                    Document.archived_at.is_(None),  # out of use: nothing to review
                 )
                 .order_by(Document.next_review_at)
                 .with_for_update(skip_locked=True)
@@ -418,6 +419,7 @@ async def escalate_overdue_reviews(
                     Document.trust == "official",
                     Document.next_review_at.is_not(None),
                     Document.next_review_at <= now,
+                    Document.archived_at.is_(None),
                 )
                 .order_by(Document.next_review_at)
                 .with_for_update(of=Document, skip_locked=True)
@@ -1141,7 +1143,7 @@ async def overview(
             return []
         rows = await session.scalars(
             select(Document)
-            .where(Document.collection_id.in_(ids), *conditions)
+            .where(Document.collection_id.in_(ids), Document.archived_at.is_(None), *conditions)
             .order_by(Document.next_review_at.nulls_last(), Document.title)
             .limit(OVERVIEW_LIMIT)
         )

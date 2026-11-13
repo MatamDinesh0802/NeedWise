@@ -15,6 +15,9 @@ cannot delete from it, and deleting old events would break verification of every
 Items under a legal hold (workmind.modules.governance.holds) are kept, however old: the preview
 and the run count them as `kept_under_hold`, and the run's audit event lists them.
 
+Documents have their own rules, per collection (workmind_ee.document_retention); the daily task
+applies both.
+
 Everything runs inside one tenant's transaction, so row-level security limits it to that
 tenant's rows; media keys are tenant-prefixed and checked again before a file is deleted.
 """
@@ -49,6 +52,8 @@ from workmind.modules.knowledge.storage import ObjectStorage, owned_key
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.models import Meeting
 from workmind.modules.work.models import Notification
+
+from workmind_ee import document_retention
 
 log = structlog.get_logger("workmind_ee.retention")
 
@@ -312,7 +317,7 @@ async def apply_policy(
 
 
 async def apply_all(resources: Resources) -> int:
-    """The daily task: every active tenant that has a policy."""
+    """The daily task: every active tenant's policy and document rules (when it has any)."""
     async with global_transaction(resources.db) as session:
         tenants = list(
             (await session.scalars(select(Tenant.id).where(Tenant.status == "active"))).all()
@@ -322,7 +327,16 @@ async def apply_all(resources: Resources) -> int:
         _, had_policy = await apply_policy(
             resources.db, resources.storage, tenant_id, actor=Actor.system(), trigger="schedule"
         )
-        applied += had_policy
+        _, had_rules = await document_retention.apply_rules(
+            resources.db,
+            resources.storage,
+            resources.qdrant,
+            resources.collection_name,
+            tenant_id,
+            actor=Actor.system(),
+            trigger="schedule",
+        )
+        applied += had_policy or had_rules
     log.info("retention_applied", tenants=applied)
     return applied
 

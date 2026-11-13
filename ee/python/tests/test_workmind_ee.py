@@ -111,6 +111,7 @@ def test_setup_registers_retention_and_the_siem_export() -> None:
     }
     assert ("/admin/retention", "retention_policies") in paths
     assert ("/admin/retention/run", "retention_policies") in paths
+    assert ("/admin/retention/documents/preview", "retention_policies") in paths
     assert ("/admin/audit-events/export.jsonl", "advanced_audit_export") in paths
     assert ("/admin/legal-holds", "legal_hold") in paths
     assert ("/admin/legal-holds/{hold_id}/release", "legal_hold") in paths

@@ -200,6 +200,11 @@ class Document(Base, TenantScoped, Timestamps):
     # stage was reached; cleared by a review, an approval or a new schedule.
     review_escalation: Mapped[str | None] = mapped_column(String(16))
     review_escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Archived by a document retention rule (Enterprise): kept, out of search and answers
+    # (is_active false in the index) until restored or given new content.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When it was last restored from the archive: retention counts from then, like an update.
+    restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DocumentVersion(Base, TenantScoped):

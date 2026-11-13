@@ -55,6 +55,8 @@ export interface KnowledgeDocument {
   size_bytes: number;
   version: number;
   updated_at: string;
+  /** Archived by a document retention rule: kept, but out of search and answers. */
+  archived_at?: string | null;
   /** Governance (docs/governance.md). */
   owner: PersonRef | null;
   reviewed_at: string | null;
@@ -163,6 +165,9 @@ export const knowledgeApi = {
   listChunks: (documentId: string) => apiJson<Items<Chunk>>(`/api/v1/documents/${id(documentId)}/chunks`),
   reindex: (documentId: string) =>
     apiJson<KnowledgeDocument>(`/api/v1/documents/${id(documentId)}/reindex`, { method: "POST" }),
+  /** Brings back a document a retention rule archived (docs/enterprise.md). */
+  unarchive: (documentId: string) =>
+    apiJson<KnowledgeDocument>(`/api/v1/documents/${id(documentId)}/unarchive`, { method: "POST" }),
   deleteDocument: (documentId: string) => apiJson<void>(`/api/v1/documents/${id(documentId)}`, { method: "DELETE" }),
   /** Trust "official" needs `requestOfficial`; demoting from official takes a note. */
   updateLabels: (documentId: string, body: { trust?: Exclude<Trust, "official">; sensitivity?: Sensitivity; note?: string }) =>

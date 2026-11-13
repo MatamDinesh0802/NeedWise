@@ -213,6 +213,11 @@ function Documents({ collection }: { collection: CollectionDetail }) {
                         Official requested
                       </Badge>
                     ) : null}
+                    {doc.archived_at ? (
+                      <Badge variant="outline" title="Archived by a retention rule: kept, out of search and answers">
+                        Archived
+                      </Badge>
+                    ) : null}
                   </div>
                 </TableCell>
                 <TableCell className="max-w-40 truncate" title={doc.owner?.display_name}>
