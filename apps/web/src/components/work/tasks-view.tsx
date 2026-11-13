@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, CalendarClock, FileText, Hand, ListTodo, Plus, Workflow } from "lucide-react";
+import { Bot, CalendarClock, FileText, Hand, Inbox, ListTodo, Mail, Plus, Route, Workflow } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -8,7 +8,7 @@ import { SignedInGate } from "@/components/auth/signed-in-gate";
 import { Field, SimpleSelect } from "@/components/data/form";
 import { EmptyState, ErrorAlert, RefreshingHint, TableSkeleton } from "@/components/data/states";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -25,10 +25,12 @@ import type { Me } from "@/lib/session";
 import { toast } from "@/lib/stores/toasts";
 import { cn } from "@/lib/utils";
 import { workApi, workKeys, type Task, type TaskScope, type TaskStatus } from "@/lib/work/api";
+import { destination } from "@/lib/work/requests";
 import {
   assigneeText,
   dueText,
   emptyTaskForm,
+  showsTriage,
   sortTasks,
   TASK_CHANGE_KEYS,
   TASK_LIMITS,
@@ -82,16 +84,20 @@ function TaskBoard({ me }: { me: Me }) {
   const mine = useApiQuery(workKeys.taskList("mine"), () => workApi.listTasks("mine"));
   const queues = useApiQuery(workKeys.taskList("queues"), () => workApi.listTasks("queues"));
   const created = useApiQuery(workKeys.taskList("created"), () => workApi.listTasks("created"));
+  // Requests nobody could route with confidence: the API answers [] to people who don't triage.
+  const triage = useApiQuery(me.org_role === "guest" ? null : workKeys.taskList("triage"), () => workApi.listTasks("triage"));
   const { names, departments: departmentChoices } = useTaskNames(me);
   const [picked, setPicked] = useState<TaskScope | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const queries = { mine, queues, created };
+  const queries = { mine, queues, created, triage };
   const lists: Record<TaskScope, Task[] | null> = {
     mine: mine.state.status === "success" ? mine.state.data : null,
     queues: queues.state.status === "success" ? queues.state.data : null,
     created: created.state.status === "success" ? created.state.data : null,
+    triage: triage.state.status === "success" ? triage.state.data : null,
   };
+  const scopes = TASK_SCOPES.filter((s) => s.value !== "triage" || showsTriage(me.org_role, lists.triage));
 
   const tab: TaskScope = picked ?? "mine";
 
@@ -104,16 +110,24 @@ function TaskBoard({ me }: { me: Me }) {
             Work for you and your teams, created by people, by the assistant (after approval) and by workflows.
           </p>
         </div>
-        <Button onClick={() => setCreating(true)}>
-          <Plus data-icon="inline-start" />
-          New task
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {me.org_role !== "guest" ? (
+            <Link href="/requests" className={cn(buttonVariants({ variant: "outline" }))}>
+              <Inbox data-icon="inline-start" aria-hidden="true" />
+              Send a request
+            </Link>
+          ) : null}
+          <Button onClick={() => setCreating(true)}>
+            <Plus data-icon="inline-start" />
+            New task
+          </Button>
+        </div>
       </header>
 
       <Tabs value={tab} onValueChange={(value) => setPicked(value as TaskScope)} className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <TabsList>
-            {TASK_SCOPES.map((scope) => {
+            {scopes.map((scope) => {
               const count = lists[scope.value]?.filter((t) => t.status === "open" || t.status === "in_progress").length ?? 0;
               return (
                 <TabsTrigger key={scope.value} value={scope.value}>
@@ -123,9 +137,9 @@ function TaskBoard({ me }: { me: Me }) {
               );
             })}
           </TabsList>
-          <RefreshingHint active={TASK_SCOPES.some((s) => { const q = queries[s.value].state; return q.status === "success" && q.refreshing; })} />
+          <RefreshingHint active={scopes.some((s) => { const q = queries[s.value].state; return q.status === "success" && q.refreshing; })} />
         </div>
-        {TASK_SCOPES.map((scope) => {
+        {scopes.map((scope) => {
           const query = queries[scope.value];
           return (
             <TabsContent key={scope.value} value={scope.value}>
@@ -158,7 +172,15 @@ function TaskBoard({ me }: { me: Me }) {
   );
 }
 
-export const ORIGIN_ICONS = { assistant: Bot, research: Bot, workflow: Workflow, meeting: CalendarClock, document: FileText } as const;
+export const ORIGIN_ICONS = {
+  assistant: Bot,
+  research: Bot,
+  workflow: Workflow,
+  meeting: CalendarClock,
+  document: FileText,
+  request: Inbox,
+  email: Mail,
+} as const;
 
 /** "From a meeting" (a link to it) or "From the assistant"; nothing for tasks made here. */
 export function OriginBadge({ task }: { task: Task }) {
@@ -218,9 +240,21 @@ function TaskRow({ task, scope, names }: { task: Task; scope: TaskScope; names: 
           ) : null}
           <span title={formatDateTime(task.created_at)}>Created {formatRelative(task.created_at)}</span>
           <OriginBadge task={task} />
+          {task.routing ? (
+            <span className="flex items-center gap-1" title={task.routing.explanation}>
+              <Route className="size-3" aria-hidden="true" />
+              {task.triage ? "Waiting in triage" : `Routed to ${destination(task.routing)}`}
+            </span>
+          ) : null}
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        {scope === "triage" ? (
+          <Link href={`/tasks/${task.id}`} className={buttonVariants({ variant: "outline", size: "sm" })} aria-label={`Route ${task.title}`}>
+            <Route data-icon="inline-start" aria-hidden="true" />
+            Route
+          </Link>
+        ) : null}
         {scope === "queues" && !task.assignee_id ? (
           <Button variant="outline" size="sm" disabled={saving} onClick={() => void update({ assignee_id: names.meId }, "Claimed: it's yours now")}>
             <Hand data-icon="inline-start" />

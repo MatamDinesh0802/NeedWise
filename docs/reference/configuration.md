@@ -149,16 +149,18 @@ not shown here; where one exists it is a development value.
 | <a id="microsoft_client_secret"></a>`MICROSOFT_CLIENT_SECRET` | *secret* | *unset* | A client secret of that app registration. |
 | <a id="microsoft_tenant_id"></a>`MICROSOFT_TENANT_ID` | string | `organizations` | The Microsoft Entra directory people sign in with: your tenant id or a verified domain (a single-tenant app), or `organizations` for any work or school account. |
 
-## Email
+## Email and Slack
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| <a id="smtp_host"></a>`SMTP_HOST` | string | *unset* | Outgoing email (`send_email`, always after a person's approval). Unset: email is off. Development uses Mailpit, which delivers nothing: http://localhost:8025. |
+| <a id="smtp_host"></a>`SMTP_HOST` | string | *unset* | Outgoing email (`send_email`, always after a person's approval, and the notification emails people choose in Settings). Unset: email is off. Development uses Mailpit, which delivers nothing: http://localhost:8025. |
 | <a id="smtp_port"></a>`SMTP_PORT` | integer | `587` | The SMTP port. |
 | <a id="smtp_from"></a>`SMTP_FROM` | string | `WorkMind <workmind@localhost>` | The sender of outgoing email. |
 | <a id="smtp_username"></a>`SMTP_USERNAME` | string | *unset* | SMTP login, if the server needs one. |
 | <a id="smtp_password"></a>`SMTP_PASSWORD` | *secret* | *unset* | SMTP password, if the server needs one. |
 | <a id="smtp_starttls"></a>`SMTP_STARTTLS` | boolean | `false` | Upgrade the SMTP connection with STARTTLS. |
+| <a id="slack_api_url"></a>`SLACK_API_URL` | string | `https://slack.com/api` | Slack's Web API, for notification direct messages through a tenant's bot token (Admin > Automation). Point it at a stub to test without Slack. |
+| <a id="slack_webhook_prefix"></a>`SLACK_WEBHOOK_PREFIX` | string | `https://hooks.slack.com/` | Every Slack incoming webhook URL a tenant admin saves must start with this, so nobody can make the server post elsewhere. |
 
 ## Enterprise edition
 

@@ -12,10 +12,17 @@ carries out instead, such as making a document official (modules/knowledge/gover
 are never tools: no agent or workflow can propose one, and their arguments cannot be edited.
 One request may go to several approvers (the same `origin.request_id`); the first decision
 wins and the others become "superseded".
+
+Approver rules (approvers.py) say who those approvers are: a named person, the org admins, a
+department's managers, any one of a group, or a chain of stages that all approve in order. A
+chain's stage that approves is "forwarded": the next stage's approvers get their copies, with
+the arguments as approved so far, and only the last stage's approval runs the action. Rules
+never resolve to the person who asked. An escalation (escalation.py) adds copies for the
+escalation target to the same stage.
 """
 
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -30,6 +37,16 @@ from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.service import load_identity
 from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError, ToolRegistry
+from workmind.modules.work.approvers import (
+    Rule,
+    RuleError,
+    describe,
+    first_stage,
+    resolve_stage,
+    rule_json,
+    stored_rule,
+)
+from workmind.modules.work.events import approval_decided
 from workmind.modules.work.links import approval_link
 from workmind.modules.work.models import Approval
 from workmind.modules.work.notifications import notify
@@ -37,6 +54,8 @@ from workmind.modules.work.notifications import notify
 DEFAULT_TTL = timedelta(days=3)
 # Called after an approval is executed, rejected or expired: resumes the workflow run it belongs to.
 OnDecided = Callable[[Approval], Awaitable[None]]
+# Starts workflow runs an event queued (approval.decided), e.g. Resources.start_workflow_runs.
+StartRuns = Callable[[uuid.UUID, Sequence[uuid.UUID]], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -62,42 +81,105 @@ async def propose(
     approver_id: uuid.UUID | None = None,
     origin: dict[str, Any] | None = None,
     ttl: timedelta = DEFAULT_TTL,
+    rule: Rule | None = None,
 ) -> Approval:
-    """Stores the action. By default the person who asked approves it themselves."""
-    approval = Approval(
-        tenant_id=ctx.tenant_id,
-        tool=tool,
-        arguments=arguments,
-        summary=summary[:1000],
-        requested_by=ctx.user_id,
-        approver_id=approver_id or ctx.user_id,
-        expires_at=datetime.now(UTC) + ttl,
-        origin={**(origin or {}), "scopes": sorted(ctx.scopes)},
-    )
-    session.add(approval)
-    await session.flush()
-    await notify(
-        session,
-        ctx.tenant_id,
-        approval.approver_id,
-        kind="approval.requested",
-        title=f"Approval needed: {summary[:120]}",
-        link=approval_link(approval.id),
-    )
+    """Stores the action. By default the person who asked approves it themselves; with a
+    `rule`, everyone its first stage resolves to gets a copy (raises RuleError when a stage
+    has nobody). Returns the first copy."""
+    stored_origin = {**(origin or {}), "scopes": sorted(ctx.scopes)}
+    if rule is None:
+        approvers = [approver_id or ctx.user_id]
+    else:
+        approvers = await first_stage(session, rule, ctx.user_id)
+        stored_origin.setdefault("request_id", str(uuid.uuid4()))
+    copies = [
+        await add_copy(
+            session,
+            ctx.tenant_id,
+            tool=tool,
+            arguments=arguments,
+            summary=summary,
+            requested_by=ctx.user_id,
+            approver_id=approver,
+            expires_at=datetime.now(UTC) + ttl,
+            origin=stored_origin,
+            rule=rule,
+            stage=0,
+        )
+        for approver in approvers
+    ]
+    details: dict[str, Any] = {
+        "tool": tool,
+        "approver": str(copies[0].approver_id),
+        "argument_names": sorted(arguments),
+    }
+    if rule is not None:
+        details |= {
+            "approvers": [str(a) for a in approvers],
+            "rule": describe(rule),
+            "stages": len(rule),
+        }
     await record_event(
         session,
         tenant_id=ctx.tenant_id,
         actor=Actor(type="user", id=ctx.user_id),
         action="approval.requested",
         resource_type="approval",
-        resource_id=str(approval.id),
-        details={
-            "tool": tool,
-            "approver": str(approval.approver_id),
-            "argument_names": sorted(arguments),
-        },
+        resource_id=str(copies[0].id),
+        details=details,
+    )
+    return copies[0]
+
+
+async def add_copy(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    tool: str,
+    arguments: dict[str, Any],
+    summary: str,
+    requested_by: uuid.UUID,
+    approver_id: uuid.UUID,
+    expires_at: datetime,
+    origin: dict[str, Any],
+    rule: Rule | None,
+    stage: int,
+    escalated_from: uuid.UUID | None = None,
+    kind: str = "approval.requested",
+    title: str | None = None,
+) -> Approval:
+    """One approver's copy of a request, and their notification."""
+    approval = Approval(
+        tenant_id=tenant_id,
+        tool=tool,
+        arguments=arguments,
+        summary=summary[:1000],
+        requested_by=requested_by,
+        approver_id=approver_id,
+        expires_at=expires_at,
+        origin=dict(origin),
+        approver_rule=rule_json(rule) if rule is not None else None,
+        stage=stage,
+        escalated_from=escalated_from,
+    )
+    session.add(approval)
+    await session.flush()
+    await notify(
+        session,
+        tenant_id,
+        approver_id,
+        kind=kind,
+        title=title or f"Approval needed: {summary[:120]}",
+        body=_stage_note(rule, stage),
+        link=approval_link(approval.id),
     )
     return approval
+
+
+def _stage_note(rule: Rule | None, stage: int) -> str:
+    if rule is None or len(rule) < 2:
+        return ""
+    return f"Step {stage + 1} of {len(rule)} ({describe(rule)})."
 
 
 async def _requester_context(session: AsyncSession, approval: Approval) -> RequestContext | None:
@@ -128,7 +210,10 @@ async def decide(
     note: str | None = None,
     on_decided: OnDecided | None = None,
     kinds: Mapping[str, ApprovalKind] | None = None,
+    start_runs: StartRuns | None = None,
 ) -> Approval:
+    """`start_runs`: starts the workflow runs an `approval.decided` event queued (without it,
+    the beat task starts them within a minute)."""
     now = datetime.now(UTC)
     async with tenant_transaction(sessions, decider.tenant_id) as session:
         approval = await session.get(Approval, approval_id)
@@ -166,9 +251,16 @@ async def decide(
                     Approval.id != approval.id,
                     Approval.status == "pending",
                 )
-                .values(status="superseded", decided_by=decider.user_id, decided_at=now)
+                .values(
+                    status="superseded",
+                    decided_by=decider.user_id,
+                    decided_at=now,
+                    # Where the request was decided: the other copies' pages link to it.
+                    result={"decided_in": str(approval.id)},
+                )
             )
         requester = await _requester_context(session, approval) if decision == "approve" else None
+        rule = stored_rule(approval.approver_rule)
         await record_event(
             session,
             tenant_id=decider.tenant_id,
@@ -176,16 +268,102 @@ async def decide(
             action="approval.approved" if decision == "approve" else "approval.rejected",
             resource_type="approval",
             resource_id=str(approval.id),
-            details={"tool": approval.tool, "edited": edited_arguments is not None},
+            details={
+                "tool": approval.tool,
+                "edited": edited_arguments is not None,
+                **({"stage": approval.stage + 1, "stages": len(rule)} if rule else {}),
+            },
         )
+        forwarded = (
+            decision == "approve"
+            and kind is None
+            and rule is not None
+            and approval.stage + 1 < len(rule)
+            and await _forward(session, approval, rule, now)
+        )
+    if forwarded:
+        return approval  # the next stage decides; nothing runs yet
     if decision == "approve" and kind is not None:
         await _run_kind(sessions, kind, approval, decider)
-    elif decision == "approve":
+    elif decision == "approve" and approval.status == "approved":
         await _execute(sessions, registry, approval, requester)
-    await _close(sessions, approval)
+    run_ids = await _close(sessions, approval)
     if on_decided is not None:
         await on_decided(approval)
+    if run_ids and start_runs is not None:
+        await start_runs(approval.tenant_id, run_ids)
     return approval
+
+
+async def _forward(session: AsyncSession, approval: Approval, rule: Rule, now: datetime) -> bool:
+    """A chain's stage approved: the next stage's approvers get copies, with the arguments as
+    approved so far. Returns False (and marks the request failed) when the next stage has
+    nobody left who may decide: the action never runs half-approved."""
+    stage = approval.stage + 1
+    try:
+        approvers = await resolve_stage(session, rule[stage], approval.requested_by)
+    except RuleError as exc:
+        approvers, problem = [], str(exc)
+    else:
+        problem = f"nobody can approve step {stage + 1} of {len(rule)} ({describe([rule[stage]])})"
+    if not approvers:
+        approval.status, approval.result = "failed", {"error": problem}
+        return False
+    ttl = approval.expires_at - approval.created_at
+    origin = {
+        **approval.origin,
+        "request_id": str(uuid.uuid4()),
+        "forwarded_from": str(approval.id),
+    }
+    arguments = approval.edited_arguments or approval.arguments
+    copies = [
+        await add_copy(
+            session,
+            approval.tenant_id,
+            tool=approval.tool,
+            arguments=arguments,
+            summary=approval.summary,
+            requested_by=approval.requested_by,
+            approver_id=approver,
+            expires_at=now + ttl,
+            origin=origin,
+            rule=rule,
+            stage=stage,
+        )
+        for approver in approvers
+    ]
+    approval.status = "forwarded"
+    approval.result = {
+        "stage": stage + 1,
+        "stages": len(rule),
+        "next": [str(c.id) for c in copies],
+    }
+    if approval.decided_by != approval.requested_by:
+        await notify(
+            session,
+            approval.tenant_id,
+            approval.requested_by,
+            kind="approval.forwarded",
+            title=f"Approved at step {stage} of {len(rule)}: {approval.summary[:120]}",
+            body=approval.decision_note or "",
+            link=approval_link(approval.id),
+        )
+    await record_event(
+        session,
+        tenant_id=approval.tenant_id,
+        actor=Actor.system(),
+        action="approval.forwarded",
+        resource_type="approval",
+        resource_id=str(approval.id),
+        details={
+            "tool": approval.tool,
+            "stage": stage + 1,
+            "stages": len(rule),
+            "approvers": [str(a) for a in approvers],
+            "next": [str(c.id) for c in copies],
+        },
+    )
+    return True
 
 
 async def _execute(
@@ -235,10 +413,15 @@ async def _run_kind(
     approval.status, approval.result = status, result
 
 
-async def _close(sessions: async_sessionmaker[AsyncSession], approval: Approval) -> None:
+async def _close(sessions: async_sessionmaker[AsyncSession], approval: Approval) -> list[uuid.UUID]:
     """Tells the requester what happened (unless they decided it themselves), with the
-    approver's note."""
+    approver's note, and queues the workflows that listen for `approval.decided`."""
     async with tenant_transaction(sessions, approval.tenant_id) as session:
+        stored = await session.get(Approval, approval.id)
+        if stored is not None and stored.status != approval.status:
+            # A chain whose next stage had nobody: the request failed instead of moving on.
+            stored.status, stored.result = approval.status, approval.result
+        run_ids = await approval_decided(session, approval.tenant_id, approval)
         if approval.decided_by != approval.requested_by:
             await notify(
                 session,
@@ -249,6 +432,7 @@ async def _close(sessions: async_sessionmaker[AsyncSession], approval: Approval)
                 body=approval.decision_note or "",
                 link=approval_link(approval.id),
             )
+    return run_ids
 
 
 async def expire_due(

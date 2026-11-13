@@ -268,7 +268,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #8 — "Connecting to Google Drive is easy. Keeping permissions in sync is the hard part."**
 
-### Phase 8 — Workflow automation and approvals (v0.8) ✅ Built, except escalation, email/Slack notifications and request routing (see `docs/automation.md`)
+### Phase 8 — Workflow automation and approvals (v0.8) ✅ Done (see `docs/automation.md`)
 
 > DoD met live: "prepare the weekly ops report and email it to leadership" → four searches → a
 > drafted email → approval with an edit → sent (Mailpit) → every step audited.
@@ -283,12 +283,22 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > department agent in `seed/acme/company.yaml`; the weekly report is a template in Admin ›
 > Workflows, not a seeded workflow.
 >
-> Not built: escalation (an approval nobody decides expires after 3 days, with no reminder and no
-> second approver); notifications by email or Slack/Teams (in-app only); approver rules other than
-> a named person (roles, department managers, chains); classifying inbound requests into
-> department queues (a task reaches a queue only when a person, or the assistant after approval,
-> puts it there); a YAML editor (Admin › Workflows takes the definition as JSON); events other
-> than `document.ready`.
+> Added in the v1.0 pass (2026-11-13): reminders and escalation (hourly, once per approval step
+> and per task, to the backup approver, the managers or the org admins; expiry stays the last
+> step); notifications by email (immediate or a daily digest) and Slack (bot DMs, a channel
+> webhook), per person and category, from an outbox with retries; approver rules (org admins,
+> department managers, any-of groups, chains; never the requester) for workflow steps and the
+> assistant's actions; request routing (admin rules, then the router model above a threshold,
+> else triage; the Request form, an email stub, `create_task`), each decision explained and
+> audited, with a 39-item eval set; workflows in YAML with errors at their lines; the events
+> `document.updated`, `meeting.processed`, `task.completed` and `approval.decided`. Checked with
+> unit and integration tests (a scripted model, a stub mailer and a stub Slack); the routing eval
+> has not been run with a real model, and the new pages were checked in headless Chromium with a
+> mocked API (no axe serious findings), not against a running stack.
+>
+> Not built: Microsoft Teams notifications and Slack interactivity (approving from Slack);
+> reading a mailbox for email requests (only an endpoint for a bridge); per-workflow SLAs and
+> working hours; events for inbound email.
 
 **Goal:** WorkMind does work, safely, with humans in control.
 

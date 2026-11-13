@@ -64,7 +64,7 @@ them into notes as well as a searchable transcript ([Meetings](../meetings.md)).
 
 When a new version is ready, the previous version's passages are removed; the document is never
 missing from search in between. Workflows can start when a document is ready
-([Automation](../automation.md#event-triggers-documentready)).
+([Automation](../automation.md#event-triggers)).
 
 ## A document's page
 

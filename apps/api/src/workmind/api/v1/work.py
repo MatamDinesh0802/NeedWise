@@ -16,7 +16,7 @@ from workmind.core.errors import ApiError
 from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
-from workmind.modules.identity.models import SLUG_PATTERN, Department, DepartmentMember, User
+from workmind.modules.identity.models import SLUG_PATTERN, Department, User
 from workmind.modules.knowledge.governance import (
     OFFICIAL_KIND,
     official_status_kind,
@@ -28,9 +28,15 @@ from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import set_document_labels
 from workmind.modules.knowledge.service import collection_access
 from workmind.modules.work.approvals import ApprovalKind, decide
+from workmind.modules.work.approvers import RuleError, describe, first_stage, stored_rule
+from workmind.modules.work.events import task_completed
 from workmind.modules.work.links import task_link
+from workmind.modules.work.mentions import notify_mentions
 from workmind.modules.work.models import Approval, Notification, Task, Workflow, WorkflowRun
 from workmind.modules.work.notifications import notify
+from workmind.modules.work.routing import reroute
+from workmind.modules.work.visibility import can_see_task, is_triager, my_departments
+from workmind.modules.work.workflow_source import SourceProblem, parse_source, to_yaml
 from workmind.modules.work.workflows import (
     Definition,
     WorkflowDeps,
@@ -62,6 +68,12 @@ class ApprovalOut(BaseModel):
     result: dict[str, Any] | None
     origin: dict[str, Any]
     created_at: datetime
+    # Approver rules (docs/automation.md): this copy's step of the request, the rule in
+    # words, and the copy an escalation came from.
+    stage: int = 1
+    stages: int = 1
+    rule: str | None = None
+    escalated_from: uuid.UUID | None = None
 
 
 class Decision(BaseModel):
@@ -85,6 +97,7 @@ def _approval(a: Approval, withheld: set[uuid.UUID] | None = None) -> ApprovalOu
     arguments, summary = a.arguments, a.summary
     if a.tool == OFFICIAL_KIND and _document_of(a) in (withheld or set()):
         arguments, summary = withhold_official_request(a.arguments)
+    rule = stored_rule(a.approver_rule)
     return ApprovalOut(
         id=a.id,
         tool=a.tool,
@@ -100,6 +113,10 @@ def _approval(a: Approval, withheld: set[uuid.UUID] | None = None) -> ApprovalOu
         result=a.result,
         origin={k: v for k, v in a.origin.items() if k != "scopes"},
         created_at=a.created_at,
+        stage=a.stage + 1,
+        stages=len(rule) if rule else 1,
+        rule=describe(rule) if rule else None,
+        escalated_from=a.escalated_from,
     )
 
 
@@ -216,6 +233,7 @@ async def decide_approval(
         note=body.note,
         on_decided=lambda a: _resume_in_background(request, deps, a),
         kinds=kinds,
+        start_runs=resources.start_workflow_runs,  # approval.decided
     )
     return _approval(decided)
 
@@ -240,6 +258,9 @@ class TaskOut(BaseModel):
     due_at: datetime | None
     origin: dict[str, Any]
     created_at: datetime
+    # How a request reached its queue, and why (docs/automation.md); None for other tasks.
+    routing: dict[str, Any] | None = None
+    triage: bool = False
 
 
 class TaskCreate(BaseModel):
@@ -255,7 +276,12 @@ class TaskUpdate(BaseModel):
     assignee_id: uuid.UUID | None = None
 
 
-def _task(t: Task) -> TaskOut:
+class TaskRoute(BaseModel):
+    department: str = Field(pattern=SLUG_PATTERN)
+    note: str = Field(default="", max_length=300)
+
+
+def task_out(t: Task) -> TaskOut:
     return TaskOut(
         id=t.id,
         title=t.title,
@@ -267,24 +293,19 @@ def _task(t: Task) -> TaskOut:
         due_at=t.due_at,
         origin=t.origin,
         created_at=t.created_at,
-    )
-
-
-async def _my_departments(session: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
-    return list(
-        (
-            await session.scalars(
-                select(DepartmentMember.department_id).where(DepartmentMember.user_id == user_id)
-            )
-        ).all()
+        routing=t.routing,
+        triage=t.triage,
     )
 
 
 @router.get("/tasks")
 async def list_tasks(
-    ctx: AskContext, request: Request, scope: Literal["mine", "queues", "created"] = "mine"
+    ctx: AskContext,
+    request: Request,
+    scope: Literal["mine", "queues", "created", "triage"] = "mine",
 ) -> list[TaskOut]:
-    """Mine (assigned to me), my departments' queues (unassigned), or the ones I created."""
+    """Mine (assigned to me), my departments' queues (unassigned), the ones I created, or the
+    requests waiting in triage (for the people who triage; others get an empty list)."""
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         query = select(Task).where(Task.status.in_(("open", "in_progress")))
         if scope == "mine":
@@ -292,12 +313,16 @@ async def list_tasks(
         elif scope == "queues":
             query = query.where(
                 Task.assignee_id.is_(None),
-                Task.department_id.in_(await _my_departments(session, ctx.user_id)),
+                Task.department_id.in_(await my_departments(session, ctx.user_id)),
             )
+        elif scope == "triage":
+            if not await is_triager(session, ctx.user_id, ctx.org_role):
+                return []
+            query = query.where(Task.triage.is_(True), Task.assignee_id.is_(None))
         else:
             query = select(Task).where(Task.created_by == ctx.user_id)
         rows = (await session.scalars(query.order_by(Task.created_at.desc()).limit(200))).all()
-    return [_task(t) for t in rows]
+    return [task_out(t) for t in rows]
 
 
 @router.post("/tasks", status_code=201)
@@ -337,17 +362,16 @@ async def create_task(ctx: AskContext, request: Request, body: TaskCreate) -> Ta
                 title=f"New task: {body.title}",
                 link=task_link(task.id),
             )
-        return _task(task)
+        if ctx.org_role != "guest":  # guests' tasks are their own: nobody to mention
+            await notify_mentions(session, ctx.tenant_id, task, author=ctx.user_id)
+        return task_out(task)
 
 
 async def _visible_task(session: AsyncSession, ctx: RequestContext, task_id: uuid.UUID) -> Task:
-    """Assignee, creator, or a member of the task's department queue; others get a 404."""
+    """Assignee, creator, a member of the task's department queue, or (a request waiting in
+    triage) a triager; others get a 404."""
     task = await session.get(Task, task_id)
-    mine = task is not None and (
-        ctx.user_id in (task.assignee_id, task.created_by)
-        or (task.department_id in await _my_departments(session, ctx.user_id))
-    )
-    if task is None or not mine:
+    if task is None or not await can_see_task(session, ctx.user_id, ctx.org_role, task):
         raise ApiError(404, "not_found", "Task not found")
     return task
 
@@ -355,7 +379,7 @@ async def _visible_task(session: AsyncSession, ctx: RequestContext, task_id: uui
 @router.get("/tasks/{task_id}")
 async def get_task(ctx: AskContext, request: Request, task_id: uuid.UUID) -> TaskOut:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
-        return _task(await _visible_task(session, ctx, task_id))
+        return task_out(await _visible_task(session, ctx, task_id))
 
 
 @router.patch("/tasks/{task_id}")
@@ -366,8 +390,10 @@ async def update_task(
         # As in create_task: a guest's tasks are for themselves, so they cannot hand one over
         # either (that would put work, and a notification title, on any employee's list).
         raise ApiError(403, "forbidden", "Guests can only assign tasks to themselves")
-    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+    resources = resources_of(request)
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         task = await _visible_task(session, ctx, task_id)
+        completed = body.status == "done" and task.status != "done"
         if body.status:
             task.status = body.status
         if body.assignee_id and body.assignee_id != task.assignee_id:
@@ -384,6 +410,9 @@ async def update_task(
                     title=f"Handed over to you: {task.title}",
                     link=task_link(task.id),
                 )
+        # Workflows listening for task.completed: queued in this transaction (before its audit
+        # record, which locks the tenant's audit chain), started after it.
+        runs = await task_completed(session, ctx.tenant_id, task, ctx.user_id) if completed else []
         await record_event(
             session,
             tenant_id=ctx.tenant_id,
@@ -393,7 +422,42 @@ async def update_task(
             resource_id=str(task.id),
             details=body.model_dump(exclude_none=True, mode="json"),
         )
-        return _task(task)
+        out = task_out(task)
+    if runs:
+        await resources.start_workflow_runs(ctx.tenant_id, runs)
+    return out
+
+
+@router.post("/tasks/{task_id}/route")
+async def route_task(
+    ctx: AskContext, request: Request, task_id: uuid.UUID, body: TaskRoute
+) -> TaskOut:
+    """Routes a request by hand: a triager, for one waiting in triage, or a member of the queue
+    it reached, for one that belongs elsewhere. Audited as `request.routed` (method "human")."""
+    if ctx.org_role == "guest":
+        raise ApiError(403, "forbidden", "Guests cannot route requests")
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        task = await _visible_task(session, ctx, task_id)
+        allowed = (task.triage and await is_triager(session, ctx.user_id, ctx.org_role)) or (
+            task.department_id is not None
+            and task.department_id in await my_departments(session, ctx.user_id)
+        )
+        if not allowed or task.assignee_id is not None or task.status in ("done", "cancelled"):
+            raise ApiError(
+                403,
+                "not_allowed",
+                "You cannot route this task",
+                "Triagers route requests in triage; a queue's members route unclaimed requests "
+                "out of their queue.",
+            )
+        department = await session.scalar(
+            select(Department).where(Department.slug == body.department)
+        )
+        if department is None:
+            raise ApiError(422, "unknown_department", "Unknown department")
+        await reroute(session, ctx.tenant_id, ctx.user_id, task, department, body.note)
+        await session.flush()
+        return task_out(task)
 
 
 # --- Notifications ----------------------------------------------------------------------------
@@ -454,9 +518,13 @@ async def mark_read(ctx: AskContext, request: Request, body: MarkRead) -> Respon
 
 
 class WorkflowIn(BaseModel):
+    """The definition as an object (`definition`) or as text (`source`: YAML, or JSON, which
+    is YAML too); exactly one of them. Text keeps its comments for the editor."""
+
     key: str = Field(pattern=SLUG_PATTERN, max_length=60)
     name: str = Field(min_length=1, max_length=120)
-    definition: dict[str, Any]
+    definition: dict[str, Any] | None = None
+    source: str | None = Field(default=None, max_length=100_000)
     enabled: bool = True
 
 
@@ -465,8 +533,27 @@ class WorkflowOut(BaseModel):
     key: str
     name: str
     definition: dict[str, Any]
+    # As written (YAML or JSON), or the definition as YAML when it was saved as an object.
+    source: str
     enabled: bool
     owner_id: uuid.UUID
+
+
+class SourceIn(BaseModel):
+    source: str = Field(max_length=100_000)
+
+
+class SourceProblemOut(BaseModel):
+    line: int | None
+    column: int | None
+    path: str
+    message: str
+
+
+class ValidationOut(BaseModel):
+    valid: bool
+    errors: list[SourceProblemOut]
+    definition: dict[str, Any] | None
 
 
 class RunOut(BaseModel):
@@ -486,6 +573,7 @@ def _workflow(w: Workflow) -> WorkflowOut:
         key=w.key,
         name=w.name,
         definition=w.definition,
+        source=w.source if w.source is not None else to_yaml(w.definition),
         enabled=w.enabled,
         owner_id=w.owner_id,
     )
@@ -505,21 +593,68 @@ def _run(r: WorkflowRun) -> RunOut:
     )
 
 
-def _definition(raw: dict[str, Any]) -> dict[str, Any]:
+def _problems(problems: list[SourceProblem]) -> ApiError:
+    first = problems[0]
+    where = f"line {first.line}: " if first.line else ""
+    return ApiError(
+        422,
+        "invalid_workflow",
+        "The workflow definition is invalid",
+        f"{where}{first.path}: {first.message}"[:800],
+        extra={"errors": [p.as_json() for p in problems[:50]]},
+    )
+
+
+def _definition(body: WorkflowIn) -> dict[str, Any]:
+    """The validated definition, from the object or from the text (errors at their lines)."""
+    if (body.definition is None) == (body.source is None):
+        raise ApiError(422, "invalid_workflow", "Give the definition or its source, not both")
+    if body.source is not None:
+        parsed, problems = parse_source(body.source, Definition)
+        if parsed is None:
+            raise _problems(problems)
+        return parsed.model_dump(mode="json", exclude_none=True)
     try:
-        return Definition.model_validate(raw).model_dump(mode="json", exclude_none=True)
+        return Definition.model_validate(body.definition).model_dump(mode="json", exclude_none=True)
     except ValidationError as exc:
         raise ApiError(
             422, "invalid_workflow", "The workflow definition is invalid", str(exc)[:800]
         ) from exc
 
 
+async def _check_approvers(
+    session: AsyncSession, ctx: RequestContext, definition: dict[str, Any]
+) -> None:
+    """Every tool step's approver rule must resolve, now, to somebody (other than the admin
+    saving it, who is the requester of the run's actions, unless it names one person)."""
+    parsed = Definition.model_validate(definition)
+    for step in parsed.steps:
+        rule = step.rule()
+        if rule is None:
+            continue
+        try:
+            await first_stage(session, rule, ctx.user_id)
+        except RuleError as exc:
+            raise ApiError(
+                422,
+                "invalid_approver",
+                f"Step {step.id}: the approver rule cannot be met",
+                str(exc)[:500],
+            ) from exc
+
+
 async def _check_event_collection(
     session: AsyncSession, ctx: RequestContext, definition: dict[str, Any]
 ) -> None:
     """An event trigger's collection must exist, and the admin saving it must be able to view it:
-    runs act as them, so a collection they can't view would never start one."""
+    runs act as them, so a collection they can't view would never start one. A department
+    filter must name a department."""
     trigger: dict[str, Any] = definition.get("trigger") or {}
+    department = trigger.get("department")
+    if isinstance(department, str) and department:
+        found = await session.scalar(select(Department.id).where(Department.slug == department))
+        if found is None:
+            raise ApiError(422, "trigger_department", f"No department “{department}”")
     key = trigger.get("collection")
     if not isinstance(key, str) or not key:
         return
@@ -545,6 +680,19 @@ async def list_workflows(ctx: AdminContext, request: Request) -> list[WorkflowOu
         ]
 
 
+@admin_router.post("/validate")
+async def validate_workflow(ctx: AdminContext, body: SourceIn) -> ValidationOut:
+    """Checks a definition written as YAML or JSON without saving it: every problem with its
+    line and column (for the editor). Approver rules and trigger filters that name people,
+    departments or collections are checked when saving."""
+    parsed, problems = parse_source(body.source, Definition)
+    return ValidationOut(
+        valid=parsed is not None,
+        errors=[SourceProblemOut(**p.as_json()) for p in problems],
+        definition=parsed.model_dump(mode="json", exclude_none=True) if parsed else None,
+    )
+
+
 @admin_router.put("/{key}")
 async def save_workflow(
     ctx: AdminContext, request: Request, key: str, body: WorkflowIn
@@ -552,9 +700,10 @@ async def save_workflow(
     """Creates or replaces a workflow. It runs as the admin who saved it."""
     if body.key != key:
         raise ApiError(422, "key_mismatch", "The key in the body must match the URL")
-    definition = _definition(body.definition)
+    definition = _definition(body)
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         await _check_event_collection(session, ctx, definition)
+        await _check_approvers(session, ctx, definition)
         workflow = await session.scalar(select(Workflow).where(Workflow.key == key))
         if workflow is None:
             workflow = Workflow(
@@ -571,6 +720,7 @@ async def save_workflow(
             body.enabled,
             ctx.user_id,
         )
+        workflow.source = body.source
         await session.flush()
         await record_event(
             session,

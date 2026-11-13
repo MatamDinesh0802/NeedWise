@@ -14,7 +14,22 @@ export const TASK_SCOPES: readonly { value: TaskScope; label: string; empty: str
   { value: "mine", label: "Mine", empty: "Nothing assigned to you is open." },
   { value: "queues", label: "My team queues", empty: "Your teams' queues are empty: nothing is waiting to be picked up." },
   { value: "created", label: "Created by me", empty: "You haven't created any tasks yet." },
+  {
+    value: "triage",
+    label: "Triage",
+    empty: "No request is waiting to be routed: the rules and the model placed every one in a queue.",
+  },
 ];
+
+const ADMIN_ROLES = new Set(["owner", "admin"]);
+
+/**
+ * Whether to show the Triage tab: org admins always (they triage), anyone else only when the
+ * API gave them requests to route (members of the triage department, if the organization set one).
+ */
+export function showsTriage(orgRole: string, triage: readonly Task[] | null): boolean {
+  return ADMIN_ROLES.has(orgRole) || (triage?.length ?? 0) > 0;
+}
 
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   open: "Open",
@@ -104,7 +119,7 @@ export function toTaskCreate(form: TaskForm, meId: string): TaskCreate {
 }
 
 export interface TaskOrigin {
-  kind: "assistant" | "workflow" | "meeting" | "research" | "document";
+  kind: "assistant" | "workflow" | "meeting" | "research" | "document" | "request" | "email";
   label: string;
   /** Where it came from, when the viewer can go there. */
   href: `/${string}` | null;
@@ -129,6 +144,8 @@ export function taskOrigin(task: Pick<Task, "origin">): TaskOrigin | null {
     // A stale-document reminder (docs/connectors.md): the documents are listed in the task.
     return { kind: "document", label: "Stale synced documents", href: null };
   }
+  if (via === "request") return { kind: "request", label: "A request", href: null };
+  if (via === "email") return { kind: "email", label: "A request by email", href: null };
   if (via === "assistant") return { kind: "assistant", label: "From the assistant", href: null };
   if (via === "research") return { kind: "research", label: "From the assistant", href: null };
   if (via === "workflow") return { kind: "workflow", label: "From a workflow", href: null };
@@ -159,14 +176,30 @@ export function taskDocuments(task: Pick<Task, "origin">): { documents: TaskDocu
 }
 
 /**
- * Whether the viewer can still open a task (the API's rule in work.py `_visible_task`: assignee,
- * creator, or a member of its team queue). Handing a task over can take it out of view.
+ * Whether the viewer can still open a task (the API's rule in modules/work/visibility.py:
+ * assignee, creator, a member of its team queue, or, for a request in triage, an org admin).
+ * Handing a task over, or routing a request elsewhere, can take it out of view.
  */
 export function canSeeTask(
-  task: Pick<Task, "assignee_id" | "created_by" | "department_id">,
-  me: { id: string; departments: readonly { id: string }[] },
+  task: Pick<Task, "assignee_id" | "created_by" | "department_id" | "triage">,
+  me: { id: string; departments: readonly { id: string }[]; org_role?: string },
 ): boolean {
   if (task.assignee_id === me.id || task.created_by === me.id) return true;
+  if (task.triage && me.org_role && ADMIN_ROLES.has(me.org_role)) return true;
+  return task.department_id !== null && me.departments.some((d) => d.id === task.department_id);
+}
+
+/**
+ * Whether the viewer may route an unclaimed request by hand: from triage (a triager: an org
+ * admin, or someone who sees it without having asked for it), or out of their own queue.
+ */
+export function canRoute(
+  task: Pick<Task, "assignee_id" | "created_by" | "department_id" | "status" | "triage">,
+  me: { id: string; departments: readonly { id: string }[]; org_role: string },
+): boolean {
+  const open = task.status === "open" || task.status === "in_progress";
+  if (!open || task.assignee_id !== null || me.org_role === "guest") return false;
+  if (task.triage) return ADMIN_ROLES.has(me.org_role) || task.created_by !== me.id;
   return task.department_id !== null && me.departments.some((d) => d.id === task.department_id);
 }
 

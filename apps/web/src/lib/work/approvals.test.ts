@@ -12,11 +12,14 @@ import {
   draftFor,
   editPayload,
   initialCardState,
+  isSettled,
   latestApproval,
   outcomeText,
   reduceCard,
+  relatedApprovalHref,
   serverFieldErrors,
   splitAddresses,
+  stepText,
   withAssigneeName,
   type CardAction,
   type CardState,
@@ -78,6 +81,15 @@ describe("status", () => {
     );
     expect(outcomeText(approval({ status: "rejected", decision_note: "Wrong week" }), NOW)).toBe("Rejected: “Wrong week”. Nothing ran.");
     expect(outcomeText(approval({ status: "expired" }), NOW)).toBe("No decision in time. Nothing ran.");
+    expect(outcomeText(approval({ status: "forwarded", result: { stage: 3, stages: 3 } }), NOW)).toBe(
+      "Approved at this step. Step 3 decides next; nothing runs until the last step approves.",
+    );
+    expect(isSettled(approval({ status: "forwarded" }), NOW)).toBe(true);
+    expect(stepText(approval({ stage: 2, stages: 3, rule: "a or b, then c, then d" }))).toBe("Step 2 of 3: a or b, then c, then d");
+    expect(stepText(approval({ stage: 1, stages: 1, rule: "an org admin" }))).toBe("Approver rule: an org admin");
+    expect(stepText(approval())).toBeNull();
+    expect(relatedApprovalHref(approval({ status: "superseded", result: { decided_in: "ap9" } }))).toBe("/approvals/ap9");
+    expect(relatedApprovalHref(approval({ status: "executed" }))).toBeNull();
     expect(outcomeText(approval(), NOW)).toBeNull();
   });
 });

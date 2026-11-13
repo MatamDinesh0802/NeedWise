@@ -253,9 +253,14 @@ async def upload_meeting(
             await resources.models.for_tenant(ctx.tenant_id),
             resources.transcriber,
             resources.ingestion,
+            start_runs=resources.start_workflow_runs,
         )
-        resources.runs.start(process_meeting(deps, ctx.tenant_id, summary.id))
+        resources.runs.start(_process(deps, ctx.tenant_id, summary.id))
     return summary
+
+
+async def _process(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUID) -> None:
+    await process_meeting(deps, tenant_id, meeting_id)  # starts its workflow runs itself
 
 
 @router.get("/meetings")

@@ -96,6 +96,7 @@ export const FEATURE_LABELS: Record<UsageFeature, string> = {
   analytics: "Insights",
   agent_test: "Agent test console",
   eval: "Evaluations",
+  routing: "Request routing",
 };
 
 export function featureLabel(feature: string): string {

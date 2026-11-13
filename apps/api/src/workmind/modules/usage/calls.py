@@ -25,7 +25,15 @@ from typing import Final, Literal, Protocol, get_args
 from workmind.providers.llm import LLMUsage
 
 Feature = Literal[
-    "chat", "agents", "research", "workflow", "meetings", "analytics", "agent_test", "eval"
+    "chat",
+    "agents",
+    "research",
+    "workflow",
+    "meetings",
+    "analytics",
+    "agent_test",
+    "eval",
+    "routing",  # request routing's model step (docs/automation.md)
 ]
 # A call made outside every known entry point is still recorded, under this name (and logged).
 UNATTRIBUTED: Final = "other"

@@ -259,3 +259,31 @@ agents:
     collections: [leadership-strategy]
     examples:
       - What did we tell the board in Q3?
+
+# Request routing (docs/automation.md): what sends a request (the Request form, the email
+# stub, the assistant's create_task without a queue) to a department's queue. Rules decide
+# first; what no rule decides goes to the router model, and below its confidence threshold to
+# triage. Seeded only for a tenant without rules, so an admin's edits survive a re-seed. The
+# request routing eval (evals/datasets/request_routing.jsonl) runs against these rules.
+request_routing:
+  - department: finance
+    categories: [Billing and expenses]
+    keywords: [invoice, refund, reimbursement, expense report, expense claim, purchase order, vendor payment, per diem]
+  - department: hr
+    categories: [People and leave]
+    keywords: [parental leave, annual leave, sick leave, payslip, onboarding, offboarding, benefits, performance review]
+  - department: operations
+    categories: [IT and equipment, Warehouse and shipping]
+    keywords: [laptop, vpn, password reset, badge, monitor, shipment, pallet, forklift, exclusion zone]
+  - department: engineering
+    categories: [Product bug]
+    keywords: [fleetos, fleet api, firmware, stack trace, regression, deploy]
+  - department: support
+    categories: [Customer issue]
+    keywords: [customer complaint, support ticket, warranty claim, rma]
+  - department: sales
+    categories: [Deals and quotes]
+    keywords: [quote, pricing, contract renewal, discount, proposal]
+  - department: marketing
+    categories: [Campaigns and brand]
+    keywords: [campaign, press release, webinar, social media, logo, trade show]

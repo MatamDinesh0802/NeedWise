@@ -26,10 +26,10 @@ export function bellLabel(count: number): string {
 export type NotificationTone = "approval" | "done" | "problem" | "task" | "info";
 
 export function notificationTone(kind: string): NotificationTone {
-  if (kind === "approval.requested") return "approval";
-  if (kind === "approval.executed" || kind === "workflow.succeeded" || kind === "meeting.ready") return "done";
-  if (/\.(failed|rejected|expired|cancelled)$/.test(kind)) return "problem";
-  if (kind.startsWith("task.")) return "task";
+  if (kind === "approval.requested" || kind === "approval.reminder" || kind === "approval.escalated") return "approval";
+  if (kind === "approval.executed" || kind === "approval.forwarded" || kind === "workflow.succeeded" || kind === "meeting.ready") return "done";
+  if (/\.(failed|rejected|expired|cancelled)$/.test(kind) || kind === "task.escalated") return "problem";
+  if (kind.startsWith("task.") || kind.startsWith("request.") || kind === "mention") return "task";
   return "info";
 }
 

@@ -1,15 +1,16 @@
 "use client";
 
-import { ArrowLeft, CalendarClock, Hand, ListTodo, UserRoundPen } from "lucide-react";
+import { ArrowLeft, CalendarClock, Hand, ListTodo, Route, UserRoundPen } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { SignedInGate } from "@/components/auth/signed-in-gate";
-import { SimpleSelect } from "@/components/data/form";
+import { Field, SimpleSelect } from "@/components/data/form";
 import { EmptyState, ErrorAlert, RefreshingHint } from "@/components/data/states";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ColleaguePicker } from "@/components/work/colleague-picker";
 import { OriginBadge, useTaskNames, type Names } from "@/components/work/tasks-view";
@@ -23,7 +24,8 @@ import { getQueryCache } from "@/lib/stores/query-cache";
 import { toast } from "@/lib/stores/toasts";
 import { cn } from "@/lib/utils";
 import { workApi, workKeys, type Task, type TaskStatus, type TaskUpdate } from "@/lib/work/api";
-import { assigneeText, canClaim, canSeeTask, dueText, TASK_CHANGE_KEYS, TASK_STATUS_LABELS, TASK_STATUSES, taskDocuments } from "@/lib/work/tasks";
+import { destination, routingLine } from "@/lib/work/requests";
+import { assigneeText, canClaim, canRoute, canSeeTask, dueText, TASK_CHANGE_KEYS, TASK_STATUS_LABELS, TASK_STATUSES, taskDocuments } from "@/lib/work/tasks";
 
 /** The description; a stale-document reminder lists its documents as links instead of text. */
 export function TaskBody({ task }: { task: Pick<Task, "description" | "origin"> }) {
@@ -48,6 +50,84 @@ export function TaskBody({ task }: { task: Pick<Task, "description" | "origin"> 
       </ul>
       {more > 0 ? <p className="text-xs text-muted-foreground">…and {more} more, listed under Sources › Stale synced documents.</p> : null}
     </div>
+  );
+}
+
+
+/** Routes a request by hand: picks the department queue, with an optional note (audited). */
+function RouteForm({ task, me, onDone }: { task: Task; me: Me; onDone: () => void }) {
+  const router = useRouter();
+  const options = useApiQuery(workKeys.requestOptions, workApi.requestOptions);
+  const [department, setDepartment] = useState("");
+  const [note, setNote] = useState("");
+  const [pending, setPending] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const choices = options.state.status === "success" ? options.state.data.departments.filter((d) => d.key !== task.routing?.department) : [];
+
+  async function route() {
+    if (!department) {
+      setProblem("Choose the team that should handle it.");
+      return;
+    }
+    setPending(true);
+    try {
+      const routed = await workApi.routeTask(task.id, department, note.trim());
+      toast({ title: `Sent to ${destination(routed.routing ?? { department, department_name: null })}`, description: routed.title });
+      await Promise.all(TASK_CHANGE_KEYS.map(invalidateQueries));
+      if (!canSeeTask(routed, me)) {
+        router.push("/tasks");
+        return;
+      }
+      getQueryCache().setData<Task>(workKeys.task(task.id), () => routed);
+      onDone();
+    } catch (error) {
+      const message = errorMessage(error);
+      toast({ title: message.title, description: message.description, tone: "error" });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <form
+      className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void route();
+      }}
+    >
+      <p className="text-sm font-medium">Which team should handle it?</p>
+      <p className="text-xs text-muted-foreground">Its managers are told. The decision and your note are kept with the task and in the audit log.</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Team" error={problem}>
+          {({ id, describedBy, invalid }) => (
+            <SimpleSelect
+              id={id}
+              value={department}
+              describedBy={describedBy}
+              invalid={invalid}
+              disabled={pending || options.state.status !== "success"}
+              onChange={(value) => {
+                setDepartment(value);
+                setProblem(null);
+              }}
+              options={[{ value: "", label: "Choose a team", disabled: true }, ...choices.map((d) => ({ value: d.key, label: d.name }))]}
+            />
+          )}
+        </Field>
+        <Field label="Note (optional)">
+          {({ id, describedBy }) => <Input id={id} maxLength={300} value={note} disabled={pending} onChange={(e) => setNote(e.target.value)} aria-describedby={describedBy} />}
+        </Field>
+      </div>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={pending}>
+          {pending ? "Routing…" : "Route"}
+        </Button>
+        <Button type="button" size="sm" variant="outline" disabled={pending} onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -83,7 +163,7 @@ function TaskDetail({ id, me }: { id: string; me: Me }) {
         <EmptyState
           icon={ListTodo}
           title="Task not found"
-          description="It doesn't exist, or it isn't yours to see: a task is visible to its assignee, its creator and the team whose queue it is in."
+          description="It doesn't exist, or it isn't yours to see: a task is visible to its assignee, its creator and the team whose queue it is in (a request waiting in triage, to the people who route requests)."
           action={
             <Link href="/tasks" className={buttonVariants({ variant: "outline", size: "sm" })}>
               Go to your tasks
@@ -101,6 +181,7 @@ function TaskCard({ task, me, names, refreshing }: { task: Task; me: Me; names: 
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [handingOver, setHandingOver] = useState(false);
+  const [routing, setRouting] = useState(false);
   const due = dueText(task.due_at);
   const closed = task.status === "done" || task.status === "cancelled";
   const creator = personName(task.created_by, { meId: me.id, people: names.people, fallback: task.created_by ? "A colleague" : "The system" });
@@ -166,6 +247,17 @@ function TaskCard({ task, me, names, refreshing }: { task: Task; me: Me; names: 
         <dd>
           <span title={formatDateTime(task.created_at)}>{formatRelative(task.created_at)}</span> by {creator}
         </dd>
+        {task.routing ? (
+          <>
+            <dt className="text-muted-foreground">Routing</dt>
+            <dd className="flex flex-col gap-0.5">
+              <span>
+                {task.triage ? "Waiting in triage for a person to route it" : `${destination(task.routing)} · ${routingLine(task.routing)}`}
+              </span>
+              <span className="text-xs text-muted-foreground">{task.routing.explanation}</span>
+            </dd>
+          </>
+        ) : null}
       </dl>
 
       <div className="flex flex-wrap items-center gap-2 border-t pt-4">
@@ -192,7 +284,15 @@ function TaskCard({ task, me, names, refreshing }: { task: Task; me: Me; names: 
             Hand over
           </Button>
         ) : null}
+        {canRoute(task, me) ? (
+          <Button variant={task.triage ? "default" : "ghost"} size="sm" disabled={saving} aria-expanded={routing} onClick={() => setRouting((open) => !open)}>
+            <Route data-icon="inline-start" aria-hidden="true" />
+            {task.triage ? "Route it" : "Send to another queue"}
+          </Button>
+        ) : null}
       </div>
+
+      {routing ? <RouteForm task={task} onDone={() => setRouting(false)} me={me} /> : null}
 
       {handingOver ? (
         <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3">

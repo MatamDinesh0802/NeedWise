@@ -8,6 +8,7 @@ from dataclasses import asdict
 from typing import Any
 
 from workmind.evals.analytics import AnalyticsRecord, summarize
+from workmind.evals.request_routing import request_routing_section
 from workmind.evals.runner import (
     AnswerRecord,
     EvalRun,
@@ -255,6 +256,9 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
     if run.routing:
         out += routing_section(run.routing)
 
+    if run.request_routing:
+        out += request_routing_section(run.request_routing)
+
     if run.meetings:
         out += [
             "",
@@ -501,6 +505,7 @@ def as_json(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
             "violations": run.violations,
             "retrieval": [asdict(r) for r in run.retrieval],
             "routing": [asdict(r) for r in run.routing],
+            "request_routing": [asdict(r) for r in run.request_routing],
             "meetings": [asdict(m) for m in run.meetings],
             "analytics_summary": summarize(run.analytics) if run.analytics else {},
             "analytics": [asdict(r) for r in run.analytics],

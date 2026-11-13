@@ -87,6 +87,12 @@ class Resources:
     limits: RateLimiter
     # What these were created from (Enterprise tasks that sync sources need it).
     settings: Settings | None = None
+    # Outgoing email (SMTP_HOST), for send_email and notification emails; None: not configured.
+    mailer: SmtpMailer | None = None
+    # Slack notifications (modules/work/slack.py).
+    slack_api_url: str = "https://slack.com/api"
+    slack_webhook_prefix: str = "https://hooks.slack.com/"
+    public_url: str = "http://localhost:8480"
 
     @property
     def llm(self) -> LLMProvider:
@@ -171,7 +177,6 @@ class Resources:
             else None
         )
         tools.register(send_email_tool(mailer, db))
-        tools.register(create_task_tool(db))
         if settings.searxng_url:
             tools.register(web_search_tool(http, settings.searxng_url))
         usage = UsageMeter(db, valkey, extensions)
@@ -184,6 +189,8 @@ class Resources:
             system_local=create_local_llm(settings, http),
         )
         models.meter = usage
+        # A task without an assignee or department is routed, with the tenant's router model.
+        tools.register(create_task_tool(db, models.for_tenant))
         resources = cls(
             engine=engine,
             db=db,
@@ -233,6 +240,10 @@ class Resources:
                 valkey, merge_limits(settings.rate_limits), enabled=settings.rate_limits_enabled
             ),
             settings=settings,
+            mailer=mailer,
+            slack_api_url=settings.slack_api_url,
+            slack_webhook_prefix=settings.slack_webhook_prefix,
+            public_url=settings.public_url,
         )
         if isinstance(resources.ingestion, InlineDispatcher):
             resources.ingestion.start_runs = resources.start_workflow_runs

@@ -140,6 +140,27 @@ describe("ApprovalCard", () => {
     });
   });
 
+  it("shows the step of a chain, an escalation, and where a forwarded step went", () => {
+    const first = approval({
+      status: "forwarded",
+      approver_id: "u-marcus",
+      requested_by: "u-bob",
+      stage: 1,
+      stages: 2,
+      rule: "a manager of the requester's department, then hannah.schmidt@acme.test",
+      result: { stage: 2, stages: 2, next: ["ap2"] },
+    });
+    const html = renderToStaticMarkup(<ApprovalCard approval={first} meId="u-bob" />);
+    expect(html).toContain("Step 1 of 2: a manager of the requester&#x27;s department, then hannah.schmidt@acme.test");
+    expect(html).toContain("Approved, with the next approver");
+    expect(html).toContain("Step 2 decides next; nothing runs until the last step approves.");
+    expect(html).toContain('href="/approvals/ap2"');
+    expect(html).not.toContain("Approve and send");
+
+    const escalated = approval({ approver_id: "u-ivan", escalated_from: "ap0" });
+    expect(renderToStaticMarkup(<ApprovalCard approval={escalated} meId="u-ivan" />)).toContain("Escalated to you");
+  });
+
   it("falls back to a JSON view for tools it doesn't know", () => {
     const html = renderToStaticMarkup(<ApprovalCard approval={approval({ tool: "erp.update_stock", arguments: { sku: "A1", qty: 3 } })} meId="u-olivia" />);
     expect(html).toContain("Use erp.update_stock");

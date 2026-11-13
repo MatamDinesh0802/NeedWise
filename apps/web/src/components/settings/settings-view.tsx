@@ -1,6 +1,7 @@
 "use client";
 
 import { AccessTokensCard } from "@/components/settings/access-tokens";
+import { NotificationsCard } from "@/components/settings/notifications-card";
 import { SignedInGate } from "@/components/auth/signed-in-gate";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,12 +50,13 @@ export function SettingsView() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <header>
         <h2 className="text-xl font-semibold tracking-tight">Settings</h2>
-        <p className="text-sm text-muted-foreground">Your profile and access tokens.</p>
+        <p className="text-sm text-muted-foreground">Your profile, where your notifications go, and access tokens.</p>
       </header>
       <SignedInGate purpose="see your settings">
         {(me) => (
           <>
             <ProfileCard me={me} />
+            <NotificationsCard me={me} />
             <AccessTokensCard />
           </>
         )}

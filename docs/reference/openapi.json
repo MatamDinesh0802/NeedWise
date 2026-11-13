@@ -361,6 +361,132 @@
         }
       }
     },
+    "/api/v1/me/work-preferences": {
+      "get": {
+        "tags": [
+          "automation"
+        ],
+        "summary": "Get Work Preferences",
+        "description": "Where my notifications go besides the app, and my backup approver.",
+        "operationId": "get_work_preferences_api_v1_me_work_preferences_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "automation"
+        ],
+        "summary": "Put Work Preferences",
+        "description": "My backup approver gets my approvals when they wait too long (escalation): an active\ncolleague other than me, never a guest. Changing it is audited.",
+        "operationId": "put_work_preferences_api_v1_me_work_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/options": {
+      "get": {
+        "tags": [
+          "automation"
+        ],
+        "summary": "Request Options",
+        "description": "What the Request form offers: the categories admins set up, and the departments.",
+        "operationId": "request_options_api_v1_requests_options_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestOptions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests": {
+      "post": {
+        "tags": [
+          "automation"
+        ],
+        "summary": "Create Request",
+        "description": "A request for whichever team handles it: routed by the admins' rules, then the router\nmodel, else to triage. The answer says where it went and why.",
+        "operationId": "create_request_api_v1_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me": {
       "get": {
         "tags": [
@@ -4774,7 +4900,7 @@
           "work"
         ],
         "summary": "List Tasks",
-        "description": "Mine (assigned to me), my departments' queues (unassigned), or the ones I created.",
+        "description": "Mine (assigned to me), my departments' queues (unassigned), the ones I created, or the\nrequests waiting in triage (for the people who triage; others get an empty list).",
         "operationId": "list_tasks_api_v1_tasks_get",
         "parameters": [
           {
@@ -4785,7 +4911,8 @@
               "enum": [
                 "mine",
                 "queues",
-                "created"
+                "created",
+                "triage"
               ],
               "type": "string",
               "default": "mine",
@@ -4955,6 +5082,60 @@
         }
       }
     },
+    "/api/v1/tasks/{task_id}/route": {
+      "post": {
+        "tags": [
+          "work"
+        ],
+        "summary": "Route Task",
+        "description": "Routes a request by hand: a triager, for one waiting in triage, or a member of the queue\nit reached, for one that belongs elsewhere. Audited as `request.routed` (method \"human\").",
+        "operationId": "route_task_api_v1_tasks__task_id__route_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRoute"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/notifications": {
       "get": {
         "tags": [
@@ -5032,6 +5213,48 @@
                   },
                   "type": "array",
                   "title": "Response List Workflows Api V1 Admin Workflows Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/workflows/validate": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Validate Workflow",
+        "description": "Checks a definition written as YAML or JSON without saving it: every problem with its\nline and column (for the editor). Approver rules and trigger filters that name people,\ndepartments or collections are checked when saving.",
+        "operationId": "validate_workflow_api_v1_admin_workflows_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -5197,6 +5420,323 @@
                     "$ref": "#/components/schemas/workmind__api__v1__work__RunOut"
                   },
                   "title": "Response List Runs Api V1 Admin Workflows  Key  Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/requests/inbound-email": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Inbound Email",
+        "description": "Email-to-request (a stub): a mail bridge, holding an org admin's access token, posts each\nmessage sent to the request mailbox. The sender must be an active colleague (a member, not\na guest); the request is theirs, routed like the form's. Nothing reads a mailbox itself.",
+        "operationId": "inbound_email_api_v1_admin_requests_inbound_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboundEmail"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/automation": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Automation",
+        "operationId": "get_automation_api_v1_admin_automation_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Put Automation",
+        "description": "Escalation SLAs, approver rules per tool (for the assistant's proposed actions; workflow\nsteps may name their own), and request routing. Audited.",
+        "operationId": "put_automation_api_v1_admin_automation_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/routing-rules": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Routing Rules",
+        "operationId": "get_routing_rules_api_v1_admin_routing_rules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RoutingRuleOut"
+                  },
+                  "type": "array",
+                  "title": "Response Get Routing Rules Api V1 Admin Routing Rules Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Put Routing Rules",
+        "description": "Replaces every routing rule (in this order). A rule needs a keyword or a category.",
+        "operationId": "put_routing_rules_api_v1_admin_routing_rules_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutingRulesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RoutingRuleOut"
+                  },
+                  "type": "array",
+                  "title": "Response Put Routing Rules Api V1 Admin Routing Rules Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/routing/preview": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Preview Routing",
+        "description": "Where a request like this would go, and why, without creating anything. Its model call\n(when the rules decide nothing) counts for the admin, as \"routing\".",
+        "operationId": "preview_routing_api_v1_admin_routing_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/workmind__api__v1__automation__RoutingOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/slack": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Slack",
+        "operationId": "get_slack_api_v1_admin_slack_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Put Slack",
+        "description": "The bot token (xoxb-…, for direct messages; scopes users:read.email and chat:write) and\nthe incoming webhook (one channel) are sealed with the deployment's encryption key.",
+        "operationId": "put_slack_api_v1_admin_slack_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/slack/test": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Test Slack",
+        "description": "Sends a test: a direct message to you through the bot, or a post through the webhook.",
+        "operationId": "test_slack_api_v1_admin_slack_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackTest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackTestOut"
                 }
               }
             }
@@ -7820,6 +8360,39 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "stage": {
+            "type": "integer",
+            "title": "Stage",
+            "default": 1
+          },
+          "stages": {
+            "type": "integer",
+            "title": "Stages",
+            "default": 1
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule"
+          },
+          "escalated_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Escalated From"
           }
         },
         "type": "object",
@@ -8064,6 +8637,59 @@
         ],
         "title": "Author"
       },
+      "AutomationIn": {
+        "properties": {
+          "escalation": {
+            "$ref": "#/components/schemas/EscalationPolicy",
+            "default": {
+              "enabled": true,
+              "remind_before_hours": 12,
+              "escalate_after_hours": 24,
+              "escalate_to": "backup",
+              "task_remind_before_hours": 24,
+              "task_escalate_after_hours": 24,
+              "queue_escalate_after_hours": 48
+            }
+          },
+          "approver_rules": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Approver Rules",
+            "default": {}
+          },
+          "routing": {
+            "$ref": "#/components/schemas/RoutingPolicy",
+            "default": {
+              "use_model": true,
+              "threshold": 0.7
+            }
+          }
+        },
+        "type": "object",
+        "title": "AutomationIn"
+      },
+      "AutomationOut": {
+        "properties": {
+          "escalation": {
+            "$ref": "#/components/schemas/EscalationPolicy"
+          },
+          "approver_rules": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Approver Rules"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/RoutingPolicy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "escalation",
+          "approver_rules",
+          "routing"
+        ],
+        "title": "AutomationOut"
+      },
       "BudgetIn": {
         "properties": {
           "scope": {
@@ -8189,6 +8815,38 @@
         ],
         "title": "CatalogOut"
       },
+      "CategoryOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "approvals",
+              "assignments",
+              "escalations",
+              "reviews",
+              "budgets",
+              "mentions",
+              "other"
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "description"
+        ],
+        "title": "CategoryOut"
+      },
       "ChainOut": {
         "properties": {
           "ok": {
@@ -8218,6 +8876,28 @@
           "first_broken_seq"
         ],
         "title": "ChainOut"
+      },
+      "Channels": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "enum": [
+              "off",
+              "immediate",
+              "digest"
+            ],
+            "title": "Email",
+            "default": "off"
+          },
+          "slack": {
+            "type": "boolean",
+            "title": "Slack",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "Channels",
+        "description": "One category's channels. Off by default: a person opts in."
       },
       "Chart": {
         "properties": {
@@ -9332,6 +10012,24 @@
         "type": "object",
         "title": "DepartmentMemberSet"
       },
+      "DepartmentOption": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name"
+        ],
+        "title": "DepartmentOption"
+      },
       "DepartmentOut": {
         "properties": {
           "id": {
@@ -9890,6 +10588,63 @@
         ],
         "title": "EditionOut"
       },
+      "EscalationPolicy": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "remind_before_hours": {
+            "type": "integer",
+            "maximum": 720.0,
+            "minimum": 0.0,
+            "title": "Remind Before Hours",
+            "default": 12
+          },
+          "escalate_after_hours": {
+            "type": "integer",
+            "maximum": 720.0,
+            "minimum": 0.0,
+            "title": "Escalate After Hours",
+            "default": 24
+          },
+          "escalate_to": {
+            "type": "string",
+            "enum": [
+              "backup",
+              "manager",
+              "org_admins"
+            ],
+            "title": "Escalate To",
+            "default": "backup"
+          },
+          "task_remind_before_hours": {
+            "type": "integer",
+            "maximum": 720.0,
+            "minimum": 0.0,
+            "title": "Task Remind Before Hours",
+            "default": 24
+          },
+          "task_escalate_after_hours": {
+            "type": "integer",
+            "maximum": 720.0,
+            "minimum": 0.0,
+            "title": "Task Escalate After Hours",
+            "default": 24
+          },
+          "queue_escalate_after_hours": {
+            "type": "integer",
+            "maximum": 720.0,
+            "minimum": 0.0,
+            "title": "Queue Escalate After Hours",
+            "default": 48
+          }
+        },
+        "type": "object",
+        "title": "EscalationPolicy",
+        "description": "When people are reminded and when work goes to someone else. 0 turns a step off.\n\nApprovals: a reminder `remind_before_hours` before the approval expires, and, after\n`escalate_after_hours` without a decision, a copy for the escalation target (`escalate_to`\nfirst: the approver's backup approver, then their department's managers, then the org\nadmins). Expiry stays the last step.\nTasks: a reminder `task_remind_before_hours` before the due date; `task_escalate_after_hours`\nafter it, the assignee's escalation target is told. A queue task nobody claimed for\n`queue_escalate_after_hours` goes to the department's managers."
+      },
       "FeedbackIn": {
         "properties": {
           "rating": {
@@ -10215,6 +10970,34 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "InboundEmail": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "maxLength": 254,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "From"
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Subject"
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 20000,
+            "title": "Body",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "subject"
+        ],
+        "title": "InboundEmail"
       },
       "Items": {
         "properties": {
@@ -11788,6 +12571,113 @@
         ],
         "title": "PolicyOut"
       },
+      "PreferencesIn": {
+        "properties": {
+          "channels": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Channels"
+            },
+            "propertyNames": {
+              "enum": [
+                "approvals",
+                "assignments",
+                "escalations",
+                "reviews",
+                "budgets",
+                "mentions",
+                "other"
+              ]
+            },
+            "type": "object",
+            "title": "Channels",
+            "default": {}
+          },
+          "digest_hour": {
+            "type": "integer",
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Digest Hour",
+            "default": 8
+          },
+          "backup_approver_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Approver Id"
+          }
+        },
+        "type": "object",
+        "title": "PreferencesIn"
+      },
+      "PreferencesOut": {
+        "properties": {
+          "channels": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Channels"
+            },
+            "propertyNames": {
+              "enum": [
+                "approvals",
+                "assignments",
+                "escalations",
+                "reviews",
+                "budgets",
+                "mentions",
+                "other"
+              ]
+            },
+            "type": "object",
+            "title": "Channels"
+          },
+          "digest_hour": {
+            "type": "integer",
+            "title": "Digest Hour"
+          },
+          "backup_approver_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Approver Id"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryOut"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "email_available": {
+            "type": "boolean",
+            "title": "Email Available"
+          },
+          "slack_available": {
+            "type": "boolean",
+            "title": "Slack Available"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channels",
+          "digest_hour",
+          "backup_approver_id",
+          "categories",
+          "email_available",
+          "slack_available"
+        ],
+        "title": "PreferencesOut"
+      },
       "ProviderIn": {
         "properties": {
           "name": {
@@ -12044,6 +12934,91 @@
         ],
         "title": "QueryOut"
       },
+      "RequestCreate": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 5000,
+            "title": "Description",
+            "default": ""
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "due": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "RequestCreate"
+      },
+      "RequestOptions": {
+        "properties": {
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "departments": {
+            "items": {
+              "$ref": "#/components/schemas/DepartmentOption"
+            },
+            "type": "array",
+            "title": "Departments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "categories",
+          "departments"
+        ],
+        "title": "RequestOptions"
+      },
+      "RequestOut": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/TaskOut"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/workmind__api__v1__automation__RoutingOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task",
+          "routing"
+        ],
+        "title": "RequestOut"
+      },
       "ResearchOut": {
         "properties": {
           "answer": {
@@ -12283,53 +13258,137 @@
         ],
         "title": "RoutedAgent"
       },
-      "RoutingOut": {
+      "RoutingPolicy": {
         "properties": {
-          "mode": {
-            "type": "string",
-            "title": "Mode"
+          "use_model": {
+            "type": "boolean",
+            "title": "Use Model",
+            "default": true
           },
-          "agents": {
+          "threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Threshold",
+            "default": 0.7
+          },
+          "triage_department": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triage Department"
+          }
+        },
+        "type": "object",
+        "title": "RoutingPolicy",
+        "description": "Request routing: rules first, then (if `use_model`) the router model, whose choice\ncounts only at `threshold` confidence or more. Everything else goes to triage, which the\norg admins handle, plus the members of `triage_department` if one is set."
+      },
+      "RoutingRuleIn": {
+        "properties": {
+          "department": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "title": "Department"
+          },
+          "keywords": {
             "items": {
-              "$ref": "#/components/schemas/RoutedAgent"
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
             },
             "type": "array",
-            "title": "Agents"
+            "maxItems": 100,
+            "title": "Keywords",
+            "default": []
           },
-          "routed_by": {
-            "type": "string",
-            "title": "Routed By"
+          "categories": {
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Categories",
+            "default": []
           },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
-          },
-          "tested_agent_picked": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tested Agent Picked"
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
           }
         },
         "type": "object",
         "required": [
-          "mode",
-          "agents",
-          "routed_by"
+          "department"
         ],
-        "title": "RoutingOut"
+        "title": "RoutingRuleIn"
+      },
+      "RoutingRuleOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "department": {
+            "type": "string",
+            "title": "Department"
+          },
+          "department_name": {
+            "type": "string",
+            "title": "Department Name"
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Keywords"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "department",
+          "department_name",
+          "keywords",
+          "categories",
+          "enabled"
+        ],
+        "title": "RoutingRuleOut"
+      },
+      "RoutingRulesIn": {
+        "properties": {
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RoutingRuleIn"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Rules",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "RoutingRulesIn"
       },
       "RunError": {
         "properties": {
@@ -12472,6 +13531,131 @@
         ],
         "title": "SearchRequest"
       },
+      "SlackIn": {
+        "properties": {
+          "bot_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Token"
+          },
+          "webhook_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Url"
+          },
+          "channel_categories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "approvals",
+                "assignments",
+                "escalations",
+                "reviews",
+                "budgets",
+                "mentions",
+                "other"
+              ]
+            },
+            "type": "array",
+            "title": "Channel Categories",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "SlackIn",
+        "description": "Leave a secret out to keep it, send null to remove it. Secrets are never returned."
+      },
+      "SlackOut": {
+        "properties": {
+          "bot_configured": {
+            "type": "boolean",
+            "title": "Bot Configured"
+          },
+          "webhook_configured": {
+            "type": "boolean",
+            "title": "Webhook Configured"
+          },
+          "channel_categories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "approvals",
+                "assignments",
+                "escalations",
+                "reviews",
+                "budgets",
+                "mentions",
+                "other"
+              ]
+            },
+            "type": "array",
+            "title": "Channel Categories"
+          },
+          "webhook_prefix": {
+            "type": "string",
+            "title": "Webhook Prefix"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bot_configured",
+          "webhook_configured",
+          "channel_categories",
+          "webhook_prefix"
+        ],
+        "title": "SlackOut"
+      },
+      "SlackTest": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "bot",
+              "webhook"
+            ],
+            "title": "Target"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "title": "SlackTest"
+      },
+      "SlackTestOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "detail"
+        ],
+        "title": "SlackTestOut"
+      },
       "SourceCreate": {
         "properties": {
           "key": {
@@ -12558,6 +13742,20 @@
           "config"
         ],
         "title": "SourceCreate"
+      },
+      "SourceIn": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "maxLength": 100000,
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "SourceIn"
       },
       "SourceKindOut": {
         "properties": {
@@ -12911,6 +14109,48 @@
           "stale"
         ],
         "title": "SourceOut"
+      },
+      "SourceProblemOut": {
+        "properties": {
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "line",
+          "column",
+          "path",
+          "message"
+        ],
+        "title": "SourceProblemOut"
       },
       "SourceUpdate": {
         "properties": {
@@ -13378,6 +14618,23 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing"
+          },
+          "triage": {
+            "type": "boolean",
+            "title": "Triage",
+            "default": false
           }
         },
         "type": "object",
@@ -13394,6 +14651,26 @@
           "created_at"
         ],
         "title": "TaskOut"
+      },
+      "TaskRoute": {
+        "properties": {
+          "department": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "title": "Department"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 300,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "department"
+        ],
+        "title": "TaskRoute"
       },
       "TaskUpdate": {
         "properties": {
@@ -14307,6 +15584,40 @@
         ],
         "title": "ValidationError"
       },
+      "ValidationOut": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/SourceProblemOut"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid",
+          "errors",
+          "definition"
+        ],
+        "title": "ValidationOut"
+      },
       "Verification": {
         "properties": {
           "numbers": {
@@ -14404,9 +15715,28 @@
             "title": "Name"
           },
           "definition": {
-            "additionalProperties": true,
-            "type": "object",
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Definition"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "enabled": {
             "type": "boolean",
@@ -14417,10 +15747,10 @@
         "type": "object",
         "required": [
           "key",
-          "name",
-          "definition"
+          "name"
         ],
-        "title": "WorkflowIn"
+        "title": "WorkflowIn",
+        "description": "The definition as an object (`definition`) or as text (`source`: YAML, or JSON, which\nis YAML too); exactly one of them. Text keeps its comments for the editor."
       },
       "WorkflowOut": {
         "properties": {
@@ -14442,6 +15772,10 @@
             "type": "object",
             "title": "Definition"
           },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
           "enabled": {
             "type": "boolean",
             "title": "Enabled"
@@ -14458,15 +15792,64 @@
           "key",
           "name",
           "definition",
+          "source",
           "enabled",
           "owner_id"
         ],
         "title": "WorkflowOut"
       },
+      "workmind__api__v1__agents__RoutingOut": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/RoutedAgent"
+            },
+            "type": "array",
+            "title": "Agents"
+          },
+          "routed_by": {
+            "type": "string",
+            "title": "Routed By"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "tested_agent_picked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tested Agent Picked"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "agents",
+          "routed_by"
+        ],
+        "title": "RoutingOut"
+      },
       "workmind__api__v1__agents__TestOut": {
         "properties": {
           "routing": {
-            "$ref": "#/components/schemas/RoutingOut"
+            "$ref": "#/components/schemas/workmind__api__v1__agents__RoutingOut"
           },
           "answer": {
             "anyOf": [
@@ -14627,6 +16010,68 @@
           "examples"
         ],
         "title": "ModelOut"
+      },
+      "workmind__api__v1__automation__RoutingOut": {
+        "properties": {
+          "method": {
+            "type": "string",
+            "title": "Method"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          },
+          "department_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Name"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "matched": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Matched"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "method",
+          "department",
+          "department_name",
+          "confidence",
+          "matched",
+          "explanation"
+        ],
+        "title": "RoutingOut"
       },
       "workmind__api__v1__knowledge__VersionOut": {
         "properties": {

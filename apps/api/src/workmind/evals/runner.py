@@ -45,6 +45,7 @@ from workmind.evals.redteam import (
     text_leaks,
     violations,
 )
+from workmind.evals.request_routing import RequestRoutingRecord
 from workmind.modules.agents.orchestrator import (
     OrchestratorDeps,
     OrchestratorEvent,
@@ -278,6 +279,7 @@ class EvalRun:
     analytics: list[AnalyticsRecord] = field(default_factory=list[AnalyticsRecord])
     # The analytics suite itself: data changed during the run, a gold query failed, ...
     analytics_problems: list[str] = field(default_factory=list[str])
+    request_routing: list[RequestRoutingRecord] = field(default_factory=list[RequestRoutingRecord])
 
     @property
     def leaks(self) -> list[str]:

@@ -20,8 +20,10 @@ from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import Department, User
 from workmind.modules.tools.registry import Tool, ToolError, ToolResult
 from workmind.modules.work.links import task_link
+from workmind.modules.work.mentions import notify_mentions
 from workmind.modules.work.models import Task
 from workmind.modules.work.notifications import notify
+from workmind.modules.work.routing import LLMFor, RequestIn, create_routed_task, route
 from workmind.providers.email import EmailError, SmtpMailer
 
 # A plain shape check, deliberately not deliverability: internal and test domains (".test",
@@ -40,7 +42,11 @@ class CreateTask(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=5000)
     assignee: Email | None = Field(default=None, description="who should do it")
-    department: str | None = Field(default=None, description="department key, for a team queue")
+    department: str | None = Field(
+        default=None,
+        description="department key, for a team queue; leave both empty to have the request "
+        "routed to the right queue",
+    )
     due: date | None = None
 
 
@@ -94,10 +100,17 @@ def send_email_tool(mailer: SmtpMailer | None, sessions: async_sessionmaker[Asyn
     )
 
 
-def create_task_tool(sessions: async_sessionmaker[AsyncSession]) -> Tool:
+def create_task_tool(
+    sessions: async_sessionmaker[AsyncSession], llm_for: LLMFor | None = None
+) -> Tool:
+    """Without an assignee or a department, the task is a request: routed to a department
+    queue by the tenant's rules and the router model, or to triage (routing.py)."""
+
     async def run(ctx: RequestContext, args: Any) -> ToolResult:
         assert isinstance(args, CreateTask)  # noqa: S101
         _refuse_guests(ctx, "create tasks through WorkMind")
+        if not args.assignee and not args.department:
+            return await _routed(ctx, args)
         async with tenant_transaction(sessions, ctx.tenant_id) as session:
             assignee = (
                 await session.scalar(select(User).where(User.email == str(args.assignee).lower()))
@@ -148,11 +161,47 @@ def create_task_tool(sessions: async_sessionmaker[AsyncSession]) -> Tool:
                     "department": args.department,
                 },
             )
+            await notify_mentions(session, ctx.tenant_id, task, author=ctx.user_id)
             task_id = task.id
         return ToolResult(f"Created task {args.title!r}.", {"task_id": str(task_id)})
 
+    async def _routed(ctx: RequestContext, args: CreateTask) -> ToolResult:
+        request = RequestIn(title=args.title, description=args.description, due=args.due)
+        decision = await route(sessions, llm_for, ctx.tenant_id, ctx.user_id, request)
+        async with tenant_transaction(sessions, ctx.tenant_id) as session:
+            task = await create_routed_task(
+                session,
+                ctx.tenant_id,
+                ctx.user_id,
+                request,
+                decision,
+                source="assistant",
+                origin={"via": "assistant"},
+            )
+            await record_event(
+                session,
+                tenant_id=ctx.tenant_id,
+                actor=Actor(type="user", id=ctx.user_id),
+                action="task.created",
+                resource_type="task",
+                resource_id=str(task.id),
+                details={
+                    "assignee": None,
+                    "department": decision.department.key if decision.department else None,
+                    "routed": decision.method,
+                },
+            )
+            task_id = task.id
+        where = decision.department.name if decision.department else "triage"
+        return ToolResult(
+            f"Created request {args.title!r} in the {where} queue. {decision.explanation}",
+            {"task_id": str(task_id), "routing": decision.as_json("assistant")},
+        )
+
     def summarize(arguments: dict[str, Any]) -> str:
-        who = arguments.get("assignee") or arguments.get("department") or "nobody yet"
+        who = arguments.get("assignee") or arguments.get("department")
+        if not who:
+            return f"Create a request, routed to the right team: {arguments.get('title', '')}"
         return f"Create a task for {who}: {arguments.get('title', '')}"
 
     return Tool(

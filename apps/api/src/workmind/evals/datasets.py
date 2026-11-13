@@ -155,7 +155,34 @@ class AnalyticsItem(_Item):
         return self
 
 
-Suite = Literal["qa", "redteam", "abstention", "cross", "routing", "meetings", "analytics"]
+class RequestRoutingItem(BaseModel):
+    """An inbound request and the queue it belongs in (docs/automation.md, request routing).
+
+    expected: a department key, or "triage" for a request too vague for anyone but a person to
+    route. via: "rule" when the seeded rules (seed/acme/company.yaml) must route it on their
+    own, without a model call; "model" when no rule may decide it, so the router model must;
+    "triage" for the vague ones (no rule may decide them either)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    title: str
+    description: str = ""
+    category: str | None = None
+    source: Literal["form", "email", "assistant"] = "form"
+    expected: str
+    via: Literal["rule", "model", "triage"]
+    note: str = ""
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "RequestRoutingItem":
+        if (self.via == "triage") != (self.expected == "triage"):
+            raise ValueError(f"{self.id}: via triage exactly when the expected queue is triage")
+        return self
+
+
+Suite = Literal[
+    "qa", "redteam", "abstention", "cross", "routing", "meetings", "analytics", "request_routing"
+]
 FILES: dict[Suite, str] = {
     "qa": "retrieval_qa.jsonl",
     "redteam": "red_team.jsonl",
@@ -164,6 +191,7 @@ FILES: dict[Suite, str] = {
     "routing": "routing.jsonl",
     "meetings": "meetings.jsonl",
     "analytics": "analytics.jsonl",
+    "request_routing": "request_routing.jsonl",
 }
 
 
@@ -199,6 +227,13 @@ def load_routing(directory: Path) -> list[RoutingItem]:
     return [
         RoutingItem.model_validate(json.loads(line))
         for line in _lines(directory / FILES["routing"])
+    ]
+
+
+def load_request_routing(directory: Path) -> list[RequestRoutingItem]:
+    return [
+        RequestRoutingItem.model_validate(json.loads(line))
+        for line in _lines(directory / FILES["request_routing"])
     ]
 
 

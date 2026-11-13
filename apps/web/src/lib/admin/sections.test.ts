@@ -14,8 +14,8 @@ const keys = (role: OrgRole | null | undefined) => visibleAdminSections(role).ma
 
 describe("admin sections by role", () => {
   it.each([
-    ["owner", ["people", "departments", "groups", "collections", "governance", "sources", "agents", "workflows", "analytics", "models", "budgets", "audit", "retention"]],
-    ["admin", ["people", "departments", "groups", "collections", "governance", "sources", "agents", "workflows", "analytics", "models", "budgets", "audit", "retention"]],
+    ["owner", ["people", "departments", "groups", "collections", "governance", "sources", "agents", "workflows", "automation", "analytics", "models", "budgets", "audit", "retention"]],
+    ["admin", ["people", "departments", "groups", "collections", "governance", "sources", "agents", "workflows", "automation", "analytics", "models", "budgets", "audit", "retention"]],
     ["auditor", ["audit"]],
     ["member", []],
     ["guest", []],

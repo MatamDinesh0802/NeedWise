@@ -13,7 +13,7 @@ from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.models import AuditEvent
 from workmind.modules.tools.registry import ToolRegistry
 from workmind.modules.work.approvals import decide
-from workmind.modules.work.models import Approval, Workflow, WorkflowRun
+from workmind.modules.work.models import Approval, AutomationSettings, Workflow, WorkflowRun
 from workmind.modules.work.tools import send_email_tool
 from workmind.modules.work.workflows import WorkflowDeps, render, resume_after, start_run
 from workmind.providers.email import SentEmail
@@ -212,3 +212,94 @@ async def test_an_invalid_action_fails_the_run_before_anyone_is_asked(
         approvals = (await session.scalars(select(Approval))).all()
     assert run.status == "failed"
     assert approvals == []  # nobody was asked to approve something that cannot run
+
+
+async def use_definition(
+    sessions: SessionFactory, acme: Acme, workflow: Workflow, owner: str, send: dict[str, Any]
+) -> None:
+    async with tenant_transaction(sessions, acme.tenant_id) as session:
+        stored = await session.get(Workflow, workflow.id)
+        assert stored is not None
+        stored.owner_id = acme.users[owner]
+        stored.definition = {**REPORT, "steps": [REPORT["steps"][0], send]}
+
+
+async def test_a_chain_approved_step_runs_after_its_last_stage_and_resumes_the_run(
+    app_sessions: SessionFactory, acme: Acme
+) -> None:
+    deps, mailer, workflow = await setup(app_sessions, acme)
+    chain = {"chain": [{"department_manager": "requester"}, "priya.raman@acme.test"]}
+    await use_definition(
+        app_sessions, acme, workflow, "erin", {**REPORT["steps"][1], "approver": chain}
+    )
+
+    paused = await start_run(deps, acme.tenant_id, workflow.id, trigger="manual")
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        first = (await session.scalars(select(Approval))).one()
+    assert (paused.status, first.approver_id) == ("waiting_approval", acme.users["olivia.grant"])
+
+    forwarded = await decide(
+        app_sessions,
+        deps.tools,
+        person(acme, "olivia.grant"),
+        first.id,
+        decision="approve",
+        on_decided=lambda a: resume_after(deps, a),
+    )
+    assert forwarded.status == "forwarded"
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        run = await session.get(WorkflowRun, paused.id)
+        second = (await session.scalars(select(Approval).where(Approval.stage == 1))).one()
+    assert run is not None
+    assert run.status == "waiting_approval"
+    assert mailer.sent == []
+    assert second.origin["workflow_run_id"] == str(paused.id)
+
+    await decide(
+        app_sessions,
+        deps.tools,
+        person(acme, "priya.raman"),
+        second.id,
+        decision="approve",
+        on_decided=lambda a: resume_after(deps, a),
+    )
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        run = await session.get(WorkflowRun, paused.id)
+    assert run is not None
+    assert run.status == "succeeded"
+    assert len(mailer.sent) == 1
+
+
+async def test_a_step_nobody_else_can_approve_fails_and_the_tenant_rule_is_the_default(
+    app_sessions: SessionFactory, acme: Acme
+) -> None:
+    deps, mailer, workflow = await setup(app_sessions, acme)
+    # Olivia manages Operations: "her department's manager" is nobody but herself.
+    send = {**REPORT["steps"][1], "approver": {"department_manager": "requester"}}
+    await use_definition(app_sessions, acme, workflow, "olivia.grant", send)
+    failed = await start_run(deps, acme.tenant_id, workflow.id, trigger="manual")
+    assert failed.status == "failed"
+    assert failed.error is not None
+    assert "Nobody can approve" in failed.error
+
+    # Without an approver of its own, the step uses the tenant's rule for the tool.
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        session.add(
+            AutomationSettings(
+                tenant_id=acme.tenant_id, approver_rules={"send_email": {"role": "org_admins"}}
+            )
+        )
+    plain = {k: v for k, v in REPORT["steps"][1].items() if k != "approver"}
+    await use_definition(app_sessions, acme, workflow, "erin", plain)
+    paused = await start_run(deps, acme.tenant_id, workflow.id, trigger="manual")
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        approvers = (
+            await session.scalars(
+                select(Approval.approver_id).where(
+                    Approval.origin["workflow_run_id"].astext == str(paused.id)
+                )
+            )
+        ).all()
+    assert paused.status == "waiting_approval"
+    assert approvers == [acme.users["priya.raman"]]  # the org admins, but never Erin herself
+    assert mailer.sent == []

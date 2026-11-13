@@ -8,6 +8,7 @@ from workmind.api.v1 import (
     agents,
     analytics,
     assistant,
+    automation,
     conversations,
     edition,
     governance,
@@ -26,6 +27,7 @@ router = APIRouter()
 router.include_router(system)
 router.include_router(edition.router)
 router.include_router(tokens.router)  # before /me so /me/tokens matches here
+router.include_router(automation.router)
 router.include_router(me.router)
 router.include_router(admin.router)
 router.include_router(knowledge.router)
@@ -41,6 +43,7 @@ router.include_router(identity_mappings.router)
 router.include_router(sources.oauth_router)
 router.include_router(work.router)
 router.include_router(work.admin_router)
+router.include_router(automation.admin_router)
 router.include_router(meetings.router)
 router.include_router(analytics.router)
 router.include_router(analytics.admin_router)

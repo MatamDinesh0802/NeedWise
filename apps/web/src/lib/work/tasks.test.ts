@@ -3,7 +3,21 @@ import { describe, expect, it } from "vitest";
 import { meetingsKeys } from "@/lib/meetings/api";
 import { workKeys, type Task } from "@/lib/work/api";
 
-import { assigneeText, canClaim, canSeeTask, dueText, emptyTaskForm, sortTasks, TASK_CHANGE_KEYS, taskDocuments, taskOrigin, toTaskCreate, validateTaskForm } from "./tasks";
+import {
+  assigneeText,
+  canClaim,
+  canRoute,
+  canSeeTask,
+  dueText,
+  emptyTaskForm,
+  showsTriage,
+  sortTasks,
+  TASK_CHANGE_KEYS,
+  taskDocuments,
+  taskOrigin,
+  toTaskCreate,
+  validateTaskForm,
+} from "./tasks";
 
 const task = (overrides: Partial<Task> = {}): Task => ({
   id: "t1",
@@ -132,5 +146,37 @@ describe("one task", () => {
     expect(canClaim(task({ department_id: "d-hr" }), me)).toBe(false);
     expect(canClaim(task({ department_id: "d-ops", status: "done" }), me)).toBe(false);
     expect(canClaim(task(), me)).toBe(false);
+  });
+
+  it("names requests by where they came from", () => {
+    expect(taskOrigin(task({ origin: { via: "request" } }))?.label).toBe("A request");
+    expect(taskOrigin(task({ origin: { via: "email" } }))?.label).toBe("A request by email");
+  });
+
+  it("is visible to org admins while it waits in triage, like the API's rule", () => {
+    const waiting = task({ triage: true, created_by: "u-other" });
+    expect(canSeeTask(waiting, { ...me, org_role: "admin" })).toBe(true);
+    expect(canSeeTask(waiting, { ...me, org_role: "member" })).toBe(false);
+  });
+
+  it("can be routed by triagers from triage and by queue members out of their queue", () => {
+    const admin = { ...me, org_role: "admin" };
+    const member = { ...me, org_role: "member" };
+    expect(canRoute(task({ triage: true, created_by: "u-other" }), admin)).toBe(true);
+    // A member who sees a request in triage they didn't send is in the triage department.
+    expect(canRoute(task({ triage: true, created_by: "u-other" }), member)).toBe(true);
+    expect(canRoute(task({ triage: true, created_by: "u-me" }), member)).toBe(false);
+    expect(canRoute(task({ department_id: "d-ops" }), member)).toBe(true);
+    expect(canRoute(task({ department_id: "d-hr" }), member)).toBe(false);
+    expect(canRoute(task({ department_id: "d-ops", assignee_id: "u-other" }), member)).toBe(false);
+    expect(canRoute(task({ department_id: "d-ops", status: "done" }), member)).toBe(false);
+    expect(canRoute(task({ triage: true, created_by: "u-other" }), { ...me, org_role: "guest" })).toBe(false);
+  });
+
+  it("shows the Triage tab to admins, and to others only when they have requests to route", () => {
+    expect(showsTriage("admin", [])).toBe(true);
+    expect(showsTriage("member", [])).toBe(false);
+    expect(showsTriage("member", null)).toBe(false);
+    expect(showsTriage("member", [task({ triage: true })])).toBe(true);
   });
 });

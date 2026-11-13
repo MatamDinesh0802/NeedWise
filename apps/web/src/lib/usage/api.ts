@@ -13,10 +13,10 @@ import { apiFetch, apiJson } from "@/lib/api";
 
 export type GroupBy = "department" | "user" | "agent" | "model" | "feature";
 export type Interval = "day" | "week" | "month";
-export type UsageFeature = "chat" | "agents" | "research" | "workflow" | "meetings" | "analytics" | "agent_test" | "eval";
+export type UsageFeature = "chat" | "agents" | "research" | "workflow" | "meetings" | "analytics" | "agent_test" | "eval" | "routing";
 
 export const GROUP_BYS: readonly GroupBy[] = ["department", "user", "agent", "model", "feature"];
-export const USAGE_FEATURES: readonly UsageFeature[] = ["chat", "agents", "research", "workflow", "meetings", "analytics", "agent_test", "eval"];
+export const USAGE_FEATURES: readonly UsageFeature[] = ["chat", "agents", "research", "workflow", "meetings", "analytics", "agent_test", "eval", "routing"];
 
 export interface NamedRef {
   id: string;

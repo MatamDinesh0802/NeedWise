@@ -130,10 +130,10 @@ counter is under its tenant's key prefix. Sign-in is counted per client address.
 
 | Limit | Endpoints | Per person | Per tenant |
 |---|---|---|---|
-| `chat` | a message in a conversation, `POST /ask` | 30 | 600 |
+| `chat` | a message in a conversation, `POST /ask`, a request (`POST /requests`, `POST /admin/requests/inbound-email`) | 30 | 600 |
 | `research` | `POST /research`, a message in research mode | 6 | 120 |
 | `search` | `POST /search` | 120 | 2400 |
-| `agent_test` | trying an agent draft, testing a model provider, running a workflow now | 10 | 100 |
+| `agent_test` | trying an agent draft, testing a model provider, running a workflow now, previewing request routing, testing Slack | 10 | 100 |
 | `analytics` | `POST /analytics/ask`, `POST /analytics/query` | 20 | 400 |
 | `ingest` | document uploads and re-indexing, meeting uploads, analytics table uploads | 60 | 600 |
 | `sync` | `POST /admin/sources/{key}/sync` | 6 | 30 |

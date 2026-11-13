@@ -21,6 +21,7 @@ export const WORKSPACE_PAGES: readonly AppPage[] = [
   { path: "/agents", section: "AI Agents", heading: { name: "AI Agents", level: 2 } },
   { path: "/approvals", section: "Approvals", heading: { name: "Approvals", level: 2 } },
   { path: "/tasks", section: "Tasks", heading: { name: "Tasks", level: 2 } },
+  { path: "/requests", section: "Requests", heading: { name: "Send a request", level: 2 } },
   { path: "/meetings", section: "Meetings", heading: { name: "Meetings", level: 2 } },
   { path: "/insights", section: "Insights", heading: { name: "Insights", level: 2 } },
   { path: "/analytics", section: "Usage", heading: { name: /^(Usage across the whole organization|Usage in .+|Your own usage)$/, level: 2 } },
@@ -37,6 +38,7 @@ export const ADMIN_PAGES: readonly AppPage[] = [
   ["/admin/sources", "Sources"],
   ["/admin/agents", "Agents"],
   ["/admin/workflows", "Workflows"],
+  ["/admin/automation", "Automation"],
   ["/admin/analytics", "Analytics"],
   ["/admin/models", "Models"],
   ["/admin/budgets", "Budgets"],
@@ -54,6 +56,7 @@ export const ADMIN_SECTION_LINKS = [
   "Sources",
   "Agents",
   "Workflows",
+  "Automation",
   "Analytics",
   "Models",
   "Budgets",
@@ -62,8 +65,8 @@ export const ADMIN_SECTION_LINKS = [
 ];
 
 /** The pages the accessibility and layout checks cover. */
-export const MAIN_PATHS = ["/", "/chat", "/knowledge", "/agents", "/approvals", "/tasks", "/meetings", "/insights", "/analytics", "/settings"];
-export const MAIN_ADMIN_PATHS = ["/admin/people", "/admin/agents", "/admin/models", "/admin/budgets", "/admin/governance", "/admin/audit", "/admin/retention"];
+export const MAIN_PATHS = ["/", "/chat", "/knowledge", "/agents", "/approvals", "/tasks", "/requests", "/meetings", "/insights", "/analytics", "/settings"];
+export const MAIN_ADMIN_PATHS = ["/admin/people", "/admin/agents", "/admin/workflows", "/admin/automation", "/admin/models", "/admin/budgets", "/admin/governance", "/admin/audit", "/admin/retention"];
 
 export function sectionTitle(page: Page) {
   return page.getByRole("heading", { level: 1 });

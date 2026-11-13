@@ -126,6 +126,29 @@ Upgrade notes so far:
   kinds. A downgrade below it deletes Confluence and SharePoint sources (their documents stay,
   as uploads).
 
+Automation: what Phase 8 left out ([docs/automation.md](docs/automation.md)):
+
+- Approver rules: org admins, a department's or the requester's managers, any-of groups and
+  sequential chains (edits carry to the next step; never the requester), in workflow steps and
+  per tool for the assistant's actions (Admin › Automation).
+- Reminders before an approval expires and escalation after the organization's SLA (backup
+  approver, then managers, then org admins), once per approval step; due-date reminders and
+  escalations for tasks. Hourly beat task `workmind.escalate_work`. Expiry stays the last step.
+- Notifications by email (right away or a daily digest) and Slack (bot DMs, a channel webhook),
+  per person and category, from an outbox sent and retried by `workmind.deliver_notifications`
+  (every minute). Slack secrets are sealed and rotate with `wm secrets rotate`. Mentions in task
+  descriptions notify colleagues who can open the task.
+- Request routing: the Request form, an email-to-request endpoint for a mail bridge, and
+  `create_task` without a queue are routed by admin rules, then the router model above a
+  threshold, else to a triage queue; each decision is explained and audited. Usage feature
+  `routing`. A 39-item eval set and the `request_routing` suite (not run with a real model yet).
+- Workflows in YAML (comments kept) with problems at their lines, in the API and a
+  line-numbered editor; events `document.updated`, `meeting.processed`, `task.completed` and
+  `approval.decided`, exactly once per event and only for what the owner can open.
+- Migration `0023`; new settings `SLACK_API_URL` and `SLACK_WEBHOOK_PREFIX`. Behaviour change: a
+  workflow step naming an approver who no longer exists now fails the step instead of falling
+  back to the owner.
+
 ## v0.11 — Phase 11: admin, governance and usage analytics (2026-11-12, not tagged)
 
 - **Open-core boundary** ([ADR 0011](docs/adr/0011-open-core-boundary-and-license-keys.md)):

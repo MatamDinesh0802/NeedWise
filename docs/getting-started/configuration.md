@@ -82,7 +82,8 @@ ingress), [backups](../operations/backup-restore.md) and [upgrades](../operation
 | Use another model for one kind of work | `LLM_MODEL_ANSWER`, `_ROUTER`, `_AGENT`, `_GENERATOR`, `_JUDGE` | [Models and keys](../models.md) |
 | Keep restricted documents on a local model | `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL` | [Local models](local-models.md#keep-restricted-documents-local) |
 | Route questions to department agents | `ASSISTANT_MODE=auto` or `agents` | [Agents](../agents.md) |
-| Send email (after approval) | `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_STARTTLS` | [Automation](../automation.md#email) |
+| Send email (after approval) and notification emails | `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_STARTTLS` | [Automation](../automation.md#email) |
+| Point Slack notifications at a stub, or limit webhook URLs | `SLACK_API_URL`, `SLACK_WEBHOOK_PREFIX` (the bot token and webhook are set per organization in Admin › Automation) | [Automation](../automation.md#notifications-by-email-and-slack) |
 | Sync Google Drive | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | [Connectors](../connectors.md) |
 | Connect Slack with OAuth (instead of pasting a bot token) | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | [Connectors](../connectors.md) |
 | Give the research agent web search | `SEARXNG_URL` | [Configuration reference](../reference/configuration.md#searxng_url) |

@@ -3,7 +3,7 @@ import { expect, test } from "./support/fixtures";
 import { ADMIN_SECTION_LINKS } from "./support/pages";
 import { ALL_USERS, seesAdministration, USERS } from "./support/users";
 
-const WORKSPACE_LINKS = ["Overview", "Assistant", "Knowledge Hub", "AI Agents", "Approvals", "Tasks", "Meetings", "Insights", "Usage"];
+const WORKSPACE_LINKS = ["Overview", "Assistant", "Knowledge Hub", "AI Agents", "Approvals", "Tasks", "Requests", "Meetings", "Insights", "Usage"];
 
 // Every test here signs in from scratch, with a fresh browser context: the cached sign-ins
 // the other files use are left alone, and signing out ends only this session.

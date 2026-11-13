@@ -43,8 +43,12 @@ from workmind.modules.knowledge.governance import send_review_reminders
 from workmind.modules.knowledge.pipeline import IngestionDeps, PermanentIngestionError, ingest
 from workmind.modules.knowledge.storage import LocalObjectStorage
 from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
+from workmind.modules.model_catalog.secrets import KeyRing
 from workmind.modules.retrieval.qdrant import QdrantClient, QdrantError
 from workmind.modules.work.approvals import expire_due
+from workmind.modules.work.delivery import DeliveryDeps, deliver_due, queue_digests
+from workmind.modules.work.escalation import run_escalation
+from workmind.modules.work.slack import SlackClient
 from workmind.modules.work.workflows import (
     WorkflowDeps,
     due_workflows,
@@ -66,6 +70,8 @@ MEETING_TASK = "workmind.process_meeting"
 WORKFLOW_RUN_TASK = "workmind.start_workflow_run"
 REVIEWS_TASK = "workmind.send_review_reminders"
 SOURCE_REMINDERS_TASK = "workmind.send_source_reminders"
+ESCALATE_TASK = "workmind.escalate_work"
+DELIVER_TASK = "workmind.deliver_notifications"
 
 log = structlog.get_logger("workmind.workers")
 settings = get_settings()
@@ -90,6 +96,10 @@ app.conf.update(
         "review-reminders": {"task": REVIEWS_TASK, "schedule": 86_400.0},
         # Daily: stale synced documents (once per staleness episode), failing sources.
         "source-reminders": {"task": SOURCE_REMINDERS_TASK, "schedule": 86_400.0},
+        # Hourly: approval and task reminders and escalations, once each (docs/automation.md).
+        "escalate-work": {"task": ESCALATE_TASK, "schedule": 3_600.0},
+        # Every minute: digests at each person's hour, then the email and Slack outbox.
+        "deliver-notifications": {"task": DELIVER_TASK, "schedule": 60.0},
     },
     broker_connection_retry_on_startup=True,
     task_ignore_result=True,
@@ -345,15 +355,63 @@ async def _process_meeting(tenant_id: str, meeting_id: str) -> None:
             resources.transcriber,
             CeleryDispatcher(),
         )
-        await process_meeting(deps, tenant, uuid.UUID(meeting_id))
+        runs = await process_meeting(deps, tenant, uuid.UUID(meeting_id))
     finally:
         await resources.aclose()
+    for run_id in runs:  # "meeting.processed": each triggered run is its own task
+        app.send_task(WORKFLOW_RUN_TASK, args=[tenant_id, str(run_id)])
 
 
 @app.task(name=MEETING_TASK)
 def process_meeting_task(tenant_id: str, meeting_id: str) -> None:
     """Failures are recorded on the meeting (status "failed" with the reason)."""
     asyncio.run(_process_meeting(tenant_id, meeting_id))
+
+
+async def _escalate_work() -> int:
+    resources = Resources.create(settings, extensions=extensions)
+    acted = 0
+    try:
+        now = datetime.now(UTC)
+        for tenant_id in await _active_tenants(resources):
+            report = await run_escalation(resources.db, tenant_id, now)
+            acted += sum(vars(report).values())
+    finally:
+        await resources.aclose()
+    return acted
+
+
+@app.task(name=ESCALATE_TASK)
+def escalate_work() -> int:
+    """Idempotent: each reminder and escalation happens once per approval (stage) or task."""
+    return asyncio.run(_escalate_work())
+
+
+async def _deliver_notifications() -> int:
+    resources = Resources.create(settings, extensions=extensions)
+    sent = 0
+    try:
+        deps = DeliveryDeps(
+            sessions=resources.db,
+            mailer=resources.mailer,
+            slack=SlackClient(resources.http, settings.slack_api_url),
+            keyring=KeyRing.from_settings(settings),
+            public_url=settings.public_url,
+        )
+        now = datetime.now(UTC)
+        for tenant_id in await _active_tenants(resources):
+            await queue_digests(resources.db, tenant_id, now)
+            report = await deliver_due(deps, tenant_id, now)
+            sent += report.sent
+    finally:
+        await resources.aclose()
+    return sent
+
+
+@app.task(name=DELIVER_TASK)
+def deliver_notifications() -> int:
+    """Failures are logged and retried with backoff; they never affect the action itself."""
+    return asyncio.run(_deliver_notifications())
 
 
 # Enterprise scheduled tasks (none in Community): known to workers, queued by beat.

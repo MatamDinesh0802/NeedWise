@@ -75,6 +75,7 @@ from workmind.modules.retrieval.qdrant import QdrantClient, match, match_any
 from workmind.modules.retrieval.sparse import encode_query
 from workmind.modules.work.approvals import propose
 from workmind.modules.work.models import Notification, Workflow, WorkflowRun
+from workmind.modules.work.routing import RouteChoice
 from workmind.seed.analytics_load import seed_analytics
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
@@ -120,10 +121,14 @@ PHRASES = {
         "review",
         "slack",
         "mapping",
+        "rule",
+        "request",
     )
 }
 SECRET_PROVIDER_KEY = f"sk-{uuid.uuid4().hex}{uuid.uuid4().hex}"
 SECRET_GITHUB_TOKEN = f"ghp_{uuid.uuid4().hex}"
+SECRET_SLACK_TOKEN = f"xoxb-{uuid.uuid4().hex}"
+SECRET_SLACK_HOOK = f"https://hooks.slack.com/services/{uuid.uuid4().hex}"
 TABLE = f"t{CANARY}"  # an analytics table only A has
 MCP_HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 
@@ -141,6 +146,8 @@ class ScriptedLLM(FakeLLM):
             )
         if schema is Extraction:
             return Extraction(summary="Nothing.", decisions=[], action_items=[]), self.usage(30, 8)
+        if schema is RouteChoice:
+            return RouteChoice(department="none", confidence=0.0), self.usage(30, 8)
         raise AssertionError(f"unscripted structured output: {schema}")
 
 
@@ -445,6 +452,50 @@ def _build_a(client: TestClient, a: Side) -> None:
         ),
         201,
     )["id"]
+
+    # Automation: a routing rule, a routed request, Slack secrets, an approver rule, and a
+    # backup approver.
+    _check(
+        client.put(
+            "/api/v1/admin/routing-rules",
+            json={"rules": [{"department": f"{CANARY}-dept", "keywords": [PHRASES["rule"]]}]},
+            headers=erin,
+        )
+    )
+    v["request_task_id"] = _check(
+        client.post(
+            "/api/v1/requests",
+            json={"title": f"{PHRASES['request']} {PHRASES['rule']}"},
+            headers=alice,
+        ),
+        201,
+    )["task"]["id"]
+    _check(
+        client.put(
+            "/api/v1/admin/slack",
+            json={
+                "bot_token": SECRET_SLACK_TOKEN,
+                "webhook_url": SECRET_SLACK_HOOK,
+                "channel_categories": ["escalations"],
+            },
+            headers=erin,
+        )
+    )
+    v["person_email"] = f"{PHRASES['person']}@acme.test"
+    _check(
+        client.put(
+            "/api/v1/admin/automation",
+            json={"approver_rules": {"send_email": v["person_email"]}},
+            headers=erin,
+        )
+    )
+    _check(
+        client.put(
+            "/api/v1/me/work-preferences",
+            json={"backup_approver_id": v["user_id"], "digest_hour": 7},
+            headers=alice,
+        )
+    )
 
     v["source_key"] = f"{CANARY}-src"
     _check(
@@ -1236,6 +1287,44 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
     ("DELETE", "/api/v1/admin/workflows/{key}"): [deny(params={"key": "workflow_key"})],
     ("POST", "/api/v1/admin/workflows/{key}/run"): [deny(params={"key": "workflow_key"})],
     ("GET", "/api/v1/admin/workflows/{key}/runs"): [deny(params={"key": "workflow_key"})],
+    ("POST", "/api/v1/admin/workflows/validate"): [
+        own(json={"source": "steps:\n  - id: gather\n    research: What happened?\n"})
+    ],
+    # Automation: preferences, requests and routing, escalation and approver rules, Slack
+    ("GET", "/api/v1/me/work-preferences"): [own()],
+    ("PUT", "/api/v1/me/work-preferences"): [
+        refuse(422, json=lambda w: {"backup_approver_id": w.a.values["user_id"]})
+    ],
+    ("GET", "/api/v1/requests/options"): [own()],
+    ("POST", "/api/v1/requests"): [
+        own(201, json={"title": f"{CANARY} request", "category": CANARY}),
+    ],
+    ("POST", "/api/v1/tasks/{task_id}/route"): [
+        deny(json={"department": "finance"}),
+        deny(params={"task_id": "request_task_id"}, json={"department": "finance"}),
+    ],
+    ("POST", "/api/v1/admin/requests/inbound-email"): [
+        refuse(
+            422,
+            json=lambda w: {"from": w.a.values["person_email"], "subject": "probe", "body": "x"},
+        )
+    ],
+    ("GET", "/api/v1/admin/automation"): [own()],
+    ("PUT", "/api/v1/admin/automation"): [
+        refuse(422, json=lambda w: {"approver_rules": {"send_email": w.a.values["person_email"]}}),
+        refuse(422, json={"routing": {"triage_department": f"{CANARY}-dept"}}),
+    ],
+    ("GET", "/api/v1/admin/routing-rules"): [own()],
+    ("PUT", "/api/v1/admin/routing-rules"): [
+        refuse(422, json={"rules": [{"department": f"{CANARY}-dept", "keywords": [CANARY]}]})
+    ],
+    ("POST", "/api/v1/admin/routing/preview"): [own(json={"title": f"{CANARY} request"})],
+    ("GET", "/api/v1/admin/slack"): [own()],
+    ("PUT", "/api/v1/admin/slack"): [own(json={"channel_categories": ["approvals"]})],
+    ("POST", "/api/v1/admin/slack/test"): [
+        refuse(409, json={"target": "bot"}),
+        refuse(409, json={"target": "webhook"}),
+    ],
     # Meetings
     ("POST", "/api/v1/meetings"): [
         refuse(
@@ -1414,7 +1503,14 @@ def _path(template: str, probe: Probe, world: World) -> str:
 
 
 def _secrets(world: World) -> list[str]:
-    return [*PHRASES.values(), SECRET_PROVIDER_KEY, SECRET_GITHUB_TOKEN, world.a.token]
+    return [
+        *PHRASES.values(),
+        SECRET_PROVIDER_KEY,
+        SECRET_GITHUB_TOKEN,
+        SECRET_SLACK_TOKEN,
+        SECRET_SLACK_HOOK,
+        world.a.token,
+    ]
 
 
 def _leaks(world: World, request_text: str, response_text: str, sent: set[str]) -> list[str]:

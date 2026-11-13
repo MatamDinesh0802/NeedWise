@@ -82,7 +82,7 @@ SECTIONS: Sequence[tuple[str, Sequence[str]]] = (
             "source_*",
         ],
     ),
-    ("Email", ["smtp_*"]),
+    ("Email and Slack", ["smtp_*", "slack_*"]),
     ("Enterprise edition", ["license_*", "deployment_id"]),
     ("Demo data (development only)", ["keycloak_admin_*", "demo_password"]),
 )
@@ -318,7 +318,8 @@ NOTES: dict[str, str] = {
         "(a single-tenant app), or `organizations` for any work or school account."
     ),
     "smtp_host": (
-        "Outgoing email (`send_email`, always after a person's approval). Unset: email is off. "
+        "Outgoing email (`send_email`, always after a person's approval, and the notification "
+        "emails people choose in Settings). Unset: email is off. "
         "Development uses Mailpit, which delivers nothing: http://localhost:8025."
     ),
     "smtp_port": "The SMTP port.",
@@ -326,6 +327,14 @@ NOTES: dict[str, str] = {
     "smtp_username": "SMTP login, if the server needs one.",
     "smtp_password": "SMTP password, if the server needs one.",
     "smtp_starttls": "Upgrade the SMTP connection with STARTTLS.",
+    "slack_api_url": (
+        "Slack's Web API, for notification direct messages through a tenant's bot token "
+        "(Admin > Automation). Point it at a stub to test without Slack."
+    ),
+    "slack_webhook_prefix": (
+        "Every Slack incoming webhook URL a tenant admin saves must start with this, so nobody "
+        "can make the server post elsewhere."
+    ),
     "license_key": (
         "The Enterprise license token. Unset: `LICENSE_FILE`, else `license.key` in "
         "`/run/workmind` or `<repo>/.workmind`. Without a valid license: Community."

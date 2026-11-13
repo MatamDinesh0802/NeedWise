@@ -1,7 +1,7 @@
 """Declarative workflows (ARCHITECTURE section 14.3).
 
     key: weekly-ops-report
-    trigger: {schedule: "0 8 * * MON"}          # or manual only, or {event: document.ready}
+    trigger: {schedule: "0 8 * * MON"}          # or manual only, or {event: <name>} (events.py)
     steps:
       - id: gather
         research: Summarize this week's operations: incidents, shipping, safety.
@@ -10,6 +10,7 @@
         arguments: {to: [leadership@acme.test], subject: Weekly ops report,
                     body: "{{ steps.gather.text }}"}
         approver: priya.raman@acme.test         # side effects stop here until a person decides
+                                                # (or a rule: approvers.py)
 
 A run acts as the workflow's owner, with the owner's current access. Research steps are
 read-only. A step with side effects becomes an approval and the run pauses; the decision
@@ -20,9 +21,9 @@ import re
 import uuid
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, get_args
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -31,7 +32,7 @@ from workmind.core.tenancy import tenant_transaction
 from workmind.modules.agents.research import research
 from workmind.modules.assistant.safety import escape_tags
 from workmind.modules.governance.audit import Actor, record_event
-from workmind.modules.identity.models import SLUG_PATTERN, Tenant, User
+from workmind.modules.identity.models import SLUG_PATTERN, Tenant
 from workmind.modules.identity.service import load_identity
 from workmind.modules.model_catalog.resolver import LLMResolver
 from workmind.modules.tools.execute import execute_tool
@@ -39,10 +40,13 @@ from workmind.modules.tools.registry import ToolError, ToolRegistry
 from workmind.modules.usage.budgets import BudgetExceededError
 from workmind.modules.usage.calls import attribute
 from workmind.modules.work.approvals import propose
+from workmind.modules.work.approvers import Rule, RuleError, parse_rule
 from workmind.modules.work.cron import Cron, CronError
+from workmind.modules.work.events import EVENTS, FILTERS
 from workmind.modules.work.links import workflow_link
 from workmind.modules.work.models import Approval, Workflow, WorkflowRun
 from workmind.modules.work.notifications import notify
+from workmind.modules.work.policy import load_policy
 from workmind.providers.llm import LLMError, LLMProvider
 
 PLACEHOLDER = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
@@ -52,10 +56,19 @@ PLACEHOLDER = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
 UNTRUSTED = frozenset({"event", "steps"})
 
 
+EventName = Literal[
+    "document.ready", "document.updated", "meeting.processed", "task.completed", "approval.decided"
+]
+assert set(get_args(EventName)) == set(EVENTS)  # noqa: S101  (events.py lists the same)
+
+
 class Trigger(BaseModel):
     schedule: str | None = None
-    event: Literal["document.ready"] | None = None
-    collection: str | None = Field(default=None, pattern=SLUG_PATTERN)  # event filter
+    event: EventName | None = None
+    # Event filters: which one an event understands is in events.FILTERS.
+    collection: str | None = Field(default=None, pattern=SLUG_PATTERN)
+    department: str | None = Field(default=None, pattern=SLUG_PATTERN)
+    tool: str | None = Field(default=None, min_length=1, max_length=120)
 
     @model_validator(mode="after")
     def _valid(self) -> Self:
@@ -64,8 +77,20 @@ class Trigger(BaseModel):
                 Cron(self.schedule)
             except CronError as exc:
                 raise ValueError(f"schedule: {exc}") from exc
-        if self.collection and not self.event:
-            raise ValueError("collection: only an event trigger can name a collection")
+        if self.schedule and self.event:
+            raise ValueError("a trigger is a schedule or an event, not both")
+        for name in ("collection", "department", "tool"):
+            if getattr(self, name) is None:
+                continue
+            if not self.event:
+                raise ValueError(f"{name}: only an event trigger has a filter")
+            if FILTERS.get(self.event) != name:
+                allowed = FILTERS.get(self.event)
+                raise ValueError(
+                    f"{name}: {self.event} filters by {allowed}"
+                    if allowed
+                    else f"{name}: {self.event} has no filter"
+                )
         return self
 
 
@@ -74,13 +99,30 @@ class Step(BaseModel):
     research: str | None = None  # a question for the research agent (read-only tools)
     tool: str | None = None  # or one tool call
     arguments: dict[str, Any] = {}
-    approver: str | None = None  # email; default: the workflow's owner
+    # An email (one named person) or a rule (approvers.py); default: the workflow's owner, or
+    # the tenant's rule for this tool (Admin > Automation).
+    approver: str | dict[str, Any] | None = None
+
+    @field_validator("approver")
+    @classmethod
+    def _rule(cls, value: str | dict[str, Any] | None) -> str | dict[str, Any] | None:
+        if value is not None:
+            try:
+                parse_rule(value)
+            except RuleError as exc:
+                raise ValueError(str(exc)) from exc
+        return value
 
     @model_validator(mode="after")
     def _one_kind(self) -> Self:
         if (self.research is None) == (self.tool is None):
             raise ValueError(f"step {self.id}: give either `research` or `tool`")
+        if self.approver is not None and self.research is not None:
+            raise ValueError(f"step {self.id}: only a tool step has an approver")
         return self
+
+    def rule(self) -> Rule | None:
+        return parse_rule(self.approver) if self.approver is not None else None
 
 
 class Definition(BaseModel):
@@ -313,6 +355,10 @@ async def advance(deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID) -
             outputs[step.id] = {"status": "failed", "error": f"{exc.code}: {exc}"}
             await _save(deps, run, outputs, step.id)
             return await _finish(deps, run, "failed", f"step {step.id}: {exc}")
+        except RuleError as exc:  # nobody (else) can approve the step right now
+            outputs[step.id] = {"status": "failed", "error": f"no_approver: {exc}"[:500]}
+            await _save(deps, run, outputs, step.id)
+            return await _finish(deps, run, "failed", f"step {step.id}: {exc}"[:500])
         except BudgetExceededError as exc:  # a used-up budget: the run ends and says which one
             outputs[step.id] = {"status": "failed", "error": f"budget_exceeded: {exc}"[:500]}
             await _save(deps, run, outputs, step.id)
@@ -336,19 +382,16 @@ async def _pause(
     outputs: dict[str, Any],
 ) -> None:
     async with tenant_transaction(deps.sessions, run.tenant_id) as session:
-        approver_id = owner.user_id
-        if step.approver:
-            approver_id = (
-                await session.scalar(select(User.id).where(User.email == step.approver.lower()))
-                or owner.user_id
-            )
+        # The step's own approver, else the tenant's rule for this tool, else the owner. A
+        # named approver who no longer exists fails the step (RuleError), as a rule does.
+        rule = step.rule() or (await load_policy(session)).approver_rules.rule_for(step.tool or "")
         approval = await propose(
             session,
             owner,
             tool=step.tool or "",
             arguments=arguments,
             summary=f"{workflow.name}: {summary}",
-            approver_id=approver_id,
+            rule=rule,
             origin={
                 "via": "workflow",
                 "workflow": workflow.key,
