@@ -27,6 +27,23 @@ deployment has a key, never which one (not even its last characters).
 | `anthropic` | optional; empty means `https://api.anthropic.com` | your Anthropic API key (needed) |
 | `openai_compatible` | required: any `/v1/chat/completions` server (OpenAI, gateways, vLLM, Ollama, llama.cpp, LM Studio) | optional (local servers often need none) |
 
+**Gemini** works as an `openai_compatible` deployment model, through Vertex AI's
+OpenAI-compatible endpoint (tested on 2026-11-13 with `google/gemini-3.1-flash-lite`: cited
+answers, structured output, streaming with token counts and tool calls):
+
+```bash
+LLM_PROVIDER=openai_compatible
+LLM_BASE_URL=https://aiplatform.googleapis.com/v1/projects/<project>/locations/global/endpoints/openapi
+LLM_MODEL=google/gemini-3.1-flash-lite
+LLM_API_KEY=<access token>   # e.g. gcloud auth print-access-token; it expires after an hour
+LLM_EXTERNAL=true            # a third-party API, for the data policy
+```
+
+A Vertex access token expires after an hour, so restart the API with a new one, or use Google
+AI Studio's OpenAI-compatible endpoint (`https://generativelanguage.googleapis.com/v1beta/openai`,
+model `gemini-3.1-flash-lite`), which takes a long-lived API key. Prices for these two names are
+in the built-in table ($0.25 input, $1.50 output per million tokens).
+
 Mark a provider **local** only when its server runs on infrastructure you control. "Local" is
 your statement, not something NeedWise can verify; the data policy relies on it. An Anthropic
 provider can never be local.

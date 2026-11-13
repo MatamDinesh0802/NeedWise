@@ -10,6 +10,9 @@ from needwise.providers.llm import LLMUsage
 PRICES: dict[str, tuple[float, float]] = {
     "claude-sonnet-5-5": (2.0, 10.0),
     "claude-opus-5-5": (4.0, 20.0),
+    # Gemini through an OpenAI-compatible endpoint (Vertex AI uses the "google/" prefix).
+    "gemini-3.1-flash-lite": (0.25, 1.5),
+    "google/gemini-3.1-flash-lite": (0.25, 1.5),
 }
 
 
