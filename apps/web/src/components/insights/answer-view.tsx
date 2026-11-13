@@ -160,7 +160,10 @@ export function AnswerView({
             </p>
             <ul className="flex flex-col gap-0.5">
               {answer.sources.map((source) => (
-                <li key={source.table}>
+                <li key={`${source.dataset ?? "uploads"}.${source.table}`}>
+                  {source.dataset && source.dataset !== "uploads" ? (
+                    <span className="font-mono text-foreground">{source.dataset}.</span>
+                  ) : null}
                   <span className="font-mono text-foreground">{source.table}</span>
                   {source.description ? ` · ${source.description}` : ""}
                 </li>

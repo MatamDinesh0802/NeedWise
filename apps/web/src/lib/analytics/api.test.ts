@@ -79,6 +79,53 @@ describe("analyticsApi", () => {
     expect(lastCall().headers.get(CSRF_HEADER)).toBe("1");
   });
 
+  it("starts a streamed answer and names its event stream", async () => {
+    fetchMock.mockResolvedValueOnce(json({ run_id: "r 1" }, 202));
+    await expect(analyticsApi.startRun("Shop revenue?")).resolves.toEqual({ run_id: "r 1" });
+    expect(lastCall()).toMatchObject({ url: "/api/v1/analytics/runs", method: "POST" });
+    expect(JSON.parse(String(lastCall().body))).toEqual({ question: "Shop revenue?" });
+    expect(lastCall().headers.get(CSRF_HEADER)).toBe("1");
+    expect(analyticsApi.eventsUrl("r 1")).toBe("/api/v1/analytics/runs/r%201/events");
+  });
+
+  it("re-runs a query on its dataset, and sends no dataset for the uploaded tables", async () => {
+    await analyticsApi.query("SELECT 1", "shop");
+    expect(JSON.parse(String(lastCall().body))).toEqual({ sql: "SELECT 1", dataset: "shop" });
+    await analyticsApi.query("SELECT 1", "uploads");
+    expect(JSON.parse(String(lastCall().body))).toEqual({ sql: "SELECT 1" });
+  });
+
+  it("calls the database source routes, sending the password only to create or replace it", async () => {
+    await analyticsApi.sources();
+    expect(lastCall()).toMatchObject({ url: "/api/v1/admin/analytics/sources", method: "GET" });
+    const input = {
+      key: "shop",
+      name: "Shop",
+      kind: "postgres" as const,
+      host: "db",
+      database: "shop",
+      username: "reader",
+      password: "s3cret",
+      tls_mode: "verify-full" as const,
+      schemas: ["shop"],
+    };
+    await analyticsApi.createSource(input);
+    expect(lastCall()).toMatchObject({ url: "/api/v1/admin/analytics/sources", method: "POST" });
+    expect(JSON.parse(String(lastCall().body))).toEqual(input);
+    await analyticsApi.updateSource("shop", { enabled: false });
+    expect(lastCall()).toMatchObject({ url: "/api/v1/admin/analytics/sources/shop", method: "PATCH" });
+    expect(JSON.parse(String(lastCall().body))).toEqual({ enabled: false });
+    await analyticsApi.testSource("shop");
+    expect(lastCall()).toMatchObject({ url: "/api/v1/admin/analytics/sources/shop/test", method: "POST" });
+    await analyticsApi.sourceCatalog("shop");
+    expect(lastCall()).toMatchObject({ url: "/api/v1/admin/analytics/sources/shop/catalog", method: "GET" });
+    await analyticsApi.saveSourceModel("shop", "name: x\n");
+    expect(lastCall()).toMatchObject({ url: "/api/v1/admin/analytics/sources/shop/model", method: "PUT" });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await expect(analyticsApi.deleteSource("shop")).resolves.toBeUndefined();
+    expect(lastCall()).toMatchObject({ url: "/api/v1/admin/analytics/sources/shop", method: "DELETE" });
+  });
+
   it("uploads a table as the raw request body with its content type", async () => {
     const file = new Blob(["customer_id,name\nC001,Bluefin\n"], { type: "text/csv" });
     await analyticsApi.uploadTable("customers", file, "text/csv");
@@ -103,7 +150,7 @@ describe("tableContentType", () => {
 
 describe("analyticsKeys", () => {
   it("keeps every key under one prefix for invalidation", () => {
-    for (const key of [analyticsKeys.model, analyticsKeys.runs, analyticsKeys.run("r1"), analyticsKeys.admin]) {
+    for (const key of [analyticsKeys.model, analyticsKeys.runs, analyticsKeys.run("r1"), analyticsKeys.admin, analyticsKeys.sources]) {
       expect(key.startsWith(analyticsKeys.all)).toBe(true);
     }
   });

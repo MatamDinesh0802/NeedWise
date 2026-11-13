@@ -20,7 +20,12 @@ import { formatBytes } from "@/lib/format";
 import { toast } from "@/lib/stores/toasts";
 import { cn } from "@/lib/utils";
 
-/** Admin → Analytics: the dataset Insights queries, and the semantic model (YAML) over it. */
+import { SqlSourcesPanel } from "./analytics-sources";
+
+/**
+ * Admin → Analytics: the uploaded dataset Insights queries and its semantic model (YAML), and the
+ * PostgreSQL and MySQL databases connected as datasets of their own.
+ */
 export function AnalyticsSection() {
   const admin = useApiQuery(analyticsKeys.admin, analyticsApi.admin);
 
@@ -33,8 +38,8 @@ export function AnalyticsSection() {
             <RefreshingHint active={admin.state.status === "success" && admin.state.refreshing} />
           </h3>
           <p className="max-w-3xl text-sm text-muted-foreground">
-            The data people can ask about in Insights. Upload tables, then describe them in the data model: what each metric means,
-            who may ask, and which rows each person sees.
+            The data people can ask about in Insights. Upload tables, or connect a PostgreSQL or MySQL database, then describe them in a
+            data model: what each metric means, who may ask, and which rows each person sees.
           </p>
         </div>
         <Link href="/insights" className={buttonVariants({ variant: "outline" })}>
@@ -47,7 +52,8 @@ export function AnalyticsSection() {
         <Info aria-hidden="true" />
         <AlertDescription>
           Questions run as read-only SQL against these tables only, through the data model: the assistant can&apos;t reach other
-          tables, and row policies are applied in code to every query, not left to the model.
+          tables, and row policies are applied in code to every query, not left to the model. Databases are queried in a read-only
+          session, with a time limit and a row cap.
         </AlertDescription>
       </Alert>
 
@@ -61,6 +67,8 @@ export function AnalyticsSection() {
           <ModelEditor key={admin.state.data.yaml ?? ""} yaml={admin.state.data.yaml} tables={admin.state.data.dataset.tables} />
         </>
       )}
+
+      <SqlSourcesPanel />
     </section>
   );
 }

@@ -5,7 +5,7 @@ import { ApiError } from "@/lib/api";
 import { answer } from "@/test/analytics-fixtures";
 
 import { AnswerView, VerificationNote } from "./answer-view";
-import { refreshErrorText } from "./query-panel";
+import { datasetLabel, refreshErrorText } from "./query-panel";
 
 describe("AnswerView", () => {
   it("shows the chart, the checked narrative and every query with its SQL and results", () => {
@@ -98,5 +98,25 @@ describe("refreshErrorText", () => {
     });
     expect(refreshErrorText(new ApiError({ status: 403, title: "x", code: "no_access" })).title).toBe("You no longer have access");
     expect(refreshErrorText(new ApiError({ status: 0, title: "Network error", code: "network_error" })).title).toBe("Can't reach the server");
+  });
+});
+
+describe("queries on a database source", () => {
+  it("name the database they ran on, and the sources name their dataset", () => {
+    const base = answer();
+    const html = renderToStaticMarkup(
+      <AnswerView
+        answer={{
+          ...base,
+          queries: base.queries.map((q) => ({ ...q, dataset: "shop", dialect: "postgres" as const })),
+          sources: [{ table: "orders", description: "One row per order.", dataset: "shop" }],
+        }}
+      />,
+    );
+    expect(html).toContain("shop · PostgreSQL");
+    expect(html).toContain("shop.</span>");
+    expect(datasetLabel({ dataset: "uploads", dialect: "duckdb" })).toBeNull();
+    expect(datasetLabel({})).toBeNull();
+    expect(datasetLabel({ dataset: "erp", dialect: "mysql" })).toBe("erp · MySQL");
   });
 });
