@@ -141,6 +141,16 @@ async def _queue(
         if owner is None or owner.user.status != "active" or not await may_see(owner):
             log.info("workflow_event_skipped", workflow=workflow.key, reason="owner_cannot_view")
             continue
+        taken = await session.scalar(
+            select(WorkflowRun.id).where(
+                WorkflowRun.workflow_id == workflow.id, WorkflowRun.idempotency_key == key
+            )
+        )
+        if taken is not None:
+            # A repeated event. Checked first because the insert below would wait for a run
+            # that is finishing right now (its row is locked) while this transaction may hold
+            # the audit log's lock that the run needs: a deadlock.
+            continue
         run_id = await session.scalar(
             insert(WorkflowRun)
             .values(

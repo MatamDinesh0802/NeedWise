@@ -392,6 +392,9 @@ async def update_task(
                     title=f"Handed over to you: {task.title}",
                     link=task_link(task.id),
                 )
+        # Workflows listening for task.completed: queued in this transaction (before its audit
+        # record, which locks the tenant's audit chain), started after it.
+        runs = await task_completed(session, ctx.tenant_id, task, ctx.user_id) if completed else []
         await record_event(
             session,
             tenant_id=ctx.tenant_id,
@@ -401,8 +404,6 @@ async def update_task(
             resource_id=str(task.id),
             details=body.model_dump(exclude_none=True, mode="json"),
         )
-        # Workflows listening for task.completed: queued in this transaction, started after.
-        runs = await task_completed(session, ctx.tenant_id, task, ctx.user_id) if completed else []
         out = task_out(task)
     if runs:
         await resources.start_workflow_runs(ctx.tenant_id, runs)

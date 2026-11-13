@@ -316,6 +316,7 @@ async def queue_digests(
                     user_id=row.user_id,
                     channel="email",
                     kind="digest",
+                    next_attempt_at=now,
                     subject=f"WorkMind: {len(items)} update{'s' if len(items) != 1 else ''}",
                     body=digest_body(items),
                 )

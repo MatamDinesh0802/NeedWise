@@ -133,8 +133,23 @@ def parse_source[T: BaseModel](text: str, model: type[T]) -> tuple[T | None, lis
         return None, problems
 
 
+def _pruned(value: Any) -> Any:
+    """Without the empty defaults a stored definition carries (description: '', trigger: {},
+    arguments: {}): what an admin would have written."""
+    if isinstance(value, dict):
+        items = cast(dict[str, Any], value).items()
+        return {k: _pruned(v) for k, v in items if v not in ("", {})}
+    if isinstance(value, list):
+        return [_pruned(v) for v in cast(list[Any], value)]
+    return value
+
+
 def to_yaml(definition: dict[str, Any]) -> str:
     """A stored definition as YAML, for one saved as JSON (no comments to keep)."""
     return yaml.safe_dump(
-        definition, sort_keys=False, allow_unicode=True, default_flow_style=False, width=100
+        _pruned(definition),
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+        width=100,
     )

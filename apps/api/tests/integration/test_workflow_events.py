@@ -20,14 +20,16 @@ from sqlalchemy import select
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory
 from workmind.core.config import Settings
+from workmind.core.context import RequestContext
 from workmind.core.tenancy import tenant_transaction
 from workmind.main import create_app
 from workmind.modules.governance.models import AuditEvent
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.retrieval.qdrant import QdrantClient
 from workmind.modules.tools.registry import ToolRegistry
-from workmind.modules.work.events import DocumentReady, document_ready
-from workmind.modules.work.models import Workflow, WorkflowRun
+from workmind.modules.work.approvals import propose
+from workmind.modules.work.events import DocumentReady, document_ready, meeting_processed
+from workmind.modules.work.models import Approval, Workflow, WorkflowRun
 from workmind.modules.work.workflows import WorkflowDeps, queued_runs, start_queued
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
@@ -371,3 +373,202 @@ async def test_a_queued_run_starts_exactly_once_and_the_sweep_finds_missed_ones(
     assert run.status == "succeeded"
     assert run.steps["_event"]["title"] == "Expenses"
     assert await queued_runs(app_sessions, acme.tenant_id, later) == []
+
+
+# --- More events: document.updated, task.completed, approval.decided, meeting.processed ----------
+
+
+async def test_document_updated_runs_for_new_versions_only(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    use_model(api, FakeLLM(tool_turns=[], tool_text="Changed: three days in May."))
+    trigger = {"event": "document.updated", "collection": "company-handbook"}
+    assert save_workflow(api, acme, "erin", "handbook-changes", trigger).status_code == 200
+    handbook = await collection_id(app_sessions, acme, "company-handbook")
+
+    upload(api, acme, "alice", handbook, "remote-work.md", HANDBOOK)
+    await asyncio.sleep(0.5)
+    assert await runs_of(app_sessions, acme, "handbook-changes") == []  # the first version
+
+    upload(api, acme, "alice", handbook, "remote-work.md", HANDBOOK + b"\nThree days in May.\n")
+    (run,) = finished_runs(api, acme, "erin", "handbook-changes", 1)
+    assert run["status"] == "succeeded", run
+    (stored,) = await runs_of(app_sessions, acme, "handbook-changes")
+    assert stored.steps["_event"]["name"] == "document.updated"
+    assert stored.steps["_event"]["version"] == 2
+    assert (stored.idempotency_key or "").startswith("document.updated:")
+
+
+async def test_task_completed_runs_once_per_task_for_tasks_the_owner_can_see(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    use_model(api, FakeLLM(tool_turns=[], tool_text="Noted."))
+    workflow = {
+        "key": "task-done",
+        "name": "Task done",
+        "source": "trigger: {event: task.completed}\n"
+        "steps:\n  - id: note\n    research: Note that {{ event.title }} is done.\n",
+    }
+    saved = api.put(
+        "/api/v1/admin/workflows/task-done", json=workflow, headers=acme.as_("erin", write=True)
+    )
+    assert saved.status_code == 200, saved.text
+    finance_only = api.put(
+        "/api/v1/admin/workflows/finance-done",
+        json={
+            "key": "finance-done",
+            "name": "Finance done",
+            "definition": {
+                "trigger": {"event": "task.completed", "department": "finance"},
+                "steps": [{"id": "note", "research": "{{ event.department }}"}],
+            },
+        },
+        headers=acme.as_("erin", write=True),
+    )
+    assert finance_only.status_code == 200, finance_only.text
+
+    # Erin hands a task to Bob; Bob finishes it (twice: reopened in between).
+    task = api.post(
+        "/api/v1/tasks",
+        json={"title": "Rotate the VPN keys", "assignee_id": str(acme.users["bob"])},
+        headers=acme.as_("erin", write=True),
+    ).json()
+    bob = acme.as_("bob", write=True)
+    for status in ("done", "open", "done"):
+        changed = api.patch(f"/api/v1/tasks/{task['id']}", json={"status": status}, headers=bob)
+        assert changed.status_code == 200, changed.text
+    (run,) = finished_runs(api, acme, "erin", "task-done", 1)
+    assert run["status"] == "succeeded", run
+    (stored,) = await runs_of(app_sessions, acme, "task-done")
+    assert stored.steps["_event"]["completed_by"] == "bob@acme.test"
+    assert stored.idempotency_key == f"task.completed:{task['id']}"
+    assert await runs_of(app_sessions, acme, "finance-done") == []  # no department
+
+    # Carol's own task: Erin can't see it, so it starts nothing and tells her nothing.
+    carol = acme.as_("carol", write=True)
+    private = api.post("/api/v1/tasks", json={"title": "My payroll question"}, headers=carol)
+    api.patch(f"/api/v1/tasks/{private.json()['id']}", json={"status": "done"}, headers=carol)
+    await asyncio.sleep(0.3)
+    assert len(await runs_of(app_sessions, acme, "task-done")) == 1
+
+    invalid = api.put(
+        "/api/v1/admin/workflows/bad",
+        json={
+            "key": "bad",
+            "name": "Bad",
+            "definition": {
+                "trigger": {"event": "task.completed", "department": "legal"},
+                "steps": [{"id": "a", "research": "b"}],
+            },
+        },
+        headers=acme.as_("erin", write=True),
+    )
+    assert (invalid.status_code, invalid.json()["code"]) == (422, "trigger_department")
+
+
+async def test_approval_decided_runs_for_the_owners_approvals_but_never_its_own(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    use_model(api, FakeLLM(tool_turns=[], tool_text="Logged."))
+    saved = api.put(
+        "/api/v1/admin/workflows/decisions",
+        json={
+            "key": "decisions",
+            "name": "Decisions",
+            "definition": {
+                "trigger": {"event": "approval.decided", "tool": "send_email"},
+                "steps": [{"id": "log", "research": "{{ event.decision }}: {{ event.summary }}"}],
+            },
+        },
+        headers=acme.as_("erin", write=True),
+    )
+    assert saved.status_code == 200, saved.text
+
+    async def proposal(requester: str, approver: str, **origin: Any) -> Approval:
+        async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+            return await propose(
+                session,
+                RequestContext(
+                    request_id="t",
+                    tenant_id=acme.tenant_id,
+                    user_id=acme.users[requester],
+                    org_role="member",
+                    principals=frozenset(),
+                    auth_method="session",
+                    scopes=frozenset({"*"}),
+                ),
+                tool="send_email",
+                arguments={"to": ["a@acme.test"], "subject": "Hi", "body": "Text"},
+                summary="Send hi",
+                approver_id=acme.users[approver],
+                origin=origin or None,
+            )
+
+    mine = await proposal("erin", "priya.raman")
+    others = await proposal("bob", "marcus.bell")
+    looped = await proposal("erin", "priya.raman", via="workflow", workflow="decisions")
+    for approval, approver in (
+        (mine, "priya.raman"),
+        (others, "marcus.bell"),
+        (looped, "priya.raman"),
+    ):
+        decided = api.post(
+            f"/api/v1/approvals/{approval.id}/decision",
+            json={"decision": "reject", "note": "Not now"},
+            headers=acme.as_(approver, write=True),
+        )
+        assert decided.status_code == 200, decided.text
+
+    (run,) = finished_runs(api, acme, "erin", "decisions", 1)
+    assert run["status"] == "succeeded", run
+    (stored,) = await runs_of(app_sessions, acme, "decisions")
+    assert stored.idempotency_key == f"approval.decided:{mine.id}"
+    assert stored.steps["_event"]["decision"] == "rejected"
+    assert stored.steps["_event"]["decided_by"] == "priya.raman@acme.test"
+
+
+async def test_meeting_processed_runs_once_for_meetings_the_owner_can_view(
+    app_sessions: SessionFactory, acme: Acme
+) -> None:
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        session.add(
+            Workflow(
+                tenant_id=acme.tenant_id,
+                key="meeting-notes",
+                name="Meeting notes",
+                owner_id=acme.users["erin"],
+                definition={
+                    "trigger": {"event": "meeting.processed", "collection": "operations-sops"},
+                    "steps": [{"id": "send", "research": "{{ event.summary }}"}],
+                },
+            )
+        )
+        await session.flush()
+        sops = (
+            await session.scalars(select(Collection.id).where(Collection.key == "operations-sops"))
+        ).one()
+        records = (
+            await session.scalars(
+                select(Collection.id).where(Collection.key == "hr-employee-records")
+            )
+        ).one()
+        meeting = uuid.uuid4()
+        fields: dict[str, Any] = {
+            "title": "Weekly ops sync",
+            "summary": "Drill moved to Tuesday.",
+            "decisions": 1,
+            "action_items": 2,
+        }
+        first = await meeting_processed(
+            session, acme.tenant_id, meeting_id=meeting, collection_id=sops, **fields
+        )
+        again = await meeting_processed(
+            session, acme.tenant_id, meeting_id=meeting, collection_id=sops, **fields
+        )
+        hidden = await meeting_processed(
+            session, acme.tenant_id, meeting_id=uuid.uuid4(), collection_id=records, **fields
+        )
+    assert (len(first), again, hidden) == (1, [], [])
+    (run,) = await runs_of(app_sessions, acme, "meeting-notes")
+    assert run.steps["_event"]["summary"] == "Drill moved to Tuesday."
+    assert run.steps["_event"]["link"] == f"/meetings/{meeting}"
