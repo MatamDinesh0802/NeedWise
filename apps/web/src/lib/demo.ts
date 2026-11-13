@@ -14,6 +14,7 @@ export const DEMO_ACCOUNTS: readonly DemoAccount[] = [
   { email: "erin@acme.test", name: "Erin", role: "IT admin" },
   { email: "priya.raman@acme.test", name: "Priya", role: "CEO" },
   { email: "hannah.schmidt@acme.test", name: "Hannah", role: "CFO" },
+  { email: "olivia.grant@acme.test", name: "Olivia", role: "Head of operations" },
   { email: "mallory@acme.test", name: "Mallory", role: "Contractor (guest)" },
 ];
 
