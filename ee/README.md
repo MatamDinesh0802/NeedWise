@@ -28,7 +28,9 @@ imported. Get a development license with `make ee-dev-license` (accepted only wi
 | `budgets.py` | `department_budgets` | the core's `usage.department_budgets` hook ([docs/usage.md](../docs/usage.md)) |
 | `chargeback.py` | `chargeback_reports` | the core's `usage.chargeback_report` hook |
 | `retention.py` | `retention_policies` | a router (`/admin/retention`) and a daily task ([docs/enterprise.md](../docs/enterprise.md#retention-policies)) |
+| `document_retention.py` | `retention_policies` | a router (`/admin/retention/documents`), applied by the same daily task ([docs/enterprise.md](../docs/enterprise.md#document-retention)) |
 | `audit_export.py` | `advanced_audit_export` | a router (`/admin/audit-events/export.jsonl`) |
+| `legal_hold.py` | `legal_hold` | a router (`/admin/legal-holds`); the core enforces holds on every deletion path, in both editions ([docs/enterprise.md](../docs/enterprise.md#legal-hold)) |
 
 No official licenses are issued yet.
 

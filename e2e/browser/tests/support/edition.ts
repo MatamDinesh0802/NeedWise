@@ -8,13 +8,14 @@ export interface Edition {
   features: readonly string[];
 }
 
-export type EnterpriseFeature = "retention_policies" | "department_budgets" | "chargeback_reports" | "advanced_audit_export";
+export type EnterpriseFeature = "retention_policies" | "department_budgets" | "chargeback_reports" | "advanced_audit_export" | "legal_hold";
 
 const LABELS: Record<EnterpriseFeature, string> = {
   retention_policies: "Retention policies",
   department_budgets: "Department budgets",
   chargeback_reports: "Chargeback reports",
   advanced_audit_export: "Advanced audit export",
+  legal_hold: "Legal hold",
 };
 
 export async function editionOf(page: Page): Promise<Edition> {

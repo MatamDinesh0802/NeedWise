@@ -564,7 +564,7 @@ export function DocumentPreviewResult({ preview, draft }: { preview: DocumentPre
                 <TableCell>{c.collection}</TableCell>
                 <TableCell className="text-muted-foreground">{formatDate(c.cutoff)}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {c.action === "delete" ? "delete" : "archive"} {c.count.toLocaleString("en-US")}
+                  {c.action === "delete" ? "Delete" : "Archive"} {c.count.toLocaleString("en-US")}
                 </TableCell>
                 <TableCell className="text-sm whitespace-normal text-muted-foreground">{keptSummary(c.kept) ?? "—"}</TableCell>
               </TableRow>

@@ -167,7 +167,7 @@ describe("DocumentPreviewResult", () => {
     );
     expect(html).toContain("A run now would delete 4 documents and archive 0 documents");
     expect(html).toContain("Kept although not updated: 1 under a legal hold and 2 official or awaiting approval.");
-    expect(html).toContain("delete 4");
+    expect(html).toContain("Delete 4");
     expect(html).toContain("Nothing was changed.");
   });
 });

@@ -150,7 +150,7 @@ function HoldTable({ holds, onRelease }: { holds: LegalHold[]; onRelease?: (hold
         <TableHeader>
           <TableRow>
             <TableHead>Holds</TableHead>
-            <TableHead>Keeps now</TableHead>
+            <TableHead>{onRelease ? "Keeps now" : "Covers"}</TableHead>
             <TableHead>Why</TableHead>
             <TableHead>{onRelease ? "Placed" : "Placed and released"}</TableHead>
             {onRelease ? <TableHead className="sr-only">Actions</TableHead> : null}
