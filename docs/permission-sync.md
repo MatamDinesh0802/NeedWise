@@ -189,6 +189,8 @@ and re-create it, or license the feature again.
   in the handbook); the attacks come from inside the collection, from the list but outside the
   collection, as a guest and as an HR member who is not a manager, through chat, agents and
   research, and run in `--retrieval-only` mode in CI.
+- `tests/test_retrieval_guardrail.py`: only `Retriever.search` queries the index (an AST check
+  over the core and `ee/`), and lock 1 always carries the document-list clause.
 - `tests/integration/test_cross_tenant.py` classifies the new routes.
 
 ## Not built
