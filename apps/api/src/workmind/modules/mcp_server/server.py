@@ -29,6 +29,7 @@ from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.analytics.compiler import OrderBy, QueryFilter
 from workmind.modules.assistant.answer import answer
+from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity import tokens
 from workmind.modules.identity.models import Tenant
 from workmind.modules.knowledge.service import visible_collections
@@ -186,6 +187,24 @@ def build_mcp_server(resources_of_app: Callable[[], Resources], version: str) ->
             raise McpToolError(exc.detail) from exc
         except ApiError as exc:  # too many answers in progress
             raise McpToolError(exc.detail or exc.title) from exc
+        async with tenant_transaction(resources.db, rc.tenant_id) as session:
+            # As POST /ask records it: which documents the answer drew on, never its text.
+            await record_event(
+                session,
+                tenant_id=rc.tenant_id,
+                actor=Actor(type="user", id=rc.user_id),
+                action="assistant.answered",
+                details={
+                    "via": "mcp",
+                    "documents": sorted({p.document_id for p in result.passages}),
+                    "cited": sorted({c.document_id for c in result.citations}),
+                    "abstained": result.abstained,
+                    "withheld_restricted": result.withheld,
+                    "local_model": result.local_model,
+                    "model": result.usage.model,
+                    "tokens": result.usage.input_tokens + result.usage.output_tokens,
+                },
+            )
         sources = [
             f"[{c.marker}] {c.title}"
             + (f" > {c.section}" if c.section else "")
@@ -250,6 +269,15 @@ def build_mcp_server(resources_of_app: Callable[[], Resources], version: str) ->
         _require(rc, "knowledge:read")
         async with tenant_transaction(resources.db, rc.tenant_id) as session:
             visible = await visible_collections(session, rc)
+            await record_event(
+                session,
+                tenant_id=rc.tenant_id,
+                actor=Actor(type="user", id=rc.user_id),
+                action="tool.called",
+                resource_type="tool",
+                resource_id="list_collections",
+                details={"caller": "mcp", "status": "ok", "collections": len(visible)},
+            )
         lines = [
             f"- {access.collection.name} ({count} documents): {access.collection.description}"
             for access, count in visible

@@ -1,5 +1,5 @@
 """The WorkMind MCP server over real HTTP (JSON-RPC, as MCP clients send it), with both
-permission locks. Embeddings are the hash provider; the language model is never called.
+permission locks. Embeddings are the hash provider; the language model is a scripted fake.
 
 Needs TEST_QDRANT_URL, TEST_VALKEY_URL and TEST_OPENFGA_URL (+ TEST_OPENFGA_API_KEY).
 """
@@ -18,12 +18,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
 from workmind.core.config import Settings
 from workmind.core.tenancy import tenant_transaction
 from workmind.main import create_app
 from workmind.modules.authz.openfga import OpenFgaClient
 from workmind.modules.authz.sync import ensure_store, reconcile
+from workmind.modules.governance.models import AuditEvent
 from workmind.modules.knowledge.models import Collection
 from workmind.modules.retrieval.qdrant import QdrantClient
 
@@ -185,3 +187,36 @@ async def test_token_scopes_limit_what_mcp_can_do(api: TestClient, acme: Acme) -
     assert "assistant:ask" in text
     assert "Company Handbook" in collections
     assert "HR Employee Records" not in collections
+
+
+async def test_every_mcp_call_is_audited_ask_and_list_collections_too(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    # Only the registry tools (search_knowledge, the analytics tools) wrote audit events: an
+    # answer drawn from restricted documents over MCP left no trail, unlike POST /ask.
+    app: Any = api.app
+    app.state.resources.llm = FakeLLM("Q3 payroll was 6.1 million euros [S1].")
+    hannah = token(api, acme, "hannah.schmidt", ["knowledge:read", "assistant:ask"])
+
+    answered, is_error = call(api, hannah, "ask", question="What was the Q3 payroll total?")
+    listed, _ = call(api, hannah, "list_collections")
+
+    assert not is_error, answered
+    assert "Finance" in listed
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        events = (
+            await session.scalars(
+                select(AuditEvent)
+                .where(AuditEvent.action.in_(["assistant.answered", "tool.called"]))
+                .order_by(AuditEvent.seq)
+            )
+        ).all()
+    answers = [e for e in events if e.action == "assistant.answered"]
+    assert len(answers) == 1
+    assert answers[0].actor_id == acme.users["hannah.schmidt"]
+    assert answers[0].details["via"] == "mcp"
+    assert answers[0].details["documents"]  # which documents it drew on, never the text
+    assert "6.1" not in json.dumps(answers[0].details)
+    assert [(e.resource_id, e.details["caller"]) for e in events if e.action == "tool.called"] == [
+        ("list_collections", "mcp")
+    ]

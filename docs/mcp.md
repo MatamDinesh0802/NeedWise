@@ -3,7 +3,9 @@
 WorkMind is an MCP server at **`/mcp`** (Streamable HTTP). Any MCP client — Claude Code,
 Cursor, Claude Desktop, your own scripts — can ask questions of your company's documents with
 **the same permissions as the web app**: both permission locks, the tenant's model policy and the
-token's scopes apply, and every call is audited.
+token's scopes apply, and every call is audited: `ask` as `assistant.answered` with `via: mcp`
+(the documents the answer drew on, never its text, as for the web app), the other tools as
+`tool.called` with `caller: mcp`.
 
 ## 1. Create a personal access token
 
