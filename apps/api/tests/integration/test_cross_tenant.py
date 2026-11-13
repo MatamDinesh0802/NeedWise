@@ -116,6 +116,7 @@ PHRASES = {
         "drive",
         "token",
         "review",
+        "mapping",
     )
 }
 SECRET_PROVIDER_KEY = f"sk-{uuid.uuid4().hex}{uuid.uuid4().hex}"
@@ -293,6 +294,25 @@ def _build_a(client: TestClient, a: Side) -> None:
             headers=alice,
         )
     )
+    # Its own access list (docs/permission-sync.md): the organization, so A's people keep
+    # reading it; and an identity mapping that names a canary.
+    _check(
+        client.put(
+            f"/api/v1/documents/{v['document_id']}/acl",
+            json={"viewers": [f"org:{acme.tenant_id}"]},
+            headers=alice,
+        )
+    )
+    v["mapping_id"] = _check(
+        client.put(
+            "/api/v1/admin/identity-mappings",
+            json={
+                "external": f"group:{PHRASES['mapping']}@acme.test",
+                "principal": f"group:{v['group_id']}",
+            },
+            headers=erin,
+        )
+    )["mapping"]["id"]
 
     conversation = _check(
         client.post("/api/v1/conversations", json={"title": PHRASES["chat"]}, headers=alice), 201
@@ -937,6 +957,35 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
         ),
     ],
     ("POST", "/api/v1/documents/{document_id}/review"): [deny(json={"note": "probe"})],
+    ("GET", "/api/v1/documents/{document_id}/acl"): [deny()],
+    ("PUT", "/api/v1/documents/{document_id}/acl"): [
+        deny(json={"viewers": None}),
+        refuse(
+            403,
+            404,
+            422,
+            params={"document_id": "b:document_id"},
+            json=lambda w: {"viewers": tenant_principals(w)},
+        ),
+    ],
+    ("GET", "/api/v1/admin/identity-mappings"): [own()],
+    ("PUT", "/api/v1/admin/identity-mappings"): [
+        refuse(
+            404,
+            422,
+            json=lambda w: {
+                "external": "group:probe@acme.test",
+                "principal": f"group:{w.a.values['group_id']}",
+            },
+        ),
+        own(
+            json=lambda w: {
+                "external": "group:probe@acme.test",
+                "principal": f"group:{w.b.values['group_id']}",
+            }
+        ),
+    ],
+    ("DELETE", "/api/v1/admin/identity-mappings/{mapping_id}"): [deny()],
     ("POST", "/api/v1/documents/{document_id}/official"): [deny(json={"note": "probe"})],
     ("GET", "/api/v1/admin/collections"): [own()],
     ("POST", "/api/v1/admin/collections"): [
