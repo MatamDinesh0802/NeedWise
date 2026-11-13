@@ -241,9 +241,10 @@ showed exactly that. What an operator changes:
    `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD` (after a restore: the source's admin
    login) and updates the two values with `kcadm.sh`.
 3. Outside WorkMind: identity providers federated into Keycloak (company SSO) must allow the new
-   broker URL (`<PUBLIC_URL>/auth/realms/workmind/broker/<alias>/endpoint`); a Google OAuth
-   client used by Drive sources needs the new redirect URI
-   (`<PUBLIC_URL>/api/v1/oauth/google/callback`); MCP clients and anyone with bookmarks need
+   broker URL (`<PUBLIC_URL>/auth/realms/workmind/broker/<alias>/endpoint`); the OAuth apps
+   of Drive, Confluence and SharePoint sources need the new redirect URI
+   (`<PUBLIC_URL>/api/v1/oauth/google/callback`, `.../oauth/atlassian/callback`,
+   `.../oauth/microsoft/callback`); MCP clients and anyone with bookmarks need
    the new address. Personal access tokens keep working (they are not tied to the address).
 
 ## Measured: a restore drill

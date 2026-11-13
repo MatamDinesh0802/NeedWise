@@ -263,6 +263,7 @@ For each one the chart uses, in this order:
 | `demoPassword` | `demo-password` | `DEMO_PASSWORD` (seed) | no |
 | `anthropicApiKey`, `llmApiKey`, `localLlmApiKey`, `embeddingApiKey`, `transcriptionApiKey` | `anthropic-api-key`, ... | `ANTHROPIC_API_KEY`, `LLM_API_KEY`, ... | no |
 | `smtpPassword`, `googleClientSecret` | `smtp-password`, `google-client-secret` | `SMTP_PASSWORD`, `GOOGLE_CLIENT_SECRET` | no |
+| `atlassianClientSecret`, `microsoftClientSecret` | `atlassian-client-secret`, `microsoft-client-secret` | `ATLASSIAN_CLIENT_SECRET`, `MICROSOFT_CLIENT_SECRET` (Confluence and SharePoint sources; the client ids are `config.atlassian.clientId`, `config.microsoft.clientId` and `config.microsoft.tenantId`) | no |
 | `licenseKey` | `license-key` | `LICENSE_KEY` (Enterprise) | no |
 | `mcpServers` | `mcp-servers` | `MCP_SERVERS` (JSON with the servers' tokens) | no |
 

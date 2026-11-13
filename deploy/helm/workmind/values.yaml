@@ -97,6 +97,15 @@ config:
   google:
     # Google Drive sources (docs/connectors.md); the secret is credentials.googleClientSecret.
     clientId: ""
+  atlassian:
+    # Confluence sources that connect with OAuth (docs/connectors.md); the secret is
+    # credentials.atlassianClientSecret. Sources that use an API token need neither.
+    clientId: ""
+  microsoft:
+    # SharePoint/OneDrive sources (docs/connectors.md); the secret is
+    # credentials.microsoftClientSecret. tenantId: your directory id or domain, or organizations.
+    clientId: ""
+    tenantId: organizations
   searxngUrl: ""
   # A license issued for one deployment is valid only where DEPLOYMENT_ID matches it.
   deploymentId: ""
@@ -224,6 +233,14 @@ credentials:
     value: ""
     existingSecret: ""
     key: google-client-secret
+  atlassianClientSecret:
+    value: ""
+    existingSecret: ""
+    key: atlassian-client-secret
+  microsoftClientSecret:
+    value: ""
+    existingSecret: ""
+    key: microsoft-client-secret
   # The Enterprise license token (LICENSE_KEY, docs/enterprise.md). Empty: Community edition.
   licenseKey:
     value: ""
