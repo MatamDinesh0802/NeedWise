@@ -223,6 +223,16 @@ async def test_bad_credentials_and_unknown_spaces_are_errors() -> None:
         await connector(fake, spaces=["HR", "NOPE"]).scan({})
     with pytest.raises(ConnectorError, match="cloud id"):
         connector(fake, {"refresh_token": "oauth-refresh-1"})
+    with pytest.raises(ConnectorError, match=r"connected to https://other\.atlassian\.net"):
+        # The site in the configuration changed after connecting: the cloud id is stale.
+        connector(
+            fake,
+            {
+                "refresh_token": "oauth-refresh-1",
+                "cloud_id": CLOUD_ID,
+                "site_url": "https://other.atlassian.net",
+            },
+        )
     with pytest.raises(ConnectorError, match="API token"):
         connector(fake, {})  # nothing at all
     with pytest.raises(ConnectorError, match="email"):

@@ -102,6 +102,10 @@ class ConfluenceConnector:
             cloud_id = str(credentials.get("cloud_id", ""))
             if not re.fullmatch(r"[A-Za-z0-9-]{1,64}", cloud_id):
                 raise ConnectorError("reconnect Confluence: the site's cloud id is missing")
+            connected = str(credentials.get("site_url") or self._site).rstrip("/").lower()
+            if connected != self._site.lower():
+                # The cloud id names the site that was granted, not the one configured now.
+                raise ConnectorError(f"reconnect Confluence: it was connected to {connected}")
             self._base = f"{ATLASSIAN_API}/{cloud_id}"
             self._token = RefreshingToken(
                 http,
