@@ -9,6 +9,8 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: [--maxkb=1000]
+        # The demo video and GIF (e2e/browser/demo): render.mjs keeps them under 20 MB and 8 MB.
+        exclude: ^docs/media/demo\.(mp4|gif)$
       - id: check-merge-conflict
       - id: detect-private-key
   - repo: https://github.com/astral-sh/ruff-pre-commit
