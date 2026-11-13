@@ -13,8 +13,8 @@
     { "type": "perf", "section": "Performance" },
     { "type": "eval", "section": "Evaluation" },
     { "type": "build", "section": "Build and supply chain" },
-    { "type": "ci", "section": "Build and supply chain" },
-    { "type": "docs", "section": "Documentation" },
+    { "type": "ci", "section": "Build and supply chain", "hidden": true },
+    { "type": "docs", "section": "Documentation", "hidden": true },
     { "type": "refactor", "section": "Refactoring", "hidden": true },
     { "type": "test", "section": "Tests", "hidden": true },
     { "type": "chore", "section": "Miscellaneous", "hidden": true }

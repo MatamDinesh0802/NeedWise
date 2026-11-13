@@ -38,8 +38,8 @@ packages or the chart's `appVersion` do not carry. The API reports its version i
 ## The flow
 
 1. **Commits on `main` follow Conventional Commits.** `feat:` and `fix:` decide the next version;
-   `perf:`, `eval:`, `build:`, `ci:` and `docs:` also appear in the changelog; `refactor:`,
-   `test:` and `chore:` do not. A breaking change is `feat!:` or a `BREAKING CHANGE:` footer; before
+   `perf:`, `eval:` and `build:` also appear in the changelog and make a release; `docs:`, `ci:`,
+   `refactor:`, `test:` and `chore:` do not (a docs-only change publishes nothing new). A breaking change is `feat!:` or a `BREAKING CHANGE:` footer; before
    1.0 it bumps the minor version (`bump-minor-pre-major`).
 2. **release-please keeps a release PR open** ([`release-please.yml`](../../.github/workflows/release-please.yml),
    on every push to `main`): "chore: release X.Y.Z", with the version bumps and a new
