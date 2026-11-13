@@ -60,7 +60,7 @@ web-dev: ## Run the web app on the host with hot reload (after `make infra`)
 	cd apps/web && pnpm dev
 
 install: ## Install backend and frontend dependencies
-	cd apps/api && uv sync --extra ee
+	cd apps/api && uv sync --extra ee --extra mysql
 	cd apps/web && pnpm install
 
 lint: ## Lint and type-check everything

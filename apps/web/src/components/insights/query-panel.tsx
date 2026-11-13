@@ -7,7 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
-import { analyticsApi, type QueryRerun, type QueryResult } from "@/lib/analytics/api";
+import { analyticsApi, UPLOADS, type QueryRerun, type QueryResult, type SqlDialect } from "@/lib/analytics/api";
 import { csvFilename, downloadText, toCsv } from "@/lib/analytics/csv";
 import { formatCount, formatElapsed } from "@/lib/analytics/format";
 import { errorMessage } from "@/lib/error-messages";
@@ -18,6 +18,14 @@ import { ResultTable } from "./result-table";
 
 export interface Refreshed extends QueryRerun {
   at: string;
+}
+
+const DIALECT_NAMES: Record<SqlDialect, string> = { duckdb: "DuckDB", postgres: "PostgreSQL", mysql: "MySQL" };
+
+/** "shop · PostgreSQL" for a query on a database source; null for the uploaded files. */
+export function datasetLabel(query: Pick<QueryResult, "dataset" | "dialect">): string | null {
+  if (!query.dataset || query.dataset === UPLOADS) return null;
+  return query.dialect ? `${query.dataset} · ${DIALECT_NAMES[query.dialect]}` : query.dataset;
 }
 
 /** What a failed refresh means, in plain words. */
@@ -61,7 +69,7 @@ export function QueryPanel({
     setRefreshing(true);
     setRefreshError(null);
     try {
-      const result = await analyticsApi.query(query.sql);
+      const result = await analyticsApi.query(query.sql, query.dataset);
       onRefreshed(query.id, { ...result, at: new Date().toISOString() });
     } catch (error) {
       setRefreshError(error);
@@ -71,6 +79,7 @@ export function QueryPanel({
   }
 
   const failure = refreshError ? refreshErrorText(refreshError) : null;
+  const where = datasetLabel(query);
 
   return (
     <section
@@ -85,6 +94,11 @@ export function QueryPanel({
               {query.id}
             </Badge>
             <span className="min-w-0">{query.purpose || "Query"}</span>
+            {where ? (
+              <Badge variant="outline" className="font-normal" title="The database this query ran on">
+                {where}
+              </Badge>
+            ) : null}
             {main ? (
               <Badge variant="secondary" className="font-normal">
                 <Star data-icon="inline-start" aria-hidden="true" />

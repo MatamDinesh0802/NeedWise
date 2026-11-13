@@ -134,9 +134,14 @@ class AnalyticsItem(_Item):
     the order matters) or "value" (a single gold cell must appear in the result).
     expect "no_access": the user may not query; the agent must refuse without calling a model.
     expect "rejected": an attack; nothing beyond what the user may see may come back.
+
+    `dataset`: the dataset the item is about: None for the uploaded files, or a PostgreSQL or
+    MySQL source's key (evals/datasets/analytics_sql.jsonl). Its gold, hidden and probe SQL are
+    written in that dataset's dialect and run on it.
     """
 
     category: str
+    dataset: str | None = None
     expect: Literal["answer", "no_access", "rejected"] = "answer"
     gold_sql: str | None = None
     compare: Literal["rows", "value"] | None = None
@@ -253,10 +258,12 @@ def load_meetings(directory: Path) -> list[MeetingItem]:
     ]
 
 
-def load_analytics(directory: Path) -> list[AnalyticsItem]:
+def load_analytics(directory: Path, filename: str | None = None) -> list[AnalyticsItem]:
+    """The analytics items, from analytics.jsonl or another file of the same shape (e.g.
+    analytics_sql.jsonl, about a database source)."""
     return [
         AnalyticsItem.model_validate(json.loads(line))
-        for line in _lines(directory / FILES["analytics"])
+        for line in _lines(directory / (filename or FILES["analytics"]))
     ]
 
 

@@ -54,7 +54,7 @@ jobs:
             openfga/openfga:v1.22.1@sha256:b852071314f1fda1194d341a6ebac0a4f619b3cd87a6626d2ccc7048af4ec671 run
           for _ in $(seq 1 30); do curl -fs http://localhost:8401/healthz && break; sleep 1; done
       # With the Enterprise package installed: the tests prove it stays unloaded without a license.
-      - run: uv sync --locked --extra ee
+      - run: uv sync --locked --extra ee --extra mysql
       - run: uv run ruff check . ../../ee/python
       - run: uv run ruff format --check . ../../ee/python
       - run: uv run pyright

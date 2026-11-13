@@ -345,7 +345,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #10 — "From a 30-minute meeting to tracked commitments, fully self-hosted."**
 
-### Phase 10 — Business intelligence agent (v0.10) ✅ Done for CSV/XLSX data: execution accuracy 33/36 with Claude Sonnet 5.5, 0 permission leaks in 51 answers. Not built: Postgres/MySQL sources (see `docs/analytics.md`)
+### Phase 10 — Business intelligence agent (v0.10) ✅ Done: execution accuracy 33/36 with Claude Sonnet 5.5 on CSV/XLSX data, 0 permission leaks in 51 answers; PostgreSQL and MySQL sources and live progress built and tested with scripted models (`docs/analytics-sql-sources.md`)
 
 **Goal:** analytical questions answered with charts, explanations and verifiable SQL.
 
@@ -362,7 +362,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 **Status:**
 - Done: CSV/XLSX → versioned DuckDB per tenant; semantic layer YAML; sqlglot guard with row policies; sandboxed read-only engine; the BI agent (tool loop, compose, chart spec, number verification with one repair pass); `/api/v1/analytics/*` and admin routes; `describe_data` / `query_data` for research mode and MCP; the Insights page and Admin › Analytics; the text-to-SQL eval (`wm eval --suites analytics`, [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md)).
 - Measured with Claude Sonnet 5.5 ([evals/results/2026-11-12-analytics.md](../evals/results/2026-11-12-analytics.md)): execution accuracy 33/36 (28/29 with full access, 5/7 under Dan's row policy), 5/5 people without access refused with no model call, 10/10 attacks without a leak, 0 leaks, 159/159 narrative numbers matched to a result, 6.9 s p50 / 10.2 s p95, $0.026 per answer. The DoD question was asked on the Insights page against the running stack: a chart, the narrative, 4 queries with their SQL and data, 20/20 figures backed. Two runs only, one model.
-- Not done: Postgres/MySQL connectors; streaming of the agent's progress; measurements with other or local models.
+- Done since (2026-11-13, [docs/analytics-sql-sources.md](analytics-sql-sources.md)): PostgreSQL and MySQL sources as datasets of their own (own model, access and row policies), read-only three ways (the guard, a read-only session, a read-only database role the docs ask for), statement timeouts, row caps, a connection budget per tenant, hosts checked against the model providers' SSRF rules with private networks only by an operator setting, passwords sealed like provider keys; model tables rewritten to the database's, row policies as CTE fences (PostgreSQL `MATERIALIZED`: without it, PostgreSQL 18 evaluated an oracle on hidden rows in a test); admin connect, catalog and model-check routes and UI; the agent across datasets; live progress of an answer on Insights (planning, each query compiled and run, writing, verifying, charting) over the chat runs' event streams. Tested on PostgreSQL 18.6 and MySQL 8.4.13 with scripted models: 127 guard bypass cases refused, 51 integration tests and 4 over HTTP; 19 eval items for a SQL source (`evals/datasets/analytics_sql.jsonl`) score 19/19 with a gold-answering scripted model.
+- Not done: execution accuracy on a SQL source with a real model; measurements with other or local models; databases other than PostgreSQL and MySQL; connection pooling.
 
 **LinkedIn post #11 — "Letting an LLM write SQL against company data, safely."**
 

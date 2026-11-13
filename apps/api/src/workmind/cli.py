@@ -7,7 +7,8 @@ wm reindex <tenant>       re-index a tenant's documents
 wm authz sync [<tenant>]  bring authorization stores up to date: the current model, and
                           tuples recomputed from PostgreSQL (all active tenants by default);
                           after an upgrade or a restore (docs/operations/)
-wm secrets rotate         re-encrypt stored model provider keys with SECRETS_ENCRYPTION_KEY
+wm secrets rotate         re-encrypt stored model provider keys and SQL source passwords with
+                          SECRETS_ENCRYPTION_KEY
 wm tenant list|create|delete|verify-empty
                           create a tenant, or delete one from every store and verify that
                           nothing remains (see `wm tenant --help`, docs/multi-tenancy.md)
@@ -166,6 +167,7 @@ async def _reindex(tenant_slug: str) -> int:
 async def _rotate_secrets() -> int:
     from workmind.core.config import Settings
     from workmind.core.db import create_engine, create_session_factory
+    from workmind.modules.analytics.rotation import rotate_source_passwords
     from workmind.modules.model_catalog.rotation import rotate_keys
     from workmind.modules.model_catalog.secrets import KeyRing
     from workmind.modules.work.delivery import rotate_slack_secrets
@@ -174,21 +176,23 @@ async def _rotate_secrets() -> int:
     keyring = KeyRing.from_settings(settings)
     engine = create_engine(settings.database_url)
     try:
-        report = await rotate_keys(create_session_factory(engine), keyring)
-        slack = await rotate_slack_secrets(create_session_factory(engine), keyring)
+        sessions = create_session_factory(engine)
+        report = await rotate_keys(sessions, keyring)
+        slack = await rotate_slack_secrets(sessions, keyring)
+        sources = await rotate_source_passwords(sessions, keyring)
     finally:
         await engine.dispose()
-    print(
-        f"model provider keys: {report.rotated} re-encrypted with key {keyring.active_key_id}, "
-        f"{report.current} already on it, {report.failed} could not be decrypted",
-        file=sys.stderr,
-    )
-    print(
-        f"Slack secrets: {slack.rotated} re-encrypted, {slack.current} already on it, "
-        f"{slack.failed} could not be decrypted",
-        file=sys.stderr,
-    )
-    return 1 if report.failed or slack.failed else 0
+    for what, done in (
+        ("model provider keys", report),
+        ("Slack secrets", slack),
+        ("SQL source passwords", sources),
+    ):
+        print(
+            f"{what}: {done.rotated} re-encrypted with key {keyring.active_key_id}, "
+            f"{done.current} already on it, {done.failed} could not be decrypted",
+            file=sys.stderr,
+        )
+    return 1 if report.failed or slack.failed or sources.failed else 0
 
 
 if __name__ == "__main__":

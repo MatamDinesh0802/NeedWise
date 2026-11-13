@@ -3597,7 +3597,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/SourceOut"
+                    "$ref": "#/components/schemas/workmind__api__v1__sources__SourceOut"
                   },
                   "type": "array",
                   "title": "Response List Sources Api V1 Admin Sources Get"
@@ -3629,7 +3629,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SourceOut"
+                  "$ref": "#/components/schemas/workmind__api__v1__sources__SourceOut"
                 }
               }
             }
@@ -3730,7 +3730,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SourceOut"
+                  "$ref": "#/components/schemas/workmind__api__v1__sources__SourceOut"
                 }
               }
             }
@@ -3807,7 +3807,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SourceOut"
+                  "$ref": "#/components/schemas/workmind__api__v1__sources__SourceOut"
                 }
               }
             }
@@ -3850,7 +3850,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SourceOut"
+                  "$ref": "#/components/schemas/workmind__api__v1__sources__SourceOut"
                 }
               }
             }
@@ -5232,7 +5232,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SourceIn"
+                "$ref": "#/components/schemas/workmind__api__v1__work__SourceIn"
               }
             }
           },
@@ -6172,7 +6172,7 @@
           "analytics"
         ],
         "summary": "Get Model",
-        "description": "The data model the caller may query: metrics, dimensions, tables, the row limits that\napply to them, and example questions.",
+        "description": "The data the caller may query: for each dataset (the uploaded files, database sources)\nits metrics, dimensions, tables, the row limits that apply to the caller, and example\nquestions.",
         "operationId": "get_model_api_v1_analytics_model_get",
         "responses": {
           "200": {
@@ -6257,6 +6257,99 @@
                   },
                   "type": "array",
                   "title": "Response List Runs Api V1 Analytics Runs Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Start Run",
+        "description": "Ask in the background: 202 with the run's id at once; the answer's progress streams from\nGET /analytics/runs/{id}/events, and the answer is GET /analytics/runs/{id} once the stream\nsays run.completed.",
+        "operationId": "start_run_api_v1_analytics_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStartedOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/runs/{run_id}/events": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Run Events",
+        "description": "The run's progress as Server-Sent Events, replayable with Last-Event-ID, for an hour\nafter its last event. Anyone else's run is a 404.",
+        "operationId": "run_events_api_v1_analytics_runs__run_id__events_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -6483,6 +6576,297 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminAnalyticsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analytics/sources": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Sources",
+        "description": "PostgreSQL and MySQL sources, with their status. Never the password.",
+        "operationId": "list_sources_api_v1_admin_analytics_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/workmind__modules__analytics__service__SourceOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Sources Api V1 Admin Analytics Sources Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create Source",
+        "description": "Connect a database: where it is, the user and password (stored encrypted), the TLS mode,\nand the schemas its tables may come from. 422 invalid_source for a host WorkMind may not\nconnect to; 409 conflict for a key in use.",
+        "operationId": "create_source_api_v1_admin_analytics_sources_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/workmind__modules__analytics__sources__SourceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/workmind__modules__analytics__service__SourceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analytics/sources/{key}": {
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update Source",
+        "description": "Change a source. Pointing it elsewhere (host, port, database, user) needs the password\nagain (422 password_required).",
+        "operationId": "update_source_api_v1_admin_analytics_sources__key__patch",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/workmind__modules__analytics__service__SourceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete Source",
+        "operationId": "delete_source_api_v1_admin_analytics_sources__key__delete",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analytics/sources/{key}/test": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Test Source",
+        "description": "Connect as queries do (read-only session) and ask the server's version. 200 either way:\n`ok` and `error` say how it went.",
+        "operationId": "test_source_api_v1_admin_analytics_sources__key__test_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceCheck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analytics/sources/{key}/catalog": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Source Catalog",
+        "description": "The tables and columns in the source's schemas that its user may read, to pick tables\nfor the semantic model. 503 source_unavailable with the reason when it cannot connect.",
+        "operationId": "source_catalog_api_v1_admin_analytics_sources__key__catalog_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceCatalog"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analytics/sources/{key}/model": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Put Source Model",
+        "description": "Replace the source's semantic model. It is validated in the source's SQL dialect and\nchecked against the database: 422 invalid_model with the problems.",
+        "operationId": "put_source_model_api_v1_admin_analytics_sources__key__model_put",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/workmind__api__v1__analytics__ModelIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/workmind__modules__analytics__service__SourceOut"
                 }
               }
             }
@@ -8199,6 +8583,21 @@
               }
             ],
             "title": "Error"
+          },
+          "dataset": {
+            "type": "string",
+            "title": "Dataset",
+            "default": "uploads"
+          },
+          "dialect": {
+            "type": "string",
+            "enum": [
+              "duckdb",
+              "postgres",
+              "mysql"
+            ],
+            "title": "Dialect",
+            "default": "duckdb"
           }
         },
         "type": "object",
@@ -8223,6 +8622,11 @@
           "description": {
             "type": "string",
             "title": "Description"
+          },
+          "dataset": {
+            "type": "string",
+            "title": "Dataset",
+            "default": "uploads"
           }
         },
         "type": "object",
@@ -8779,6 +9183,42 @@
         "type": "object",
         "title": "BudgetsIn"
       },
+      "CatalogColumn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "model_type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "integer",
+              "decimal",
+              "date",
+              "timestamp",
+              "boolean"
+            ],
+            "title": "Model Type"
+          },
+          "usable": {
+            "type": "boolean",
+            "title": "Usable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "model_type",
+          "usable"
+        ],
+        "title": "CatalogColumn"
+      },
       "CatalogOut": {
         "properties": {
           "providers": {
@@ -8814,6 +9254,41 @@
           "defaults"
         ],
         "title": "CatalogOut"
+      },
+      "CatalogTable": {
+        "properties": {
+          "schema": {
+            "type": "string",
+            "title": "Schema"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "table",
+              "view"
+            ],
+            "title": "Kind"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogColumn"
+            },
+            "type": "array",
+            "title": "Columns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schema",
+          "name",
+          "kind",
+          "columns"
+        ],
+        "title": "CatalogTable"
       },
       "CategoryOut": {
         "properties": {
@@ -9766,6 +10241,107 @@
           "type"
         ],
         "title": "DatasetColumnOut"
+      },
+      "DatasetModelOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "files",
+              "postgres",
+              "mysql"
+            ],
+            "title": "Kind"
+          },
+          "dialect": {
+            "type": "string",
+            "enum": [
+              "duckdb",
+              "postgres",
+              "mysql"
+            ],
+            "title": "Dialect"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "data_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Through"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/MetricOut"
+            },
+            "type": "array",
+            "title": "Metrics"
+          },
+          "dimensions": {
+            "items": {
+              "$ref": "#/components/schemas/DimensionOut"
+            },
+            "type": "array",
+            "title": "Dimensions"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/TableOut"
+            },
+            "type": "array",
+            "title": "Tables"
+          },
+          "row_policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Policy"
+          },
+          "examples": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Examples"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "kind",
+          "dialect",
+          "name",
+          "description",
+          "data_through",
+          "metrics",
+          "dimensions",
+          "tables",
+          "row_policy",
+          "examples"
+        ],
+        "title": "DatasetModelOut",
+        "description": "One dataset the caller may query: the uploaded files, or a database source."
       },
       "DatasetOut": {
         "properties": {
@@ -12914,6 +13490,18 @@
             "maxLength": 20000,
             "minLength": 1,
             "title": "Sql"
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 63
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset"
           }
         },
         "type": "object",
@@ -13508,6 +14096,20 @@
         ],
         "title": "RunStarted"
       },
+      "RunStartedOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "RunStartedOut"
+      },
       "SearchOut": {
         "properties": {
           "passages": {
@@ -13686,6 +14288,69 @@
         ],
         "title": "SlackTestOut"
       },
+      "SourceCatalog": {
+        "properties": {
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogTable"
+            },
+            "type": "array",
+            "title": "Tables"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tables",
+          "truncated"
+        ],
+        "title": "SourceCatalog"
+      },
+      "SourceCheck": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "server_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Version"
+          },
+          "elapsed_ms": {
+            "type": "integer",
+            "title": "Elapsed Ms"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "server_version",
+          "elapsed_ms",
+          "error"
+        ],
+        "title": "SourceCheck"
+      },
       "SourceCreate": {
         "properties": {
           "key": {
@@ -13772,20 +14437,6 @@
           "config"
         ],
         "title": "SourceCreate"
-      },
-      "SourceIn": {
-        "properties": {
-          "source": {
-            "type": "string",
-            "maxLength": 100000,
-            "title": "Source"
-          }
-        },
-        "type": "object",
-        "required": [
-          "source"
-        ],
-        "title": "SourceIn"
       },
       "SourceKindOut": {
         "properties": {
@@ -13884,261 +14535,148 @@
         ],
         "title": "SourceOptions"
       },
-      "SourceOut": {
+      "SourcePatch": {
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "key": {
-            "type": "string",
-            "title": "Key"
-          },
           "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "kind": {
-            "type": "string",
-            "title": "Kind"
-          },
-          "collection": {
-            "type": "string",
-            "title": "Collection"
-          },
-          "collection_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Collection Id"
-          },
-          "collection_name": {
-            "type": "string",
-            "title": "Collection Name"
-          },
-          "collection_scope": {
-            "type": "string",
-            "title": "Collection Scope"
-          },
-          "access": {
-            "items": {
-              "$ref": "#/components/schemas/AccessOut"
-            },
-            "type": "array",
-            "title": "Access"
-          },
-          "owner": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PersonRef"
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Name"
           },
-          "config": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Config"
+          "host": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 253,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
           },
-          "has_credentials": {
-            "type": "boolean",
-            "title": "Has Credentials"
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 65535.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
           },
-          "needs": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Needs"
+          "database": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 63,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database"
           },
-          "oauth": {
+          "username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 63,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024,
+                "minLength": 1,
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "tls_mode": {
             "anyOf": [
               {
                 "type": "string",
                 "enum": [
-                  "google",
-                  "slack",
-                  "atlassian",
-                  "microsoft"
+                  "disable",
+                  "require",
+                  "verify-full"
                 ]
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Oauth"
+            "title": "Tls Mode"
           },
-          "interval_minutes": {
-            "type": "integer",
-            "title": "Interval Minutes"
+          "tls_ca": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tls Ca"
+          },
+          "schemas": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 20,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schemas"
           },
           "enabled": {
-            "type": "boolean",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Enabled"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "health": {
-            "type": "string",
-            "enum": [
-              "healthy",
-              "failing",
-              "paused",
-              "never_synced"
-            ],
-            "title": "Health"
-          },
-          "syncing": {
-            "type": "boolean",
-            "title": "Syncing"
-          },
-          "consecutive_failures": {
-            "type": "integer",
-            "title": "Consecutive Failures"
-          },
-          "failure_alerted_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Failure Alerted At"
-          },
-          "last_sync_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Sync At"
-          },
-          "last_success_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Success At"
-          },
-          "next_sync_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Sync At"
-          },
-          "last_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Error"
-          },
-          "last_error_plain": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Error Plain"
-          },
-          "last_run": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/workmind__api__v1__sources__RunOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "stats": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Stats"
-          },
-          "documents": {
-            "type": "integer",
-            "title": "Documents"
-          },
-          "stale_after_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stale After Days"
-          },
-          "stale": {
-            "$ref": "#/components/schemas/StaleCounts"
           }
         },
+        "additionalProperties": false,
         "type": "object",
-        "required": [
-          "id",
-          "key",
-          "name",
-          "kind",
-          "collection",
-          "collection_id",
-          "collection_name",
-          "collection_scope",
-          "access",
-          "owner",
-          "config",
-          "has_credentials",
-          "needs",
-          "oauth",
-          "interval_minutes",
-          "enabled",
-          "status",
-          "health",
-          "syncing",
-          "consecutive_failures",
-          "failure_alerted_at",
-          "last_sync_at",
-          "last_success_at",
-          "next_sync_at",
-          "last_error",
-          "last_error_plain",
-          "last_run",
-          "stats",
-          "documents",
-          "stale_after_days",
-          "stale"
-        ],
-        "title": "SourceOut"
+        "title": "SourcePatch",
+        "description": "A change; fields left out stay. Changing where it connects (host, port, database, user)\nneeds the password again: the stored one is bound to the old place."
       },
       "SourceProblemOut": {
         "properties": {
@@ -16029,6 +16567,14 @@
             },
             "type": "array",
             "title": "Examples"
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetModelOut"
+            },
+            "type": "array",
+            "title": "Datasets",
+            "default": []
           }
         },
         "type": "object",
@@ -16042,7 +16588,8 @@
           "row_policy",
           "examples"
         ],
-        "title": "ModelOut"
+        "title": "ModelOut",
+        "description": "The first dataset (the uploaded files when the caller may query them) at the top level,\nas before database sources existed; every dataset the caller may query in `datasets`."
       },
       "workmind__api__v1__automation__RoutingOut": {
         "properties": {
@@ -16438,6 +16985,262 @@
         ],
         "title": "RunOut"
       },
+      "workmind__api__v1__sources__SourceOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "collection": {
+            "type": "string",
+            "title": "Collection"
+          },
+          "collection_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Collection Id"
+          },
+          "collection_name": {
+            "type": "string",
+            "title": "Collection Name"
+          },
+          "collection_scope": {
+            "type": "string",
+            "title": "Collection Scope"
+          },
+          "access": {
+            "items": {
+              "$ref": "#/components/schemas/AccessOut"
+            },
+            "type": "array",
+            "title": "Access"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          },
+          "has_credentials": {
+            "type": "boolean",
+            "title": "Has Credentials"
+          },
+          "needs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Needs"
+          },
+          "oauth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "google",
+                  "slack",
+                  "atlassian",
+                  "microsoft"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth"
+          },
+          "interval_minutes": {
+            "type": "integer",
+            "title": "Interval Minutes"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "health": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "failing",
+              "paused",
+              "never_synced"
+            ],
+            "title": "Health"
+          },
+          "syncing": {
+            "type": "boolean",
+            "title": "Syncing"
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "title": "Consecutive Failures"
+          },
+          "failure_alerted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Alerted At"
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "next_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Sync At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_error_plain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Plain"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/workmind__api__v1__sources__RunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stats": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Stats"
+          },
+          "documents": {
+            "type": "integer",
+            "title": "Documents"
+          },
+          "stale_after_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale After Days"
+          },
+          "stale": {
+            "$ref": "#/components/schemas/StaleCounts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "name",
+          "kind",
+          "collection",
+          "collection_id",
+          "collection_name",
+          "collection_scope",
+          "access",
+          "owner",
+          "config",
+          "has_credentials",
+          "needs",
+          "oauth",
+          "interval_minutes",
+          "enabled",
+          "status",
+          "health",
+          "syncing",
+          "consecutive_failures",
+          "failure_alerted_at",
+          "last_sync_at",
+          "last_success_at",
+          "next_sync_at",
+          "last_error",
+          "last_error_plain",
+          "last_run",
+          "stats",
+          "documents",
+          "stale_after_days",
+          "stale"
+        ],
+        "title": "SourceOut"
+      },
       "workmind__api__v1__work__RunOut": {
         "properties": {
           "id": {
@@ -16510,6 +17313,282 @@
           "finished_at"
         ],
         "title": "RunOut"
+      },
+      "workmind__api__v1__work__SourceIn": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "maxLength": 100000,
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "SourceIn"
+      },
+      "workmind__modules__analytics__service__SourceOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "postgres",
+              "mysql"
+            ],
+            "title": "Kind"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port"
+          },
+          "database": {
+            "type": "string",
+            "title": "Database"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password_set": {
+            "type": "boolean",
+            "title": "Password Set"
+          },
+          "tls_mode": {
+            "type": "string",
+            "enum": [
+              "disable",
+              "require",
+              "verify-full"
+            ],
+            "title": "Tls Mode"
+          },
+          "tls_ca": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tls Ca"
+          },
+          "schemas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Schemas"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "yaml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yaml"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "server_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Version"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "kind",
+          "host",
+          "port",
+          "database",
+          "username",
+          "password_set",
+          "tls_mode",
+          "tls_ca",
+          "schemas",
+          "enabled",
+          "yaml",
+          "checked_at",
+          "server_version",
+          "last_error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SourceOut",
+        "description": "A database source as admins see it: never the password."
+      },
+      "workmind__modules__analytics__sources__SourceIn": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "postgres",
+              "mysql"
+            ],
+            "title": "Kind"
+          },
+          "host": {
+            "type": "string",
+            "maxLength": 253,
+            "minLength": 1,
+            "title": "Host"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 65535.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "database": {
+            "type": "string",
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Database"
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 1,
+            "format": "password",
+            "title": "Password",
+            "writeOnly": true
+          },
+          "tls_mode": {
+            "type": "string",
+            "enum": [
+              "disable",
+              "require",
+              "verify-full"
+            ],
+            "title": "Tls Mode",
+            "default": "verify-full"
+          },
+          "tls_ca": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tls Ca"
+          },
+          "schemas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Schemas"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "kind",
+          "host",
+          "database",
+          "username",
+          "password",
+          "schemas"
+        ],
+        "title": "SourceIn"
       }
     }
   }

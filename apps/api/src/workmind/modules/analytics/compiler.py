@@ -11,21 +11,37 @@ literal node, so nothing is ever spliced into SQL text.
 
 The compiled SQL then goes through the SQL guard like any other query (service.py), which adds
 the user's row policies: there is one code path for permissions.
+
+The SQL is written in the model's dialect: DuckDB for uploaded files, PostgreSQL or MySQL for a
+database source. MySQL has neither date_trunc nor FILTER (WHERE ...) on aggregates, so time
+grains are built from MAKEDATE / INTERVAL and filtered metrics become CASE WHEN inside the
+aggregate (the same values: rows that fail the condition add NULL, which aggregates skip).
 """
 
 import math
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Literal
+from typing import Literal, cast
 
+import sqlglot
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlglot import exp
 
-from workmind.modules.analytics.guard import DIALECT
+from workmind.modules.analytics.guard import DIALECT, Dialect
 from workmind.modules.analytics.semantic import GRAINS, Format, Join, SemanticModel, expression
 
 Op = Literal["=", "!=", ">", ">=", "<", "<=", "in", "not_in"]
 Value = str | int | float | bool
+# MySQL: the first day of each period, as a DATE (__wm_col__ stands for the time column).
+_MYSQL_GRAINS = {
+    "day": "CAST(__wm_col__ AS DATE)",
+    "week": "DATE_SUB(CAST(__wm_col__ AS DATE), INTERVAL WEEKDAY(__wm_col__) DAY)",
+    "month": "CAST(MAKEDATE(YEAR(__wm_col__), 1) + INTERVAL (MONTH(__wm_col__) - 1) MONTH AS DATE)",
+    "quarter": (
+        "CAST(MAKEDATE(YEAR(__wm_col__), 1) + INTERVAL (QUARTER(__wm_col__) - 1) QUARTER AS DATE)"
+    ),
+    "year": "MAKEDATE(YEAR(__wm_col__), 1)",
+}
 _COMPARISONS: dict[str, type[exp.Binary]] = {
     "=": exp.EQ,
     "!=": exp.NEQ,
@@ -104,6 +120,7 @@ class CompiledQuery:
 def compile_query(model: SemanticModel, query: SemanticQuery) -> CompiledQuery:
     fact = _fact_table(model, query.metrics)
     time_column = model.tables[fact].time_column
+    dialect = model.dialect
     needed: set[str] = set()
     select = exp.Select()
     columns: list[OutputColumn] = []
@@ -112,8 +129,7 @@ def compile_query(model: SemanticModel, query: SemanticQuery) -> CompiledQuery:
         if name in GRAINS:
             if not time_column:
                 raise CompileError(f"{fact} has no date column, so it cannot be grouped by {name}")
-            truncated = exp.func("date_trunc", exp.Literal.string(name), _column(fact, time_column))
-            node: exp.Expr = exp.cast(truncated, exp.DataType.build("DATE"))
+            node: exp.Expr = _grain(name, _column(fact, time_column), dialect)
             columns.append(OutputColumn(name, "dimension", "date"))
         else:
             node = _dimension(model, fact, name, needed)
@@ -122,7 +138,7 @@ def compile_query(model: SemanticModel, query: SemanticQuery) -> CompiledQuery:
 
     for name in query.metrics:
         metric = model.metrics[name]
-        node = _metric(fact, metric.sql, metric.filter)
+        node = _metric(fact, metric.sql, metric.filter, dialect)
         select = select.select(exp.alias_(node, name, quoted=False), copy=False)
         columns.append(OutputColumn(name, "metric", metric.format))
 
@@ -133,7 +149,9 @@ def compile_query(model: SemanticModel, query: SemanticQuery) -> CompiledQuery:
         # every value and drops groups that would only show NULL ("pipeline value by stage"
         # would otherwise list won and lost deals with no value).
         unique = dict.fromkeys(" ".join(f.split()) for f in filters if f)
-        conditions.append(exp.or_(*(_qualified(expression(f), fact) for f in unique), copy=False))
+        conditions.append(
+            exp.or_(*(_qualified(expression(f, dialect), fact) for f in unique), copy=False)
+        )
     for item in query.filters:
         if item.dimension in GRAINS:
             raise CompileError("Filter dates with date_from and date_to, not a time grain.")
@@ -177,12 +195,14 @@ def compile_query(model: SemanticModel, query: SemanticQuery) -> CompiledQuery:
             exp.Ordered(
                 this=exp.Literal.number(positions[item.field]),
                 desc=item.direction == "desc",
-                nulls_first=False,
+                # MySQL cannot say NULLS LAST next to a position: its own order applies there
+                # (NULL first ascending, last descending).
+                nulls_first=None if dialect == "mysql" else False,
             ),
             copy=False,
         )
     return CompiledQuery(
-        sql=select.sql(dialect=DIALECT),
+        sql=select.sql(dialect=dialect),
         fact=fact,
         columns=columns,
         limit=query.limit,
@@ -217,7 +237,7 @@ def _dimension(model: SemanticModel, fact: str, name: str, needed: set[str]) -> 
                 f"The dimension {name} ({table}) cannot be combined with metrics of {fact}."
             ) from exc
         needed.add(table)
-    return expression(model.dimensions[name].sql)
+    return expression(model.dimensions[name].sql, model.dialect)
 
 
 def _joins(model: SemanticModel, fact: str, tables: set[str]) -> list[Join]:
@@ -230,12 +250,28 @@ def _joins(model: SemanticModel, fact: str, tables: set[str]) -> list[Join]:
     return joins
 
 
-def _metric(fact: str, sql: str, condition: str | None) -> exp.Expr:
-    node = _qualified(expression(sql), fact)
+def _grain(grain: str, column: exp.Column, dialect: Dialect) -> exp.Expr:
+    """The first day of `column`'s period, as a DATE."""
+    if dialect == "mysql":
+        node = sqlglot.parse_one(f"SELECT {_MYSQL_GRAINS[grain]}", dialect="mysql")
+        for placeholder in list(node.find_all(exp.Column)):
+            if placeholder.name == "__wm_col__":
+                placeholder.replace(column.copy())
+        return cast(exp.Select, node).selects[0]
+    truncated = exp.func("date_trunc", exp.Literal.string(grain), column)
+    return exp.cast(truncated, exp.DataType.build("DATE"))
+
+
+def _metric(fact: str, sql: str, condition: str | None, dialect: Dialect = DIALECT) -> exp.Expr:
+    node = _qualified(expression(sql, dialect), fact)
     if not condition:
         return node
-    where = _qualified(expression(condition), fact)
+    where = _qualified(expression(condition, dialect), fact)
     aggregates = [a for a in node.find_all(exp.AggFunc)]
+    if dialect == "mysql":
+        for aggregate in aggregates:
+            _filter_inside(aggregate, where)
+        return node
     for aggregate in aggregates:
         parent = aggregate.parent
         if isinstance(parent, exp.Filter) and isinstance(parent.expression, exp.Where):
@@ -248,6 +284,23 @@ def _metric(fact: str, sql: str, condition: str | None) -> exp.Expr:
         else:
             aggregate.replace(filtered)
     return node
+
+
+def _filter_inside(aggregate: exp.AggFunc, where: exp.Expr) -> None:
+    """agg(x) FILTER (WHERE c) as agg(CASE WHEN c THEN x END), for MySQL: count(*) counts
+    CASE WHEN c THEN 1 END, and DISTINCT applies to the CASE."""
+    argument = aggregate.this
+    if argument is None or isinstance(argument, exp.Star):
+        aggregate.set("this", _case(where, exp.Literal.number(1)))
+        return
+    if isinstance(argument, exp.Distinct):
+        argument.set("expressions", [_case(where, e) for e in argument.expressions])
+        return
+    aggregate.set("this", _case(where, argument))
+
+
+def _case(where: exp.Expr, value: exp.Expr) -> exp.Expr:
+    return exp.Case(ifs=[exp.If(this=where.copy(), true=value.copy())])
 
 
 def _qualified(node: exp.Expr, table: str) -> exp.Expr:
@@ -290,7 +343,7 @@ def _default_order(query: SemanticQuery) -> list[OrderBy]:
     return [OrderBy(field=query.metrics[0], direction="desc")]
 
 
-def duplicate_keys_sql(join: Join) -> str:
+def duplicate_keys_sql(join: Join, dialect: Dialect = DIALECT) -> str:
     """How many values of the join's right-hand (one-side) key appear more than once: any is a
     fan-out, counting the fact rows that match it several times."""
     table, column = join.right.split(".")
@@ -301,10 +354,10 @@ def duplicate_keys_sql(join: Join) -> str:
             expression=exp.func("count", exp.Distinct(expressions=[key.copy()])),
         )
     ).from_(exp.to_table(table))
-    return select.sql(dialect=DIALECT)
+    return select.sql(dialect=dialect)
 
 
-def orphan_keys_sql(join: Join) -> str:
+def orphan_keys_sql(join: Join, dialect: Dialect = DIALECT) -> str:
     """How many rows on the many side have a key the one side lacks (they show as NULL)."""
     left_table, left_column = join.left.split(".")
     right_table, right_column = join.right.split(".")
@@ -322,4 +375,4 @@ def orphan_keys_sql(join: Join) -> str:
             )
         )
     )
-    return select.sql(dialect=DIALECT)
+    return select.sql(dialect=dialect)

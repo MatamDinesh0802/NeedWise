@@ -53,6 +53,9 @@ diarization = [
 # The Enterprise Edition (ee/, commercial license). Installed or not, it runs only with a valid
 # license key; without one the core never imports it (docs/enterprise.md).
 ee = ["workmind-ee"]
+# MySQL data sources for analytics (docs/analytics-sql-sources.md). PostgreSQL sources use asyncpg,
+# which the core already needs. The image installs it.
+mysql = ["pymysql>=1.1.1"]
 
 [tool.uv.sources]
 workmind-ee = { path = "../../ee/python", editable = true }
@@ -71,6 +74,7 @@ dev = [
     "pytest-asyncio>=1.4.1.post1",
     "reportlab>=5.1.0",
     "ruff>=0.17.3",
+    "types-pymysql>=1.2.4.20261111",
     "types-pyyaml>=6.0.12.20261103",
 ]
 

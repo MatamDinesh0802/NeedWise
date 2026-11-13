@@ -3,7 +3,7 @@
 import { ChartColumnBig, FileQuestion, LockKeyhole, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { SignedInGate } from "@/components/auth/signed-in-gate";
 import { EmptyState, ErrorAlert } from "@/components/data/states";
@@ -19,6 +19,8 @@ import {
   type AnalyticsModelUnavailable,
 } from "@/lib/analytics/api";
 import { unavailableCopy } from "@/lib/analytics/ask";
+import { initialProgress, type ProgressState } from "@/lib/analytics/progress";
+import { createProgressStream, type ProgressStream } from "@/lib/analytics/progress-stream";
 import type { Me } from "@/lib/session";
 import { toast } from "@/lib/stores/toasts";
 
@@ -79,7 +81,25 @@ export function Unavailable({ model, me }: { model: AnalyticsModelUnavailable; m
 interface Asking {
   question: string;
   startedAt: number;
-  controller: AbortController;
+  /** The answer's live steps, once the server has started it. */
+  stream: ProgressStream | null;
+}
+
+const NO_PROGRESS = initialProgress();
+const noStream = () => () => {};
+
+function useProgress(stream: ProgressStream | null): ProgressState {
+  return useSyncExternalStore(
+    stream ? stream.subscribe : noStream,
+    () => (stream ? stream.getSnapshot() : NO_PROGRESS),
+    () => NO_PROGRESS,
+  );
+}
+
+/** Example questions of every dataset, without repeats. */
+export function allExamples(model: AnalyticsModelAvailable): string[] {
+  const lists = model.datasets?.length ? model.datasets.map((d) => d.examples) : [model.examples];
+  return [...new Set(lists.flat())].slice(0, 8);
 }
 
 function Workspace({ model }: { model: AnalyticsModelAvailable }) {
@@ -96,37 +116,65 @@ function Workspace({ model }: { model: AnalyticsModelAvailable }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const askingRef = useRef<Asking | null>(null);
 
-  // Leaving the page stops waiting (the server still saves the answer to the history).
-  useEffect(() => () => askingRef.current?.controller.abort(), []);
+  // Leaving the page stops listening (the server still saves the answer to the history).
+  useEffect(() => () => askingRef.current?.stream?.close(), []);
+  const progress = useProgress(asking?.stream ?? null);
 
   const useLatest = runId !== null && latest?.id === runId;
   const saved = useApiQuery(runId && !useLatest ? analyticsKeys.run(runId) : null, () => analyticsApi.run(runId!));
   const answer = useLatest ? latest : saved.state.status === "success" ? saved.state.data : null;
 
-  async function ask(question: string) {
-    const current: Asking = { question, startedAt: Date.now(), controller: new AbortController() };
-    askingRef.current = current;
-    setAsking(current);
-    setAskError(null);
+  function done() {
+    askingRef.current = null;
+    setAsking(null);
+    void invalidateQueries(analyticsKeys.runs);
+  }
+
+  /** The run ended: show the stored answer, or why it failed. */
+  async function finished(current: Asking, runId: string, state: ProgressState) {
+    if (askingRef.current !== current) return; // stopped waiting, or a newer question
     try {
-      const result = await analyticsApi.ask(question, current.controller.signal);
+      if (state.phase === "failed" && state.error?.code !== "stream_lost") {
+        setAskError(new ApiError({ status: 500, title: "The answer failed", code: state.error?.code, detail: state.error?.message }));
+        return;
+      }
+      // Completed (its answer is stored, failed answers too), or the stream was lost: the
+      // stored answer says how it ended.
+      const result = await analyticsApi.run(runId);
       setLatest(result);
       setFocusAnswer(true);
       setDraft("");
       router.push(`${pathname}?run=${encodeURIComponent(result.id)}`, { scroll: false });
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        toast({ title: "Stopped waiting", description: "If the answer finishes anyway, it appears in your answers." });
-        // The server keeps going; look again once it has likely finished.
-        window.setTimeout(() => void invalidateQueries(analyticsKeys.runs), 30_000);
-      } else {
-        setAskError(error);
-      }
+      setAskError(error);
     } finally {
-      askingRef.current = null;
-      setAsking(null);
-      void invalidateQueries(analyticsKeys.runs);
+      done();
     }
+  }
+
+  async function ask(question: string) {
+    const current: Asking = { question, startedAt: Date.now(), stream: null };
+    askingRef.current = current;
+    setAsking(current);
+    setAskError(null);
+    try {
+      const { run_id: runId } = await analyticsApi.startRun(question);
+      if (askingRef.current !== current) return;
+      const stream = createProgressStream(runId, { onDone: (state) => void finished(current, runId, state) });
+      current.stream = stream;
+      setAsking({ ...current });
+    } catch (error) {
+      setAskError(error);
+      done();
+    }
+  }
+
+  function stopWaiting() {
+    asking?.stream?.close();
+    toast({ title: "Stopped waiting", description: "If the answer finishes anyway, it appears in your answers." });
+    // The server keeps going; look again once it has likely finished.
+    window.setTimeout(() => void invalidateQueries(analyticsKeys.runs), 30_000);
+    done();
   }
 
   function askAgain(question: string) {
@@ -138,10 +186,10 @@ function Workspace({ model }: { model: AnalyticsModelAvailable }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
       <div className="flex min-w-0 flex-col gap-5">
-        <QuestionBox value={draft} onChange={setDraft} onAsk={(q) => void ask(q)} busy={asking !== null} examples={model.examples} inputRef={inputRef} />
+        <QuestionBox value={draft} onChange={setDraft} onAsk={(q) => void ask(q)} busy={asking !== null} examples={allExamples(model)} inputRef={inputRef} />
 
         {asking ? (
-          <AskProgress question={asking.question} startedAt={asking.startedAt} onStop={() => asking.controller.abort()} />
+          <AskProgress question={asking.question} startedAt={asking.startedAt} progress={progress} onStop={stopWaiting} />
         ) : askError ? (
           <ErrorAlert error={askError} onRetry={draft.trim() ? () => void ask(draft.trim()) : undefined} />
         ) : null}

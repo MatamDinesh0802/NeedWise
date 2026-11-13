@@ -2,6 +2,9 @@
 
     GET    /analytics/model                what the caller may query, or why they may not
     POST   /analytics/ask                  a question to the BI agent -> AnalyticsAnswer (stored)
+    POST   /analytics/runs                 the same question, answered in the background -> 202
+                                           {run_id}; its progress streams from .../events
+    GET    /analytics/runs/{id}/events     Server-Sent Events: planning, queries, verification
     GET    /analytics/runs                 the caller's own answers, newest first
     GET    /analytics/runs/{id}            one of them (anyone else's is a 404)
     POST   /analytics/query                re-run SQL as the caller: same guard, same row policies
@@ -11,15 +14,26 @@
     POST   /admin/analytics/tables?name=   add or replace a table (CSV or XLSX body)
     DELETE /admin/analytics/tables/{name}  remove a table
 
+    GET    /admin/analytics/sources                    PostgreSQL and MySQL sources
+    POST   /admin/analytics/sources                    connect one (the password is sealed)
+    PATCH  /admin/analytics/sources/{key}              change it
+    DELETE /admin/analytics/sources/{key}              remove it
+    POST   /admin/analytics/sources/{key}/test         connect and ask the server's version
+    GET    /admin/analytics/sources/{key}/catalog      tables and columns it can read
+    PUT    /admin/analytics/sources/{key}/model        its semantic model, checked against it
+
 Who may query, and which rows they see, is decided by the analytics service from the caller's
 principals (never by the model, never by the request). Errors are problem documents.
 """
 
 import uuid
-from datetime import date, datetime
-from typing import Annotated, Literal
+from collections.abc import AsyncIterator
+from datetime import UTC, date, datetime
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Query, Request
+import structlog
+from fastapi import APIRouter, Header, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, JsonValue, ValidationError
 
 from workmind.api.deps import rate_limit, require_scope, resources_of, settings_of
@@ -30,11 +44,24 @@ from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.analytics import agent
 from workmind.modules.analytics.agent import AnalyticsAnswer, AnswerColumn
+from workmind.modules.analytics.guard import Dialect
 from workmind.modules.analytics.semantic import GRAINS
-from workmind.modules.analytics.service import AnalyticsError, ModelDescription
+from workmind.modules.analytics.service import (
+    AnalyticsError,
+    DatasetKind,
+    ModelDescription,
+    SourceCatalog,
+    SourceCheck,
+    SourceOut,
+)
+from workmind.modules.analytics.sources import SourceIn, SourcePatch
+from workmind.modules.conversations.events import RunMeta
 from workmind.modules.identity.models import Tenant
+from workmind.modules.usage.budgets import BudgetExceededError
 from workmind.modules.usage.calls import attribute
+from workmind.providers.llm import LLMProvider
 
+log = structlog.get_logger("workmind.analytics")
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 admin_router = APIRouter(prefix="/admin/analytics", tags=["admin"])
 AskContext = Annotated[RequestContext, require_scope("assistant:ask")]
@@ -74,7 +101,26 @@ class TableOut(BaseModel):
     columns: list[ColumnOut]
 
 
+class DatasetModelOut(BaseModel):
+    """One dataset the caller may query: the uploaded files, or a database source."""
+
+    key: str  # "uploads", or the source's key: pass it as `dataset` to /query
+    kind: DatasetKind
+    dialect: Dialect  # the SQL /query takes for it
+    name: str
+    description: str
+    data_through: date | None
+    metrics: list[MetricOut]
+    dimensions: list[DimensionOut]  # the time grains included
+    tables: list[TableOut]
+    row_policy: str | None  # the row limits that apply to the caller, in plain words
+    examples: list[str]
+
+
 class ModelOut(BaseModel):
+    """The first dataset (the uploaded files when the caller may query them) at the top level,
+    as before database sources existed; every dataset the caller may query in `datasets`."""
+
     available: Literal[True] = True
     name: str
     description: str
@@ -84,6 +130,7 @@ class ModelOut(BaseModel):
     tables: list[TableOut]
     row_policy: str | None  # the row limits that apply to the caller, in plain words
     examples: list[str]
+    datasets: list[DatasetModelOut] = []
 
 
 class ModelUnavailable(BaseModel):
@@ -107,6 +154,12 @@ class RunItem(BaseModel):
 
 class QueryIn(BaseModel):
     sql: str = Field(min_length=1, max_length=20_000)
+    # "uploads" (the default) or a database source's key; the SQL is in that dataset's dialect.
+    dataset: str | None = Field(default=None, max_length=63)
+
+
+class RunStartedOut(BaseModel):
+    run_id: uuid.UUID
 
 
 class QueryOut(BaseModel):
@@ -147,17 +200,25 @@ class ModelIn(BaseModel):
 
 @router.get("/model")
 async def get_model(ctx: AskContext, request: Request) -> ModelOut | ModelUnavailable:
-    """The data model the caller may query: metrics, dimensions, tables, the row limits that
-    apply to them, and example questions."""
+    """The data the caller may query: for each dataset (the uploaded files, database sources)
+    its metrics, dimensions, tables, the row limits that apply to the caller, and example
+    questions."""
     analytics = resources_of(request).analytics
-    access = await analytics.access(ctx)
-    if not access.configured:
+    datasets = await analytics.datasets(ctx)
+    if not datasets:
         return ModelUnavailable(reason="not_configured", message=agent.NOT_SET_UP)
-    if not access.can_query:
-        return ModelUnavailable(reason="no_access", message=access.summary)
-    if not access.has_data:
+    queryable = [d for d in datasets if d.access.can_query]
+    if not queryable:
+        return ModelUnavailable(reason="no_access", message=datasets[0].access.summary)
+    usable = [d for d in queryable if d.access.has_data]
+    if not usable:
         return ModelUnavailable(reason="not_configured", message=agent.NO_DATA)
-    return _model_out(await analytics.describe(ctx))
+    described = [_dataset_out(await analytics.describe(ctx, d.key)) for d in usable]
+    first = described[0]
+    return ModelOut(
+        **first.model_dump(exclude={"key", "kind", "dialect"}),
+        datasets=described,
+    )
 
 
 @router.post("/ask", dependencies=[rate_limit("analytics")])
@@ -177,6 +238,114 @@ async def ask(ctx: AskContext, request: Request, body: AskIn) -> AnalyticsAnswer
                 body.question,
                 organization=tenant.name if tenant else "the company",
             )
+
+
+@router.post("/runs", status_code=202, dependencies=[rate_limit("analytics")])
+async def start_run(ctx: AskContext, request: Request, body: AskIn) -> RunStartedOut:
+    """Ask in the background: 202 with the run's id at once; the answer's progress streams from
+    GET /analytics/runs/{id}/events, and the answer is GET /analytics/runs/{id} once the stream
+    says run.completed."""
+    resources = resources_of(request)
+    await resources.usage.check(ctx)  # 429 budget_exceeded before anything is stored
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        tenant = await session.get(Tenant, ctx.tenant_id)
+    token = uuid.uuid4().hex
+    inflight = resources.runs.inflight
+    if not await inflight.acquire(ctx, token):  # 429 too_many_requests
+        raise inflight.refusal()
+    try:
+        created_at = datetime.now(UTC)
+        run_id = await resources.analytics.start_run(ctx, body.question, created_at=created_at)
+        # A run of its own: the event stream's key is the analytics run (no conversation).
+        meta = RunMeta(run_id, ctx.tenant_id, ctx.user_id, conversation_id=run_id)
+        await resources.runs.events.create(meta)
+        llm = await resources.models.for_tenant(ctx.tenant_id)
+    except BaseException:
+        await inflight.release(ctx, token)
+        raise
+    with attribute("analytics", user_id=ctx.user_id):
+        resources.runs.start(
+            _answer_streamed(
+                resources,
+                llm,
+                ctx,
+                meta,
+                body.question,
+                organization=tenant.name if tenant else "the company",
+                created_at=created_at,
+            ),
+            slot=(ctx, token),
+        )
+    return RunStartedOut(run_id=run_id)
+
+
+async def _answer_streamed(
+    resources: Resources,
+    llm: LLMProvider,
+    ctx: RequestContext,
+    meta: RunMeta,
+    question: str,
+    *,
+    organization: str,
+    created_at: datetime,
+) -> None:
+    """The agent, with each step as an `analytics.step` event, then run.completed (the answer
+    is stored: GET /analytics/runs/{id}) or run.failed."""
+    events = resources.runs.events
+    await events.emit(meta, "run.started", {"run_id": str(meta.run_id)})
+
+    async def on_event(step: str, data: dict[str, Any]) -> None:
+        await events.emit(meta, "analytics.step", {"step": step, **data})
+
+    try:
+        result = await agent.answer(
+            llm,
+            resources.analytics,
+            ctx,
+            question,
+            organization=organization,
+            run_id=meta.run_id,
+            created_at=created_at,
+            on_event=on_event,
+        )
+    except BudgetExceededError as exc:  # stored as a failed answer by the agent
+        await events.emit(meta, "run.failed", exc.event())
+        return
+    except Exception:
+        log.exception("analytics_run_failed", run_id=str(meta.run_id))
+        await events.emit(meta, "run.failed", {"code": "internal", "message": agent.FAILED})
+        return
+    await events.emit(
+        meta,
+        "run.completed",
+        {"run_id": str(meta.run_id), "status": result.status, "error": result.error},
+    )
+
+
+@router.get("/runs/{run_id}/events", response_class=StreamingResponse)
+async def run_events(
+    ctx: AskContext,
+    request: Request,
+    run_id: uuid.UUID,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    """The run's progress as Server-Sent Events, replayable with Last-Event-ID, for an hour
+    after its last event. Anyone else's run is a 404."""
+    events = resources_of(request).runs.events
+    meta = await events.meta(ctx.tenant_id, run_id)
+    if meta is None or meta.user_id != ctx.user_id or meta.conversation_id != run_id:
+        raise ApiError(404, "not_found", "Run not found or expired")
+
+    async def stream() -> AsyncIterator[str]:
+        yield "retry: 2000\n\n"
+        async for event in events.read(meta, after=last_event_id or "0"):
+            yield ": keep-alive\n\n" if event is None else event.sse()
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/runs")
@@ -219,7 +388,7 @@ async def run_query(ctx: AskContext, request: Request, body: QueryIn) -> QueryOu
     """Re-run SQL (an answer's query, or one the caller wrote) through the same guard and the
     caller's own row policies: refreshed data, never more than they may see."""
     try:
-        result = await resources_of(request).analytics.run_sql(ctx, body.sql)
+        result = await resources_of(request).analytics.run_sql(ctx, body.sql, dataset=body.dataset)
     except AnalyticsError as exc:
         if exc.code == "analytics_forbidden":
             raise ApiError(403, "no_access", exc.title, exc.detail) from exc
@@ -235,7 +404,7 @@ async def run_query(ctx: AskContext, request: Request, body: QueryIn) -> QueryOu
     )
 
 
-def _model_out(description: ModelDescription) -> ModelOut:
+def _dataset_out(description: ModelDescription) -> DatasetModelOut:
     dated = [f"{t.name}.{t.time_column}" for t in description.tables if t.time_column]
     on = f", on {' / '.join(dated)}" if dated else ""
     metrics = [
@@ -246,7 +415,10 @@ def _model_out(description: ModelDescription) -> ModelOut:
         )
         for m in description.metrics
     ]
-    return ModelOut(
+    return DatasetModelOut(
+        key=description.dataset,
+        kind=description.kind,
+        dialect=description.dialect,
         name=description.name,
         description=description.description,
         data_through=description.data_through,
@@ -323,6 +495,61 @@ async def delete_table(ctx: AdminContext, request: Request, name: str) -> AdminA
     resources = resources_of(request)
     await resources.analytics.delete_table(ctx, name)
     return await _admin_out(resources, ctx)
+
+
+# --- Database sources (org owners and admins; docs/analytics-sql-sources.md) ---------------
+
+
+@admin_router.get("/sources")
+async def list_sources(ctx: AdminContext, request: Request) -> list[SourceOut]:
+    """PostgreSQL and MySQL sources, with their status. Never the password."""
+    return await resources_of(request).analytics.sources(ctx)
+
+
+@admin_router.post("/sources", status_code=201)
+async def create_source(ctx: AdminContext, request: Request, body: SourceIn) -> SourceOut:
+    """Connect a database: where it is, the user and password (stored encrypted), the TLS mode,
+    and the schemas its tables may come from. 422 invalid_source for a host WorkMind may not
+    connect to; 409 conflict for a key in use."""
+    return await resources_of(request).analytics.create_source(ctx, body)
+
+
+@admin_router.patch("/sources/{key}")
+async def update_source(
+    ctx: AdminContext, request: Request, key: str, body: SourcePatch
+) -> SourceOut:
+    """Change a source. Pointing it elsewhere (host, port, database, user) needs the password
+    again (422 password_required)."""
+    return await resources_of(request).analytics.update_source(ctx, key, body)
+
+
+@admin_router.delete("/sources/{key}", status_code=204)
+async def delete_source(ctx: AdminContext, request: Request, key: str) -> Response:
+    await resources_of(request).analytics.delete_source(ctx, key)
+    return Response(status_code=204)
+
+
+@admin_router.post("/sources/{key}/test")
+async def test_source(ctx: AdminContext, request: Request, key: str) -> SourceCheck:
+    """Connect as queries do (read-only session) and ask the server's version. 200 either way:
+    `ok` and `error` say how it went."""
+    return await resources_of(request).analytics.test_source(ctx, key)
+
+
+@admin_router.get("/sources/{key}/catalog")
+async def source_catalog(ctx: AdminContext, request: Request, key: str) -> SourceCatalog:
+    """The tables and columns in the source's schemas that its user may read, to pick tables
+    for the semantic model. 503 source_unavailable with the reason when it cannot connect."""
+    return await resources_of(request).analytics.source_catalog(ctx, key)
+
+
+@admin_router.put("/sources/{key}/model")
+async def put_source_model(
+    ctx: AdminContext, request: Request, key: str, body: ModelIn
+) -> SourceOut:
+    """Replace the source's semantic model. It is validated in the source's SQL dialect and
+    checked against the database: 422 invalid_model with the problems."""
+    return await resources_of(request).analytics.set_source_model(ctx, key, body.yaml)
 
 
 async def _admin_out(resources: Resources, ctx: RequestContext) -> AdminAnalyticsOut:

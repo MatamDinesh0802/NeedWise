@@ -104,6 +104,7 @@ LIMITED = {
     ("POST", "/api/v1/admin/models/providers/{provider_id}/test"): "agent_test",
     ("POST", "/api/v1/admin/workflows/{key}/run"): "agent_test",
     ("POST", "/api/v1/analytics/ask"): "analytics",
+    ("POST", "/api/v1/analytics/runs"): "analytics",
     ("POST", "/api/v1/analytics/query"): "analytics",
     ("POST", "/api/v1/collections/{collection_id}/documents"): "ingest",
     ("POST", "/api/v1/documents/{document_id}/reindex"): "ingest",

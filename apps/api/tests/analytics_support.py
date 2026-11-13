@@ -15,9 +15,11 @@ from workmind.modules.analytics.compiler import CompileError, SemanticQuery, com
 from workmind.modules.analytics.service import (
     AccessInfo,
     AnalyticsError,
+    DatasetInfo,
     ModelDescription,
     QueryResult,
     ResultColumn,
+    StepCallback,
 )
 
 ACME_ANALYTICS = Path(__file__).resolve().parents[3] / "seed" / "acme" / "analytics"
@@ -137,8 +139,22 @@ class LocalAnalytics:
         self.runs: dict[uuid.UUID, dict[str, Any]] = {}
         self.denied: list[str] = []
         self.executed: list[str] = []  # the SQL that ran, row policies included
+        self.steps: list[tuple[str, dict[str, Any]]] = []  # progress the service reported
 
-    async def access(self, ctx: RequestContext) -> AccessInfo:
+    async def datasets(self, ctx: RequestContext) -> list[DatasetInfo]:
+        if not self.configured:
+            return []
+        return [
+            DatasetInfo(
+                key="uploads",
+                name=self.model.name,
+                kind="files",
+                dialect="duckdb",
+                access=await self.access(ctx),
+            )
+        ]
+
+    async def access(self, ctx: RequestContext, dataset: str | None = None) -> AccessInfo:
         policies = [DAN_POLICY] if self.as_dan and self.can_query else []
         summary = (
             "You do not have access to the analytics data."
@@ -157,7 +173,7 @@ class LocalAnalytics:
             summary=summary,
         )
 
-    async def describe(self, ctx: RequestContext) -> ModelDescription:
+    async def describe(self, ctx: RequestContext, dataset: str | None = None) -> ModelDescription:
         loaded = service.LoadedModel(
             id=uuid.uuid4(),
             yaml=None,
@@ -170,11 +186,26 @@ class LocalAnalytics:
         return service._describe(loaded, self.model, await self.access(ctx))
 
     async def run_sql(
-        self, ctx: RequestContext, sql: str, *, max_rows: int | None = None
+        self,
+        ctx: RequestContext,
+        sql: str,
+        *,
+        max_rows: int | None = None,
+        dataset: str | None = None,
+        on_step: StepCallback | None = None,
     ) -> QueryResult:
-        return await self._run(sql, {}, min(max_rows or self.max_rows, self.max_rows))
+        return await self._run(
+            sql, {}, min(max_rows or self.max_rows, self.max_rows), on_step=on_step
+        )
 
-    async def run_semantic(self, ctx: RequestContext, query: SemanticQuery) -> QueryResult:
+    async def run_semantic(
+        self,
+        ctx: RequestContext,
+        query: SemanticQuery,
+        *,
+        dataset: str | None = None,
+        on_step: StepCallback | None = None,
+    ) -> QueryResult:
         if not self.can_query:
             raise service._forbidden()
         try:
@@ -184,9 +215,18 @@ class LocalAnalytics:
                 400, "invalid_query", "The query does not fit the data model", str(exc)
             ) from exc
         formats = {c.name: c.format for c in compiled.columns}
-        return await self._run(compiled.sql, formats, min(query.limit, self.max_rows))
+        return await self._run(
+            compiled.sql, formats, min(query.limit, self.max_rows), on_step=on_step
+        )
 
-    async def _run(self, sql: str, formats: dict[str, Any], cap: int) -> QueryResult:
+    async def _run(
+        self,
+        sql: str,
+        formats: dict[str, Any],
+        cap: int,
+        *,
+        on_step: StepCallback | None = None,
+    ) -> QueryResult:
         if not self.can_query:
             raise service._forbidden()
         filters = dan_filters() if self.as_dan else {}
@@ -198,6 +238,10 @@ class LocalAnalytics:
             raise AnalyticsError(
                 400, "query_rejected", "The query was refused", exc.reason
             ) from exc
+        if on_step is not None:
+            step = {"dataset": "uploads", "dialect": "duckdb"}
+            await on_step("query_compiled", {**step, "sql": checked.query})
+            await on_step("executing", step)
         try:
             result = await engine.execute(
                 self.path, checked.sql, max_rows=cap, fences=fences(checked)

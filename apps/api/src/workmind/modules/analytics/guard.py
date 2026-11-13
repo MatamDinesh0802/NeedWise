@@ -24,18 +24,36 @@ SQL to execute, rebuilt by sqlglot from the parsed tree (the text that was sent 
 
 The engine (engine.py) is the second lock: even SQL that skipped this guard cannot touch files,
 the network or settings.
+
+A PostgreSQL or MySQL source (sources.py, docs/analytics-sql-sources.md) is checked the same way
+in its own dialect (`dialect=`), with these differences:
+- Functions sqlglot does not know (`exp.Anonymous`) must be on that dialect's allow-list of
+  ordinary built-ins: a database can hold functions of its own, with any side effect
+  (pg_sleep, dblink, lo_import, LOAD_FILE, SLEEP, BENCHMARK and user-defined ones are all
+  unknown names). Qualified function calls (`schema.f()`), variables (`@x`, `@@version`) and
+  assignments are refused.
+- Every reference to a model table becomes the table it reads in the database
+  (`"schema"."table" AS <alias>`, from `relations`).
+- A row policy cannot copy rows into a temporary table (the session is read-only, and a
+  read-only role may not create one), so the fence is a CTE of its own at the head of the
+  query: `WITH _wm_rows_<t> AS MATERIALIZED (SELECT * FROM "schema"."t" WHERE <filter>)` on
+  PostgreSQL, where a MATERIALIZED CTE is planned on its own and no condition of the outer
+  query is pushed into it; on MySQL the session turns off derived-table merging and condition
+  pushdown (remote.py), which has the same effect. Every reference reads the fence.
 """
 
 import fnmatch
 import re
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import SqlglotError
 
-DIALECT = "duckdb"
+Dialect = Literal["duckdb", "postgres", "mysql"]
+DIALECT: Dialect = "duckdb"  # uploaded files; databases bring their own (sources.py)
 MAX_SQL_CHARS = 20_000
 RESERVED_PREFIX = "_wm_"  # names the guard and the engine generate; refused in queries
 RESULT_ALIAS = "_wm_result"
@@ -88,7 +106,184 @@ DENIED_FUNCTIONS: tuple[str, ...] = (
     "pg_*",
     "sql_auto_complete",
     "error",  # raises with any text: an oracle on the rows it is evaluated on
+    # Database sources (PostgreSQL, MySQL): waiting, files, locks, other connections, settings,
+    # SQL in a string, and who the connection is. Most are unknown names there anyway (refused
+    # unless allow-listed, see ALLOWED_FUNCTIONS); this list holds whatever the dialect.
+    "sleep",
+    "benchmark",
+    "load_file",
+    "*_lock",
+    "release_all_locks",
+    "*_pos_wait",
+    "wait_for_executed_gtid_set",
+    "wait_until_sql_thread_after_gtids",
+    "sys_*",
+    "lo_*",
+    "dblink*",
+    "set_config",
+    "*_to_xml*",
+    "*xmlschema*",
+    "ts_stat",
+    "ts_rewrite",
+    "lastval",
+    "txid_*",
+    "inet_*",
+    "current_user*",
+    "current_session",
+    "current_organization*",
+    "next_value_for",
+    "session_user",
+    "system_user",
+    "current_role",
+    "current_database",
+    "current_schema*",
+    "current_catalog",
+    "connection_id",
+    "database",
+    "schema",
+    "user",
 )
+
+# Functions sqlglot does not know by type (exp.Anonymous) that a database source may call: common
+# built-ins only, lower case. Anything else unknown is refused (a database can hold functions of
+# its own); known functions pass unless DENIED_FUNCTIONS lists them.
+ALLOWED_FUNCTIONS: dict[str, frozenset[str]] = {
+    "postgres": frozenset(
+        [
+            "age",
+            "array_length",
+            "array_position",
+            "array_remove",
+            "array_to_string",
+            "ascii",
+            "asin",
+            "atan",
+            "atan2",
+            "bit_length",
+            "btrim",
+            "cardinality",
+            "cbrt",
+            "char_length",
+            "character_length",
+            "chr",
+            "corr",
+            "cos",
+            "covar_pop",
+            "covar_samp",
+            "cume_dist",
+            "date_bin",
+            "degrees",
+            "div",
+            "every",
+            "factorial",
+            "gcd",
+            "initcap",
+            "isfinite",
+            "json_agg",
+            "json_build_object",
+            "json_object_agg",
+            "jsonb_agg",
+            "jsonb_build_object",
+            "jsonb_object_agg",
+            "justify_days",
+            "justify_hours",
+            "justify_interval",
+            "lcm",
+            "make_date",
+            "make_interval",
+            "make_time",
+            "make_timestamp",
+            "mode",
+            "num_nonnulls",
+            "num_nulls",
+            "octet_length",
+            "percent_rank",
+            "pi",
+            "radians",
+            "regexp_match",
+            "regexp_matches",
+            "regexp_split_to_array",
+            "regr_count",
+            "regr_intercept",
+            "regr_r2",
+            "regr_slope",
+            "scale",
+            "sin",
+            "starts_with",
+            "string_to_array",
+            "tan",
+            "timezone",
+            "to_hex",
+            "to_number",
+            "trim_scale",
+            "width_bucket",
+        ]
+    ),
+    "mysql": frozenset(
+        [
+            "adddate",
+            "addtime",
+            "any_value",
+            "bin",
+            "bit_xor",
+            "conv",
+            "curdate",
+            "current_time",
+            "curtime",
+            "date",
+            "dayname",
+            "elt",
+            "field",
+            "find_in_set",
+            "format",
+            "from_days",
+            "json_array",
+            "json_arrayagg",
+            "json_contains",
+            "json_keys",
+            "json_length",
+            "json_object",
+            "json_objectagg",
+            "json_type",
+            "json_unquote",
+            "json_valid",
+            "last_day",
+            "lcase",
+            "localtime",
+            "localtimestamp",
+            "makedate",
+            "maketime",
+            "microsecond",
+            "mid",
+            "monthname",
+            "now",
+            "oct",
+            "period_add",
+            "period_diff",
+            "sec_to_time",
+            "space",
+            "std",
+            "strcmp",
+            "subdate",
+            "time",
+            "time_format",
+            "time_to_sec",
+            "timediff",
+            "timestamp",
+            "to_days",
+            "to_seconds",
+            "ucase",
+            "unix_timestamp",
+            "utc_date",
+            "utc_time",
+            "utc_timestamp",
+            "week",
+            "weekday",
+            "weekofyear",
+            "yearweek",
+        ]
+    ),
+}
 
 
 def _classes(*names: str) -> tuple[type[exp.Expr], ...]:
@@ -144,6 +339,7 @@ FORBIDDEN_NODES = _classes(
     "Pivot",
     "Placeholder",
     "Parameter",
+    "SessionParameter",
     "TableFromRows",
 )
 QUERY_NODES = (exp.Select, exp.SetOperation)
@@ -176,7 +372,9 @@ class Fence:
 
 @dataclass(frozen=True)
 class GuardedQuery:
-    sql: str  # what to execute, after the fences: row policies applied, row cap enforced
+    # What to execute, after the fences: row policies applied, row cap enforced. For a database
+    # source, the fences are CTEs inside it and it reads the database's own tables.
+    sql: str
     query: str  # the checked query as written (normalized), before policies and the cap
     tables: tuple[str, ...]  # model tables the query reads
     filtered: tuple[str, ...]  # of those, the ones a row policy restricted
@@ -195,9 +393,14 @@ def check(
     tables: Collection[str],
     row_filters: Mapping[str, exp.Expr] | None = None,
     max_rows: int = 1000,
+    dialect: Dialect = DIALECT,
+    relations: Mapping[str, tuple[str, str]] | None = None,
 ) -> GuardedQuery:
     """Validate `sql` against the allow-listed `tables` (lower-case names) and rewrite it with
-    this user's `row_filters` (table -> condition, user values already literals)."""
+    this user's `row_filters` (table -> condition, user values already literals).
+
+    A database source passes its `dialect` and `relations`: model table -> (schema, table) in the
+    database, for every model table."""
     if max_rows < 1:
         raise ValueError("max_rows must be positive")
     allowed = frozenset(t.lower() for t in tables)
@@ -205,6 +408,11 @@ def check(
     unknown = set(filters) - allowed
     if unknown:
         raise ValueError(f"row filters for tables outside the model: {sorted(unknown)}")
+    if dialect != DIALECT:
+        located = {t.lower(): loc for t, loc in (relations or {}).items()}
+        if frozenset(located) != allowed:
+            raise ValueError("a database source needs the location of every model table")
+        return _check_external(sql, allowed, filters, max_rows, dialect, located)
 
     try:
         tree = _parse_one(sql)
@@ -234,6 +442,122 @@ def check(
     )
 
 
+def _check_external(
+    sql: str,
+    allowed: frozenset[str],
+    filters: Mapping[str, exp.Expr],
+    max_rows: int,
+    dialect: Dialect,
+    relations: Mapping[str, tuple[str, str]],
+) -> GuardedQuery:
+    """check() for a database source: fences as CTEs, model tables as the database's tables."""
+    try:
+        tree = _parse_one(sql, dialect)
+        used = validate(tree, allowed, dialect=dialect)
+        query = tree.sql(dialect=dialect, comments=False)
+
+        fenced = _apply_row_filters(tree, filters)
+        _apply_relations(tree, relations)
+        ctes = [_fence_cte(t, filters[t], relations, dialect) for t in sorted(fenced)]
+        tree = _with_ctes(tree, ctes)
+        capped = _cap(tree, max_rows + 1)
+        final = capped.sql(dialect=dialect, comments=False)
+
+        # Defence in depth: what will run parses back to itself, reads only the model's tables
+        # in the database, and reads a restricted one only inside its fence.
+        reparsed = _parse_one(final, dialect)
+        if reparsed.sql(dialect=dialect, comments=False) != final:
+            raise QueryRejectedError("The query could not be rewritten safely.")
+        physical = frozenset(relations.values())
+        validate(reparsed, frozenset(), dialect=dialect, physical=physical)
+        restricted = {relations[t] for t in filters}
+        for table in reparsed.find_all(exp.Table):
+            if (table.db, table.name) in restricted and not _inside_fence(table):
+                raise QueryRejectedError("The query could not be rewritten safely.")
+    except RecursionError as exc:  # sqlglot parses and walks recursively
+        raise QueryRejectedError("The query is nested too deeply.") from exc
+
+    return GuardedQuery(
+        sql=final,
+        query=query,
+        tables=tuple(sorted(used)),
+        filtered=tuple(sorted(used & set(filters))),
+    )
+
+
+def _physical(table: str, relations: Mapping[str, tuple[str, str]]) -> exp.Table:
+    schema, name = relations[table]
+    return exp.Table(
+        this=exp.to_identifier(name, quoted=True),
+        db=exp.to_identifier(schema, quoted=True),
+    )
+
+
+def _apply_relations(tree: exp.Expr, relations: Mapping[str, tuple[str, str]]) -> None:
+    """Point every reference to a model table at the database table it reads, under the same
+    alias (or the model table's name, so `orders.amount` still resolves)."""
+    targets = [
+        t
+        for t in tree.find_all(exp.Table)
+        if not t.args.get("db") and not is_cte_reference(t) and t.name.lower() in relations
+    ]
+    for table in targets:
+        alias = table.args.get("alias")
+        replacement = _physical(table.name.lower(), relations)
+        replacement.set(
+            "alias",
+            alias.copy()
+            if isinstance(alias, exp.TableAlias)
+            else exp.TableAlias(this=exp.to_identifier(table.name.lower())),
+        )
+        table.replace(replacement)
+
+
+def _fence_cte(
+    table: str,
+    condition: exp.Expr,
+    relations: Mapping[str, tuple[str, str]],
+    dialect: Dialect,
+) -> exp.CTE:
+    """The rows of `table` this user may see, as a CTE of its own (PostgreSQL: MATERIALIZED,
+    so it is planned alone and no outer condition reaches a hidden row)."""
+    where = condition.copy()
+    holder = exp.Paren(this=where)  # a parent, so a bare table reference could be replaced
+    _apply_relations(holder, relations)  # tables in the policy's own subqueries
+    source = _physical(table, relations)
+    source.set("alias", exp.TableAlias(this=exp.to_identifier(table)))
+    select = exp.select("*").from_(source).where(holder.this)
+    return exp.CTE(
+        this=select,
+        alias=exp.TableAlias(this=exp.to_identifier(fence_name(table))),
+        materialized=True if dialect == "postgres" else None,
+    )
+
+
+def _with_ctes(tree: exp.Expr, ctes: list[exp.CTE]) -> exp.Expr:
+    """`tree` with `ctes` first in its WITH (so every CTE and subquery of it can see them)."""
+    if not ctes:
+        return tree
+    if not isinstance(tree, QUERY_NODES):
+        alias = exp.TableAlias(this=exp.to_identifier(RESULT_ALIAS))
+        tree = exp.select("*").from_(exp.Subquery(this=tree, alias=alias))
+    existing = tree.args.get("with_")
+    if isinstance(existing, exp.With):
+        existing.set("expressions", [*ctes, *existing.expressions])
+    else:
+        tree.set("with_", exp.With(expressions=ctes))
+    return tree
+
+
+def _inside_fence(node: exp.Expr) -> bool:
+    parent = node.parent
+    while parent is not None:
+        if isinstance(parent, exp.CTE) and parent.alias_or_name.startswith(FENCE_PREFIX):
+            return True
+        parent = parent.parent
+    return False
+
+
 def fence_name(table: str) -> str:
     return f"{FENCE_PREFIX}{table.lower()}"
 
@@ -247,11 +571,11 @@ def _fence(table: str, condition: exp.Expr, tables: frozenset[str]) -> Fence:
     return Fence(name=fence_name(table), table=table, sql=sql)
 
 
-def _parse_one(sql: str) -> exp.Expr:
+def _parse_one(sql: str, dialect: Dialect = DIALECT) -> exp.Expr:
     if len(sql) > MAX_SQL_CHARS:
         raise QueryRejectedError(f"The query is too long (over {MAX_SQL_CHARS} characters).")
     try:
-        statements = [s for s in sqlglot.parse(sql, dialect=DIALECT) if s is not None]
+        statements = [s for s in sqlglot.parse(sql, dialect=dialect) if s is not None]
     except SqlglotError as exc:
         raise QueryRejectedError(f"The query is not valid SQL: {_first_line(str(exc))}") from exc
     if not statements:
@@ -261,9 +585,18 @@ def _parse_one(sql: str) -> exp.Expr:
     return statements[0]
 
 
-def validate(tree: exp.Expr, tables: frozenset[str]) -> set[str]:
+def validate(
+    tree: exp.Expr,
+    tables: frozenset[str],
+    *,
+    dialect: Dialect = DIALECT,
+    physical: frozenset[tuple[str, str]] | None = None,
+) -> set[str]:
     """Raise QueryRejectedError unless `tree` is one read-only query over `tables`. Returns the
-    model tables it reads (lower-case)."""
+    model tables it reads (lower-case).
+
+    `physical`: check SQL about to run on a database source instead, whose table references
+    are the database's (schema, table) pairs and whose fences are CTEs."""
     top = tree
     while isinstance(top, exp.Subquery) and not top.alias:
         top = top.this
@@ -271,8 +604,14 @@ def validate(tree: exp.Expr, tables: frozenset[str]) -> set[str]:
         raise QueryRejectedError("Only read-only queries are allowed (SELECT, with optional CTEs).")
 
     for node in tree.walk():
+        if isinstance(node, exp.SessionParameter) or (
+            isinstance(node, exp.Parameter) and dialect == "mysql"
+        ):
+            raise QueryRejectedError("Variables are not allowed: write values inline.")
         if isinstance(node, exp.Placeholder | exp.Parameter):
             raise QueryRejectedError("Query parameters are not supported: write values inline.")
+        if reason := unavailable_function(node, dialect):
+            raise QueryRejectedError(reason[0].upper() + reason[1:] + ".")
         if isinstance(node, exp.Pivot):
             raise QueryRejectedError("PIVOT is not supported: use GROUP BY with FILTER instead.")
         if isinstance(node, FORBIDDEN_NODES):
@@ -291,7 +630,7 @@ def validate(tree: exp.Expr, tables: frozenset[str]) -> set[str]:
             node.this, exp.Subquery | exp.Unnest | exp.Select
         ):
             raise QueryRejectedError("LATERAL is only allowed with a subquery.")
-        if isinstance(node, exp.Func) and (name := denied_function(node)):
+        if isinstance(node, exp.Func) and (name := denied_function(node, dialect)):
             raise QueryRejectedError(f"The function {name}() is not allowed.")
         if isinstance(node, exp.CTE):
             cte = node.alias_or_name.lower()
@@ -299,7 +638,8 @@ def validate(tree: exp.Expr, tables: frozenset[str]) -> set[str]:
                 raise QueryRejectedError(
                     f"The CTE name {cte!r} is the name of a table; choose another name."
                 )
-            if cte.startswith(RESERVED_PREFIX):
+            fence = physical is not None and cte.startswith(FENCE_PREFIX)
+            if cte.startswith(RESERVED_PREFIX) and not fence:
                 raise QueryRejectedError(
                     f"CTE names starting with {RESERVED_PREFIX} are reserved; choose another name."
                 )
@@ -308,11 +648,44 @@ def validate(tree: exp.Expr, tables: frozenset[str]) -> set[str]:
     for table in tree.find_all(exp.Table):
         if is_cte_reference(table):
             continue
-        used.add(_check_table(table, tables))
+        if physical is not None:
+            _check_physical(table, physical)
+            continue
+        used.add(_check_table(table, tables, dialect))
     return used
 
 
-def _check_table(table: exp.Table, tables: frozenset[str]) -> str:
+def _check_physical(table: exp.Table, physical: frozenset[tuple[str, str]]) -> None:
+    extra = sorted(k for k, v in table.args.items() if v and k not in TABLE_ARGS)
+    if (
+        not isinstance(table.this, exp.Identifier)
+        or extra
+        or table.catalog
+        or (table.db, table.name) not in physical
+    ):
+        raise QueryRejectedError("The query could not be rewritten safely.")
+
+
+def unavailable_function(node: exp.Expr, dialect: Dialect) -> str | None:
+    """Why a database source refuses this node (None: no objection, or DuckDB): an unknown
+    function not on the dialect's allow-list, a qualified function call, an assignment."""
+    if dialect == DIALECT:
+        return None
+    if isinstance(node, exp.Dot):
+        return "qualified names such as schema.function() are not allowed"
+    if isinstance(node, exp.PropertyEQ):
+        return "assignments are not allowed"
+    if isinstance(node, exp.Anonymous):
+        name = node.name.lower()
+        if name not in ALLOWED_FUNCTIONS.get(dialect, frozenset()):
+            return (
+                f"the function {name}() is not available: use the database's common built-in "
+                "functions (aggregates, dates, text, numbers)"
+            )
+    return None
+
+
+def _check_table(table: exp.Table, tables: frozenset[str], dialect: Dialect = DIALECT) -> str:
     if not isinstance(table.this, exp.Identifier):
         name = table.this.sql(dialect=DIALECT) if table.this else "?"
         raise QueryRejectedError(
@@ -326,7 +699,8 @@ def _check_table(table: exp.Table, tables: frozenset[str]) -> str:
             "no TABLESAMPLE, PIVOT, time travel or parenthesized joins."
         )
     name = table.name.lower()
-    if table.catalog or (table.db and table.db.lower() != "main"):
+    main = dialect == DIALECT and table.db.lower() == "main"
+    if table.catalog or (table.db and not main):
         qualified = ".".join(p for p in (table.catalog, table.db, table.name) if p)
         raise QueryRejectedError(
             f"{qualified} is outside the data model: refer to tables by their plain name."
@@ -390,23 +764,23 @@ def _in_recursive_term(cte: exp.Expr, path: list[exp.Expr]) -> bool:
     return any(node is recursive for node in path)
 
 
-def denied_function(node: exp.Func) -> str | None:
+def denied_function(node: exp.Func, dialect: Dialect = DIALECT) -> str | None:
     """The name under which `node` is denied, or None."""
-    for name in function_names(node):
+    for name in function_names(node, dialect):
         if any(fnmatch.fnmatchcase(name, pattern) for pattern in DENIED_FUNCTIONS):
             return name
     return None
 
 
-def function_names(node: exp.Func) -> set[str]:
-    """Every name a function goes by: as written, sqlglot's, and as DuckDB will see it."""
+def function_names(node: exp.Func, dialect: Dialect = DIALECT) -> set[str]:
+    """Every name a function goes by: as written, sqlglot's, and as the database will see it."""
     names: set[str] = set()
     if isinstance(node, exp.Anonymous):
         names.add(node.name.lower())
     else:
         names.add(node.sql_name().lower())
     try:
-        rendered = node.sql(dialect=DIALECT, comments=False)
+        rendered = node.sql(dialect=dialect, comments=False)
     except SqlglotError:
         rendered = ""
     if match := _CALL.match(rendered):

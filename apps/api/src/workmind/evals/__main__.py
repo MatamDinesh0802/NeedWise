@@ -109,6 +109,13 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
         f"Acme data is fixed in 2026 (default {ACME_TODAY.isoformat()})",
     )
     parser.add_argument(
+        "--analytics-file",
+        default=None,
+        help="analytics: the items file in --datasets (default analytics.jsonl); "
+        "analytics_sql.jsonl asks about a PostgreSQL or MySQL source "
+        "(docs/analytics-sql-sources.md)",
+    )
+    parser.add_argument(
         "--rescore",
         type=Path,
         help="re-grade a saved run (.json) against the current datasets, without model calls",
@@ -171,7 +178,9 @@ async def run(args: argparse.Namespace) -> int:
     cross = load_cross(args.datasets) if "cross" in suites else []
     routing = load_routing(args.datasets) if "routing" in suites else []
     meeting_items = load_meetings(args.datasets) if "meetings" in suites else []
-    analytics_items = load_analytics(args.datasets) if "analytics" in suites else []
+    analytics_items = (
+        load_analytics(args.datasets, args.analytics_file) if "analytics" in suites else []
+    )
     requests = load_request_routing(args.datasets) if "request_routing" in suites else []
     # Candidates for the person who sees every row (the leak checks), before any filtering.
     analytics_people = sorted({i.user for i in analytics_items})

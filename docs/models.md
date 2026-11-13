@@ -119,8 +119,10 @@ credentials (docs/connectors.md) and has no key ids.
    `SECRETS_ENCRYPTION_PREVIOUS_KEYS` (comma-separated; listed keys only decrypt).
 2. Restart the API and the workers. New and changed keys are now sealed with the new key; old
    ones still open with the old key.
-3. Run `wm secrets rotate`. It re-encrypts every stored provider key with the active key and
-   reports how many it moved, how many were already on it, and how many it could not decrypt.
+3. Run `wm secrets rotate`. It re-encrypts every stored provider key (and every SQL source
+   password, [analytics-sql-sources.md](analytics-sql-sources.md#the-password)) with the active
+   key and reports how many it moved, how many were already on it, and how many it could not
+   decrypt.
 4. When it reports no failures, remove the old key from `SECRETS_ENCRYPTION_PREVIOUS_KEYS` and
    restart. A key that could not be decrypted (its key was lost) must be entered again in
    Admin → Models; until then calls to that provider fail with that message.

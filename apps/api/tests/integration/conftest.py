@@ -26,6 +26,8 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+# Throwaway PostgreSQL and MySQL shop databases for the SQL-source tests (session fixtures).
+from tests.integration.shop_databases import shop_mysql, shop_postgres  # noqa: F401
 from workmind.core.config import Settings
 from workmind.core.db import create_engine, create_session_factory
 from workmind.core.tenancy import global_transaction, tenant_transaction

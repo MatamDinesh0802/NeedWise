@@ -14,8 +14,8 @@ export function questionError(question: string): string | null {
 }
 
 /**
- * What the waiting state says. There's no streaming: one request runs the whole pipeline, so this
- * describes the steps it takes instead of pretending to track them.
+ * What the waiting state adds when an answer takes long. The steps themselves stream from the
+ * server (progress.ts); this only explains a slow one.
  */
 export function waitingMessage(elapsedSeconds: number): { title: string; detail: string } {
   if (elapsedSeconds < 30) {
@@ -49,8 +49,8 @@ export function unavailableCopy(model: AnalyticsModelUnavailable, role: OrgRole 
     return {
       title: "Insights isn't set up yet",
       description: canManage
-        ? "Upload the data (CSV or Excel tables) and write the data model that says what people may ask about, in Admin › Analytics."
-        : "An administrator has to upload the company data and describe it in a data model first. Ask an owner or admin of your organization.",
+        ? "Upload the data (CSV or Excel tables) or connect a PostgreSQL or MySQL database, and write the data model that says what people may ask about, in Admin › Analytics."
+        : "An administrator has to upload the company data or connect a database, and describe it in a data model first. Ask an owner or admin of your organization.",
       action: canManage ? { href: "/admin/analytics", label: "Set up analytics" } : null,
     };
   }

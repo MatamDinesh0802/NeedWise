@@ -34,13 +34,19 @@ pnpm build          # standalone output for the Docker image
 | `src/components/ui/` | shadcn/ui components (Base UI primitives) |
 | `src/lib/analytics/`, `src/components/insights/` | Insights (Phase 10): the analytics API client, formatting, chart shaping, and the page |
 | `src/components/admin/analytics-section.tsx` | Admin › Analytics: dataset tables (upload, delete) and the semantic model YAML |
+| `src/components/admin/analytics-sources.tsx`, `src/lib/analytics/sources.ts` | Admin › Analytics › Databases: PostgreSQL and MySQL sources (connect, test, catalog, starting model, model) |
 
 ## Insights (Phase 10)
 
 `/insights` asks `GET /api/v1/analytics/model` first and says plainly when the caller has no
-access or nothing is set up. An answer (`POST /api/v1/analytics/ask`, 10–30 s, one request, no
-streaming) shows a chart, the narrative, and every query with its SQL, a sortable table, CSV
-download and Refresh (`POST /api/v1/analytics/query`). Saved answers open at `/insights?run=<id>`.
+access or nothing is set up. A question starts a run (`POST /api/v1/analytics/runs`) whose steps
+stream from its events (`lib/analytics/progress.ts` reduces them, `progress-stream.ts` holds the
+EventSource; `ask-progress.tsx` lists planning, each query with its SQL and outcome, writing,
+the figure check and the chart, with a polite live region). When it ends the stored answer is
+read (`GET /api/v1/analytics/runs/{id}`): a chart, the narrative, and every query with its SQL,
+the database it ran on when it is not the uploaded tables, a sortable table, CSV download and
+Refresh (`POST /api/v1/analytics/query`, on the query's dataset). Saved answers open at
+`/insights?run=<id>`.
 
 - **Checked figures.** Each number in `verification.numbers` is marked where it appears in the
   narrative: verified ones get a quiet dotted underline, unverified ones an amber mark, a

@@ -115,8 +115,51 @@ and rely on its row-level security). Rejected because:
 - **Query results go to the configured model** (up to 50 rows per query in the tool loop, 100
   when composing). There is no local-only routing for analytics data yet, unlike restricted
   documents (ARCHITECTURE 11.6).
-- **Live Postgres/MySQL sources are not built.** sqlglot can check and rewrite other dialects,
-  but running on a live database needs its own sandbox (a read-only role on a replica, a
-  statement timeout, a connection budget). That is a separate decision when it is built.
+- **Live Postgres/MySQL sources** were left for a separate decision: the update below.
 - **Execution accuracy with a real model** is measured by the suite above; the first results are
   recorded in `evals/README.md` and `docs/analytics.md`.
+
+## Update: database sources (2026-11-13)
+
+PostgreSQL and MySQL databases are now sources ([docs/analytics-sql-sources.md](../analytics-sql-sources.md)).
+The decisions:
+
+1. **A source is a dataset of its own**, with its own semantic model, access list and row
+   policies, next to the uploaded files (`uploads`). Each model table names the table it reads
+   (`source_table: schema.table`). Permissions stay per dataset, exactly as for uploads; a
+   query reads one dataset. Rejected: one model spanning uploads and databases (it would need
+   queries across engines, and one access list for data with different owners).
+2. **The same guard, in the source's dialect, plus an allow-list for unknown functions.** A
+   database can hold functions with any side effect (`dblink`, `pg_sleep`, user-defined ones),
+   and a deny-list of names cannot know them. Functions sqlglot does not know by type must be
+   ordinary built-ins on a per-dialect list; qualified calls, variables and assignments are
+   refused. The guard rewrites model tables to the database's quoted tables, so the model's
+   names are what people and the agent use and the database's never reach the prompt.
+3. **Read-only three ways:** the guard; a read-only session per query (PostgreSQL:
+   `default_transaction_read_only` and `BEGIN READ ONLY`, `search_path = pg_catalog`; MySQL:
+   `SET SESSION TRANSACTION READ ONLY` and `START TRANSACTION READ ONLY`, no multi-statements,
+   no `LOCAL INFILE`); and a database role that may only `SELECT`, which the docs require.
+   Statement timeouts on the server, the row cap in the SQL, and the existing query workers
+   (memory limit, kill after the timeout) apply.
+4. **Row policies as CTE fences.** A read-only session cannot create the temporary tables the
+   DuckDB fences use. The fence is a CTE of its own at the head of the query, `MATERIALIZED` on
+   PostgreSQL (planned alone, no outer condition pushed into it) and, on MySQL, materialized by
+   turning off `derived_merge` and `derived_condition_pushdown` for the session. On PostgreSQL
+   18 a test shows the difference: inlined, the query's `CAST` ran on hidden rows and quoted one
+   in its error; materialized, it counted nothing. On MySQL 8.4 the same oracles did not fire
+   with merging on either, so the settings are a precaution the tests do not prove necessary.
+   Rejected: per-person database roles or session variables with the database's own row-level
+   security (an admin would have to set up roles and policies per person in every database).
+5. **One connection per query, in the query worker**, to the address the host resolved to and
+   was checked against the SSRF rules of model providers (no link-local or metadata; private
+   and loopback networks only when the operator lists them). Rejected: a connection pool in the
+   API process (sessions would carry state between people, and a large value would land in the
+   API's memory); not measured: what the connections cost under load.
+6. **Passwords sealed like provider keys**, bound to the tenant, the source and where it
+   connects, so a changed host needs the password again.
+
+Consequences: the semantic compiler writes each dialect (MySQL has neither `date_trunc` nor
+`FILTER`); the eval takes items about a source (`dataset`); the allow-list must grow when people
+need a built-in it lacks (a refusal names the function); the source's database role, not
+WorkMind, is the lock that holds if the guard and the session were both wrong. Execution
+accuracy on a source has not been measured with a real model.

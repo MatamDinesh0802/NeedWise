@@ -7,7 +7,14 @@ import type { ReactNode } from "react";
 import { EmptyState, ErrorAlert, RefreshingHint } from "@/components/data/states";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiQuery } from "@/hooks/use-api-query";
-import { analyticsApi, analyticsKeys, type AnalyticsModelAvailable, type RunSummary } from "@/lib/analytics/api";
+import {
+  analyticsApi,
+  analyticsKeys,
+  type AnalyticsDataset,
+  type AnalyticsModelAvailable,
+  type DatasetKind,
+  type RunSummary,
+} from "@/lib/analytics/api";
 import { verifiedLabel } from "@/lib/analytics/ask";
 import { formatDay } from "@/lib/analytics/format";
 import { formatDateTime, formatRelative } from "@/lib/format";
@@ -17,14 +24,34 @@ import { StatusBadge } from "./answer-view";
 
 const GRAINS = new Set(["day", "week", "month", "quarter", "year"]);
 
-/** What the data covers, what you may see, and what you can ask about. */
+const KIND_LABELS: Record<DatasetKind, string> = {
+  files: "Uploaded tables",
+  postgres: "PostgreSQL database",
+  mysql: "MySQL database",
+};
+
+/** What each dataset covers, what you may see in it, and what you can ask about. */
 export function ModelSummary({ model }: { model: AnalyticsModelAvailable }) {
+  const datasets = model.datasets ?? [];
+  if (datasets.length < 2) return <DatasetSummary dataset={model} />;
+  return (
+    <div className="flex flex-col gap-3">
+      {datasets.map((dataset) => (
+        <DatasetSummary key={dataset.key} dataset={dataset} kind={KIND_LABELS[dataset.kind]} />
+      ))}
+    </div>
+  );
+}
+
+function DatasetSummary({ dataset: model, kind }: { dataset: AnalyticsModelAvailable | AnalyticsDataset; kind?: string }) {
   const grains = model.dimensions.filter((d) => GRAINS.has(d.name));
   const dimensions = model.dimensions.filter((d) => !GRAINS.has(d.name));
+  const headingId = `insights-model-${"key" in model ? model.key : "main"}`;
   return (
-    <section aria-labelledby="insights-model" className="flex flex-col gap-3 rounded-xl border bg-card p-4 text-sm">
+    <section aria-labelledby={headingId} className="flex flex-col gap-3 rounded-xl border bg-card p-4 text-sm">
       <div>
-        <h3 id="insights-model" className="font-medium">
+        {kind ? <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{kind}</p> : null}
+        <h3 id={headingId} className="font-medium">
           {model.name}
         </h3>
         {model.description ? <p className="text-xs text-muted-foreground">{model.description}</p> : null}

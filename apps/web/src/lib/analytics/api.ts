@@ -35,6 +35,28 @@ export interface ModelTable {
   columns: ModelColumn[];
 }
 
+/** Where a dataset's data lives: uploaded files, or a PostgreSQL or MySQL database. */
+export type DatasetKind = "files" | "postgres" | "mysql";
+/** The SQL a dataset's queries are written in. */
+export type SqlDialect = "duckdb" | "postgres" | "mysql";
+/** The key of the uploaded files' dataset. */
+export const UPLOADS = "uploads";
+
+/** One dataset the caller may query (GET /analytics/model `datasets`). */
+export interface AnalyticsDataset {
+  key: string;
+  kind: DatasetKind;
+  dialect: SqlDialect;
+  name: string;
+  description: string;
+  data_through: string | null;
+  metrics: ModelMetric[];
+  dimensions: ModelDimension[];
+  tables: ModelTable[];
+  row_policy: string | null;
+  examples: string[];
+}
+
 export interface AnalyticsModelAvailable {
   available: true;
   name: string;
@@ -48,6 +70,8 @@ export interface AnalyticsModelAvailable {
   /** Plain words on the row limits that apply to the caller, or null when there are none. */
   row_policy: string | null;
   examples: string[];
+  /** Every dataset the caller may query; the fields above describe the first. */
+  datasets?: AnalyticsDataset[];
 }
 
 export type UnavailableReason = "no_access" | "not_configured";
@@ -100,6 +124,9 @@ export interface QueryResult {
   truncated: boolean;
   elapsed_ms: number;
   error: string | null;
+  /** The dataset it ran on ("uploads", or a database source's key): refresh it there. */
+  dataset?: string;
+  dialect?: SqlDialect;
 }
 
 export interface VerifiedNumber {
@@ -120,6 +147,7 @@ export interface Verification {
 export interface AnswerSource {
   table: string;
   description: string;
+  dataset?: string;
 }
 
 export interface AnswerUsage {
@@ -185,6 +213,88 @@ export interface AdminAnalytics {
   dataset: { version: string | null; tables: DatasetTable[] };
 }
 
+// --- Database sources (Admin › Analytics) ---------------------------------------------------
+
+export type SourceKind = "postgres" | "mysql";
+export type TlsMode = "disable" | "require" | "verify-full";
+
+/** A PostgreSQL or MySQL source as admins see it. The password is never returned. */
+export interface SqlSource {
+  key: string;
+  name: string;
+  kind: SourceKind;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password_set: boolean;
+  tls_mode: TlsMode;
+  tls_ca: string | null;
+  schemas: string[];
+  enabled: boolean;
+  /** Its semantic model, or null until one is saved (people can't query it before). */
+  yaml: string | null;
+  checked_at: string | null;
+  server_version: string | null;
+  /** Why the last connection failed (for admins), or null. */
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SqlSourceInput {
+  key: string;
+  name: string;
+  kind: SourceKind;
+  host: string;
+  port?: number;
+  database: string;
+  username: string;
+  password: string;
+  tls_mode: TlsMode;
+  tls_ca?: string | null;
+  schemas: string[];
+}
+
+export type SqlSourcePatch = Partial<Omit<SqlSourceInput, "key" | "kind">> & { enabled?: boolean };
+
+export interface SourceCheck {
+  ok: boolean;
+  server_version: string | null;
+  elapsed_ms: number;
+  error: string | null;
+}
+
+export type ModelColumnType = "text" | "integer" | "decimal" | "date" | "timestamp" | "boolean";
+
+export interface CatalogColumn {
+  name: string;
+  /** As the database names it (character varying, numeric, int…). */
+  type: string;
+  model_type: ModelColumnType;
+  /** Only lower_snake_case column names can be used in a model. */
+  usable: boolean;
+}
+
+export interface CatalogTable {
+  schema: string;
+  name: string;
+  kind: "table" | "view";
+  columns: CatalogColumn[];
+}
+
+export interface SourceCatalog {
+  tables: CatalogTable[];
+  truncated: boolean;
+}
+
+// --- Streamed answers -----------------------------------------------------------------------
+
+/** POST /analytics/runs: the answer is made in the background; follow it at eventsUrl. */
+export interface RunStarted {
+  run_id: string;
+}
+
 export const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /** Content-Type for an upload, from the file name: CSV or XLSX only. */
@@ -208,8 +318,15 @@ export const analyticsApi = {
     apiJson<AnalyticsAnswer>(`${BASE}/ask`, { method: "POST", json: { question }, signal }),
   runs: () => apiJson<RunSummary[]>(`${BASE}/runs`),
   run: (runId: string) => apiJson<AnalyticsAnswer>(`${BASE}/runs/${id(runId)}`),
-  /** 403 "no_access"; 422 "sql_rejected" with a detail saying why. */
-  query: (sql: string) => apiJson<QueryRerun>(`${BASE}/query`, { method: "POST", json: { sql } }),
+  /** Answers in the background: 202 with the run's id; its steps stream from eventsUrl. */
+  startRun: (question: string) => apiJson<RunStarted>(`${BASE}/runs`, { method: "POST", json: { question } }),
+  eventsUrl: (runId: string) => `${BASE}/runs/${id(runId)}/events`,
+  /** 403 "no_access"; 422 "sql_rejected" with a detail saying why. `dataset`: where it ran. */
+  query: (sql: string, dataset?: string) =>
+    apiJson<QueryRerun>(`${BASE}/query`, {
+      method: "POST",
+      json: dataset && dataset !== UPLOADS ? { sql, dataset } : { sql },
+    }),
 
   // Administration (owner/admin)
   admin: () => apiJson<AdminAnalytics>(ADMIN),
@@ -223,6 +340,21 @@ export const analyticsApi = {
       headers: { "Content-Type": contentType },
     }),
   deleteTable: (name: string) => apiJson<AdminAnalytics>(`${ADMIN}/tables/${id(name)}`, { method: "DELETE" }),
+
+  // Database sources (owner/admin)
+  sources: () => apiJson<SqlSource[]>(`${ADMIN}/sources`),
+  /** 422 "invalid_source" for a host WorkMind may not connect to; 409 for a key in use. */
+  createSource: (input: SqlSourceInput) => apiJson<SqlSource>(`${ADMIN}/sources`, { method: "POST", json: input }),
+  /** 422 "password_required" when the change points it elsewhere without the password. */
+  updateSource: (key: string, patch: SqlSourcePatch) =>
+    apiJson<SqlSource>(`${ADMIN}/sources/${id(key)}`, { method: "PATCH", json: patch }),
+  deleteSource: (key: string) => apiJson<void>(`${ADMIN}/sources/${id(key)}`, { method: "DELETE" }),
+  testSource: (key: string) => apiJson<SourceCheck>(`${ADMIN}/sources/${id(key)}/test`, { method: "POST" }),
+  /** 503 "source_unavailable" with the reason when it can't connect. */
+  sourceCatalog: (key: string) => apiJson<SourceCatalog>(`${ADMIN}/sources/${id(key)}/catalog`),
+  /** 422 "invalid_model" with the problems (also tables or columns the database lacks). */
+  saveSourceModel: (key: string, yaml: string) =>
+    apiJson<SqlSource>(`${ADMIN}/sources/${id(key)}/model`, { method: "PUT", json: { yaml } }),
 };
 
 /** Query-cache keys ("insights/", not "analytics/": Phase 11 usage analytics is a different page). */
@@ -232,4 +364,5 @@ export const analyticsKeys = {
   runs: "insights/runs",
   run: (runId: string) => `insights/runs/${runId}`,
   admin: "insights/admin",
+  sources: "insights/admin/sources",
 };
