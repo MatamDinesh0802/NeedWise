@@ -12,6 +12,8 @@ tuples:
   - { user: user:bob, relation: member, object: organization:acme }
   - { user: user:carol, relation: member, object: organization:acme }
   - { user: user:nina, relation: member, object: organization:acme }
+  - { user: user:wei, relation: member, object: organization:acme }
+  - { user: user:dan, relation: member, object: organization:acme }
   # mallory (external contractor) is a guest: no organization membership at all
 
   # Departments
@@ -20,6 +22,7 @@ tuples:
   - { user: organization:acme, relation: organization, object: department:finance }
   - { user: user:alice, relation: manager, object: department:hr }
   - { user: user:bob, relation: member, object: department:engineering }
+  - { user: user:wei, relation: member, object: department:engineering }
   - { user: user:carol, relation: member, object: department:finance }
 
   # Groups, including a nested one: people-ops is part of hr-records
@@ -43,11 +46,33 @@ tuples:
   - { user: user:mallory, relation: viewer, object: collection:contractor-onboarding }
   - { user: department:engineering#member, relation: viewer, object: collection:contractor-onboarding }
 
-  # Documents inherit from their collection; personal documents have only an owner
+  - { user: user:alice, relation: owner, object: collection:alice-personal }
+
+  # Documents. Without its own access list a document has the wildcard grantee (user:*), so it
+  # is visible exactly to its collection's viewers.
   - { user: collection:hr-employee-records, relation: collection, object: document:salary-bands }
+  - { user: user:*, relation: grantee, object: document:salary-bands }
   - { user: collection:company-handbook, relation: collection, object: document:leave-policy-2026 }
-  - { user: user:alice, relation: owner, object: document:alice-private-notes }
-  - { user: user:bob, relation: viewer, object: document:salary-bands-excerpt-shared-with-bob }
+  - { user: user:*, relation: grantee, object: document:leave-policy-2026 }
+  - { user: collection:alice-personal, relation: collection, object: document:alice-private-notes }
+  - { user: user:*, relation: grantee, object: document:alice-private-notes }
+
+  # Documents with their own access list (permission sync from the source, or set by an editor:
+  # docs/permission-sync.md). The list only narrows the collection; it never widens it.
+  # A Drive file in Engineering Docs shared with Wei, with leadership and with the contractor:
+  - { user: collection:engineering-docs, relation: collection, object: document:embargoed-advisory }
+  - { user: user:wei, relation: grantee, object: document:embargoed-advisory }
+  - { user: group:leadership#member, relation: grantee, object: document:embargoed-advisory }
+  - { user: user:mallory, relation: grantee, object: document:embargoed-advisory }
+  # A handbook page for leadership and the HR managers only:
+  - { user: collection:company-handbook, relation: collection, object: document:reorg-plan }
+  - { user: group:leadership#member, relation: grantee, object: document:reorg-plan }
+  - { user: department:hr#manager, relation: grantee, object: document:reorg-plan }
+  # A grant on a document in a collection Bob cannot read gives him nothing:
+  - { user: collection:hr-employee-records, relation: collection, object: document:salary-bands-excerpt }
+  - { user: user:bob, relation: grantee, object: document:salary-bands-excerpt }
+  # Every principal the source named was unmapped: the list is empty, so nobody sees it.
+  - { user: collection:company-handbook, relation: collection, object: document:unmapped-only }
 
 tests:
   - name: HR manager sees HR content, payroll and company docs, nothing from leadership or engineering
@@ -115,6 +140,9 @@ tests:
       - user: user:erin
         object: document:alice-private-notes
         assertions: { viewer: false }
+      - user: user:erin
+        object: document:reorg-plan
+        assertions: { viewer: false }
       - user: user:priya
         object: organization:acme
         assertions: { can_manage: true }
@@ -176,8 +204,79 @@ tests:
         object: document:alice-private-notes
         assertions: { viewer: true, editor: true }
       - user: user:bob
-        object: document:salary-bands-excerpt-shared-with-bob
+        object: document:alice-private-notes
+        assertions: { viewer: false }
+
+  - name: A document's own access list narrows its collection and never widens it
+    check:
+      # In the collection and on the list
+      - user: user:wei
+        object: document:embargoed-advisory
+        assertions: { viewer: true, editor: false }
+      # In the collection, not on the list: the engineer next to Wei
+      - user: user:bob
+        object: document:embargoed-advisory
+        assertions: { viewer: false, editor: false }
+      # On the list (leadership), not in the collection
+      - user: user:priya
+        object: document:embargoed-advisory
+        assertions: { viewer: false }
+      # On the list by name, and a viewer of another collection only (the contractor)
+      - user: user:mallory
+        object: document:embargoed-advisory
+        assertions: { viewer: false }
+      # Admins are on no list unless the source names them
+      - user: user:erin
+        object: document:embargoed-advisory
+        assertions: { viewer: false }
+      # Enterprise collection, list of leadership and HR managers
+      - user: user:priya
+        object: document:reorg-plan
         assertions: { viewer: true }
+      - user: user:alice
+        object: document:reorg-plan
+        assertions: { viewer: true }
+      - user: user:nina
+        object: document:reorg-plan
+        assertions: { viewer: false }
+      - user: user:bob
+        object: document:reorg-plan
+        assertions: { viewer: false }
+      - user: user:dan
+        object: document:reorg-plan
+        assertions: { viewer: false }
+      # A grant never opens a collection
+      - user: user:bob
+        object: document:salary-bands-excerpt
+        assertions: { viewer: false }
+      - user: user:alice
+        object: document:salary-bands-excerpt
+        assertions: { viewer: false }
+      # Nobody on the list: nobody sees it, not even the handbook's editors
+      - user: user:alice
+        object: document:unmapped-only
+        assertions: { viewer: false, editor: false }
+      - user: user:bob
+        object: document:unmapped-only
+        assertions: { viewer: false }
+    list_objects:
+      - user: user:bob
+        type: document
+        assertions:
+          viewer:
+            - document:leave-policy-2026
+      - user: user:wei
+        type: document
+        assertions:
+          viewer:
+            - document:embargoed-advisory
+            - document:leave-policy-2026
+      - user: user:priya
+        type: document
+        assertions:
+          viewer:
+            - document:leave-policy-2026
+            - document:reorg-plan
 
   # The full grid published in LinkedIn post #2: 6 people x 7 collections, every cell tested.
   - name: Full who-can-see-what grid for the demo personas
