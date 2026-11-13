@@ -7,12 +7,17 @@ back. Backups are in [backup-restore.md](backup-restore.md).
 ## Supported paths
 
 - **From any release to a later one, directly.** The database migrations are one linear chain
-  (`0001` to `0019` today) and the `migrate` service applies every missing step in order, so
+  (`0001` to `0026` today) and the `migrate` service applies every missing step in order, so
   there is no need to stop at intermediate versions.
-- **Tested:** v0.1.0 (the only tag so far, 2026-11-04; alembic `0004`) to this code (alembic
-  `0019`), four times on 2026-11-12, with `scripts/upgrade-test.sh`
-  ([below](#measured-v010-to-this-code)). Restoring a v0.1.0 backup into this code, and rolling
-  an upgraded stack back to v0.1.0, were tested too.
+- **Tested:** v0.1.0 (the only tag so far, 2026-11-04; alembic `0004`) to the code of
+  2026-11-12 (alembic `0019`), four times on 2026-11-12, with `scripts/upgrade-test.sh`
+  ([below](#measured-v010-to-this-code)). Restoring a v0.1.0 backup into that code, and rolling
+  an upgraded stack back to v0.1.0, were tested too. Migrations `0020` to `0026` (the Phase 7 to
+  11 additions of 2026-11-13) were checked on a throwaway database: `0012` to `0026`, the Acme
+  company plus a failing source with a synced document added, down to `0012` and up again (the
+  backfills ran over those rows), down to `0019` and up, and `alembic check` clean. The
+  upgrade-test script was not run against them. Upgrading the running development stack from
+  `0019` to `0026` worked (`docker compose up --build`).
 - **Not supported:** downgrades (the migrations go forward only; to go back, restore the backup
   you took before upgrading), and running the old and the new version side by side (a rolling
   upgrade). Plan a short downtime: from `docker compose up` to healthy took 32 to 138 seconds
