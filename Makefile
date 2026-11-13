@@ -145,7 +145,7 @@ scan-images: ## Build the api and web images under :scan tags, scan them, remove
 DOCS_PYTHON := 3.13
 DOCS_PORT ?= 8495
 # docs-lock pins only packages released on or before this date: move it on purpose.
-DOCS_LOCK_DATE ?= 2026-10-29
+DOCS_LOCK_DATE ?= 2026-11-12
 MKDOCS := uvx --python $(DOCS_PYTHON) --with-requirements docs/requirements.txt mkdocs
 
 docs: ## Build the documentation site into site/ (strict: a broken link or anchor fails)
