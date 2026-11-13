@@ -16,6 +16,9 @@ concurrency:
 jobs:
   release-please:
     name: Release PR, or tag and GitHub Release
+    # Releases are public artifacts: none from a private repository (v1.0.0 is tagged by hand
+    # when the repository is made public; docs/operations/releasing.md).
+    if: github.event.repository.private == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

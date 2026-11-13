@@ -20,6 +20,8 @@ concurrency:
 jobs:
   analyze:
     name: CodeQL · ${{ matrix.language }}
+    # Code scanning needs a public repository (or GitHub Advanced Security): skip while private.
+    if: github.event.repository.private == false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
