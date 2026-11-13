@@ -209,8 +209,17 @@ route alone, 11 only the model can, 5 too vague for anyone but a person, two wit
 instructions). `uv run wm eval --skip-retrieval --suites request_routing` runs them through the
 same decision with the tenant's rules, threshold and model and reports the correct queue, wrong
 departments (the costly error) and triage counts; with `--retrieval-only` it checks the rules
-alone. The unit tests check the rules part on every run; **the model part has not been run with a
-real model yet** (no result is claimed here).
+alone. The unit tests check the rules part on every run. A failed router call is counted as a
+model error in the report, never as a cautious triage.
+
+Measured on 2026-11-13 (commit `07fe2ba`, the Acme seed's rules, router model
+`claude-sonnet-5-5` at the default threshold 0.7, one run;
+[`2026-11-13-request-routing`](../evals/results/2026-11-13-request-routing.md)):
+36/39 to the correct queue (rule items 23/23, model items 8/11, person-only items 5/5), **1 to a
+wrong department** (a finance request the model sent to management at confidence 0.70), 2 model
+items to triage at 0.55 and 0.60, 0 failed model calls. Before that commit every router call
+failed: the schema sent to Claude carried `minimum`/`maximum`, which the API refuses, so the
+model step never ran. One run of 39 items is a smoke test, not a quality claim.
 
 ## Workflows
 
@@ -341,4 +350,5 @@ Not built:
 - A digest more or less often than daily; HTML email.
 - Event filters other than the one per event (e.g. by sensitivity or file type), and events for
   inbound email.
-- The request routing eval with a real model (the dataset and the suite are here; no score yet).
+- A larger request routing eval: one run of 39 requests is measured (see Request routing), with
+  no repeat runs, no other model and no threshold sweep.
