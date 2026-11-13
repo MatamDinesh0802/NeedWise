@@ -67,7 +67,7 @@ SECTIONS: Sequence[tuple[str, Sequence[str]]] = (
     ("Embeddings and search", ["embedding_*", "retrieval_*"]),
     ("Limits", ["max_inflight_per_user", "rate_limits*"]),
     ("Documents and ingestion", ["object_storage_path", "ingestion_mode", "max_upload_bytes"]),
-    ("Meetings", ["max_meeting_bytes", "transcription_*"]),
+    ("Meetings", ["max_meeting_bytes", "transcription_*", "diarization_*"]),
     ("Analytics", ["analytics_*"]),
     (
         "Tools and connectors",
@@ -265,6 +265,27 @@ NOTES: dict[str, str] = {
     ),
     "transcription_base_url": "The transcription server (`openai_compatible` only).",
     "transcription_api_key": "The transcription server's API key, if it needs one.",
+    "diarization_provider": (
+        "Who spoke when in recordings: `sherpa_onnx` (pyannote segmentation and NeMo TitaNet-S "
+        "speaker embeddings on the worker's CPU; needs the `diarization` extra, which the image "
+        "has) or `none`. Without it, or if it fails, a recording is transcribed without "
+        "speaker labels."
+    ),
+    "diarization_model_dir": (
+        "Where the diarization models (46 MB) are downloaded on the first recording, or placed "
+        "by hand for an offline install. Empty: `$HF_HOME/diarization` (`/models/diarization` "
+        "in the image), else `~/.cache/workmind/diarization`."
+    ),
+    "diarization_threshold": (
+        "How different two voices must sound to count as two speakers: higher finds fewer "
+        "speakers. Lower errs towards splitting one voice into two labels, which naming both "
+        "fixes; higher merges voices, which nothing fixes. Chosen on the demo recording cut to "
+        "2, 5, 10 and 23 minutes (docs/meetings.md)."
+    ),
+    "diarization_window_shift": (
+        "The step of the segmentation model's 10-second window, as a share of it. pyannote "
+        "uses 0.1: slightly more accurate on the demo recording, and about four times slower."
+    ),
     "analytics_max_rows": "Row cap per analytics query.",
     "analytics_timeout_s": "Time limit per analytics query, in seconds.",
     "analytics_workers": (

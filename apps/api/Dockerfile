@@ -38,15 +38,16 @@ COPY pyproject.toml uv.lock ./
 COPY --from=ee python/pyproject.toml python/LICENSE /build/ee/python/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project --no-install-package workmind-ee \
-        --extra meetings --extra ee
+        --extra meetings --extra diarization --extra ee
 COPY src ./src
 # hadolint ignore=DL3022
 COPY --from=ee python/src /build/ee/python/src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --extra meetings --extra ee
+    uv sync --locked --no-dev --no-editable --extra meetings --extra diarization --extra ee
 
 FROM base AS runtime
-# /models: speech models download here. /var/lib/celerybeat: beat's schedule. Both are volumes.
+# /models: speech and diarization models download here. /var/lib/celerybeat: beat's schedule.
+# Both are volumes.
 RUN groupadd --system --gid 10001 workmind \
     && useradd --system --uid 10001 --gid 10001 --no-create-home workmind \
     && mkdir -p /models /var/lib/celerybeat && chown workmind:workmind /models /var/lib/celerybeat

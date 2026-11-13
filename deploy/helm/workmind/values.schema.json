@@ -374,6 +374,18 @@
           },
           "additionalProperties": false
         },
+        "diarization": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "enum": [
+                "sherpa_onnx",
+                "none"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
         "smtp": {
           "type": "object",
           "properties": {

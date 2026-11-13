@@ -1,12 +1,24 @@
 /**
  * Meetings, framework-free: which files can be uploaded, where processing is, timestamps and
- * where a click on one should jump, the corrections payload and "My commitments". Tested on its
- * own; components/meetings/* only render it.
+ * where a click on one should jump, topics, naming speakers, the corrections payload and "My
+ * commitments". Tested on its own; components/meetings/* only render it.
  */
 
 import { ApiError } from "@/lib/api";
 import { errorMessage, type ErrorMessage } from "@/lib/error-messages";
-import { meetingsKeys, type ActionEdit, type ActionItem, type Commitment, type Decision, type Meeting, type MeetingStatus, type Segment, type Speaker } from "@/lib/meetings/api";
+import {
+  meetingsKeys,
+  type ActionEdit,
+  type ActionItem,
+  type Commitment,
+  type Decision,
+  type Meeting,
+  type MeetingStatus,
+  type Segment,
+  type Speaker,
+  type SpeakerChoice,
+  type Topic,
+} from "@/lib/meetings/api";
 import { workKeys } from "@/lib/work/api";
 import { dueText } from "@/lib/work/tasks";
 
@@ -95,8 +107,11 @@ const MESSAGES: Record<string, Omit<ErrorMessage, "code">> = {
   unknown_speaker: { title: "Unknown speaker", description: "The transcript has no speaker by that name. Reload the page." },
   forbidden: {
     title: "You can't change this meeting",
-    description: "Only the person who uploaded it and editors of its collection can map speakers, correct items and make tasks.",
+    description:
+      "Only the person who uploaded it and editors of its collection can correct items and make tasks. Speakers can be named by the person who uploaded it, attendees who can edit it, and admins.",
   },
+  not_ready: { title: "Still processing", description: "Name the speakers once the notes are ready." },
+  empty_name: { title: "The guest needs a name", description: "Type the guest's name, or choose a colleague." },
 };
 
 /** Meeting API errors in words (falls back to the app-wide messages). */
@@ -179,6 +194,11 @@ export function formatTimestamp(seconds: number): string {
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** How long someone spoke: 4.2 → "4 s", 75 → "1 min" (formatDuration above a minute). */
+export function formatSpoken(seconds: number): string {
+  return seconds < 59.5 ? `${Math.max(1, Math.round(seconds))} s` : (formatDuration(seconds) ?? "");
 }
 
 /** 1385 → "23 min", 45 → "1 min", 3900 → "1 h 5 min". */
@@ -275,11 +295,136 @@ export function meetingLink(meetingId: string, start: number | null): `/meetings
   return start != null && Number.isFinite(start) && start >= 0 ? `/meetings/${id}?t=${Math.round(start * 100) / 100}` : `/meetings/${id}`;
 }
 
+// --- Topics -----------------------------------------------------------------------------------
+
+/** The topic being discussed at `time` (topics are in order): its index, or null before the first. */
+export function topicAt(topics: readonly Pick<Topic, "start">[], time: number): number | null {
+  let found: number | null = null;
+  for (let index = 0; index < topics.length && topics[index].start <= time; index++) found = index;
+  return found;
+}
+
+/** "4:31–9:02". */
+export function topicRange(topic: Pick<Topic, "start" | "end">): string {
+  return `${formatTimestamp(topic.start)}–${formatTimestamp(topic.end)}`;
+}
+
+/** Where the outline came from, when it is not the model's (null when it is). */
+export function topicsNote(topics: readonly Pick<Topic, "source">[]): string | null {
+  return topics.some((t) => t.source === "words")
+    ? "Worked out from the transcript's words, because the model's outline couldn't be used: each title is the words that set that stretch apart."
+    : null;
+}
+
+/** Topic by the segment it starts at, for headings in the transcript. */
+export function topicStarts<T extends Pick<Topic, "segment">>(topics: readonly T[]): Map<string, T> {
+  return new Map(topics.map((topic) => [topic.segment, topic]));
+}
+
 // --- Speakers and owners ----------------------------------------------------------------------
+
+const DIARIZED = /\bSPEAKER_(\d+)\b/g;
+
+/**
+ * Labels from diarization as people read them: "SPEAKER_3" is "Speaker 3", in a label or in text
+ * the model wrote with one nobody has named yet ("SPEAKER_2 will…"). Names stay as they are.
+ */
+export function labelText(text: string): string {
+  return text.replace(DIARIZED, "Speaker $1");
+}
 
 export function speakerName(label: string | null, speakers: Readonly<Record<string, Speaker>>): string {
   if (!label) return "Speaker";
-  return speakers[label]?.name || label;
+  const name = speakers[label]?.name;
+  return name && name !== label ? name : labelText(label);
+}
+
+export interface SpeakerOverview {
+  label: string;
+  segments: number;
+  seconds: number;
+  /** The first thing they said: something to recognise them by. */
+  first: Segment | null;
+}
+
+/** Each speaker label with how much they said and where they first spoke, in order of appearance. */
+export function speakerOverview(segments: readonly Segment[], speakers: Readonly<Record<string, Speaker>>): SpeakerOverview[] {
+  const seen = new Map<string, SpeakerOverview>();
+  for (const segment of segments) {
+    if (!segment.speaker || !(segment.speaker in speakers)) continue;
+    const entry = seen.get(segment.speaker) ?? { label: segment.speaker, segments: 0, seconds: 0, first: segment };
+    entry.segments += 1;
+    entry.seconds += Math.max(0, segment.end - segment.start);
+    seen.set(segment.speaker, entry);
+  }
+  const silent = Object.keys(speakers)
+    .filter((label) => !seen.has(label))
+    .sort((a, b) => a.localeCompare(b))
+    .map((label) => ({ label, segments: 0, seconds: 0, first: null }));
+  return [...seen.values(), ...silent];
+}
+
+/** Why a recording's transcript has no speaker labels (null when it has them, or is a transcript). */
+export function speakerNote(meeting: Pick<Meeting, "speakers" | "timings" | "filename">): string | null {
+  if (fileKind(meeting.filename) !== "audio" || Object.keys(meeting.speakers).length > 0) return null;
+  const reason = meeting.timings.diarization_skipped;
+  return reason ? `Speakers weren't told apart: ${reason}.` : "Speakers weren't told apart in this recording.";
+}
+
+/** What "Who is who" holds for one label while it is being edited. */
+export type SpeakerDraft = { kind: "nobody" } | { kind: "person"; id: string } | { kind: "guest"; name: string };
+
+/** The select's value for a guest (any other value is a colleague's id, or "" for nobody). */
+export const GUEST = "__guest__";
+export const GUEST_NAME_MAX = 100;
+
+export function speakerDraft(speaker: Speaker | undefined): SpeakerDraft {
+  if (speaker?.user_id) return { kind: "person", id: speaker.user_id };
+  if (speaker?.guest) return { kind: "guest", name: speaker.name };
+  return { kind: "nobody" };
+}
+
+export function draftValue(draft: SpeakerDraft): string {
+  return draft.kind === "person" ? draft.id : draft.kind === "guest" ? GUEST : "";
+}
+
+/** The draft after picking `value` in the select (a guest keeps the name typed so far). */
+export function draftFromValue(value: string, previous: SpeakerDraft): SpeakerDraft {
+  if (value === GUEST) return { kind: "guest", name: previous.kind === "guest" ? previous.name : "" };
+  return value ? { kind: "person", id: value } : { kind: "nobody" };
+}
+
+/** Options for naming a speaker: nobody, a guest, then colleagues (the current one is kept). */
+export function speakerOptions(people: readonly PersonOption[], current: Speaker | undefined): { value: string; label: string }[] {
+  const colleagues = personOptions(people, current?.user_id ? { id: current.user_id, name: current.name } : null, "Not named yet");
+  return [colleagues[0], { value: GUEST, label: "A guest (type their name)" }, ...colleagues.slice(1)];
+}
+
+/**
+ * The mapping as the API takes it: only labels whose name changed, a colleague as their id, a
+ * guest as `{ name }`, and null for "not named". A guest needs a name.
+ */
+export function speakerMapPayload(
+  current: Readonly<Record<string, Speaker>>,
+  drafts: Readonly<Record<string, SpeakerDraft>>,
+): { ok: true; body: Record<string, SpeakerChoice> } | { ok: false; errors: Record<string, string> } {
+  const body: Record<string, SpeakerChoice> = {};
+  const errors: Record<string, string> = {};
+  for (const [label, draft] of Object.entries(drafts)) {
+    const now = current[label];
+    if (!now) continue;
+    if (draft.kind === "person") {
+      if (now.user_id !== draft.id) body[label] = draft.id;
+    } else if (draft.kind === "guest") {
+      const name = draft.name.trim().replace(/\s+/g, " ");
+      if (!name) errors[label] = "Type the guest's name.";
+      else if (name.length > GUEST_NAME_MAX) errors[label] = `At most ${GUEST_NAME_MAX} characters.`;
+      else if (!(now.guest && now.name === name)) body[label] = { name };
+    } else if (now.user_id || now.guest) {
+      body[label] = null;
+    }
+  }
+  return Object.keys(errors).length > 0 ? { ok: false, errors } : { ok: true, body };
 }
 
 export interface PersonOption {
@@ -319,21 +464,9 @@ export function personOptions(
   return options;
 }
 
-/** The speaker mapping as the API takes it: only labels whose colleague changed. */
-export function speakerChanges(
-  current: Readonly<Record<string, Speaker>>,
-  chosen: Readonly<Record<string, string | null>>,
-): Record<string, string | null> {
-  const out: Record<string, string | null> = {};
-  for (const [label, userId] of Object.entries(chosen)) {
-    if (label in current && (current[label].user_id ?? null) !== userId) out[label] = userId;
-  }
-  return out;
-}
-
 export function ownerText(item: Pick<ActionItem, "owner" | "owner_user_id">, meId: string | null): string {
   if (item.owner_user_id && item.owner_user_id === meId) return "You";
-  return item.owner?.trim() || "Nobody yet";
+  return labelText(item.owner?.trim() || "") || "Nobody yet";
 }
 
 // --- Correcting an action item ----------------------------------------------------------------

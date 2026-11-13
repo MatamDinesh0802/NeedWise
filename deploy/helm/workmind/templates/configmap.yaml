@@ -21,6 +21,7 @@
   "EMBEDDING_DIMENSIONS" (toString $c.embedding.dimensions)
   "TRANSCRIPTION_PROVIDER" $c.transcription.provider
   "TRANSCRIPTION_MODEL" $c.transcription.model
+  "DIARIZATION_PROVIDER" $c.diarization.provider
 -}}
 {{- $optional := dict
   "LLM_BASE_URL" $c.llm.baseUrl

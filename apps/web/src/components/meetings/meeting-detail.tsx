@@ -2,12 +2,14 @@
 
 import {
   ArrowLeft,
+  AudioLines,
   CalendarClock,
   CircleAlert,
   CircleCheck,
   CircleDashed,
   Info,
   ListTodo,
+  ListTree,
   LoaderCircle,
   PencilLine,
   Play,
@@ -32,17 +34,22 @@ import { usePeople } from "@/hooks/use-people";
 import { usePolling } from "@/hooks/use-polling";
 import { ApiError } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
-import { meetingsApi, meetingsKeys, type ActionItem, type Decision, type Meeting } from "@/lib/meetings/api";
+import { meetingsApi, meetingsKeys, type ActionItem, type Decision, type Meeting, type Topic } from "@/lib/meetings/api";
 import {
   actionEditPayload,
   actionForm,
   activeSegment,
+  draftFromValue,
+  draftValue,
   dueOf,
   formatDay,
   formatDuration,
+  formatSpoken,
   formatTimestamp,
+  GUEST_NAME_MAX,
   isProcessing,
   jumpTarget,
+  labelText,
   MEETING_DELETION_KEYS,
   meetingDeletionText,
   meetingErrorMessage,
@@ -53,13 +60,22 @@ import {
   parseStartParam,
   personOptions,
   pipelineSteps,
-  speakerChanges,
+  speakerDraft,
+  speakerMapPayload,
   speakerName,
+  speakerNote,
+  speakerOptions,
+  speakerOverview,
   stepLabel,
+  topicAt,
+  topicRange,
+  topicsNote,
+  topicStarts,
   untimedCount,
   type ActionForm,
   type JumpTarget,
   type PersonOption,
+  type SpeakerDraft,
 } from "@/lib/meetings/meetings";
 import { canUseDirectory } from "@/lib/people";
 import type { Me } from "@/lib/session";
@@ -214,9 +230,11 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
   const [flash, setFlash] = useState<string | null>(startSegment);
   const flashTimer = useRef<number | undefined>(undefined);
 
-  // Editors pick owners and speakers from the colleague directory, plus anyone this meeting already
-  // linked (guests can't use the directory; a linked name never disappears from its own select).
-  const directoryEnabled = meeting.can_edit && canUseDirectory(me.org_role);
+  // Editors pick owners, and those who may name speakers pick them, from the colleague directory,
+  // plus anyone this meeting already linked (guests can't use the directory; a linked name never
+  // disappears from its own select).
+  const mappingDirectory = meeting.can_map_speakers && canUseDirectory(me.org_role);
+  const directoryEnabled = (meeting.can_edit || meeting.can_map_speakers) && canUseDirectory(me.org_role);
   const directory = usePeople(directoryEnabled);
   const people: PersonOption[] = useMemo(
     () => mergePeople(meetingPeople(meeting, { id: me.id, name: me.display_name }), directory.people),
@@ -279,6 +297,11 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
   }, [current, scrollToSegment]);
 
   const untimed = untimedCount(meeting);
+  // `?? []`: during a rolling upgrade the page may meet an API that predates topics.
+  const topics = meeting.topics ?? [];
+  const starts = topicStarts(topics);
+  const currentTopic = current ? topicAt(topics, meeting.segments.find((s) => s.id === current)?.start ?? 0) : null;
+  const note = speakerNote(meeting);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
@@ -287,8 +310,10 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
           <h3 id="summary-heading" className="font-medium">
             Summary
           </h3>
-          <p className="text-sm leading-relaxed whitespace-pre-line">{meeting.summary || "No summary was extracted."}</p>
+          <p className="text-sm leading-relaxed whitespace-pre-line">{labelText(meeting.summary) || "No summary was extracted."}</p>
         </section>
+
+        {topics.length > 0 ? <Topics topics={topics} hasMedia={meeting.has_media} current={currentTopic} onJump={jump} /> : null}
 
         <section aria-labelledby="decisions-heading" className="flex flex-col gap-2">
           <h3 id="decisions-heading" className="font-medium">
@@ -301,7 +326,7 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
               {meeting.decisions.map((decision, index) => (
                 <li key={index} className="flex items-start gap-3 rounded-lg border px-3 py-2 text-sm">
                   <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-                  <p className="min-w-0 flex-1">{decision.text}</p>
+                  <p className="min-w-0 flex-1">{labelText(decision.text)}</p>
                   <Timestamp item={decision} hasMedia={meeting.has_media} onJump={jump} />
                 </li>
               ))}
@@ -331,12 +356,13 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
           ) : null}
         </section>
 
-        {meeting.can_edit && Object.keys(meeting.speakers).length > 0 ? (
+        {meeting.can_map_speakers && Object.keys(meeting.speakers).length > 0 ? (
           <SpeakerMapping
             key={JSON.stringify(meeting.speakers)}
             meeting={meeting}
             people={people}
-            directoryError={directoryEnabled ? directory.error : null}
+            directoryError={mappingDirectory ? directory.error : null}
+            onJump={jump}
           />
         ) : null}
       </div>
@@ -361,6 +387,12 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
             Transcript
             <span className="font-normal text-muted-foreground">({meeting.segments.length} segments)</span>
           </h3>
+          {note ? (
+            <p className="flex items-start gap-1.5 border-b px-3 py-2 text-xs text-muted-foreground">
+              <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              {note}
+            </p>
+          ) : null}
           {meeting.segments.length === 0 ? (
             <div className="p-3">
               <EmptyState icon={ScrollText} title="No transcript" />
@@ -374,24 +406,40 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
                   tabIndex={-1}
                   aria-current={current === segment.id ? "true" : undefined}
                   className={cn(
-                    "flex gap-2 rounded-md px-2 py-1.5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                    "flex flex-wrap gap-x-2 gap-y-1 rounded-md px-2 py-1.5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                     current === segment.id && "bg-sky-500/10",
                     flash === segment.id && "bg-amber-500/20",
                   )}
                 >
+                  {starts.has(segment.id) ? (
+                    <p className="w-full pt-1 text-xs font-semibold">
+                      <span className="sr-only">Topic: </span>
+                      {labelText(starts.get(segment.id)?.title ?? "")}
+                    </p>
+                  ) : null}
                   {meeting.has_media ? (
                     <button
                       type="button"
-                      className="h-fit shrink-0 rounded font-mono text-xs text-muted-foreground tabular-nums hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                      className={cn(
+                        "h-fit shrink-0 rounded font-mono text-xs tabular-nums hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+                        current === segment.id || flash === segment.id ? "text-foreground" : "text-muted-foreground",
+                      )}
                       aria-label={`Play from ${formatTimestamp(segment.start)}`}
                       onClick={() => jump({ kind: "media", seconds: segment.start, segment: segment.id })}
                     >
                       {formatTimestamp(segment.start)}
                     </button>
                   ) : (
-                    <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">{formatTimestamp(segment.start)}</span>
+                    <span
+                      className={cn(
+                        "shrink-0 font-mono text-xs tabular-nums",
+                        current === segment.id || flash === segment.id ? "text-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      {formatTimestamp(segment.start)}
+                    </span>
                   )}
-                  <p className="min-w-0">
+                  <p className="min-w-0 flex-1">
                     {segment.speaker ? <span className="font-medium">{speakerName(segment.speaker, meeting.speakers)}: </span> : null}
                     {segment.text}
                   </p>
@@ -402,6 +450,52 @@ export function ReadyMeeting({ meeting, me, startAt }: { meeting: Meeting; me: M
         </section>
       </div>
     </div>
+  );
+}
+
+/** The meeting's outline: a click plays the recording from that topic or shows it in the transcript. */
+function Topics({ topics, hasMedia, current, onJump }: { topics: Topic[]; hasMedia: boolean; current: number | null; onJump: (target: JumpTarget) => void }) {
+  const note = topicsNote(topics);
+  return (
+    <section aria-labelledby="topics-heading" className="flex flex-col gap-2">
+      <h3 id="topics-heading" className="flex items-center gap-2 font-medium">
+        <ListTree className="size-4 text-muted-foreground" aria-hidden="true" />
+        Topics <span className="text-sm font-normal text-muted-foreground">({topics.length})</span>
+      </h3>
+      <ol className="flex flex-col gap-1">
+        {topics.map((topic, index) => {
+          const title = labelText(topic.title);
+          return (
+            <li key={topic.segment} aria-current={current === index ? "true" : undefined}>
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+                  current === index && "bg-sky-500/10",
+                )}
+                onClick={() =>
+                  onJump(hasMedia ? { kind: "media", seconds: topic.start, segment: topic.segment } : { kind: "segment", segment: topic.segment })
+                }
+              >
+                <span className={cn("w-24 shrink-0 font-mono text-xs tabular-nums", current === index ? "text-foreground" : "text-muted-foreground")}>
+                  {topicRange(topic)}
+                </span>{" "}
+                <span className="min-w-0 flex-1">
+                  {title}
+                  <span className="sr-only">{hasMedia ? ": play from here" : ": show in the transcript"}</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      {note ? (
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          {note}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -597,7 +691,7 @@ function ActionRow({
           <div className="flex items-start gap-3">
             <ListTodo className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <div className="min-w-0 flex-1">
-              <p>{item.text}</p>
+              <p>{labelText(item.text)}</p>
               <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Users className="size-3" aria-hidden="true" />
@@ -647,22 +741,42 @@ function ActionRow({
   );
 }
 
-function SpeakerMapping({ meeting, people, directoryError }: { meeting: Meeting; people: PersonOption[]; directoryError: unknown }) {
-  const labels = Object.keys(meeting.speakers).sort((a, b) => a.localeCompare(b));
-  const [chosen, setChosen] = useState<Record<string, string | null>>(() =>
-    Object.fromEntries(labels.map((label) => [label, meeting.speakers[label].user_id ?? null])),
+/**
+ * "Who is who": name each voice in the transcript as a colleague or a guest. For the uploader,
+ * attendees who can edit, and admins (`can_map_speakers`); the API checks the same.
+ */
+function SpeakerMapping({
+  meeting,
+  people,
+  directoryError,
+  onJump,
+}: {
+  meeting: Meeting;
+  people: PersonOption[];
+  directoryError: unknown;
+  onJump: (target: JumpTarget) => void;
+}) {
+  const overview = speakerOverview(meeting.segments, meeting.speakers);
+  const [drafts, setDrafts] = useState<Record<string, SpeakerDraft>>(() =>
+    Object.fromEntries(Object.keys(meeting.speakers).map((label) => [label, speakerDraft(meeting.speakers[label])])),
   );
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const changes = speakerChanges(meeting.speakers, chosen);
-  const dirty = Object.keys(changes).length > 0;
+  const payload = speakerMapPayload(meeting.speakers, drafts);
+  const dirty = !payload.ok || Object.keys(payload.body).length > 0;
 
   async function save() {
+    if (!payload.ok) {
+      setErrors(payload.errors);
+      return;
+    }
+    setErrors({});
     setPending(true);
     setError(null);
     try {
-      storeMeeting(await meetingsApi.setSpeakers(meeting.id, changes));
-      toast({ title: "Speakers saved", description: "Action items owned by those speakers are now linked to them." });
+      storeMeeting(await meetingsApi.setSpeakers(meeting.id, payload.body));
+      toast({ title: "Speakers named", description: "The transcript, the notes and search now use these names, and their action items follow them." });
     } catch (err) {
       setError(err);
     } finally {
@@ -677,8 +791,8 @@ function SpeakerMapping({ meeting, people, directoryError }: { meeting: Meeting;
           Who is who
         </h3>
         <p className="text-xs text-muted-foreground">
-          Link each speaker in the transcript to a colleague. Their action items are linked to that person, so a task made from one
-          reaches them.
+          Name each voice as a colleague, or type a guest&apos;s name. The transcript, the notes and search show the names, and action
+          items a speaker took on go to that person.
         </p>
       </div>
       {directoryError ? (
@@ -686,31 +800,91 @@ function SpeakerMapping({ meeting, people, directoryError }: { meeting: Meeting;
           The colleague directory didn&apos;t load, so only people this meeting already knows are listed.
         </p>
       ) : null}
-      <ul className="flex flex-col gap-2">
-        {labels.map((label) => {
-          const speaker = meeting.speakers[label];
-          return (
-            <li key={label} className="flex flex-wrap items-center justify-between gap-2">
-              <span className="min-w-0 truncate text-sm" title={label}>
-                {label}
-              </span>
-              <SimpleSelect
-                size="sm"
-                ariaLabel={`Colleague for ${label}`}
-                value={chosen[label] ?? ""}
-                disabled={pending}
-                onChange={(value) => setChosen({ ...chosen, [label]: value || null })}
-                options={personOptions(people, speaker.user_id ? { id: speaker.user_id, name: speaker.name } : null, "Not a colleague")}
-              />
-            </li>
-          );
-        })}
-      </ul>
-      {error ? <ErrorAlert error={error} message={meetingErrorMessage(error)} /> : null}
-      <Button type="button" size="sm" className="w-fit self-end" disabled={!dirty || pending} onClick={() => void save()}>
-        {pending ? <LoaderCircle className="animate-spin" data-icon="inline-start" aria-hidden="true" /> : null}
-        {pending ? "Saving…" : "Save speakers"}
-      </Button>
+      <form
+        className="flex flex-col gap-3"
+        noValidate
+        aria-label="Name the speakers"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <ul className="flex flex-col gap-3">
+          {overview.map(({ label, segments, seconds, first }) => {
+            const speaker = meeting.speakers[label];
+            const draft = drafts[label] ?? { kind: "nobody" };
+            const shown = labelText(label);
+            const target: JumpTarget | null = first
+              ? meeting.has_media
+                ? { kind: "media", seconds: first.start, segment: first.id }
+                : { kind: "segment", segment: first.id }
+              : null;
+            return (
+              <li key={label} className="flex flex-col gap-2 rounded-lg border p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium break-words" title={label}>
+                      {shown}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {segments === 1 ? "1 segment" : `${segments} segments`}
+                      {seconds > 0 ? `, ${formatSpoken(seconds)}` : ""}
+                    </p>
+                    {first ? <p className="mt-1 line-clamp-2 text-xs text-muted-foreground italic">“{first.text}”</p> : null}
+                  </div>
+                  {target && first ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="shrink-0 font-mono tabular-nums"
+                      aria-label={meeting.has_media ? `Listen to ${shown} from ${formatTimestamp(first.start)}` : `Show where ${shown} first speaks`}
+                      onClick={() => onJump(target)}
+                    >
+                      {meeting.has_media ? <AudioLines data-icon="inline-start" aria-hidden="true" /> : null}
+                      {formatTimestamp(first.start)}
+                    </Button>
+                  ) : null}
+                </div>
+                <Field label={`Who is ${shown}?`}>
+                  {({ id, describedBy }) => (
+                    <SimpleSelect
+                      id={id}
+                      describedBy={describedBy}
+                      size="sm"
+                      value={draftValue(draft)}
+                      disabled={pending}
+                      onChange={(value) => setDrafts({ ...drafts, [label]: draftFromValue(value, draft) })}
+                      options={speakerOptions(people, speaker)}
+                    />
+                  )}
+                </Field>
+                {draft.kind === "guest" ? (
+                  <Field label={`Guest's name for ${shown}`} error={errors[label] ?? null}>
+                    {({ id, describedBy, invalid }) => (
+                      <Input
+                        id={id}
+                        value={draft.name}
+                        maxLength={GUEST_NAME_MAX}
+                        disabled={pending}
+                        autoComplete="off"
+                        onChange={(e) => setDrafts({ ...drafts, [label]: { kind: "guest", name: e.target.value } })}
+                        aria-describedby={describedBy}
+                        aria-invalid={invalid || undefined}
+                      />
+                    )}
+                  </Field>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+        {error ? <ErrorAlert error={error} message={meetingErrorMessage(error)} /> : null}
+        <Button type="submit" size="sm" className="w-fit self-end" disabled={!dirty || pending}>
+          {pending ? <LoaderCircle className="animate-spin" data-icon="inline-start" aria-hidden="true" /> : null}
+          {pending ? "Saving…" : "Save names"}
+        </Button>
+      </form>
     </section>
   );
 }

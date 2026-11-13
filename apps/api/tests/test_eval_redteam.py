@@ -15,7 +15,7 @@ from tests.eval_analytics_support import People
 from tests.fakes import FakeLLM
 from tests.test_eval_analytics import IgnoresDansPolicy
 from workmind.core.context import RequestContext
-from workmind.evals.datasets import RedTeamItem, load_meetings, load_red_team
+from workmind.evals.datasets import MeetingTopic, RedTeamItem, load_meetings, load_red_team
 from workmind.evals.redteam import (
     PROMPT_SHINGLES,
     documents_in_tool_results,
@@ -32,6 +32,7 @@ from workmind.evals.runner import (
     EvalRun,
     Evaluator,
     meeting_sources,
+    score_topics,
 )
 from workmind.modules.agents.research import MAX_TOOL_CALLS
 from workmind.modules.analytics.agent import Composed
@@ -39,6 +40,8 @@ from workmind.modules.assistant.answer import ABSTAIN, SYSTEM
 from workmind.modules.knowledge.parsing import detect_mime, parse
 from workmind.modules.meetings.extract import ActionItem, Decision, Extraction
 from workmind.modules.meetings.pipeline import Directory
+from workmind.modules.meetings.topics import Outline, TopicStart, word_outline
+from workmind.modules.meetings.transcripts import parse as parse_transcript
 from workmind.modules.retrieval.service import Passage, RetrievalResult
 from workmind.modules.tools.registry import Tool, ToolRegistry, ToolResult
 from workmind.providers.llm import LLMRequest, LLMUsage
@@ -555,6 +558,72 @@ async def test_the_meetings_suite_counts_an_injected_decision(obeys: bool) -> No
     assert record.error is None
     assert record.decisions_found == 2
     assert record.rejected_as_decision == (1 if obeys else 0)
+
+
+async def test_the_meetings_suite_scores_the_topic_outline() -> None:
+    item = next(i for i in load_meetings(DATASETS) if i.id == "mt-02")
+    notes = Extraction(summary="Fix and rota.", decisions=[], action_items=[])
+    outline = Outline(
+        topics=[
+            TopicStart(title="Lakeside dashboard timeouts", first_segment="T1"),
+            TopicStart(title="Holiday support rota", first_segment="T14"),
+        ]
+    )
+    with_model = evaluator(askers=Askers(llm=FakeLLM(structured=[notes, outline])))
+    without = evaluator(askers=Askers(llm=FakeLLM(structured=[notes])))
+
+    scored = await with_model._meeting(  # pyright: ignore[reportPrivateUsage]
+        item, ACME / "meetings", "transcript", Directory([], {}), "Acme Robotics"
+    )
+    fallback = await without._meeting(  # pyright: ignore[reportPrivateUsage]
+        item, ACME / "meetings", "transcript", Directory([], {}), "Acme Robotics"
+    )
+
+    assert (scored.topics_found, scored.topics_expected, scored.topics_source) == (2, 2, "model")
+    assert scored.topics == ["Lakeside dashboard timeouts", "Holiday support rota"]
+    # Without the model's outline: one topic from the transcript's words, titled by Lakeside.
+    assert (fallback.topics_found, fallback.topics_source) == (1, "words")
+    assert fallback.topics_missed == ["holiday support rota"]
+
+
+def test_a_topic_counts_when_the_stretch_holding_its_anchor_has_a_fitting_title() -> None:
+    segments = [
+        {"id": "T1", "start": 0.0, "text": "Morning."},
+        {"id": "T2", "start": 10.0, "text": "Our shipping costs went up."},
+        {"id": "T3", "start": 20.0, "text": "The emergency stop test runs first."},
+    ]
+    topics = [
+        {"title": "Carrier costs", "start": 0.0},
+        {"title": "Fleet safety", "start": 15.0},
+    ]
+    expected = [
+        MeetingTopic(keywords=[["carrier", "shipping"]], anchor="shipping costs"),
+        # Speech to text drops the hyphen; the title does not name the drill.
+        MeetingTopic(keywords=[["drill"]], anchor="emergency-stop test"),
+        MeetingTopic(keywords=[["rota"]], anchor="holiday support rota"),  # never said
+    ]
+
+    assert score_topics(expected, topics, segments) == [
+        "emergency-stop test",
+        "holiday support rota",
+    ]
+
+
+def test_the_word_outline_finds_the_demo_meetings_expected_topics() -> None:
+    """The deterministic outline alone (no model), scored like the eval scores a model's."""
+    found: dict[str, int] = {}
+    for item in load_meetings(DATASETS):
+        path = ACME / "meetings" / item.file
+        transcript = parse_transcript(path.read_bytes(), path.name)
+        segments = [
+            {"id": f"T{i}", "start": s.start, "end": s.end, "speaker": s.speaker, "text": s.text}
+            for i, s in enumerate(transcript.segments, start=1)
+        ]
+        found[item.id] = len(item.topics) - len(
+            score_topics(item.topics, word_outline(segments), segments)
+        )
+
+    assert found == {"mt-01": 4, "mt-02": 1}
 
 
 def test_only_meetings_with_a_recording_are_transcribed() -> None:

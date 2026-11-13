@@ -5976,7 +5976,7 @@
           "meetings"
         ],
         "summary": "Map Speakers",
-        "description": "Who is who: maps transcript speaker labels to colleagues, and re-links action items whose\nowner was named by that label.",
+        "description": "Who is who: names transcript speakers (SPEAKER_2, or a name the transcript gave) as\ncolleagues or guests. The transcript shows the names, its indexed copy is rewritten with them\n(a new version of the transcript document), and action items owned by a renamed speaker\nname that colleague or guest. For the uploader, attendees who can edit, and admins.",
         "operationId": "map_speakers_api_v1_meetings__meeting_id__speakers_put",
         "parameters": [
           {
@@ -10958,6 +10958,22 @@
         ],
         "title": "GroupRef"
       },
+      "Guest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "Guest",
+        "description": "Someone outside the directory: shown by this name, linked to nobody."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -11622,6 +11638,14 @@
             "type": "array",
             "title": "Action Items"
           },
+          "topics": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Topics"
+          },
           "document_id": {
             "anyOf": [
               {
@@ -11642,6 +11666,10 @@
           "can_edit": {
             "type": "boolean",
             "title": "Can Edit"
+          },
+          "can_map_speakers": {
+            "type": "boolean",
+            "title": "Can Map Speakers"
           },
           "held_on": {
             "type": "string",
@@ -11672,9 +11700,11 @@
           "summary",
           "decisions",
           "action_items",
+          "topics",
           "document_id",
           "timings",
           "can_edit",
+          "can_map_speakers",
           "held_on",
           "created_at"
         ],
@@ -14209,13 +14239,16 @@
                   "format": "uuid"
                 },
                 {
+                  "$ref": "#/components/schemas/Guest"
+                },
+                {
                   "type": "null"
                 }
               ]
             },
             "type": "object",
             "title": "Speakers",
-            "description": "speaker label -> colleague, or null"
+            "description": "speaker label -> a colleague's id, a guest ({\"name\": \"...\"}), or null to leave it unnamed"
           }
         },
         "type": "object",

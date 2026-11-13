@@ -103,6 +103,12 @@ class RoutingItem(BaseModel):
         return self
 
 
+class MeetingTopic(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    keywords: list[list[str]]
+    anchor: str
+
+
 class MeetingItem(BaseModel):
     """A meeting file with its known outcome. Keywords: every group must match, any word of it."""
 
@@ -115,6 +121,9 @@ class MeetingItem(BaseModel):
     # Floated but never agreed: must appear neither as a decision nor as an action item.
     not_decisions: list[list[list[str]]] = []
     actions: list[dict[str, Any]]
+    # What the meeting talked about: the topic covering the first segment that contains
+    # `anchor` (words said well inside the topic) must have a title matching `keywords`.
+    topics: list[MeetingTopic] = []
 
 
 class AnalyticsItem(_Item):
@@ -249,6 +258,11 @@ def load_analytics(directory: Path) -> list[AnalyticsItem]:
         AnalyticsItem.model_validate(json.loads(line))
         for line in _lines(directory / FILES["analytics"])
     ]
+
+
+def spoken(text: str) -> str:
+    """Words only, as speech to text may punctuate them: "emergency-stop" = "emergency stop"."""
+    return _SPACES.sub(" ", re.sub(r"[^a-z0-9]+", " ", text.lower())).strip()
 
 
 def keywords_match(groups: list[list[str]], text: str) -> bool:

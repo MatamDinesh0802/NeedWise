@@ -321,9 +321,13 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > "My commitments" on `/tasks`, transcripts indexed as knowledge, the meeting-extraction eval set,
 > and the pages (`/meetings`, `/meetings/{id}`) with clickable timestamps that play the recording
 > or scroll the transcript. Measured: extraction and transcription times in `docs/meetings.md`. The
-> UI was checked end to end in Chromium with a scripted model, not a real one. Not built:
-> pyannote diarization (so speaker mapping covers transcripts with named speakers only) and
-> topic segmentation.
+> UI was checked end to end in Chromium with a scripted model, not a real one. Added in the
+> final pass: speaker diarization (pyannote segmentation and NeMo TitaNet-S as ONNX through
+> sherpa-onnx, no Hugging Face token; measured on the demo recording), naming speakers as
+> colleagues or guests (relabels the transcript, the notes and the indexed transcript; audited),
+> and topic outlines (model-based, checked against the transcript, with a deterministic
+> fallback; scored in the meetings eval), checked in headless Chromium with a scripted model.
+> Not measured with a real model: the topic outline and extraction from diarized recordings.
 
 **Goal:** meetings turn into decisions, tasks and searchable knowledge.
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from workmind.providers.llm import (
     Done,
+    LLMError,
     LLMRequest,
     LLMUsage,
     Role,
@@ -88,11 +89,26 @@ class FakeLLM:
         yield Done(self.usage(100, len(self.tokens)))
 
     async def structured(self, role: Role, request: LLMRequest, schema: Any) -> Any:
+        """The first scripted reply of the requested schema (or a scripted exception), else
+        `structured_script`. Nothing scripted for this schema: the call fails like a model
+        error would (a meeting's topic outline then falls back to its own)."""
         self.requests.append((role, request))
-        if self.structured_replies or self.structured_script is None:
-            reply = self.structured_replies.pop(0)
-        else:
+        index = next(
+            (
+                i
+                for i, reply in enumerate(self.structured_replies)
+                if isinstance(reply, Exception)
+                or not isinstance(schema, type)
+                or isinstance(reply, schema)
+            ),
+            None,
+        )
+        if index is not None:
+            reply = self.structured_replies.pop(index)
+        elif self.structured_script is not None:
             reply = self.structured_script(request)
+        else:
+            raise LLMError(f"FakeLLM: no scripted {getattr(schema, '__name__', schema)} reply")
         if isinstance(reply, Exception):
             raise reply
         return reply, self.usage(30, 8)

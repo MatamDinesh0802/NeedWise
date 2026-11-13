@@ -89,11 +89,11 @@ describe("meetingsApi", () => {
   };
 
   it("maps speakers, corrects an action item and makes a task, with CSRF", async () => {
-    await meetingsApi.setSpeakers("m 1", { "Speaker 2": "u-wei", "Olivia Grant": null });
+    await meetingsApi.setSpeakers("m 1", { "Speaker 2": "u-wei", "Olivia Grant": null, SPEAKER_3: { name: "Jonas Brandt" } });
     await meetingsApi.editAction("m1", 2, { owner_user_id: "u-olivia", due: null });
     await meetingsApi.makeTask("m1", 0);
 
-    expect(call(0)).toEqual({ url: "/api/v1/meetings/m%201/speakers", method: "PUT", body: { speakers: { "Speaker 2": "u-wei", "Olivia Grant": null } }, csrf: "1" });
+    expect(call(0)).toEqual({ url: "/api/v1/meetings/m%201/speakers", method: "PUT", body: { speakers: { "Speaker 2": "u-wei", "Olivia Grant": null, SPEAKER_3: { name: "Jonas Brandt" } } }, csrf: "1" });
     expect(call(1)).toEqual({ url: "/api/v1/meetings/m1/actions/2", method: "PATCH", body: { owner_user_id: "u-olivia", due: null }, csrf: "1" });
     expect(call(2)).toMatchObject({ url: "/api/v1/meetings/m1/actions/0/task", method: "POST", csrf: "1" });
   });

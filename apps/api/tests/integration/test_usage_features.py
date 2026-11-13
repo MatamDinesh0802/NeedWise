@@ -35,6 +35,7 @@ from workmind.modules.agents.department import EvidenceOut, Finding
 from workmind.modules.agents.planning import PlanOut, Subtask
 from workmind.modules.conversations.models import Message
 from workmind.modules.identity.models import Department
+from workmind.modules.meetings.topics import Outline, TopicStart
 from workmind.modules.usage.models import UsageEvent
 from workmind.modules.work.models import Workflow, WorkflowRun
 
@@ -231,7 +232,8 @@ async def test_a_workflow_run_counts_for_its_owner_and_the_run(
 async def test_meeting_extraction_counts_for_the_uploader_and_the_meeting(
     api: TestClient, acme: Acme, app_sessions: SessionFactory
 ) -> None:
-    use_model(api, FakeLLM(structured=[OUTCOME]))
+    topics = Outline(topics=[TopicStart(title="Safety drill", first_segment="T1")])
+    use_model(api, FakeLLM(structured=[OUTCOME, topics]))
     uploaded = api.post(
         "/api/v1/meetings",
         params={"collection": "operations-sops", "filename": "ops.vtt", "title": "Ops sync"},
@@ -252,14 +254,17 @@ async def test_meeting_extraction_counts_for_the_uploader_and_the_meeting(
         )
     )
 
-    (event,) = await usage(app_sessions, acme)
-    assert (event.feature, event.user_id, event.ref_type, event.ref_id) == (
-        "meetings",
-        acme.users["olivia.grant"],
-        "meeting",
-        meeting_id,
-    )
-    assert event.department_id == await department(app_sessions, acme, "operations")
+    # Two calls: the notes, then the topic outline.
+    extraction, outline = await usage(app_sessions, acme)
+    for event in (extraction, outline):
+        assert (event.feature, event.user_id, event.ref_type, event.ref_id, event.status) == (
+            "meetings",
+            acme.users["olivia.grant"],
+            "meeting",
+            meeting_id,
+            "ok",
+        )
+        assert event.department_id == await department(app_sessions, acme, "operations")
 
 
 async def test_a_budget_used_up_half_way_ends_the_chat_run_with_budget_exceeded(

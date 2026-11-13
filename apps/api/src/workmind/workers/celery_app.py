@@ -354,6 +354,7 @@ async def _process_meeting(tenant_id: str, meeting_id: str) -> None:
             await resources.models.for_tenant(tenant),
             resources.transcriber,
             CeleryDispatcher(),
+            resources.diarizer,
         )
         runs = await process_meeting(deps, tenant, uuid.UUID(meeting_id))
     finally:

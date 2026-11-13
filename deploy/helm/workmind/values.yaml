@@ -87,6 +87,11 @@ config:
     provider: faster_whisper
     model: base.en
     baseUrl: ""
+  diarization:
+    # sherpa_onnx (who spoke when, on the worker's CPU; 46 MB of models downloaded on the first
+    # recording into the worker's models volume) | none. Other settings: config.env
+    # (DIARIZATION_THRESHOLD, DIARIZATION_WINDOW_SHIFT, DIARIZATION_MODEL_DIR).
+    provider: sherpa_onnx
   smtp:
     # Empty: email is disabled.
     host: ""
@@ -404,8 +409,8 @@ worker:
     requests: {cpu: 500m, memory: 1Gi}
     limits: {cpu: "2", memory: 4Gi}
   tmpSizeLimit: 1Gi
-  # Speech-to-text models (HF_HOME=/models), downloaded on the first recording. Without
-  # persistence: an emptyDir, so a new pod downloads again.
+  # Speech-to-text and diarization models (HF_HOME=/models), downloaded on the first recording.
+  # Without persistence: an emptyDir, so a new pod downloads again.
   models:
     persistence: false
     existingClaim: ""

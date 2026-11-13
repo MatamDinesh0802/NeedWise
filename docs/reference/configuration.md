@@ -121,6 +121,10 @@ not shown here; where one exists it is a development value.
 | <a id="transcription_model"></a>`TRANSCRIPTION_MODEL` | string | `base.en` | A faster-whisper model (`base.en`, `small.en`, `medium.en`: slower and more accurate), or the server's model. |
 | <a id="transcription_base_url"></a>`TRANSCRIPTION_BASE_URL` | string | `http://localhost:8000/v1` | The transcription server (`openai_compatible` only). |
 | <a id="transcription_api_key"></a>`TRANSCRIPTION_API_KEY` | *secret* | *unset* | The transcription server's API key, if it needs one. |
+| <a id="diarization_provider"></a>`DIARIZATION_PROVIDER` | one of `sherpa_onnx`, `none` | `sherpa_onnx` | Who spoke when in recordings: `sherpa_onnx` (pyannote segmentation and NeMo TitaNet-S speaker embeddings on the worker's CPU; needs the `diarization` extra, which the image has) or `none`. Without it, or if it fails, a recording is transcribed without speaker labels. |
+| <a id="diarization_model_dir"></a>`DIARIZATION_MODEL_DIR` | string | `""` | Where the diarization models (46 MB) are downloaded on the first recording, or placed by hand for an offline install. Empty: `$HF_HOME/diarization` (`/models/diarization` in the image), else `~/.cache/workmind/diarization`. |
+| <a id="diarization_threshold"></a>`DIARIZATION_THRESHOLD` | number, > 0, ≤ 2 | `0.6` | How different two voices must sound to count as two speakers: higher finds fewer speakers. Lower errs towards splitting one voice into two labels, which naming both fixes; higher merges voices, which nothing fixes. Chosen on the demo recording cut to 2, 5, 10 and 23 minutes (docs/meetings.md). |
+| <a id="diarization_window_shift"></a>`DIARIZATION_WINDOW_SHIFT` | number, ≥ 0.05, ≤ 1 | `0.5` | The step of the segmentation model's 10-second window, as a share of it. pyannote uses 0.1: slightly more accurate on the demo recording, and about four times slower. |
 
 ## Analytics
 
