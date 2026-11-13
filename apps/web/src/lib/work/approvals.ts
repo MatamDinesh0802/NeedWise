@@ -448,6 +448,16 @@ export function serverFieldErrors(error: DecisionError | null): DraftErrors {
 }
 
 /** Where an approval came from, in words. */
+/**
+ * An action the assistant proposed while answering someone, sent by an approver rule to another
+ * person: the person who asked never confirmed it, and a document the assistant read could have
+ * steered it. The approver should check it is something they asked for.
+ */
+export function unconfirmedNote(approval: Approval, requester: string): string | null {
+  if (approval.origin.via !== "research" || approval.requested_by === approval.approver_id) return null;
+  return `The assistant proposed this while answering ${requester}, and ${requester} has not confirmed it. Check that it is something they asked for: a document the assistant read could have steered it.`;
+}
+
 export function originLabel(approval: Approval): string {
   if (approval.origin.via === "workflow") return "From a workflow run";
   if (approval.origin.via === "governance") return "Requested in the Knowledge Hub";

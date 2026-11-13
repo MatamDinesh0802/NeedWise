@@ -13,7 +13,8 @@ import { ApiError } from "@/lib/api";
 import { pdfPageUrl, type Source } from "@/lib/chat/api";
 import { snippetParts } from "@/lib/chat/snippet";
 import { groupSources } from "@/lib/chat/thread";
-import { knowledgeApi, knowledgeKeys } from "@/lib/knowledge/api";
+import { knowledgeApi, knowledgeKeys, type Chunk } from "@/lib/knowledge/api";
+import type { QueryState } from "@/lib/stores/query-cache";
 import { cn } from "@/lib/utils";
 
 export interface PanelSources {
@@ -70,6 +71,12 @@ export function SourcesPanel({
 
 function SourceCard({ source, cited, focused }: { source: Source; cited: boolean; focused: boolean }) {
   const ref = useRef<HTMLElement>(null);
+  // From history, the passage is fetched (permission-checked): a 404 means the document was
+  // deleted or is no longer open to this person, so there is nothing to open either.
+  const { state: stored } = useApiQuery(source.text ? null : knowledgeKeys.chunks(source.document_id), () =>
+    knowledgeApi.listChunks(source.document_id),
+  );
+  const gone = !source.text && stored.status === "error" && isGone(stored.error);
   useEffect(() => {
     if (focused) {
       ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -108,24 +115,26 @@ function SourceCard({ source, cited, focused }: { source: Source; cited: boolean
         <SensitivityBadge sensitivity={source.sensitivity} />
         {source.page != null ? <span className="text-xs text-muted-foreground">Page {source.page}</span> : null}
       </div>
-      <Snippet source={source} />
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-        <Link href={`/knowledge/documents/${source.document_id}`} className="inline-flex items-center gap-1 text-primary hover:underline">
-          <FileText className="size-3.5" aria-hidden="true" />
-          Open document
-        </Link>
-        {source.page != null && source.filename.toLowerCase().endsWith(".pdf") ? (
-          <a
-            href={pdfPageUrl(source.document_id, source.page)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-primary hover:underline"
-          >
-            <ExternalLink className="size-3.5" aria-hidden="true" />
-            Open PDF at page {source.page}
-          </a>
-        ) : null}
-      </div>
+      {source.text ? <SnippetText text={source.text} /> : <StoredSnippet source={source} state={stored} />}
+      {gone ? null : (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          <Link href={`/knowledge/documents/${source.document_id}`} className="inline-flex items-center gap-1 text-primary hover:underline">
+            <FileText className="size-3.5" aria-hidden="true" />
+            Open document
+          </Link>
+          {source.page != null && source.filename.toLowerCase().endsWith(".pdf") ? (
+            <a
+              href={pdfPageUrl(source.document_id, source.page)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              <ExternalLink className="size-3.5" aria-hidden="true" />
+              Open PDF at page {source.page}
+            </a>
+          ) : null}
+        </div>
+      )}
     </article>
   );
 }
@@ -150,10 +159,9 @@ function ReviewOverdueBadge() {
 
 const SNIPPET = "rounded-lg bg-muted/40 px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap";
 
-/** Live sources carry their text; from history it's fetched (permission-checked) on demand. */
-function Snippet({ source }: { source: Source }) {
-  if (source.text) return <SnippetText text={source.text} />;
-  return <StoredSnippet source={source} />;
+/** Deleted, or no longer open to this person: the API answers both the same (404). */
+export function isGone(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 404 || error.status === 403);
 }
 
 /** A passage: plain text, with its markdown tables drawn as tables. */
@@ -196,17 +204,14 @@ export function SnippetText({ text }: { text: string }) {
   );
 }
 
-function StoredSnippet({ source }: { source: Source }) {
-  const { state } = useApiQuery(knowledgeKeys.chunks(source.document_id), () =>
-    knowledgeApi.listChunks(source.document_id),
-  );
+/** From history, the passage is fetched on demand (permission-checked). */
+function StoredSnippet({ source, state }: { source: Source; state: QueryState<{ items: Chunk[] }> }) {
   if (state.status === "loading") return <Skeleton className="h-16 w-full" />;
   if (state.status === "error") {
-    const lost = state.error instanceof ApiError && (state.error.status === 404 || state.error.status === 403);
     return (
       <p className="flex items-center gap-1.5 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
         <Lock className="size-3.5" aria-hidden="true" />
-        {lost ? "You no longer have access to this document." : "Couldn't load the passage."}
+        {isGone(state.error) ? "This document was deleted, or you no longer have access to it." : "Couldn't load the passage."}
       </p>
     );
   }

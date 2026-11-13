@@ -41,14 +41,14 @@ export const TOKEN_SCOPES: readonly TokenScope[] = [
   {
     value: "knowledge:read",
     label: "Search knowledge",
-    description: "Search documents you have access to.",
-    active: false,
+    description: "Search documents you have access to and list your collections (MCP: search_knowledge, list_collections).",
+    active: true,
   },
   {
     value: "assistant:ask",
     label: "Ask the assistant",
-    description: "Ask questions and get cited answers.",
-    active: false,
+    description: "Ask questions and get cited answers, and query analytics data you may see (MCP: ask, describe_data, query_data).",
+    active: true,
   },
 ];
 

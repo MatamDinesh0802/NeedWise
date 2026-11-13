@@ -139,10 +139,16 @@ export function WorkflowsSection() {
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
           {workflows.state.data.map((workflow) => (
-            <li key={workflow.id} className={cn("flex flex-col gap-3 rounded-xl border bg-card p-4", !workflow.enabled && "opacity-70")}>
+            <li
+              key={workflow.id}
+              aria-labelledby={`workflow-${workflow.id}`}
+              className={cn("flex flex-col gap-3 rounded-xl border bg-card p-4", !workflow.enabled && "opacity-70")}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-medium">{workflow.name}</p>
+                  <p id={`workflow-${workflow.id}`} className="font-medium">
+                    {workflow.name}
+                  </p>
                   <p className="font-mono text-xs text-muted-foreground">{workflow.key}</p>
                 </div>
                 <Badge variant={workflow.enabled ? "secondary" : "outline"}>{workflow.enabled ? "Enabled" : "Disabled"}</Badge>
@@ -165,18 +171,18 @@ export function WorkflowsSection() {
                 ))}
               </ol>
               <div className="mt-auto flex flex-wrap justify-end gap-2 pt-1">
-                <Button variant="ghost" size="sm" className="mr-auto text-muted-foreground" onClick={() => setDeleting(workflow)}>
+                <Button variant="ghost" size="sm" className="mr-auto text-muted-foreground" aria-label={`Delete ${workflow.name}`} onClick={() => setDeleting(workflow)}>
                   <Trash2 data-icon="inline-start" />
                   Delete
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => setHistory(workflow)}>
+                <Button variant="ghost" size="sm" aria-label={`Runs of ${workflow.name}`} onClick={() => setHistory(workflow)}>
                   <History data-icon="inline-start" />
                   Runs
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setEditing({ workflow, template: false })}>
+                <Button variant="outline" size="sm" aria-label={`Edit ${workflow.name}`} onClick={() => setEditing({ workflow, template: false })}>
                   Edit
                 </Button>
-                <Button size="sm" disabled={starting === workflow.key || !workflow.enabled} onClick={() => void runNow(workflow)}>
+                <Button size="sm" aria-label={`Run now: ${workflow.name}`} disabled={starting === workflow.key || !workflow.enabled} onClick={() => void runNow(workflow)}>
                   {starting === workflow.key ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Play data-icon="inline-start" />}
                   Run now
                 </Button>

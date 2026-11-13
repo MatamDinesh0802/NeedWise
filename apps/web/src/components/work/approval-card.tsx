@@ -47,6 +47,7 @@ import {
   OFFICIAL_KIND,
   originLabel,
   outcomeText,
+  unconfirmedNote,
   relatedApprovalHref,
   stepText,
   reduceCard,
@@ -129,6 +130,8 @@ export function ApprovalCard({
   const subject = subjectLink(approval);
   const step = stepText(approval);
   const related = relatedApprovalHref(approval);
+  const requester = personName(approval.requested_by, { meId, people: colleagues.byId, fallback: "the person who asked" });
+  const unconfirmed = status === "pending" && decidable ? unconfirmedNote(approval, requester) : null;
 
   async function submit(kind: SubmitKind) {
     const request = decisionRequest(state, kind);
@@ -196,6 +199,12 @@ export function ApprovalCard({
                 : `It only runs once ${approver} says yes.`}
           </p>
         </div>
+      ) : null}
+      {unconfirmed ? (
+        <p className="flex items-start gap-2 rounded-lg border border-amber-500/40 px-3 py-2 text-sm" role="note">
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+          {unconfirmed}
+        </p>
       ) : null}
 
       {state.mode === "edit" && state.draft ? (

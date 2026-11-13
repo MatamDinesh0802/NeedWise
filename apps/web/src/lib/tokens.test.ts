@@ -51,12 +51,13 @@ describe("validateTokenForm", () => {
 });
 
 describe("scopes", () => {
-  it("offers the contract's scopes; only profile:read works today", () => {
+  it("offers the API's scopes, all in effect (MCP needs knowledge:read and assistant:ask)", () => {
     expect(TOKEN_SCOPES.map((s) => [s.value, s.active])).toEqual([
       ["profile:read", true],
-      ["knowledge:read", false],
-      ["assistant:ask", false],
+      ["knowledge:read", true],
+      ["assistant:ask", true],
     ]);
+    expect(TOKEN_SCOPES.some((s) => !s.active)).toBe(false); // no "Takes effect in a later phase."
   });
 });
 

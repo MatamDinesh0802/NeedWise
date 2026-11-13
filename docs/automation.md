@@ -71,7 +71,10 @@ approver:                                           # all of these steps, in ord
   decide.
 - **Where rules apply:** a workflow step's own `approver`; otherwise the organization's rule for
   that tool (Admin › Automation), for workflow steps and for the actions the assistant proposes
-  in research mode; otherwise the default above.
+  in research mode; otherwise the default above. With a rule, the person who asked does not
+  confirm the assistant's proposal themselves: the assistant tells them who decides it, and the
+  approver's card says the person who asked has not confirmed it (a document the assistant read
+  could have steered it), so they check it is something that person wanted.
 - Saving a workflow or the rules checks that every person and department named exists, and
   that each step can be met by somebody other than the admin saving it (`422
   invalid_approver`). Edits at decision time are validated as before (`422 invalid_input`).

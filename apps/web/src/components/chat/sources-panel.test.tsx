@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import type { Source } from "@/lib/chat/api";
 
-import { reviewOverdue, SourcesPanel } from "./sources-panel";
+import { ApiError } from "@/lib/api";
+
+import { isGone, reviewOverdue, SourcesPanel } from "./sources-panel";
 
 const source = (overrides: Partial<Source> = {}): Source => ({
   marker: "S1",
@@ -41,5 +43,19 @@ describe("SourcesPanel review warnings", () => {
   it("only warns about official documents", () => {
     expect(reviewOverdue({ trust: "reference", review_overdue: true })).toBe(false);
     expect(reviewOverdue({ trust: "official", review_overdue: true })).toBe(true);
+  });
+});
+
+describe("SourcesPanel for a document that is gone", () => {
+  it("treats 404 and 403 as deleted or no longer open, other failures as a load error", () => {
+    const problem = (status: number) => new ApiError({ status, title: "x", code: null, detail: null, problem: null });
+    expect(isGone(problem(404))).toBe(true);
+    expect(isGone(problem(403))).toBe(true);
+    expect(isGone(problem(500))).toBe(false);
+    expect(isGone(new Error("offline"))).toBe(false);
+  });
+
+  it("offers the document while its passage is available", () => {
+    expect(render([source()])).toContain("Open document");
   });
 });

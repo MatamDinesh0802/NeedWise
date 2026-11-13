@@ -20,6 +20,7 @@ import {
   serverFieldErrors,
   splitAddresses,
   stepText,
+  unconfirmedNote,
   withAssigneeName,
   type CardAction,
   type CardState,
@@ -265,5 +266,14 @@ describe("card state machine", () => {
     const executed = approval({ status: "executed" });
     expect(latestApproval(executed, approval({ status: "approved" }))).toBe(executed);
     expect(latestApproval(pending, null)).toBe(pending);
+  });
+});
+
+describe("an action the assistant proposed for someone else to approve", () => {
+  it("tells the approver the person who asked has not confirmed it", () => {
+    const routed = approval({ origin: { via: "research" }, approver_id: "u-marcus" });
+    expect(unconfirmedNote(routed, "Bob")).toMatch(/^The assistant proposed this while answering Bob, and Bob has not confirmed it\./);
+    expect(unconfirmedNote(approval({ origin: { via: "research" } }), "Olivia")).toBeNull(); // they approve it themselves
+    expect(unconfirmedNote(approval({ origin: { via: "workflow" }, approver_id: "u-marcus" }), "Bob")).toBeNull();
   });
 });
