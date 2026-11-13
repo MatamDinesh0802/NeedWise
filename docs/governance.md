@@ -279,6 +279,12 @@ Seeding is idempotent: it only touches what the product has not changed (an owne
 to the uploader, a document never reviewed in the product), so running it again changes nothing
 and never undoes a review or an owner chosen in the app.
 
+Every seeded collection keeps the default escalation (14 days) and no automatic demotion. So the
+Company Handbook's official documents, due on 2026-11-03, escalate at the first daily run from
+2026-11-17; those Alice owns go straight to the admins' stage, since she also owns the
+collection and was already reminded. Nothing seeded is demoted automatically. This follows from
+the rules above; it has not been observed on the running stack.
+
 ## What is not built
 
 - Escalation covers official documents only, and tells people in the app only (no email or
