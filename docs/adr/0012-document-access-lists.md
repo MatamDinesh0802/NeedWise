@@ -27,7 +27,9 @@ collection`): a document grant could only widen access. The app never wrote such
    in every chunk's payload and a filter clause (no list, or a list naming the caller). Lock 2
    keeps checking every passage's collection (which never races a just-uploaded document's own
    tuples) and also checks `viewer` on the document for every passage whose document has a list
-   according to PostgreSQL **or** the payload, so either signal suffices. Every non-retrieval
+   according to PostgreSQL **or** the payload, so either signal suffices; for those documents
+   lock 2 also applies the PostgreSQL list itself (one query), which closes the window in which
+   both OpenFGA (outbox) and the payload (refresh after commit) still lag. Every non-retrieval
    path asks the same question in SQL (`document_acl.visible_clause`, `can_view`).
 3. **Identity mapping fails closed.** Every principal a source names is kept as written
    (`email:`, `group:`, `domain:`, `anyone`, `slack-user:`, `github-*`). Only `email:` (the

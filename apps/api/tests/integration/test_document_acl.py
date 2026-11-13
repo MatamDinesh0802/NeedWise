@@ -483,6 +483,52 @@ async def test_lock_two_holds_when_the_index_forgets_the_list(
     assert result.dropped_by_recheck >= 1  # counted as drift
 
 
+async def test_a_new_list_holds_before_openfga_and_the_index_catch_up(
+    world: World,
+    app_sessions: SessionFactory,
+    fga: OpenFgaClient,
+    qdrant: QdrantClient,
+    model_name: str,
+) -> None:
+    """The moment after the commit: the outbox has not reached OpenFGA and the chunks still
+    say the document has no list. PostgreSQL, read by lock 2, already says Bob is not on it."""
+    w = world
+    async with tenant_transaction(app_sessions, w.acme.tenant_id) as session:
+        document = await session.get(Document, uuid.UUID(w.open))
+        assert document is not None
+        await document_acl.set_acl(
+            session,
+            w.acme.tenant_id,
+            document,
+            [document_acl.AclEntry(w.user("wei.zhang"))],
+            origin="manual",
+            actor=Actor.system(),
+        )
+    assert await fga.check(w.store, RelationTuple(w.user("bob"), "viewer", f"document:{w.open}"))
+    search = retriever(qdrant, fga, app_sessions, model_name).search
+
+    bob = await search(await _ctx(app_sessions, w, "bob"), "restart the fleet controller")
+    wei = await search(await _ctx(app_sessions, w, "wei.zhang"), "restart the fleet controller")
+
+    assert all(p.document_id != w.open for p in bob.passages)
+    assert bob.dropped_by_recheck >= 1
+    assert any(p.document_id == w.open for p in wei.passages)
+
+
+async def _ctx(sessions: SessionFactory, w: World, name: str) -> RequestContext:
+    async with tenant_transaction(sessions, w.acme.tenant_id) as session:
+        identity = await load_identity(session, w.acme.users[name])
+    assert identity is not None
+    return RequestContext(
+        request_id="t",
+        tenant_id=w.acme.tenant_id,
+        user_id=identity.user.id,
+        org_role=identity.user.org_role,
+        principals=identity.principals,
+        auth_method="service",
+    )
+
+
 async def test_a_list_never_opens_the_collection(
     api: TestClient, world: World, app_sessions: SessionFactory, fga: OpenFgaClient
 ) -> None:

@@ -8,6 +8,8 @@ access, and checking the collection never races a just-uploaded document's own t
 document with its own access list (ADR 0012) is also checked as a document (`viewer` on
 `document:<id>`, which needs the collection AND the list). Which documents have one is read
 from PostgreSQL, the source of truth, and from the chunk's payload: either is enough to ask.
+The same PostgreSQL query also says whether the list names the caller, so a narrowed list holds
+even while OpenFGA still waits for the outbox and the chunks still carry the old payload.
 A passage that fails lock 2 is dropped and counted as drift, which should never happen.
 """
 
@@ -27,6 +29,7 @@ from workmind.core.context import RequestContext
 from workmind.core.tenancy import global_transaction, tenant_transaction
 from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
 from workmind.modules.identity.models import Tenant
+from workmind.modules.knowledge.document_acl import visible_clause
 from workmind.modules.knowledge.models import Document
 from workmind.modules.retrieval.qdrant import QdrantClient, match, match_any
 from workmind.modules.retrieval.sparse import encode_query
@@ -265,7 +268,10 @@ class Retriever:
             log.warning("authz_store_missing", tenant_id=str(ctx.tenant_id))
             return []  # fail closed
         own = {str(h["payload"]["document_id"]) for h in hits if h["payload"].get("own_acl")}
-        own |= await self._own_acl_documents(ctx, {h["payload"]["document_id"] for h in hits})
+        listed, closed = await self._own_acl_documents(
+            ctx, {h["payload"]["document_id"] for h in hits}
+        )
+        own |= listed
         user = f"user:{ctx.user_id}"
         questions = [
             RelationTuple(user, "viewer", f"collection:{c}")
@@ -278,14 +284,18 @@ class Retriever:
             h
             for h in hits
             if f"collection:{h['payload']['collection_id']}" in allowed
+            and str(h["payload"]["document_id"]) not in closed
             and (
                 str(h["payload"]["document_id"]) not in own
                 or f"document:{h['payload']['document_id']}" in allowed
             )
         ]
 
-    async def _own_acl_documents(self, ctx: RequestContext, document_ids: set[str]) -> set[str]:
-        """Which of these documents have their own access list, according to PostgreSQL."""
+    async def _own_acl_documents(
+        self, ctx: RequestContext, document_ids: set[str]
+    ) -> tuple[set[str], set[str]]:
+        """According to PostgreSQL: which of these documents have their own access list, and
+        which of those the list closes to the caller."""
         ids: list[uuid.UUID] = []
         for document_id in document_ids:
             try:
@@ -293,12 +303,15 @@ class Retriever:
             except ValueError:
                 continue
         if not ids:
-            return set()
+            return set(), set()
         async with tenant_transaction(self._sessions, ctx.tenant_id) as session:
-            found = await session.scalars(
-                select(Document.id).where(Document.id.in_(ids), Document.own_acl.is_(True))
+            rows = await session.execute(
+                select(Document.id, visible_clause(ctx.principals)).where(
+                    Document.id.in_(ids), Document.own_acl.is_(True)
+                )
             )
-            return {str(document_id) for document_id in found}
+            found = [(str(document_id), bool(open_)) for document_id, open_ in rows]
+        return {d for d, _ in found}, {d for d, open_ in found if not open_}
 
     async def _store(self, tenant_id: uuid.UUID) -> str | None:
         if tenant_id not in self._stores:

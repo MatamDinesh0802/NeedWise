@@ -32,7 +32,9 @@ retrieval checks ([ARCHITECTURE §7.6](ARCHITECTURE.md#76-permission-aware-retri
   `user:*`; one with a list names exactly its principals, so an empty list leaves nobody. Before
   any model call, every passage's collection is checked as before, and every passage whose
   document has a list (according to PostgreSQL **or** the chunk's payload) is also checked as a
-  document. A passage that fails is dropped and counted as drift.
+  document. The same PostgreSQL query says whether the list names you, so a list narrowed a
+  moment ago holds even before the OpenFGA outbox and the chunk payloads have caught up. A
+  passage that fails is dropped and counted as drift.
 
 Both are derived from the same rows: a change to a list writes the OpenFGA tuples to the
 outbox in the same transaction and refreshes the chunks' payload right after the commit.
