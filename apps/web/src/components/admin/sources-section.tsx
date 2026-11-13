@@ -25,6 +25,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
+import { IdentityMappingsSection } from "@/components/admin/identity-mappings-section";
 import { SourceDetail, StaleDocumentsPanel, type DetailTab } from "@/components/admin/source-detail";
 import { Field, SimpleSelect } from "@/components/data/form";
 import { EmptyState, ErrorAlert, RefreshingHint, TableSkeleton } from "@/components/data/states";
@@ -226,6 +227,9 @@ export function SourcesSection({ scope = "all", embedded = false }: { scope?: So
       )}
 
       {list.length > 0 ? <StaleDocumentsPanel /> : null}
+
+      {/* Mapping source accounts to people and groups is for org admins (Admin → Sources). */}
+      {scope === "all" && !notAManager ? <IdentityMappingsSection /> : null}
 
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">

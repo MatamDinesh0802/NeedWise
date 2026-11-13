@@ -13,7 +13,10 @@ and the "official" approval flow.
   approval, and a new version of an official document is no longer official. Demoting an
   official document is immediate, audited, and the owner is told.
 
-Permissions are checked here and in the API, never by a model.
+Permissions are checked here and in the API, never by a model. A document with its own access
+list (ADR 0012) counts as readable only by those on it who can open the collection: owners,
+approvers and deciders must be able to read the document itself, and titles and notes are
+withheld from anyone else.
 """
 
 import uuid
@@ -32,6 +35,7 @@ from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.governance.models import AuditEvent
 from workmind.modules.identity.models import User
 from workmind.modules.identity.service import load_identity
+from workmind.modules.knowledge import document_acl
 from workmind.modules.knowledge.acl import acl_principals
 from workmind.modules.knowledge.models import (
     Collection,
@@ -88,14 +92,19 @@ async def can_view_as(
     user_id: uuid.UUID,
     collection: Collection,
     grants: Sequence[CollectionGrant] | None = None,
+    *,
+    document: Document | None = None,
 ) -> bool:
-    """Whether another person (an owner to be) can open the collection, with their access now."""
+    """Whether another person (an owner to be) can open the collection, with their access now,
+    and, given a document, that document too (its own access list, if it has one)."""
     identity = await load_identity(session, user_id)
     if identity is None or identity.user.status != "active":
         return False
     if grants is None:
         grants = await _grants(session, collection.id)
-    return bool(set(acl_principals(collection, grants)) & identity.principals)
+    if not set(acl_principals(collection, grants)) & identity.principals:
+        return False
+    return document is None or await document_acl.can_view(session, identity.principals, document)
 
 
 # --- Owners ------------------------------------------------------------------------------------
@@ -126,13 +135,13 @@ async def set_owner(
     owner = await session.get(User, owner_id)
     if owner is None or owner.status != "active":
         raise ApiError(422, "unknown_user", "Choose an active colleague as the owner")
-    if not await can_view_as(session, owner_id, collection):
+    if not await can_view_as(session, owner_id, collection, document=document):
         raise ApiError(
             422,
             "owner_cannot_view",
-            "This person cannot open the collection",
+            "This person cannot open the document",
             "An owner reviews the document, so they must be able to read it. Share the "
-            "collection with them first.",
+            "collection (and the document, if it has its own access list) with them first.",
         )
     before = document.owner_id
     if before == owner_id:
@@ -287,6 +296,14 @@ async def send_review_reminders(
             if owner is None or owner.status != "active":
                 report.without_owner += 1
                 continue
+            collection = await session.get(Collection, document.collection_id)
+            if collection is None or not await can_view_as(
+                session, owner.id, collection, document=document
+            ):
+                # The reminder names the document: never to someone who cannot read it (an
+                # owner its source's access list leaves out). Someone else should own it.
+                report.without_owner += 1
+                continue
             assert document.next_review_at is not None  # noqa: S101 (filtered above)
             title = f"Review {document.title}"[:200]
             task = Task(
@@ -379,7 +396,7 @@ async def pending_official_requests(
 
 
 async def _official_approvers(
-    session: AsyncSession, collection: Collection, requester_id: uuid.UUID
+    session: AsyncSession, collection: Collection, requester_id: uuid.UUID, document: Document
 ) -> list[uuid.UUID]:
     """The collection's owner; when the owner is the one asking, or there is none (or they
     left), every active org admin who can open the collection, except the requester. Never the
@@ -389,7 +406,7 @@ async def _official_approvers(
     if (
         owner is not None
         and owner != requester_id
-        and await can_view_as(session, owner, collection, grants)
+        and await can_view_as(session, owner, collection, grants, document=document)
     ):
         return [owner]
     admins = await session.scalars(
@@ -397,7 +414,11 @@ async def _official_approvers(
         .where(User.org_role.in_(ADMIN_ROLES), User.status == "active", User.id != requester_id)
         .order_by(User.display_name)
     )
-    return [a for a in admins.all() if await can_view_as(session, a, collection, grants)]
+    return [
+        a
+        for a in admins.all()
+        if await can_view_as(session, a, collection, grants, document=document)
+    ]
 
 
 async def decider_problem(
@@ -421,8 +442,8 @@ async def decider_problem(
         approver.id == collection.owner_id or approver.org_role in ADMIN_ROLES
     ):
         return "Only the collection's owner or an administrator decides this request."
-    if not await can_view_as(session, decider.user_id, collection):
-        return "You cannot open this collection, so you cannot decide on its documents."
+    if not await can_view_as(session, decider.user_id, collection, document=document):
+        return "You cannot open this document, so you cannot decide on it."
     return None
 
 
@@ -447,6 +468,20 @@ async def unreadable_collections(
         if set(acl_principals(c, [g for g in grants if g.collection_id == c.id])) & ctx.principals
     }
     return collection_ids - readable
+
+
+async def unreadable_documents(
+    session: AsyncSession, ctx: RequestContext, document_ids: set[uuid.UUID]
+) -> set[uuid.UUID]:
+    """The documents among `document_ids` the caller cannot read: their collection is closed to
+    them, or their own access list leaves them out. What is said about them leaves out titles
+    and notes, like for an unreadable collection."""
+    if not document_ids:
+        return set()
+    documents = (await session.scalars(select(Document).where(Document.id.in_(document_ids)))).all()
+    closed = await unreadable_collections(session, ctx, {d.collection_id for d in documents})
+    hidden = await document_acl.hidden_documents(session, ctx.principals, [d.id for d in documents])
+    return {d.id for d in documents if d.collection_id in closed} | hidden
 
 
 def withhold_official_request(arguments: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -484,7 +519,7 @@ async def request_official(
         raise ApiError(
             409, "official_pending", "Official status was already requested for this document"
         )
-    approvers = await _official_approvers(session, collection, ctx.user_id)
+    approvers = await _official_approvers(session, collection, ctx.user_id, document)
     if not approvers:
         raise ApiError(
             409,
@@ -670,6 +705,8 @@ async def new_version_stored(
             if approval.requested_by in told:
                 continue
             told.add(approval.requested_by)
+            if not await can_view_as(session, approval.requested_by, collection, document=document):
+                continue  # the summary names the document: only to someone who may read it
             await notify(
                 session,
                 ctx.tenant_id,
@@ -705,7 +742,11 @@ async def new_version_stored(
             "version": version_no,
         },
     )
-    if document.owner_id is not None and document.owner_id != ctx.user_id:
+    if (
+        document.owner_id is not None
+        and document.owner_id != ctx.user_id
+        and await can_view_as(session, document.owner_id, collection, document=document)
+    ):
         await notify(
             session,
             ctx.tenant_id,
@@ -737,7 +778,10 @@ async def reroute_official_requests(
     changed = 0
     for request_id, copies in by_request.items():
         first = copies[0]
-        deciders = await _official_approvers(session, collection, first.requested_by)
+        document = await session.get(Document, uuid.UUID(str(first.arguments["document_id"])))
+        if document is None:
+            continue  # deleted: approving it fails on its own
+        deciders = await _official_approvers(session, collection, first.requested_by, document)
         holders = {a.approver_id for a in copies}
         if set(deciders) == holders:
             continue
@@ -749,15 +793,17 @@ async def reroute_official_requests(
                 reason="nobody can decide this request any more: the collection's owner changed",
                 actor=ctx.user_id,
             )
-            await notify(
-                session,
-                ctx.tenant_id,
-                first.requested_by,
-                kind="approval.failed",
-                title=f"Nobody can decide: {first.summary[:120]}",
-                body="The collection's owner changed and nobody else can approve it.",
-                link=document_link(uuid.UUID(str(first.arguments["document_id"]))),
-            )
+            # The summary names the document: only to a requester who may still read it.
+            if await can_view_as(session, first.requested_by, collection, document=document):
+                await notify(
+                    session,
+                    ctx.tenant_id,
+                    first.requested_by,
+                    kind="approval.failed",
+                    title=f"Nobody can decide: {first.summary[:120]}",
+                    body="The collection's owner changed and nobody else can approve it.",
+                    link=document_link(document.id),
+                )
         else:
             _close_official_requests(
                 [a for a in copies if a.approver_id not in deciders],
@@ -830,7 +876,13 @@ async def demote(
             "note": clean_note,
         },
     )
-    if document.owner_id is not None and document.owner_id != ctx.user_id:
+    collection = await session.get(Collection, document.collection_id)
+    if (
+        document.owner_id is not None
+        and document.owner_id != ctx.user_id
+        and collection is not None
+        and await can_view_as(session, document.owner_id, collection, document=document)
+    ):
         await notify(
             session,
             ctx.tenant_id,
@@ -874,6 +926,9 @@ async def overview_scope(session: AsyncSession, ctx: RequestContext) -> Scope:
 @dataclass(frozen=True)
 class Overview:
     scope: Scope
+    # Documents listed below whose own access list leaves the caller out: like a document of a
+    # collection outside `scope.viewable`, they are shown without title or note.
+    hidden: set[uuid.UUID]
     overdue: list[Document]
     due_soon: list[Document]
     without_owner: list[Document]
@@ -930,8 +985,16 @@ async def overview(
             .limit(OVERVIEW_LIMIT)
         )
         demotions = list(events.all())
+    listed = [*overdue, *due_soon, *without_owner, *pending_documents.values()]
+    named: set[uuid.UUID] = {d.id for d in listed}
+    for event in demotions:
+        try:
+            named.add(uuid.UUID(str(event.resource_id)))
+        except ValueError:
+            continue
+    hidden = await document_acl.hidden_documents(session, ctx.principals, named)
     person_ids: set[uuid.UUID] = set()
-    for document in [*overdue, *due_soon, *without_owner, *pending_documents.values()]:
+    for document in listed:
         person_ids.update(i for i in (document.owner_id, document.reviewed_by) if i)
     for request in pending.values():
         person_ids.update([request.requested_by, *request.approvers])
@@ -943,6 +1006,7 @@ async def overview(
     )
     return Overview(
         scope=scope,
+        hidden=hidden,
         overdue=overdue,
         due_soon=due_soon,
         without_owner=without_owner,

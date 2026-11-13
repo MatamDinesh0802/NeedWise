@@ -2,7 +2,8 @@
 
 Org owners and admins see every collection; anyone else sees the collections they own (an
 empty overview if they own none). Separation of duties (ARCHITECTURE 7.1): an admin who cannot
-open a collection sees that its documents need attention, never their titles.
+open a collection sees that its documents need attention, never their titles. The same holds
+for a document whose own access list leaves the caller out (ADR 0012).
 """
 
 import uuid
@@ -84,11 +85,14 @@ async def get_overview(ctx: ReadContext, request: Request) -> OverviewOut:
         found = await governance.overview(session, ctx)
     scope, people = found.scope, found.people
 
+    def readable(collection_id: uuid.UUID, document_id: uuid.UUID) -> bool:
+        return collection_id in scope.viewable and document_id not in found.hidden
+
     def document_out(document: Document) -> GovernedDocument:
         owner = people.get(document.owner_id) if document.owner_id else None
         return GovernedDocument(
             id=document.id,
-            title=document.title if document.collection_id in scope.viewable else None,
+            title=document.title if readable(document.collection_id, document.id) else None,
             collection_id=document.collection_id,
             trust=document.trust,
             owner=_person(people, document.owner_id),
@@ -101,17 +105,17 @@ async def get_overview(ctx: ReadContext, request: Request) -> OverviewOut:
     demotions: list[Demotion] = []
     for event in found.demotions:
         collection_id = uuid.UUID(str(event.details["collection_id"]))
+        document_id = uuid.UUID(str(event.resource_id))
+        shown = readable(collection_id, document_id)
         demotions.append(
             Demotion(
-                document_id=uuid.UUID(str(event.resource_id)),
-                title=str(event.details.get("title") or "")
-                if collection_id in scope.viewable
-                else None,
+                document_id=document_id,
+                title=str(event.details.get("title") or "") if shown else None,
                 collection_id=collection_id,
                 by=_person(people, event.actor_id),
                 at=event.occurred_at,
                 to=str(event.details.get("after") or ""),
-                note=event.details.get("note") if collection_id in scope.viewable else None,
+                note=event.details.get("note") if shown else None,
             )
         )
     return OverviewOut(
@@ -135,7 +139,7 @@ async def get_overview(ctx: ReadContext, request: Request) -> OverviewOut:
                 requested_by=_person(people, request.requested_by),
                 requested_at=request.requested_at,
                 note=request.note
-                if found.pending_documents[document_id].collection_id in scope.viewable
+                if readable(found.pending_documents[document_id].collection_id, document_id)
                 else None,
                 approvers=[p for a in request.approvers if (p := _person(people, a))],
             )

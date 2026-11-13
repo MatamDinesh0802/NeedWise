@@ -80,6 +80,8 @@ class PlannedDocument:
     format: str = ""
     trust: str | None = None
     sensitivity: str | None = None
+    # The document's own access list (docs/permission-sync.md), company.yaml syntax.
+    viewers: list[str] | None = None
 
     def __post_init__(self) -> None:
         self.format = self.format or PurePath(self.file).suffix.lstrip(".")
@@ -426,6 +428,7 @@ async def generate(
             "title": d.title,
             **({"trust": d.trust} if d.trust else {}),
             **({"sensitivity": d.sensitivity} if d.sensitivity else {}),
+            **({"viewers": d.viewers} if d.viewers is not None else {}),
         }
         for d in documents
         if (out / d.file).exists()

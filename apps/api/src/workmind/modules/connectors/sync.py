@@ -1,6 +1,7 @@
 """Incremental sync of one source (ARCHITECTURE section 10.3).
 
-    scan -> per item: unchanged (skip) | new or changed (fetch, new version, ingest)
+    scan -> [Enterprise: the source's ACLs, written onto the documents synced before]
+         -> per item: unchanged (skip) | new or changed (fetch, new version, ingest)
          -> items the source reported deleted (delta tombstones) are deleted everywhere
          -> if the scan was complete: items that disappeared are deleted everywhere
             if it was cut short: they are kept and flagged "missing upstream"
@@ -12,7 +13,13 @@ Safe by construction:
 - a failed scan deletes nothing; a failed item is counted and retried next time: when a
   download fails, the source's cursor does not advance, so an incremental source (a delta
   feed) reports the item again;
-- every synced document lands in the source's collection, with that collection's access.
+- every synced document lands in the source's collection, with that collection's access;
+- with permission sync (Enterprise, docs/permission-sync.md), each document also gets the
+  source's ACL as its own access list, which only narrows the collection's. ACLs are read
+  before any content is applied, a new document gets its list in the transaction that creates
+  it (never indexed or visible with the wider access first), and a failure to read them fails
+  the sync without changing anything. Without the license nothing about ACLs happens: lists
+  already written stay as they are (docs/permission-sync.md says what that means).
 """
 
 import uuid
@@ -22,20 +29,22 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
+from workmind.core.extensions import ExtensionRegistry
 from workmind.core.tenancy import tenant_transaction
-from workmind.modules.connectors.base import Connector, ConnectorError, RemoteItem
+from workmind.modules.connectors.base import Connector, ConnectorError, RemoteItem, ScanResult
+from workmind.modules.connectors.extensions import PERMISSION_SYNC, ItemAcl
 from workmind.modules.connectors.models import Source, SourceRun
 from workmind.modules.connectors.reminders import announce_recovery, check_failing
 from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.governance.audit import Actor, record_event
-from workmind.modules.knowledge import service
+from workmind.modules.knowledge import document_acl, service
 from workmind.modules.knowledge.dispatch import Dispatcher
-from workmind.modules.knowledge.models import Collection, Document
+from workmind.modules.knowledge.models import Collection, Document, DocumentGrant
 from workmind.modules.knowledge.pipeline import delete_document_points
 from workmind.modules.knowledge.storage import ObjectStorage, owned_key
 from workmind.modules.retrieval.qdrant import QdrantClient
@@ -65,6 +74,8 @@ class SyncDeps:
     max_bytes: int
     # Failed syncs in a row before the people who manage the source are alerted.
     failure_alert_after: int = 3
+    # The process's extensions: permission sync runs only when it is licensed and implemented.
+    extensions: ExtensionRegistry | None = None
 
 
 @dataclass
@@ -78,6 +89,10 @@ class SyncReport:
     failed: int = 0
     missing: int = 0  # known items a cut-short scan did not list (kept, flagged)
     complete: bool | None = None
+    # Permission sync: documents whose own access list changed, and entries the source named
+    # that map to nobody in WorkMind (they grant nothing; Admin lists them).
+    acl_changed: int = 0
+    acl_unmapped: int = 0
     errors: list[str] = field(default_factory=list[str])
     # Per-item errors keep the item's id apart from the message (the run history shows both).
     item_errors: list[tuple[str | None, str]] = field(default_factory=list[tuple[str | None, str]])
@@ -171,7 +186,14 @@ async def sync_source(
         scan = await connector.scan(source.cursor)
         report.items = len(scan.items)
         report.complete = scan.complete
-        retry = await _apply(deps, source, connector, scan.items, report)
+        acls = await _source_acls(deps, source, connector, scan, report)
+        if acls is not None:
+            # Existing documents first: a narrowed list applies before any new content.
+            changed = await apply_acls(
+                deps.sessions, deps.qdrant, deps.collection_name, source, acls
+            )
+            report.acl_changed += changed
+        retry = await _apply(deps, source, connector, scan.items, report, acls)
         # A download that failed is retried from the same position, not skipped for good.
         cursor = dict(source.cursor) if retry else scan.cursor
         present = {i.external_id for i in scan.items}
@@ -180,6 +202,8 @@ async def sync_source(
         if scan.complete:
             await _delete(deps, source, None, report, keep=present)
         await _mark_seen(deps, source, present, flag_missing=scan.truncated, report=report)
+        if acls is not None:
+            report.acl_unmapped = await unmapped_entries(deps.sessions, source)
         report.status = (
             "error"
             if report.failed and not (report.added or report.updated or report.unchanged)
@@ -201,12 +225,102 @@ async def sync_source(
     return report
 
 
+async def _source_acls(
+    deps: SyncDeps, source: Source, connector: Connector, scan: ScanResult, report: SyncReport
+) -> dict[str, ItemAcl] | None:
+    """The source's ACL for every scanned item (and any synced item it also covers), or None
+    when permission sync is not licensed or not available for this kind of source."""
+    if deps.extensions is None:
+        return None
+    syncers = [s for s in deps.extensions.call(PERMISSION_SYNC) if s.supports(source)]
+    if not syncers:
+        return None
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        known = set(
+            await session.scalars(
+                select(Document.external_id).where(
+                    Document.source_id == source.id, Document.external_id.is_not(None)
+                )
+            )
+        )
+    found = dict(await syncers[0].acls(source, connector, scan.items, {k for k in known if k}))
+    for item in scan.items:
+        found.setdefault(item.external_id, ItemAcl())  # left out: nobody (fail closed)
+    for external_id, acl in sorted(found.items()):
+        if acl.error:
+            report.error(f"permissions not read, nobody sees it: {acl.error}", external_id)
+    return found
+
+
+async def apply_acls(
+    sessions: async_sessionmaker[AsyncSession],
+    qdrant: QdrantClient,
+    collection_name: str,
+    source: Source,
+    acls: Mapping[str, ItemAcl],
+) -> int:
+    """Writes the source's ACLs onto the documents it already synced (identity mapping: fail
+    closed), queues the OpenFGA changes in the same transaction, and once committed refreshes
+    the chunks of every document whose list changed. Used by every sync and by Enterprise's
+    immediate revocation (Drive changes). Returns how many documents changed."""
+    payloads: dict[uuid.UUID, dict[str, Any]] = {}
+    async with tenant_transaction(sessions, source.tenant_id) as session:
+        documents = (
+            await session.scalars(
+                select(Document).where(
+                    Document.source_id == source.id, Document.external_id.in_(sorted(acls))
+                )
+            )
+        ).all()
+        externals = {p for d in documents for p in acls[d.external_id or ""].principals}
+        resolved = await document_acl.resolve(session, source.tenant_id, externals)
+        for document in documents:
+            entries = acl_entries(acls[document.external_id or ""], resolved)
+            if await document_acl.set_acl(
+                session,
+                source.tenant_id,
+                document,
+                entries,
+                origin="source",
+                actor=Actor.system(),
+            ):
+                payloads[document.id] = await document_acl.payload_of(session, document)
+    for document_id, payload in payloads.items():
+        await document_acl.refresh_payload(
+            qdrant, collection_name, source.tenant_id, document_id, payload
+        )
+    return len(payloads)
+
+
+async def unmapped_entries(sessions: async_sessionmaker[AsyncSession], source: Source) -> int:
+    """Entries on the source's documents that map to nobody (they grant nothing)."""
+    async with tenant_transaction(sessions, source.tenant_id) as session:
+        count = await session.scalar(
+            select(func.count())
+            .select_from(DocumentGrant)
+            .join(Document, Document.id == DocumentGrant.document_id)
+            .where(Document.source_id == source.id, DocumentGrant.principal.is_(None))
+        )
+    return count or 0
+
+
+def acl_entries(
+    acl: ItemAcl, resolved: Mapping[str, str | None]
+) -> list[document_acl.AclEntry] | None:
+    """An own list from what the source says (None: the collection's access, no list)."""
+    if not acl.restricted:
+        return None
+    names = {document_acl.normalize_external(p) for p in acl.principals}
+    return document_acl.ordered(document_acl.AclEntry(resolved.get(n), n) for n in names)
+
+
 async def _apply(
     deps: SyncDeps,
     source: Source,
     connector: Connector,
     items: list[RemoteItem],
     report: SyncReport,
+    acls: Mapping[str, ItemAcl] | None = None,
 ) -> bool:
     """Stores new and changed items. True when a download failed (worth retrying), as
     opposed to an item that cannot be stored as it is (too large, an unreadable type)."""
@@ -235,6 +349,11 @@ async def _apply(
             if len(data) > deps.max_bytes:
                 raise ConnectorError(f"{item.title}: larger than {deps.max_bytes // 1_000_000} MB")
             async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+                entries: list[document_acl.AclEntry] | None = None
+                if acls is not None:
+                    acl = acls.get(item.external_id, ItemAcl())
+                    resolved = await document_acl.resolve(session, source.tenant_id, acl.principals)
+                    entries = acl_entries(acl, resolved)
                 result = await service.upload(
                     session,
                     ctx,
@@ -248,6 +367,8 @@ async def _apply(
                     synced=service.SyncedItem(
                         source.id, item.external_id, item.title, item.url, dict(item.meta)
                     ),
+                    acl=entries,
+                    acl_origin="source",
                 )
                 document = await session.get(Document, result.document.id)
                 assert document is not None  # noqa: S101

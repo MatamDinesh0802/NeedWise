@@ -29,6 +29,7 @@ imported. Get a development license with `make ee-dev-license` (accepted only wi
 | `chargeback.py` | `chargeback_reports` | the core's `usage.chargeback_report` hook |
 | `retention.py` | `retention_policies` | a router (`/admin/retention`) and a daily task ([docs/enterprise.md](../docs/enterprise.md#retention-policies)) |
 | `audit_export.py` | `advanced_audit_export` | a router (`/admin/audit-events/export.jsonl`) |
+| `permission_sync.py` | `permission_sync` | the core's `connectors.permission_sync` hook and a task every minute (the Drive changes feed) ([docs/permission-sync.md](../docs/permission-sync.md)) |
 
 No official licenses are issued yet.
 

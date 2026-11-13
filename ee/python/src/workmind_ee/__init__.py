@@ -10,9 +10,10 @@ belongs to; the core checks that feature on every request, task run and hook cal
 import structlog
 from workmind.core.edition import Edition
 from workmind.core.extensions import ExtensionRegistry
+from workmind.modules.connectors.extensions import PERMISSION_SYNC
 from workmind.modules.usage.extensions import CHARGEBACK_REPORT, DEPARTMENT_BUDGETS
 
-from workmind_ee import audit_export, retention
+from workmind_ee import audit_export, permission_sync, retention
 from workmind_ee.budgets import department_budgets
 from workmind_ee.chargeback import chargeback_csv
 
@@ -20,13 +21,14 @@ __version__ = "0.0.1"
 
 log = structlog.get_logger("workmind_ee")
 
-# The features this package implements: all four in workmind.core.edition.FEATURES
+# The features this package implements: all five in workmind.core.edition.FEATURES
 # (docs/enterprise.md).
 IMPLEMENTED: tuple[str, ...] = (
     "department_budgets",
     "chargeback_reports",
     retention.FEATURE,
     audit_export.FEATURE,
+    permission_sync.FEATURE,
 )
 
 
@@ -46,6 +48,15 @@ def setup(registry: ExtensionRegistry, edition: Edition) -> None:
     )
     # The complete, verifiable audit chain as JSON lines, for a SIEM.
     registry.add_router(audit_export.router, feature="advanced_audit_export")
+    # Permission sync: source ACLs as document access lists, read during every sync, and
+    # the Drive changes feed every minute for revocations (docs/permission-sync.md).
+    registry.add_hook(PERMISSION_SYNC, permission_sync.permission_sync, feature="permission_sync")
+    registry.add_scheduled_task(
+        permission_sync.TASK_NAME,
+        permission_sync.apply_drive_changes,
+        every_s=permission_sync.CHANGES_EVERY_S,
+        feature="permission_sync",
+    )
     log.info(
         "workmind_ee_loaded",
         version=__version__,

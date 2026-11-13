@@ -26,12 +26,14 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from tests.integration.conftest import VALKEY_URL, Acme, Database
 from workmind.core.config import Settings
 from workmind.core.tenancy import tenant_transaction
 from workmind.main import create_app
+from workmind.modules.governance.audit import Actor
+from workmind.modules.knowledge import document_acl
 from workmind.modules.knowledge.models import Document
 from workmind.modules.retrieval.qdrant import QdrantClient
 
@@ -496,6 +498,51 @@ async def test_stale_synced_documents_are_listed_and_titles_withheld_from_who_ca
     assert as_alice[0]["url"].endswith("travel.html")
     assert listed["stale"]["missing_upstream"] == 2
     assert listed["last_run"]["complete"] is False
+
+
+async def test_stale_synced_documents_withhold_a_title_its_own_list_keeps_from_the_caller(
+    api: TestClient, acme: Acme, site: tuple[str, Path], app_sessions: Any
+) -> None:
+    """A document with its own access list (docs/permission-sync.md) that leaves out an admin
+    who can open the collection: listed as stale, without its title or link."""
+    url, _ = site
+    api.post(
+        "/api/v1/admin/sources",
+        json={
+            "key": "intranet",
+            "name": "Intranet",
+            "kind": "web",
+            "collection": "company-handbook",
+            "config": {"start_urls": [url]},
+        },
+        headers=acme.as_("erin", write=True),
+    )
+    sync(api, acme, "intranet")
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        await session.execute(
+            update(Document)
+            .where(Document.source_id.is_not(None))
+            .values(source_changed_at=datetime.now(UTC) - timedelta(days=400))
+        )
+        travel = (
+            await session.scalars(select(Document).where(Document.title == "Travel policy"))
+        ).one()
+        await document_acl.set_acl(
+            session,
+            acme.tenant_id,
+            travel,
+            [document_acl.AclEntry(f"user:{acme.users['alice']}")],
+            origin="manual",
+            actor=Actor.system(),
+        )
+
+    stale = api.get("/api/v1/admin/sources/stale-documents", headers=acme.as_("erin")).json()
+
+    titles = {d["id"]: (d["title"], d["url"]) for d in stale}
+    assert titles[str(travel.id)] == (None, None)
+    leave = [u for t, u in titles.values() if t == "Leave policy"]
+    assert len(leave) == 1
+    assert leave[0].endswith("leave.html")
 
 
 def oauth_settings(database: Database, tmp_path: Path, **extra: Any) -> Settings:

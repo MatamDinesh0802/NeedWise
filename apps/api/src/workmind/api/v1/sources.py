@@ -30,8 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from workmind.api.deps import CurrentContext, rate_limit, resources_of, settings_of
 from workmind.api.v1.admin import AdminContext, PersonRef
+from workmind.core.config import Settings
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
+from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_key, tenant_transaction
 from workmind.modules.connectors import oauth
 from workmind.modules.connectors.base import ConnectorError
@@ -56,7 +58,7 @@ from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sync import SyncDeps, sync_source
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN, Department, Group, User
-from workmind.modules.knowledge import service
+from workmind.modules.knowledge import document_acl, governance, service
 from workmind.modules.knowledge.acl import acl_principals
 from workmind.modules.knowledge.governance import is_org_admin
 from workmind.modules.knowledge.models import Collection, CollectionGrant, Document
@@ -265,7 +267,9 @@ class SourceOptions(BaseModel):
 
 class StaleSyncedDocument(BaseModel):
     id: uuid.UUID
-    title: str | None  # None when the caller cannot open the collection (an admin)
+    # None when the caller cannot read the document: its collection is closed to them (an
+    # admin), or its own access list leaves them out (docs/permission-sync.md).
+    title: str | None
     url: str | None  # the original in the source; withheld like the title
     collection_id: uuid.UUID
     collection_name: str
@@ -280,7 +284,9 @@ class StaleSyncedDocument(BaseModel):
 
 class StaleDocument(BaseModel):
     id: uuid.UUID
-    title: str
+    # None when the caller cannot read the document (a restricted collection, or a document
+    # whose own access list leaves them out): admins manage, they do not read everything.
+    title: str | None
     collection: str
     reason: Literal["expired", "not_updated"]
     updated_at: datetime
@@ -768,19 +774,24 @@ async def delete_source(ctx: ManagerContext, request: Request, key: str) -> Resp
 
 
 def sync_deps(request: Request) -> SyncDeps:
-    resources, settings = resources_of(request), settings_of(request)
+    return sync_deps_from(resources_of(request), settings_of(request))
+
+
+def sync_deps_from(resources: Resources, settings: Settings) -> SyncDeps:
+    """What a sync needs, from the process's resources (the API, Enterprise tasks)."""
     return SyncDeps(
         sessions=resources.db,
         storage=resources.storage,
         ingestion=resources.ingestion,
         qdrant=resources.qdrant,
         collection_name=resources.collection_name,
-        secrets=_secrets(request),
+        secrets=SecretBox(settings.secrets_key.get_secret_value()),
         connectors=lambda source, credentials: build_connector(
             source, credentials, http=resources.http, apps=OAuthApps.from_settings(settings)
         ),
         max_bytes=settings.max_upload_bytes,
         failure_alert_after=settings.source_failure_alert_after,
+        extensions=resources.extensions,
     )
 
 
@@ -888,6 +899,9 @@ async def stale_synced_documents(
             if set(acl_principals(c, [g for g in grants if g.collection_id == c.id]))
             & ctx.principals
         }
+        hidden = await document_acl.hidden_documents(
+            session, ctx.principals, [d.id for d in documents]
+        )
         people = await _people(session, {d.owner_id for d in documents})
     out: list[StaleSyncedDocument] = []
     for d in documents:
@@ -895,7 +909,7 @@ async def stale_synced_documents(
         if s is None:
             continue
         collection = collections.get(d.collection_id)
-        visible = d.collection_id in viewable
+        visible = d.collection_id in viewable and d.id not in hidden
         out.append(
             StaleSyncedDocument(
                 id=d.id,
@@ -920,8 +934,9 @@ async def stale_documents(
     ctx: AdminContext, request: Request, days: int = 365
 ) -> list[StaleDocument]:
     """Every document (uploads too) past its `valid_until`, or not updated in WorkMind for
-    `days`: candidates for review. Org admins only; titles only, never content. Synced documents
-    that are stale in their source: `GET /admin/sources/stale-documents`."""
+    `days`: candidates for review. Org admins only; titles only, never content, and only of
+    documents they can read themselves. Synced documents that are stale in their source:
+    `GET /admin/sources/stale-documents`."""
     cutoff = datetime.now(UTC) - timedelta(days=days)
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         keys = {c.id: c.key for c in await session.scalars(select(Collection))}
@@ -933,11 +948,12 @@ async def stale_documents(
                 .limit(500)
             )
         ).all()
+        withheld = await governance.unreadable_documents(session, ctx, {d.id for d in rows})
     now = datetime.now(UTC)
     return [
         StaleDocument(
             id=d.id,
-            title=d.title,
+            title=None if d.id in withheld else d.title,
             collection=keys.get(d.collection_id, ""),
             reason="expired" if d.valid_until and d.valid_until < now else "not_updated",
             updated_at=d.updated_at,

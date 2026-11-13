@@ -28,13 +28,16 @@ from workmind.core.db import Base, TenantScoped, Timestamps, uuid_primary_key
 
 # Synced documents reference sources: register that table whenever documents are used.
 from workmind.modules.connectors import models as _sources
-from workmind.modules.identity.models import SLUG_PATTERN
+from workmind.modules.identity.models import PRINCIPAL_PATTERN, SLUG_PATTERN
 
 _ = _sources  # documents reference sources: keep the table registered
 
 SCOPES = ("personal", "department", "enterprise", "restricted")
 TRUST_LEVELS = ("official", "reference", "discussion")
 SENSITIVITIES = ("internal", "confidential", "restricted")
+# Where a document's own access list came from (docs/permission-sync.md): its source, through
+# permission sync, or an editor.
+ACL_ORIGINS = ("source", "manual")
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -86,10 +89,7 @@ class CollectionGrant(Base, TenantScoped):
         ),
         UniqueConstraint("collection_id", "principal", "relation"),
         CheckConstraint("relation IN ('viewer', 'editor')", name="relation"),
-        CheckConstraint(
-            "principal ~ '^(user|group|dept|dept-manager|org):[0-9a-f-]{36}$'",
-            name="principal_format",
-        ),
+        CheckConstraint(f"principal ~ '{PRINCIPAL_PATTERN}'", name="principal_format"),
     )
 
     id: Mapped[uuid.UUID] = uuid_primary_key()
@@ -142,6 +142,11 @@ class Document(Base, TenantScoped, Timestamps):
             "next_review_at",
             postgresql_where=text("next_review_at IS NOT NULL"),
         ),
+        CheckConstraint(
+            f"(own_acl AND {_in('acl_origin', ACL_ORIGINS)})"
+            " OR (NOT own_acl AND acl_origin IS NULL)",
+            name="acl_origin",
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_primary_key()
@@ -181,6 +186,44 @@ class Document(Base, TenantScoped, Timestamps):
     next_review_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The open reminder task of the current review cycle; cleared when the document is reviewed.
     review_task_id: Mapped[uuid.UUID | None]
+    # True: the document has its own access list (document_grants), which narrows the
+    # collection's: only principals on it who can also view the collection see the document.
+    # An own list without a mapped principal on it means nobody (ADR 0012).
+    own_acl: Mapped[bool] = mapped_column(server_default=sa_false())
+    acl_origin: Mapped[str | None] = mapped_column(String(16))  # "source" | "manual"
+    acl_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DocumentGrant(Base, TenantScoped):
+    """One entry of a document's own access list (ADR 0012, docs/permission-sync.md).
+
+    `principal` uses RequestContext's principal strings (user:, group:, dept:, dept-manager:,
+    org:<id>). `external` is how the source named it (`email:ana@acme.test`,
+    `github-team:acme/platform`): permission sync records every entry the source lists. An entry
+    it could not map to anyone in WorkMind has no principal, so it grants nothing (fail closed)
+    and is listed for administrators. Entries an editor sets have no `external`."""
+
+    __tablename__ = "document_grants"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "document_id"],
+            ["documents.tenant_id", "documents.id"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "document_id", "principal", "external", postgresql_nulls_not_distinct=True
+        ),
+        Index("ix_document_grants_external", "tenant_id", "external"),
+        CheckConstraint(
+            f"principal IS NULL OR principal ~ '{PRINCIPAL_PATTERN}'", name="principal_format"
+        ),
+        CheckConstraint("principal IS NOT NULL OR external IS NOT NULL", name="named"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_primary_key()
+    document_id: Mapped[uuid.UUID]
+    principal: Mapped[str | None] = mapped_column(Text)
+    external: Mapped[str | None] = mapped_column(Text)
 
 
 class DocumentVersion(Base, TenantScoped):

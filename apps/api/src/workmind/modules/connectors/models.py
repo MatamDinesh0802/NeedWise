@@ -29,12 +29,22 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from workmind.core.db import Base, TenantScoped, Timestamps, uuid_primary_key
-from workmind.modules.identity.models import SLUG_PATTERN
+from workmind.modules.identity.models import PRINCIPAL_PATTERN, SLUG_PATTERN
 
 KINDS = ("web", "github", "slack", "gdrive", "confluence", "sharepoint")
 STATUSES = ("idle", "syncing", "ok", "error")
 RUN_STATUSES = ("running", "ok", "error")
 TRIGGERS = ("schedule", "manual")
+# A principal as a source names it (docs/permission-sync.md), always lower case:
+#   email:<address>        a person: matched to the WorkMind user with that e-mail on its own
+#   group:<address or id>  a group in the source (a Google group, a Slack user group)
+#   domain:<domain>        everyone in a domain (Drive "anyone at acme.test")
+#   anyone                 anyone with the link: matched to the organization on its own
+#   slack-user:<id>        a Slack member whose e-mail Slack did not give
+#   github-user:<login>, github-team:<org>/<slug>, github-org:<org>
+EXTERNAL_PATTERN = (
+    r"^(anyone|(email|group|domain|slack-user|github-user|github-team|github-org):[^\s:]{1,255})$"
+)
 
 
 class Source(Base, TenantScoped, Timestamps):
@@ -114,3 +124,27 @@ class SourceRun(Base, TenantScoped):
     stats: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     # [{"item": external id or null, "message": what the source or the engine said}]
     errors: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+
+
+class IdentityMapping(Base, TenantScoped, Timestamps):
+    """Who a principal named by a source is in WorkMind (docs/permission-sync.md). People are
+    matched by e-mail without one, and "anyone" is the organization; a group, a domain, a Slack
+    or GitHub account needs a mapping, made by an administrator. A source principal that maps
+    to nobody grants nothing (fail closed)."""
+
+    __tablename__ = "identity_mappings"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "external"),
+        ForeignKeyConstraint(
+            ["tenant_id", "created_by"],
+            ["users.tenant_id", "users.id"],
+            ondelete="SET NULL (created_by)",
+        ),
+        CheckConstraint(f"external ~ '{EXTERNAL_PATTERN}'", name="external_format"),
+        CheckConstraint(f"principal ~ '{PRINCIPAL_PATTERN}'", name="principal_format"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_primary_key()
+    external: Mapped[str] = mapped_column(Text)
+    principal: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None]

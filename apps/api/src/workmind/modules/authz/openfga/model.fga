@@ -36,9 +36,13 @@ type collection
     define editor: [user, group#member, department#manager] or owner
     define viewer: [user, group#member, department#member, organization#member] or editor
 
+# A document's own access list only ever narrows its collection's (ADR 0012,
+# docs/permission-sync.md): to view a document you must view its collection AND be a grantee.
+# A document without its own list has the wildcard grantee user:*. One with a list names its
+# principals and nobody else, so an empty list (every source principal unmapped) means nobody.
 type document
   relations
     define collection: [collection]
-    define owner: [user]
-    define editor: [user, group#member] or owner or editor from collection
-    define viewer: [user, group#member, department#member, organization#member] or editor or viewer from collection
+    define grantee: [user, user:*, group#member, department#member, department#manager, organization#member]
+    define viewer: viewer from collection and grantee
+    define editor: editor from collection and grantee

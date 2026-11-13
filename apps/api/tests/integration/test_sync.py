@@ -35,8 +35,10 @@ from workmind.modules.connectors.reminders import StaleReminderReport, send_sour
 from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sharepoint import SharePointConnector
 from workmind.modules.connectors.sync import SyncDeps, sync_source
+from workmind.modules.governance.audit import Actor
 from workmind.modules.governance.models import AuditEvent
 from workmind.modules.identity.models import User
+from workmind.modules.knowledge import document_acl
 from workmind.modules.knowledge.dispatch import InlineDispatcher
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import IngestionDeps
@@ -655,6 +657,47 @@ async def test_an_owner_who_cannot_open_the_collection_is_not_reminded(
 
     assert (report.reminded, report.without_owner) == ([], 1)
     assert await notifications(deps, source, "source.stale_documents") == []
+
+
+async def test_an_owner_left_out_of_a_documents_own_list_is_not_reminded(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """Permission sync (docs/permission-sync.md) can give a synced document a list that leaves
+    its owner out: its title must not reach them in a reminder."""
+    deps, connector, source, _, _ = setup
+    alice = await user_id(deps, source, "alice@")
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+        assert stored is not None
+        stored.stale_after_days = 30
+    connector.put("leave", "x", "v1")
+    connector.put("travel", "y", "v1")
+    await run(deps, source)
+    await age(deps, source, "leave", 60)
+    await age(deps, source, "travel", 60)
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        leave = (
+            await session.scalars(
+                select(Document).where(
+                    Document.source_id == source.id, Document.external_id == "leave"
+                )
+            )
+        ).one()
+        await document_acl.set_acl(
+            session,
+            source.tenant_id,
+            leave,
+            [document_acl.AclEntry(f"user:{alice}")],  # Alice only, not Erin (the owner)
+            origin="source",
+            actor=Actor.system(),
+        )
+
+    report = await reminders(deps, source)
+
+    docs = await documents(deps, source)
+    assert (report.reminded, report.without_owner) == ([docs["travel"].id], 1)
+    notes = await notifications(deps, source, "source.stale_documents")
+    assert [n.title for n in notes] == ["Check “Travel”: it looks stale"]
 
 
 async def test_the_daily_task_alerts_a_failing_source_the_engine_did_not(

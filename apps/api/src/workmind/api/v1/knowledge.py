@@ -9,7 +9,7 @@ needs a browser session. Uploads send the raw file as the request body:
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from urllib.parse import quote
 
 from fastapi import APIRouter, Query, Request, Response
@@ -31,13 +31,14 @@ from workmind.core.tenancy import tenant_transaction
 from workmind.modules.authz.sync import enqueue
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import Department, Group, User
-from workmind.modules.knowledge import governance, service
-from workmind.modules.knowledge.acl import collection_tuples
+from workmind.modules.knowledge import document_acl, governance, service
+from workmind.modules.knowledge.acl import collection_tuples, document_payload
 from workmind.modules.knowledge.models import (
     Chunk,
     Collection,
     CollectionGrant,
     Document,
+    DocumentGrant,
     DocumentVersion,
 )
 from workmind.modules.knowledge.pipeline import (
@@ -105,6 +106,9 @@ class DocumentOut(BaseModel):
     next_review_at: datetime | None = None
     review_overdue: bool = False
     official_request: OfficialRequestOut | None = None
+    # The document has its own access list (from its source, or set by an editor), narrower
+    # than its collection's: docs/permission-sync.md.
+    own_acl: bool = False
 
 
 class VersionOut(BaseModel):
@@ -223,6 +227,7 @@ def _document_out(document: Document, version: DocumentVersion | None) -> Docume
         size_bytes=version.size_bytes if version else 0,
         version=version.version_no if version else 0,
         updated_at=document.updated_at,
+        own_acl=document.own_acl,
     )
 
 
@@ -247,13 +252,19 @@ async def _document_for(
     if document is None:
         raise ApiError(404, "not_found", "Document not found")
     try:
-        access = await service.collection_access(session, ctx, document.collection_id, edit=edit)
+        access = await service.collection_access(session, ctx, document.collection_id)
     except ApiError as exc:
         if exc.status == 404:
             raise ApiError(
                 404, "not_found", "Document not found"
             ) from exc  # same answer as missing
         raise
+    # Its own access list (if any) must name the caller too; otherwise the document does not
+    # exist for them, even for the collection's editors (ADR 0012).
+    if not await document_acl.can_view(session, ctx.principals, document):
+        raise ApiError(404, "not_found", "Document not found")
+    if edit and not access.can_edit:
+        raise ApiError(403, "forbidden", "You can view this collection but not change it")
     return document, access
 
 
@@ -292,7 +303,10 @@ async def list_documents(
             (
                 await session.scalars(
                     select(Document)
-                    .where(Document.collection_id == collection_id)
+                    .where(
+                        Document.collection_id == collection_id,
+                        document_acl.visible_clause(ctx.principals),
+                    )
                     .order_by(Document.title)
                 )
             ).all()
@@ -944,3 +958,102 @@ async def replace_grants(
         resources.qdrant, resources.collection_name, ctx.tenant_id, collection, new
     )
     return Items(items=[GrantOut(principal=g.principal, relation=g.relation) for g in new])
+
+
+# --- A document's own access list (docs/permission-sync.md) ----------------------------------
+
+AclOrigin = Literal["source", "manual"]
+
+
+class AclEntryOut(BaseModel):
+    principal: str | None  # None: the source named someone WorkMind could not map (no access)
+    external: str | None  # how the source named them; None for an entry an editor set
+
+
+class DocumentAclOut(BaseModel):
+    document_id: uuid.UUID
+    own_acl: bool
+    origin: AclOrigin | None
+    updated_at: datetime | None
+    entries: list[AclEntryOut]
+
+
+class DocumentAclUpdate(BaseModel):
+    """`viewers`: who may see the document, within the collection's access (null: no list of
+    its own, back to the collection's access)."""
+
+    viewers: list[Principal] | None = Field(max_length=500)
+
+
+def _acl_out(document: Document, grants: Sequence[DocumentGrant]) -> DocumentAclOut:
+    return DocumentAclOut(
+        document_id=document.id,
+        own_acl=document.own_acl,
+        origin=cast(AclOrigin | None, document.acl_origin),
+        updated_at=document.acl_updated_at,
+        entries=[
+            AclEntryOut(principal=g.principal, external=g.external)
+            for g in sorted(grants, key=lambda g: (g.external or "", g.principal or ""))
+        ],
+    )
+
+
+@router.get("/documents/{document_id}/acl")
+async def get_document_acl(
+    ctx: ReadContext, request: Request, document_id: uuid.UUID
+) -> DocumentAclOut:
+    """The document's own access list, for the collection's editors who can see it."""
+    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+        document, _ = await _document_for(session, ctx, document_id, edit=True)
+        grants = (await document_acl.grants_of(session, [document.id]))[document.id]
+        return _acl_out(document, grants)
+
+
+@router.put("/documents/{document_id}/acl")
+async def set_document_acl(
+    ctx: SessionContext, request: Request, document_id: uuid.UUID, body: DocumentAclUpdate
+) -> DocumentAclOut:
+    """A collection editor limits an uploaded document to some of the collection's viewers, or
+    lifts the limit. Synced documents follow their source (permission sync) and meeting
+    documents their meeting, so neither is changed here. The list only narrows: someone on it
+    who cannot view the collection still cannot see the document. The editor must stay on it,
+    so nobody locks themselves out by mistake."""
+    resources = resources_of(request)
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        document, _ = await _document_for(session, ctx, document_id, edit=True)
+        if document.source_id is not None or document.source == "meeting":
+            raise ApiError(
+                409,
+                "acl_from_source",
+                "This document's access follows its source",
+                "Synced documents take their access from the source (docs/permission-sync.md), "
+                "meeting documents from their meeting.",
+            )
+        entries: list[document_acl.AclEntry] | None = None
+        if body.viewers is not None:
+            viewers = sorted(set(body.viewers))
+            await check_principals(session, ctx.tenant_id, viewers)
+            if not set(viewers) & ctx.principals:
+                raise ApiError(
+                    422,
+                    "would_lose_access",
+                    "You would lose access to this document",
+                    "Include yourself, or a group or department you belong to.",
+                )
+            entries = [document_acl.AclEntry(p) for p in viewers]
+        changed = await document_acl.set_acl(
+            session,
+            ctx.tenant_id,
+            document,
+            entries,
+            origin="manual",
+            actor=Actor(type="user", id=ctx.user_id),
+        )
+        grants = (await document_acl.grants_of(session, [document.id]))[document.id]
+        payload = document_payload(document, grants)
+        out = _acl_out(document, grants)
+    if changed:
+        await document_acl.refresh_payload(
+            resources.qdrant, resources.collection_name, ctx.tenant_id, document_id, payload
+        )
+    return out

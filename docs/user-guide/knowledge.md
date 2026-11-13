@@ -57,6 +57,10 @@ them into notes as well as a searchable transcript ([Meetings](../meetings.md)).
    the collection's default.
 4. **Embed and index**: each passage is stored for hybrid search (meaning and keywords), with the
    collection's access list attached, so a search can only ever return what the person may read.
+   A document can also have **its own access list**, narrower than its collection's: synced from
+   its source (Enterprise permission sync) or set by a collection editor on an upload
+   (`PUT /api/v1/documents/{id}/acl`). Only people on it who can read the collection see the
+   document; for anyone else it does not exist ([permission-sync.md](../permission-sync.md)).
 
 When a new version is ready, the previous version's passages are removed; the document is never
 missing from search in between. Workflows can start when a document is ready

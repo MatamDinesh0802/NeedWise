@@ -127,9 +127,12 @@ pending, the document page shows **Official status requested** with who asked, w
 why, and a second request is refused (`409 official_pending`). The approval shows the version it
 is for.
 
-Someone who cannot open the collection (a request made before these checks, or an approver
+Someone who cannot open the collection, or whom the document's own access list leaves out
+([permission-sync.md](permission-sync.md); a request made before these checks, or an approver
 who lost access since) sees the approval without the document's title, the requester's note or
-a link: "A document in <collection> you can't open". They cannot decide it.
+a link: "A document in <collection> you can't open". They cannot decide it, nobody who cannot
+read the document is chosen as its approver or made its owner, and review reminders and
+demotion notices go only to an owner who can read it.
 
 **New content ends official status.** A new version of an official document (an upload with
 the same file name, or a connector sync of an item that changed) drops it to the collection's
@@ -167,10 +170,11 @@ overview if they own none. It lists:
 - **Waiting for official approval:** pending requests, with who asked, who decides and why.
 - **No longer official (30 days):** demotions, with who did it and their note.
 
-Each list holds at most 200 documents. An admin who cannot open a collection sees that its
-documents need attention, never their titles or the notes about them (the request's reason, the
-demotion note; separation of duties, ARCHITECTURE 7.1); the web app says "A document in
-<collection> you can't open" instead of a link.
+Each list holds at most 200 documents. An admin who cannot open a collection, or a document
+whose own access list leaves them out, sees that its documents need attention, never their
+titles or the notes about them (the request's reason, the demotion note; separation of duties,
+ARCHITECTURE 7.1); the web app says "A document in <collection> you can't open" instead of a
+link. The stale-documents list in **Admin > Sources** withholds the same titles.
 
 ## The audit explorer
 

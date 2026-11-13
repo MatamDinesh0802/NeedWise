@@ -8,7 +8,12 @@ from typing import Any
 
 import httpx
 
-from workmind.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
+from workmind.modules.connectors.base import (
+    ConnectorError,
+    ConnectorRefusedError,
+    RemoteItem,
+    ScanResult,
+)
 
 API = "https://www.googleapis.com/drive/v3"
 TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105  (an endpoint, not a secret)
@@ -105,12 +110,19 @@ class GoogleDriveConnector:
         except httpx.HTTPError as exc:
             raise ConnectorError(f"Google Drive is unreachable: {exc}") from exc
         if response.status_code in (401, 403):
-            raise ConnectorError("Google Drive refused access; check the folder is shared")
+            raise ConnectorRefusedError("Google Drive refused access; check the folder is shared")
+        if response.status_code == 404:
+            raise ConnectorRefusedError("Google Drive: not found, or not shared with this account")
         if response.status_code == 429:
             raise ConnectorError("Google Drive rate limit reached")
         if response.is_error:
             raise ConnectorError(f"Google Drive answered HTTP {response.status_code}")
         return response
+
+    async def get_json(self, path: str, **params: str) -> dict[str, Any]:
+        """A read-only Drive API call with this source's token (permission sync uses it)."""
+        body: dict[str, Any] = (await self._get(path, **params)).json()
+        return body
 
     async def scan(self, cursor: Mapping[str, Any]) -> ScanResult:
         items: list[RemoteItem] = []

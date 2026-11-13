@@ -4,7 +4,12 @@
              -> trust boost, per-document diversity -> OpenFGA recheck (lock 2) -> passages
 
 Lock 2 checks `viewer` on each passage's collection: documents inherit their collection's
-access, and checking the collection never races a just-uploaded document's own tuple.
+access, and checking the collection never races a just-uploaded document's own tuple. A
+document with its own access list (ADR 0012) is also checked as a document (`viewer` on
+`document:<id>`, which needs the collection AND the list). Which documents have one is read
+from PostgreSQL, the source of truth, and from the chunk's payload: either is enough to ask.
+The same PostgreSQL query also says whether the list names the caller, so a narrowed list holds
+even while OpenFGA still waits for the outbox and the chunks still carry the old payload.
 A passage that fails lock 2 is dropped and counted as drift, which should never happen.
 """
 
@@ -24,6 +29,7 @@ from workmind.core.context import RequestContext
 from workmind.core.tenancy import global_transaction, tenant_transaction
 from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
 from workmind.modules.identity.models import Tenant
+from workmind.modules.knowledge.document_acl import visible_clause
 from workmind.modules.knowledge.models import Document
 from workmind.modules.retrieval.qdrant import QdrantClient, match, match_any
 from workmind.modules.retrieval.sparse import encode_query
@@ -129,11 +135,21 @@ class Retriever:
     ) -> dict[str, Any]:
         """Lock 1. Built here, never by callers, so no search can skip it. `collection_ids`
         only narrows the search (an agent's knowledge scope); it can never widen access."""
+        principals = sorted(ctx.principals)
         flt: dict[str, Any] = {
             "must": [
                 match("tenant_id", str(ctx.tenant_id)),
                 match("is_active", True),
-                match_any("acl", sorted(ctx.principals)),
+                match_any("acl", principals),
+                # A document's own access list only narrows: no own list, or one naming the
+                # caller. Points indexed before own lists existed have no `own_acl` field and
+                # count as having none, which is what they are.
+                {
+                    "should": [
+                        {"must_not": [match("own_acl", True)]},
+                        match_any("doc_acl", principals),
+                    ]
+                },
             ]
         }
         if collection_ids is not None:
@@ -180,8 +196,7 @@ class Retriever:
                 per_document[document] += 1
                 chosen.append(hit)
 
-        allowed = await self._recheck(ctx, {h["payload"]["collection_id"] for h in chosen})
-        kept = [h for h in chosen if h["payload"]["collection_id"] in allowed]
+        kept = await self._recheck(ctx, chosen)
         result.dropped_by_recheck = len(chosen) - len(kept)
         if result.dropped_by_recheck:
             log.warning(
@@ -241,20 +256,62 @@ class Retriever:
         fused = fuse(dense_hits, sparse_hits, sparse_weight=self.sparse_weight, k=self.rrf_k)
         return fused[:limit], (float(dense_hits[0]["score"]) if dense_hits else None)
 
-    async def _recheck(self, ctx: RequestContext, collection_ids: set[str]) -> set[str]:
-        """Lock 2: OpenFGA must also say yes for every collection a passage comes from."""
-        if self._fga is None or not collection_ids:
-            return collection_ids
+    async def _recheck(
+        self, ctx: RequestContext, hits: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Lock 2: OpenFGA must also say yes for every collection a passage comes from, and for
+        every document with its own access list."""
+        if self._fga is None or not hits:
+            return hits
         store = await self._store(ctx.tenant_id)
         if store is None:
             log.warning("authz_store_missing", tenant_id=str(ctx.tenant_id))
-            return set()  # fail closed
+            return []  # fail closed
+        own = {str(h["payload"]["document_id"]) for h in hits if h["payload"].get("own_acl")}
+        listed, closed = await self._own_acl_documents(
+            ctx, {h["payload"]["document_id"] for h in hits}
+        )
+        own |= listed
+        user = f"user:{ctx.user_id}"
         questions = [
-            RelationTuple(f"user:{ctx.user_id}", "viewer", f"collection:{c}")
-            for c in sorted(collection_ids)
+            RelationTuple(user, "viewer", f"collection:{c}")
+            for c in sorted({str(h["payload"]["collection_id"]) for h in hits})
         ]
+        questions += [RelationTuple(user, "viewer", f"document:{d}") for d in sorted(own)]
         answers = await self._fga.batch_check(store, questions)
-        return {q.object.split(":", 1)[1] for q, ok in answers.items() if ok}
+        allowed = {q.object for q, ok in answers.items() if ok}
+        return [
+            h
+            for h in hits
+            if f"collection:{h['payload']['collection_id']}" in allowed
+            and str(h["payload"]["document_id"]) not in closed
+            and (
+                str(h["payload"]["document_id"]) not in own
+                or f"document:{h['payload']['document_id']}" in allowed
+            )
+        ]
+
+    async def _own_acl_documents(
+        self, ctx: RequestContext, document_ids: set[str]
+    ) -> tuple[set[str], set[str]]:
+        """According to PostgreSQL: which of these documents have their own access list, and
+        which of those the list closes to the caller."""
+        ids: list[uuid.UUID] = []
+        for document_id in document_ids:
+            try:
+                ids.append(uuid.UUID(str(document_id)))
+            except ValueError:
+                continue
+        if not ids:
+            return set(), set()
+        async with tenant_transaction(self._sessions, ctx.tenant_id) as session:
+            rows = await session.execute(
+                select(Document.id, visible_clause(ctx.principals)).where(
+                    Document.id.in_(ids), Document.own_acl.is_(True)
+                )
+            )
+            found = [(str(document_id), bool(open_)) for document_id, open_ in rows]
+        return {d for d, _ in found}, {d for d, open_ in found if not open_}
 
     async def _store(self, tenant_id: uuid.UUID) -> str | None:
         if tenant_id not in self._stores:

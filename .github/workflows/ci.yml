@@ -162,7 +162,7 @@ jobs:
           python3 -c "import json,sys; d=json.load(open('status.json')); sys.exit(0 if d['status']=='ok' else 1)"
           curl -fsS -o /dev/null http://localhost:8480/
           curl -fsS -o /dev/null http://localhost:8480/auth/realms/master
-      - name: Seed the demo company and its 47 documents through the real ingestion pipeline
+      - name: Seed the demo company and its 49 documents through the real ingestion pipeline
         run: docker compose --profile tools run --rm seed
       - name: Permission gate - every red-team attack, every retrieval mode, zero leaks
         # No relevance floor for the gate (it is calibrated for real embeddings), so it checks

@@ -9,8 +9,8 @@ Exactly once per document version and workflow: the run's idempotency key is uni
 re-delivered ingestion task or a re-index of the same version finds the run already there.
 
 A run acts as the workflow's owner, with their current access. A workflow whose owner cannot
-view the document's collection gets no run, so the event never tells them about a document
-they could not open themselves.
+view the document (its collection, and its own access list if it has one) gets no run, so the
+event never tells them about a document they could not open themselves.
 """
 
 import uuid
@@ -24,8 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.service import load_identity
-from workmind.modules.knowledge.acl import acl_principals
-from workmind.modules.knowledge.models import Collection, CollectionGrant
+from workmind.modules.knowledge.acl import acl_principals, can_view_document
+from workmind.modules.knowledge.models import Collection, CollectionGrant, Document, DocumentGrant
 from workmind.modules.work.models import Workflow, WorkflowRun
 
 log = structlog.get_logger("workmind.workflows")
@@ -96,13 +96,23 @@ async def document_ready(
         )
     ).all()
     viewers = set(acl_principals(collection, grants))
+    document = await session.get(Document, event.document_id)
+    if document is None:
+        return []
+    document_grants = (
+        await session.scalars(select(DocumentGrant).where(DocumentGrant.document_id == document.id))
+    ).all()
     payload = event.payload(collection)
     created: list[uuid.UUID] = []
     for workflow in workflows:
         if not listens_to(workflow.definition, DOCUMENT_READY, collection.key):
             continue
         owner = await load_identity(session, workflow.owner_id)
-        if owner is None or not viewers & owner.principals:
+        if (
+            owner is None
+            or not viewers & owner.principals
+            or not can_view_document(owner.principals, document, document_grants)
+        ):
             # Same rule as the Knowledge Hub and search (lock 1): no access, no run.
             log.info("workflow_event_skipped", workflow=workflow.key, reason="owner_cannot_view")
             continue

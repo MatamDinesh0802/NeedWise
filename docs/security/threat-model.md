@@ -14,7 +14,7 @@ The method: reading the code of every surface below, then trying to break it wit
 which a scripted model (`apps/api/tests/fakes.py`) does exactly what an injected instruction
 asks, so that only code stands between the attack and the data. The fixes this review made are
 listed in [owasp-llm-top10.md](owasp-llm-top10.md#fixes-made-in-this-review). The red team
-(`evals/datasets/red_team.jsonl`, 59 attacks): its retrieval part runs in CI without a model; its
+(`evals/datasets/red_team.jsonl`, 68 attacks): its retrieval part runs in CI without a model; its
 answer part ran three times with Claude Sonnet 5.5 on 2026-11-12: after the Phase 12 merges (0
 leaks, 2 violations after a scoring fix), then in the v1.0 benchmark in `single` and in `auto`
 mode (0 leaks, 0 violations each; [v1.0 benchmarks](../benchmarks/v1.0.md)). Three runs of one
@@ -122,7 +122,7 @@ E: elevation of privilege. "Residual" lists what is not prevented.
 | S | Ask as someone else | BFF session (opaque cookie, server-side tokens), PAT hashing, `RequestContext` from the server only | Stolen session cookie within its 30-minute idle window |
 | T | A document pre-writes citation markers so its claim shows a trusted source's chip | Markers in sources reach the model as `(S1)` (`safety.quote_markers`, fixed); answers only map markers to passages they were given; unknown markers reported | The model can still attribute a claim to the wrong real source; there is no sentence-level verification (ARCHITECTURE 11.5 describes one; it is not built) |
 | R | Deny having seen something | `assistant.answered` audit event with document ids, cited ids, model | Event content is ids, not text |
-| I | Restricted passages to an unauthorized person | Lock 1 + lock 2 before any model call; abstention says nothing about what exists | Lock 2 is per collection; there are no per-document grants |
+| I | Restricted passages to an unauthorized person | Lock 1 + lock 2 before any model call; abstention says nothing about what exists. A document's own access list narrows its collection in both locks (lock 2 checks the document whenever PostgreSQL or the chunk says it has a list) and in every other path ([permission-sync.md](../permission-sync.md), ADR 0012) | Answers given before access was lost stay in the person's conversations |
 | I | Restricted passages to an external model | Sensitivity routing (`route`): above the tenant's threshold only to a local model, else withheld and counted | The label is set by ingestion rules and collection defaults; a mislabelled document is routed by its label |
 | I | Answer exfiltrates data through an image URL | Images removed from stored answers and research text (fixed), never loaded in the web app, CSP `img-src 'self'` | Tokens are streamed raw over SSE before the stored copy is cleaned: an API client rendering the stream itself would see the image markup |
 | I | Answer exfiltrates through a link | Links open in a new tab, `noreferrer`; the host is shown next to the text (fixed) | No allow-list: a person can still click |
@@ -176,7 +176,9 @@ E: elevation of privilege. "Residual" lists what is not prevented.
 
 | | Threat | Control | Residual |
 |---|---|---|---|
-| E | Confused deputy: query-time access through the connector's service credentials | Credentials are used only to sync; every synced document lands in the source's collection with that collection's access | Per-document source permissions are not synced (Enterprise roadmap): everyone who can read the collection reads every synced item |
+| E | Confused deputy: query-time access through the connector's service credentials | Credentials are used only to sync; every synced document lands in the source's collection with that collection's access. With permission sync (Enterprise), each item also gets its source ACL as its own list, which only narrows; identity mapping fails closed (unmapped source principals grant nothing); an item whose permissions cannot be read is for nobody; an outage fails the sync without changes | Community keeps collection-level access for synced items. Removals in Slack and GitHub apply at the next sync (Drive: within a minute through the changes feed). Without the license, lists written earlier stop updating. Not tested against a live Drive, Slack or GitHub |
+| I | A new synced item is visible with the collection's wider access before its ACL arrives | The ACLs are read before any content is applied; a new document gets its list in the transaction that creates it, before it is indexed | none known |
+| E | A wrong identity mapping lets someone in | Only admins map (audited as `admin.identity_mapping.saved`/`deleted`); only `email:` and `anyone` map without one; a mapping can name only principals of the tenant | An admin can map a source group to anyone, like granting a collection |
 | T | Slack messages become official policy in an official-by-default collection | Slack syncs are always `discussion` (fixed) | Drive, GitHub and web items take the collection's default trust, an admin decision |
 | I | A web page redirects the crawler to the cloud metadata endpoint, and the answer is indexed | Redirects followed by hand only within the site; every host checked against the outbound URL policy, also through DNS (fixed); start URLs checked when saved | Private and loopback addresses are allowed (intranets); DNS rebinding between the check and the request is not caught |
 | I | Connector tokens leak | AES-256-GCM, bound to the source id; write-only in the API | One deployment key (`SECRETS_KEY`), no KMS |
@@ -244,8 +246,12 @@ E: elevation of privilege. "Residual" lists what is not prevented.
 4. **Unpriced models are not budgeted.** The in-flight cap bounds concurrency per person and
    the request rate limits (`core/ratelimit.py`, [multi-tenancy](../multi-tenancy.md#abuse-limits))
    bound requests per minute, but nothing bounds what an unpriced model does over a day.
-5. **No per-document permissions.** Access is per collection; synced sources do not bring their
-   own per-file sharing (Enterprise roadmap).
+5. **Per-document permissions are synced only with Enterprise, and some only at the next sync.**
+   Documents can carry their own access list in both editions (ADR 0012), but in Community a
+   synced item keeps its collection's access. With permission sync, a removal in Slack or GitHub
+   takes effect at the next sync of the source (Drive: within a minute), and none of the three
+   was tested against the live service. Lists written while licensed stop updating when the
+   license lapses.
 6. **Secrets use one deployment key** (`SECRETS_KEY`, `SECRETS_ENCRYPTION_KEY`), not per-tenant
    data keys or a KMS.
 7. **Streamed tokens are not sanitized**; the stored answer is. API clients that render the SSE

@@ -12,8 +12,8 @@
   owner, docs/governance.md) gets one task and one notification per daily run that lists every
   document that became stale, and each document is reminded once per staleness episode: the
   episode ends when the document changes in the source or is no longer stale. An owner who left,
-  or who can no longer open the collection, is not reminded (the Sources page lists the
-  document instead).
+  or who can no longer open the collection or the document (its own access list), is not
+  reminded (the Sources page lists the document instead).
 
 Both are idempotent: the markers (`sources.failure_alerted_at`, `documents.stale_reminded_at`)
 are written in the same transaction as the notifications, with the rows locked.
@@ -325,7 +325,13 @@ async def send_source_reminders(
                 allowed[key] = collection is not None and await can_view_as(
                     session, owner_id, collection
                 )
-            if not allowed[key]:
+            if not allowed[key] or (
+                # A document with its own access list (docs/permission-sync.md): the owner must
+                # be on it too.
+                document.own_acl
+                and collection is not None
+                and not await can_view_as(session, owner_id, collection, document=document)
+            ):
                 report.without_owner += 1  # titles never reach someone who can't open them
                 continue
             by_owner[owner_id].append(document)

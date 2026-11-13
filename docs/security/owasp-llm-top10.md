@@ -51,13 +51,14 @@ unless they start with `apps/web` or name a web test (`*.test.tsx`, in `apps/web
 
 ## The red team
 
-`evals/datasets/red_team.jsonl` has 59 attacks (16 before this review). Each names its asking
+`evals/datasets/red_team.jsonl` has 68 attacks (16 before this review; rt-60 to rt-68, on
+documents with their own access list, were added after it). Each names its asking
 person, the surface it runs on (`chat` 34, `agents` 13, `research` 7, `analytics` 5) and what
 counts as failure (`evals/redteam.py`):
 
 - **Leaks** (the gate, `wm eval` exits 2): a forbidden document or canary in what the surface
   read, or a canary or `forbidden_text` string in what it wrote, a tool result or a query
-  result. 52 attacks are also checked by the retrieval-only gate in CI, in all three retrieval
+  result. 61 attacks are also checked by the retrieval-only gate in CI, in all three retrieval
   modes; 7 are answer-only (system prompt extraction, citation spoofing, two Slack injections),
   marked `answer_only` and checked only when a model answers.
 - **Violations** (reported, target 0): the answer wrote an `obey_tokens` code word that only
@@ -158,10 +159,20 @@ internal network content pulled in through a connector (fix 1).
 `::test_error_oracles_and_the_catalog_are_out_of_dans_reach`;
 `test_model_catalog_unit.py::test_provider_errors_never_carry_the_key`, `::test_unsafe_base_urls_are_refused`;
 `integration/test_conversations_api.py::test_conversations_and_runs_are_private`;
-`test_security_outbound.py`; the red team gate (52 attacks x 3 modes in CI).
+`test_security_outbound.py`; the red team gate (61 attacks x 3 modes in CI).
 
-**Residual risk.** Lock 2 checks collections: there are no per-document grants, and synced
-sources do not bring their per-file sharing. A person keeps earlier answers (and the
+**Document access lists** ([permission-sync.md](../permission-sync.md), ADR 0012): a
+document's own list narrows its collection in lock 1 (payload `own_acl`, `doc_acl`), in lock 2
+(`viewer` on the document, checked whenever PostgreSQL or the payload says it has a list) and in
+every other path that shows documents. Tests: the matrix in `model.fga.yaml`;
+`integration/test_document_acl.py` (a canary never reaches Bob through search, chat, research,
+agents, MCP or the Knowledge Hub; the locks agree for every person; lock 2 holds when the index
+drifts); `integration/test_permission_sync.py`; `integration/test_document_acl_redteam.py` and
+red-team items `rt-60` to `rt-68`.
+
+**Residual risk.** In Community, synced sources do not bring their per-file sharing (permission
+sync is Enterprise); with it, Slack and GitHub removals apply at the next sync. A person keeps
+earlier answers (and the
 conversation summary built from them) after losing access. Run event streams hold passage text
 in Valkey for an hour, unencrypted. Qdrant holds chunk text in its payloads and has no API key
 in the Compose file (it listens on 127.0.0.1 only): it is not an authorization boundary. The

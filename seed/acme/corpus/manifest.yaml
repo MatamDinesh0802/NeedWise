@@ -12,6 +12,12 @@ documents:
   title: Information Security Policy
 - file: company-handbook/company-holidays-2026.xlsx
   title: Company Holidays 2026
+- file: company-handbook/organisation-changes-2027-draft.md
+  title: Organisation Changes 2027 (draft, confidential)
+  trust: reference
+  viewers:
+  - group:leadership
+  - department-manager:hr
 - file: hr-guidance/leave-policy-2025-draft.docx
   title: Leave Policy 2025 (Draft)
 - file: hr-guidance/onboarding-checklist.md
@@ -36,6 +42,13 @@ documents:
   title: Engineering Roadmap H2 2026
 - file: engineering-docs/lidarcore-5-2-vendor-release-notes.md
   title: LidarCore 5.2 SDK Release Notes (vendor)
+- file: engineering-docs/security-advisory-wm-sa-2026-07-embargoed.md
+  title: Security Advisory WM-SA-2026-07 (embargoed)
+  viewers:
+  - user:wei.zhang@acme.test
+  - user:fatima.hassan@acme.test
+  - user:marcus.bell@acme.test
+  - group:leadership
 - file: finance-reports/q3-2026-financial-summary.xlsx
   title: Q3 2026 Financial Summary
 - file: finance-reports/budget-2027-draft.docx

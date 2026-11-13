@@ -14,7 +14,12 @@ from typing import Any
 
 import httpx
 
-from workmind.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
+from workmind.modules.connectors.base import (
+    ConnectorError,
+    ConnectorRefusedError,
+    RemoteItem,
+    ScanResult,
+)
 
 API = "https://slack.com/api"
 
@@ -54,8 +59,12 @@ class SlackConnector:
         except ValueError as exc:
             raise ConnectorError(f"Slack {method}: the response was not JSON") from exc
         if not body.get("ok"):
-            raise ConnectorError(f"Slack {method}: {body.get('error', 'failed')}")
+            raise ConnectorRefusedError(f"Slack {method}: {body.get('error', 'failed')}")
         return body
+
+    async def api(self, method: str, **params: str) -> dict[str, Any]:
+        """A read-only Web API call with this source's token (permission sync uses it)."""
+        return await self._call(method, **params)
 
     async def _history(self, channel: str) -> list[dict[str, Any]]:
         oldest = str(time.time() - self._days * 86_400)

@@ -5,7 +5,9 @@ searchable chunks.
     -> "document.ready": workflows listening for it get a queued run (in the same transaction)
 
 New points are written before the previous version's points are removed, so a document is never
-missing from search while it is re-indexed. Every chunk carries the collection's ACL (lock 1).
+missing from search while it is re-indexed. Every chunk carries the collection's ACL and the
+document's own access list, if it has one (lock 1). Both are read again when the chunks are
+stored: a sharing change made while the document was being embedded is applied to them too.
 """
 
 import asyncio
@@ -20,8 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
-from workmind.modules.knowledge.acl import acl_principals
+from workmind.modules.knowledge.acl import acl_principals, document_payload
 from workmind.modules.knowledge.chunking import chunk_document, embedding_text
+from workmind.modules.knowledge.document_acl import grants_of
 from workmind.modules.knowledge.models import (
     Chunk,
     Collection,
@@ -92,6 +95,9 @@ async def _ingest(
         ).all()
         document.status = "processing"
         acl = acl_principals(collection, grants)
+        own_list = document_payload(
+            document, (await grants_of(session, [document_id]))[document_id]
+        )
         default_sensitivity, filename, mime = (
             collection.default_sensitivity,
             document.filename,
@@ -136,6 +142,7 @@ async def _ingest(
                 "chunk_id": str(chunk_id),
                 "ordinal": draft.ordinal,
                 "acl": acl,
+                **own_list,
                 "trust": trust,
                 "sensitivity": sensitivity,
                 "title": title,
@@ -177,6 +184,15 @@ async def _ingest(
             )
             for chunk_id, draft in zip(chunk_ids, drafts, strict=True)
         )
+        current_grants = (
+            await session.scalars(
+                select(CollectionGrant).where(CollectionGrant.collection_id == collection.id)
+            )
+        ).all()
+        current_access: dict[str, Any] = {
+            "acl": acl_principals(collection, current_grants),
+            **document_payload(document, (await grants_of(session, [document_id]))[document_id]),
+        }
         version.chunk_count, version.processed_at = len(drafts), datetime.now(UTC)
         version.embedding_model = deps.embeddings.model_id
         document.current_version_id, document.status, document.error = version_id, "ready", None
@@ -209,6 +225,15 @@ async def _ingest(
             ),
         )
 
+    if current_access != {"acl": acl, **own_list}:
+        # Sharing changed while we were embedding: its own refresh may have run before these
+        # points existed, so they get the access that holds now.
+        await deps.qdrant.set_payload(
+            deps.collection_name,
+            current_access,
+            {"must": [match("document_id", str(document_id))]},
+            tenant_id=tenant_id,
+        )
     # Only now remove every older point of this document, from earlier versions or from an
     # earlier run of this same version (re-index): search never sees a gap or a duplicate.
     await deps.qdrant.delete(

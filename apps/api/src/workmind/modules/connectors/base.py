@@ -22,6 +22,11 @@ class ConnectorError(Exception):
     on the source and retries at the next interval; nothing is deleted on an error."""
 
 
+class ConnectorRefusedError(ConnectorError):
+    """The source answered, and said no: no access to this item, or it does not exist.
+    Unlike an outage or a rate limit, asking again soon would get the same answer."""
+
+
 @dataclass(frozen=True)
 class RemoteItem:
     external_id: str  # stable for the item's whole life (a URL, a file id, a message ts)

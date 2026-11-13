@@ -182,6 +182,7 @@ async def _run_sync(
             ),
             max_bytes=settings.max_upload_bytes,
             failure_alert_after=settings.source_failure_alert_after,
+            extensions=extensions,  # permission sync, when licensed (docs/permission-sync.md)
         )
         try:
             report = await sync_source(

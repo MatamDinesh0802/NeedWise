@@ -239,8 +239,15 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > health dashboard (Admin › Sources, and Knowledge Hub › Sources for collection owners: health,
 > mapping, last and next sync, run history, plain errors, pause/resume, disconnect), "missing
 > upstream" flags after cut-short scans, and daily stale-document reminders to owners plus
-> failing-source alerts, each once per episode. Pending: a test Drive and Slack workspace (DoD), a
-> live Confluence site and Microsoft 365 tenant, and moving a source to another collection.
+> failing-source alerts, each once per episode. Per-document permission sync (Enterprise
+> `permission_sync`, [docs/permission-sync.md](permission-sync.md), ADR 0012): document access
+> lists that only narrow their collection, enforced in both locks and every other path
+> (Community), fail-closed identity mapping with unmapped principals listed for admins
+> (Community), ACLs read from Drive, Slack and GitHub during every sync and Drive revocations
+> from the changes feed every minute (Enterprise), tested against fakes of the three APIs.
+> Pending: a test Drive and Slack workspace (DoD; permission sync has not met a live API
+> either), a live Confluence site and Microsoft 365 tenant, a screen for a document's own list,
+> and moving a source to another collection.
 
 **Goal:** knowledge flows in automatically from the tools companies already use.
 

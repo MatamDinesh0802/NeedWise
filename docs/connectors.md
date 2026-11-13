@@ -2,8 +2,10 @@
 
 A **source** pulls documents from somewhere else into **one collection**. Everything synced from
 that source gets the collection's access rules: "this Drive folder → Finance" is one line of
-configuration. Per-document permission sync, mirroring each file's ACL in the source, is an
-enterprise feature (`ee/`, planned).
+configuration. With the Enterprise feature `permission_sync`, each synced document also gets
+its source's access list (Drive file sharing, private Slack channel members, private GitHub
+collaborators and teams), which narrows the collection's access: see
+[permission-sync.md](permission-sync.md).
 
 ## How a sync works
 
@@ -382,6 +384,10 @@ All under `/api/v1/admin/sources`, for org admins and collection owners as descr
 
 ## Security
 
+- Access: in Community a synced document has its collection's access, whatever the item's
+  sharing in the source. Choose the collection for the narrowest audience of what the source
+  holds, or use permission sync (Enterprise), which fails closed: a source principal WorkMind
+  cannot map grants nothing, and an item whose permissions cannot be read is for nobody.
 - Credentials are encrypted with AES-256-GCM (`SECRETS_KEY`) and bound to their source: a
   ciphertext copied onto another source does not decrypt. The API never returns them; the page
   only says whether they are stored.

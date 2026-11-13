@@ -47,6 +47,11 @@ def next_sync_at(source: Source, now: datetime | None = None) -> datetime | None
 # the raw message the connector or the engine raised (modules/connectors/*.py, sync.py).
 _EXPLANATIONS: tuple[tuple[str, str], ...] = (
     (
+        r"permissions not read",
+        "The source didn't show who may see an item (permission sync), so nobody in WorkMind "
+        "sees it until a sync can read them. Check that the account may read sharing settings.",
+    ),
+    (
         r"cannot be decrypted|credentials are malformed",
         "The stored credentials can't be read any more (the server's SECRETS_KEY changed). "
         "Enter them again, or reconnect.",

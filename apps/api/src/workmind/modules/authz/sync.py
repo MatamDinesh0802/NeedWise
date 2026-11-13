@@ -33,8 +33,13 @@ from workmind.modules.identity.models import (
     Tenant,
     User,
 )
-from workmind.modules.knowledge.acl import collection_tuples, document_tuple
-from workmind.modules.knowledge.models import Collection, CollectionGrant, Document
+from workmind.modules.knowledge.acl import collection_tuples, document_tuples
+from workmind.modules.knowledge.models import (
+    Collection,
+    CollectionGrant,
+    Document,
+    DocumentGrant,
+)
 
 SessionFactory = async_sessionmaker[AsyncSession]
 log = structlog.get_logger("workmind.authz")
@@ -107,8 +112,11 @@ async def desired_identity_tuples(
     for collection in await session.scalars(select(Collection)):
         own = [g for g in grants if g.collection_id == collection.id]
         tuples |= collection_tuples(tenant_id, collection, own)
+    document_grants: dict[uuid.UUID, list[DocumentGrant]] = {}
+    for grant in await session.scalars(select(DocumentGrant)):
+        document_grants.setdefault(grant.document_id, []).append(grant)
     for document in await session.scalars(select(Document)):
-        tuples.add(document_tuple(document))
+        tuples |= document_tuples(document, document_grants.get(document.id, []))
     return tuples
 
 

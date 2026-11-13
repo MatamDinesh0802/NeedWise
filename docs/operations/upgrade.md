@@ -30,7 +30,12 @@ back. Backups are in [backup-restore.md](backup-restore.md).
 - **Authorization model.** Each tenant's OpenFGA store holds a copy of the model. Seeding wrote
   it, and nothing else did until `wm authz sync`: run it after every upgrade
   (`docker compose run --rm migrate wm authz sync`). It writes the current model where it
-  differs and recomputes the tuples from PostgreSQL. The model has not changed since v0.1.0.
+  differs and recomputes the tuples from PostgreSQL. The model changed once since v0.1.0: the
+  document type got its own access lists ([ADR 0012](../adr/0012-document-access-lists.md),
+  migration `0022`). Until `wm authz sync` has written it, OpenFGA refuses the new document
+  tuples: the outbox retries them (later changes wait behind them for up to about 20 seconds,
+  then go ahead) and the sync writes everything. Retrieval is not affected meanwhile: lock 2
+  checks documents only when they have their own list, and none has one before the upgrade.
 - **Keycloak.** Keycloak migrates its own database when its image version changes.
   `deploy/keycloak/realm-workmind.json` is imported once, when the realm does not exist yet:
   later edits to that file are not applied to an existing realm, so a release that changes it

@@ -28,6 +28,8 @@ GroupSource = Literal["local", "idp", "connector"]
 ORG_ROLES: tuple[OrgRole, ...] = ("owner", "admin", "auditor", "member", "guest")
 # Slugs never contain "_": personal access tokens use it as a separator.
 SLUG_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
+# A principal as RequestContext.principals names it (collection and document grants).
+PRINCIPAL_PATTERN = r"^(user|group|dept|dept-manager|org):[0-9a-f-]{36}$"
 
 
 class Tenant(Base, Timestamps):

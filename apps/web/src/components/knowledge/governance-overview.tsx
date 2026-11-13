@@ -67,7 +67,7 @@ export function GovernanceOverviewView({ overview, now, footer }: { overview: Go
         {overview.scope === "all"
           ? `All ${overview.collections.length} collections in the organization.`
           : `The ${overview.collections.length === 1 ? "collection" : `${overview.collections.length} collections`} you own: ${overview.collections.map((c) => c.name).join(", ")}.`}{" "}
-        Titles of documents in collections you can&apos;t open are withheld.
+        Titles of documents you can&apos;t open (their collection, or their own access list) are withheld.
       </p>
 
       <nav aria-label="Lists on this page">

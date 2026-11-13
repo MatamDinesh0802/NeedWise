@@ -146,7 +146,7 @@ add their own provider keys in Admin > Models ([models.md](../models.md)).
 
 `seed.enabled: true` runs `python -m workmind.seed` after install and after every upgrade (it is
 safe to re-run): the Acme Robotics company, its logins (password `credentials.demoPassword`,
-default `workmind-demo`), 47 documents through the ingestion pipeline, analytics data and the
+default `workmind-demo`), 49 documents through the ingestion pipeline, analytics data and the
 authorization tuples. It refuses `config.appEnv: production`; use `demo`. The repository's
 `seed/` directory (about 9 MB) is not in the API image, so the Job fetches it in an init
 container, from `seed.data.source`:
