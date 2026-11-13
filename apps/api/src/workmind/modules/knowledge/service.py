@@ -142,6 +142,34 @@ def _title_from(filename: str) -> str:
     return PurePath(filename).stem.replace("_", " ").replace("-", " ").strip() or filename
 
 
+async def _same_upload(
+    session: AsyncSession, ctx: RequestContext, collection: Collection, filename: str
+) -> Document | None:
+    """The uploaded document a file of this name updates: the oldest one in the collection
+    with that file name that the person can see. A document whose own access list leaves them
+    out does not exist for them (ADR 0012), so their file becomes a new document instead of a
+    new version of it (it would replace its content and answer with its id and title). Synced
+    documents are their source's: an upload never adds a version to one. System callers (the
+    seed, a meeting's transcript) see every document."""
+    candidates = (
+        await session.scalars(
+            select(Document)
+            .where(
+                Document.collection_id == collection.id,
+                Document.filename == filename,
+                Document.source_id.is_(None),
+            )
+            .order_by(Document.created_at, Document.id)
+        )
+    ).all()
+    if candidates and ctx.auth_method != "service":
+        hidden = await document_acl.hidden_documents(
+            session, ctx.principals, [d.id for d in candidates]
+        )
+        candidates = [d for d in candidates if d.id not in hidden]
+    return candidates[0] if candidates else None
+
+
 async def upload(
     session: AsyncSession,
     ctx: RequestContext,
@@ -178,12 +206,17 @@ async def upload(
         raise ApiError(422, "empty_file", "The file is empty")
     content_hash = hashlib.sha256(data).hexdigest()
 
-    same_item = (
-        (Document.source_id == synced.source_id) & (Document.external_id == synced.external_id)
-        if synced
-        else (Document.collection_id == collection.id) & (Document.filename == filename)
-    )
-    document = (await session.scalars(select(Document).where(same_item))).first()
+    if synced:
+        document = (
+            await session.scalars(
+                select(Document).where(
+                    Document.source_id == synced.source_id,
+                    Document.external_id == synced.external_id,
+                )
+            )
+        ).first()
+    else:
+        document = await _same_upload(session, ctx, collection, filename)
     if document is not None and document.current_version_id is not None:
         current = await session.get(DocumentVersion, document.current_version_id)
         if (

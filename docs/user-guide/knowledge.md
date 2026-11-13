@@ -36,7 +36,9 @@ file is uploaded, then indexed in the background; the table shows its status (*p
 
 - **Size:** up to 50 MB per file by default (`MAX_UPLOAD_BYTES`).
 - **New versions:** uploading a file with the same name to the same collection adds a version;
-  uploading identical bytes again changes nothing.
+  uploading identical bytes again changes nothing. Only documents you can see count: a document
+  whose own access list leaves you out, or one synced from a source, is never updated by your
+  upload (your file becomes a new document of its own).
 - **Scanned PDFs** have no text layer, and WorkMind does not run OCR: they fail with "no
   readable text found (a scanned PDF needs OCR)".
 - **In a browser only.** Uploads need a signed-in browser session; personal access tokens

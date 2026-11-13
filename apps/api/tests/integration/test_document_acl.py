@@ -390,6 +390,55 @@ async def test_the_knowledge_hub_answers_as_if_it_did_not_exist(
         assert w.canary not in api.get(path, headers=bob).text
 
 
+async def test_an_upload_never_becomes_a_version_of_a_document_the_uploader_cannot_see(
+    api: TestClient, world: World, app_sessions: SessionFactory
+) -> None:
+    """An editor left out of a document's list uploaded a file with its name: it became a new
+    version of the hidden document (its content replaced for the people on the list), and the
+    answer carried the hidden document's id and title; identical bytes answered `unchanged`."""
+    w = world
+    async with tenant_transaction(app_sessions, w.acme.tenant_id) as session:
+        session.add(
+            CollectionGrant(
+                tenant_id=w.acme.tenant_id,
+                collection_id=w.collection,
+                principal=w.user("bob"),
+                relation="editor",
+            )
+        )
+    headers = {**w.acme.as_("bob", write=True), "Content-Type": "text/markdown"}
+
+    def put(data: str) -> Any:
+        return api.post(
+            f"/api/v1/collections/{w.collection}/documents",
+            params={"filename": "advisory.md"},
+            content=data.encode(),
+            headers=headers,
+        )
+
+    guess = put(SECRET.format(w.canary))  # the exact content: no "unchanged" oracle
+    replaced = put("# Maintenance token advisory\n\nNothing to see here.\n")
+
+    assert guess.status_code == 202, guess.text
+    mine = guess.json()["document"]["id"]
+    assert mine != w.limited
+    assert guess.json()["unchanged"] is False
+    assert replaced.json()["document"]["id"] == mine  # Bob's own document, version 2
+    assert w.limited not in guess.text + replaced.text
+    marcus = api.get(f"/api/v1/documents/{w.limited}", headers=w.acme.as_("marcus.bell")).json()
+    assert len(marcus["versions"]) == 1
+    chunks = api.get(f"/api/v1/documents/{w.limited}/chunks", headers=w.acme.as_("marcus.bell"))
+    assert w.canary in chunks.text
+    # Marcus, on the list, still updates his own document by its name.
+    again = api.post(
+        f"/api/v1/collections/{w.collection}/documents",
+        params={"filename": "advisory.md"},
+        content=SECRET.format(w.canary).encode(),
+        headers={**w.acme.as_("marcus.bell", write=True), "Content-Type": "text/markdown"},
+    )
+    assert (again.json()["document"]["id"], again.json()["unchanged"]) == (w.limited, True)
+
+
 async def test_both_locks_agree_for_every_person_on_every_document(
     world: World,
     app_sessions: SessionFactory,
