@@ -57,6 +57,25 @@ Multi-tenant hardening ([docs/multi-tenancy.md](docs/multi-tenancy.md)):
   `RATE_LIMITS`, `RATE_LIMITS_ENABLED`).
 - A cross-tenant suite that calls every route with another tenant's ids.
 
+Connectors ([docs/connectors.md](docs/connectors.md)):
+
+- Confluence Cloud sources (REST API v2): the current pages of one or more spaces as Markdown
+  converted from the storage format, their readable attachments, the page tree as source
+  metadata, links back; signs in with an API token or OAuth 2.0 (3LO). SharePoint and OneDrive
+  sources (Microsoft Graph): a site's library, a drive or the connecting account's OneDrive,
+  optionally one folder; delta queries with the delta link stored, tombstones as deletions, a
+  full listing when a folder leaves or enters the selection; OAuth with PKCE and the least Graph
+  permission for the selection; 429 Retry-After honoured. Both are tested against fakes built
+  from the API documentation, not against a live site or tenant.
+- The sync engine applies deletions the source reports (delta tombstones), keeps the cursor when
+  a download failed, keeps each document's place in its source (`documents.source_meta`), and
+  stores renewed OAuth tokens also after a failed sync.
+- `GET /api/v1/admin/sources/kinds` describes every connector (label, how it signs in, fields,
+  configuration schema) for the admin UI. New settings: `ATLASSIAN_CLIENT_ID`,
+  `ATLASSIAN_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`,
+  `MICROSOFT_TENANT_ID` (Helm: `config.atlassian`, `config.microsoft` and the matching
+  credentials).
+
 Operations: `make backup` and `make restore` with a measured restore drill
 ([backup and restore](docs/operations/backup-restore.md)); an upgrade test from a release tag,
 passed from v0.1.0 ([upgrades](docs/operations/upgrade.md)); `wm authz sync`.
@@ -90,6 +109,9 @@ Upgrade notes so far:
   signature authority workbook.
 - After an upgrade or a restore, `wm authz sync` brings each tenant's OpenFGA store to the
   current model.
+- Migration 0021 adds `documents.source_meta` and the `confluence` and `sharepoint` source
+  kinds. A downgrade below it deletes Confluence and SharePoint sources (their documents stay,
+  as uploads).
 
 ## v0.11 — Phase 11: admin, governance and usage analytics (2026-11-12, not tagged)
 
