@@ -149,6 +149,68 @@ Automation: what Phase 8 left out ([docs/automation.md](docs/automation.md)):
   workflow step naming an approver who no longer exists now fails the step instead of falling
   back to the owner.
 
+
+Document access lists and permission sync ([docs/permission-sync.md](docs/permission-sync.md),
+[ADR 0012](docs/adr/0012-document-access-lists.md)):
+
+- A document may have its own access list, which only narrows its collection's: enforced by
+  both locks (the Qdrant filter and the OpenFGA recheck, which also applies the PostgreSQL list)
+  and on every other path (Knowledge Hub, counts, governance, approvals, reminders, workflow
+  events, the stale-document lists). Editors set one with `PUT /api/v1/documents/{id}/acl`.
+  Community.
+- Identity mapping that fails closed: an e-mail matches a person and "anyone" the organization;
+  groups, domains and Slack or GitHub accounts grant nothing until an admin maps them (Admin ›
+  Sources › Source accounts).
+- Enterprise `permission_sync`: each synced Drive file, private Slack channel and private or
+  internal GitHub repository gets its source's list during every sync; Drive revocations from
+  the changes feed every minute. Tested against fakes of the three APIs, not live. Each source
+  on the Sources page says whether permission sync applies to it.
+
+Meetings ([docs/meetings.md](docs/meetings.md)): speaker diarization with sherpa-onnx
+(pyannote segmentation and NeMo TitaNet-S as ONNX on the CPU, the optional `diarization` extra,
+included in the API image; the 47 MB of models download on first use), naming speakers as
+colleagues or guests, and a topic outline per meeting.
+
+Insights ([docs/analytics-sql-sources.md](docs/analytics-sql-sources.md)): PostgreSQL and MySQL
+sources as datasets of their own, read-only three ways, with row policies as CTE fences and
+sealed passwords; the BI agent across datasets; the steps of an answer streamed live on
+/insights. Tested on PostgreSQL 18.6 and MySQL 8.4.13 with scripted models.
+
+Governance ([docs/governance.md](docs/governance.md), [docs/enterprise.md](docs/enterprise.md)):
+
+- Review escalation: an official document whose review stays overdue is escalated to the
+  collection's owner, then the org admins, then (if the collection says so) demoted.
+- Legal holds (Enterprise `legal_hold` to place them; enforced by the core on every deletion
+  path whatever the license): documents, collections, people, meetings and Insights questions.
+  Placing or releasing one notifies the other owners, admins and auditors.
+- Document retention per collection (Enterprise, part of `retention_policies`): delete or
+  archive documents not updated for N days, with a preview; archived documents leave search
+  until restored.
+
+Notifications: two new categories, "Sources" (failing sources and their recovery) and "Legal
+holds"; review escalations count as escalations and stale synced documents as document reviews,
+so email and Slack follow each person's choice for them.
+
+Newcomers: the README path from a fresh clone measured (about 3 min 50 s to the first cited
+answer with an empty build cache), a demo video and GIF (`make demo-video`), and a first
+question without a model now says so (`model_not_configured`).
+
+More upgrade notes (2026-11-13 merges):
+
+- Migrations `0020` to `0026` run in that order (`0019` before). `0022` adds document lists and
+  identity mappings, `0024` meeting topics, `0025` SQL sources, `0026` review escalation, legal
+  holds and document retention; every new tenant table has forced row-level security.
+- The OpenFGA model changed (a document's viewers are its collection's viewers who are also on
+  its list): run `wm authz sync` after deploying (the Helm `authz-sync` hook does; `make seed`
+  reconciles the demo tenant).
+- Rebuild the api, worker and beat images: they now install the `diarization` and `mysql`
+  extras. Re-run `make ee-dev-license` so a development license includes `permission_sync` and
+  `legal_hold`, then restart api, worker and beat.
+- Re-seed demo deployments (`make seed`): two documents with their own lists (49 in all) and the
+  request-routing rules.
+- With the default 14-day grace period, the seeded Company Handbook's overdue official documents
+  reach the org admins' escalation stage at the first daily run from 2026-11-17.
+
 ## v0.11 — Phase 11: admin, governance and usage analytics (2026-11-12, not tagged)
 
 - **Open-core boundary** ([ADR 0011](docs/adr/0011-open-core-boundary-and-license-keys.md)):

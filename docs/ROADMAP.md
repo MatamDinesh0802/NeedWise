@@ -35,9 +35,11 @@ Sizes are rough estimates in **weeks of focused work**; part-time takes longer. 
 | 12 🚧 | **v1.0** | **Production hardening** | 2–3 wk | **v1.0 launch** (HN, Product Hunt) |
 | — | after 1.0 | Commercial track | ongoing | WorkMind Cloud + Enterprise edition |
 
-✅ built (4: launch pending the public repository; 8: with the gaps its section lists); 🚧 built
-with work remaining (7: live Drive, Slack, Confluence and SharePoint verification; 12: the final
-review and the release). Each phase's section below has the details.
+✅ built (4: launch pending the public repository; 8 to 11: with the gaps their sections list);
+🚧 built with work remaining (7: live Drive, Slack, Confluence and SharePoint verification; 12:
+the release). Each phase's section below has the details. On 2026-11-13 the last Phase 7 to 11
+branches were merged into `main` and the development stack was rebuilt from it; what that run
+checked is under each phase ("Integrated 2026-11-13").
 
 ---
 
@@ -177,7 +179,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > `HTTP_PORT`, **View as…** did not offer Olivia, whose examples the quickstart uses, and the
 > document count was stale. The [demo video](media/demo.mp4) (1 min 44 s) and the README GIF
 > were recorded with `make demo-video` against the development stack
-> ([how](../e2e/browser/demo/README.md)).
+> ([how](../e2e/browser/demo/README.md)). These timings were taken before the seed grew to 49
+> documents (two with their own access lists) on 2026-11-13; they were not taken again.
 
 **Goal:** a real person can install WorkMind and get cited, permission-aware answers in minutes.
 
@@ -269,6 +272,20 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > Pending: a test Drive and Slack workspace (DoD; permission sync has not met a live API
 > either), a live Confluence site and Microsoft 365 tenant, a screen for a document's own list,
 > and moving a source to another collection.
+>
+> Integrated 2026-11-13: the Sources page offers all six kinds (Confluence with an API token or
+> Connect Confluence, SharePoint/OneDrive with Connect SharePoint), says on each source whether
+> permission sync applies to it, and hides Source accounts from collection owners (the API is
+> for org admins). Stale-document lists and reminders now respect a document's own list and skip
+> archived documents; sync deletions keep documents under a legal hold, tombstones included.
+> Failing-source and stale-document notifications follow each person's email and Slack choices.
+> Checked: the backend suite (1,924 passed, 25 skipped, unit, integration and `ee/`), the web
+> tests, and on the rebuilt, re-seeded stack the browser suite (184 passed, including the
+> Admin › Sources and Knowledge Hub › Sources pages) and the retrieval-only permission gate (0
+> leaks in 183 checks, the 9 document-list attacks included,
+> [report](../evals/results/2026-11-13-permission-gate-final.md)). A Confluence source was
+> created and removed through the API on that stack. No connector was synced against a live
+> service.
 
 **Goal:** knowledge flows in automatically from the tools companies already use.
 
@@ -314,8 +331,14 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > audited, with a 39-item eval set; workflows in YAML with errors at their lines; the events
 > `document.updated`, `meeting.processed`, `task.completed` and `approval.decided`. Checked with
 > unit and integration tests (a scripted model, a stub mailer and a stub Slack); the routing eval
-> has not been run with a real model, and the new pages were checked in headless Chromium with a
-> mocked API (no axe serious findings), not against a running stack.
+> has not been run with a real model.
+>
+> Integrated 2026-11-13: on the rebuilt stack the browser suite (184 passed) covers Requests and
+> Admin › Automation (page, accessibility and layout checks); beat schedules
+> `workmind.escalate_work` hourly and `workmind.deliver_notifications` every minute, and the
+> seed added the 7 Acme routing rules. Every notification kind now has a delivery category,
+> including two new ones (Sources, Legal holds). Not observed on the stack: an escalation, an
+> email or a Slack message actually sent by the beat tasks.
 >
 > Not built: Microsoft Teams notifications and Slack interactivity (approving from Slack);
 > reading a mailbox for email requests (only an endpoint for a bridge); per-workflow SLAs and
@@ -349,6 +372,11 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > and topic outlines (model-based, checked against the transcript, with a deterministic
 > fallback; scored in the meetings eval), checked in headless Chromium with a scripted model.
 > Not measured with a real model: the topic outline and extraction from diarized recordings.
+>
+> Integrated 2026-11-13: the API image now installs the `diarization` extra. In the rebuilt
+> worker container sherpa-onnx 2.0.1 loads, and the two models downloaded into
+> `/models/diarization` and loaded (153.6 s, most of it the download, on a busy laptop). No
+> recording was diarized on the stack.
 
 **Goal:** meetings turn into decisions, tasks and searchable knowledge.
 
@@ -384,6 +412,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Done: CSV/XLSX → versioned DuckDB per tenant; semantic layer YAML; sqlglot guard with row policies; sandboxed read-only engine; the BI agent (tool loop, compose, chart spec, number verification with one repair pass); `/api/v1/analytics/*` and admin routes; `describe_data` / `query_data` for research mode and MCP; the Insights page and Admin › Analytics; the text-to-SQL eval (`wm eval --suites analytics`, [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md)).
 - Measured with Claude Sonnet 5.5 ([evals/results/2026-11-12-analytics.md](../evals/results/2026-11-12-analytics.md)): execution accuracy 33/36 (28/29 with full access, 5/7 under Dan's row policy), 5/5 people without access refused with no model call, 10/10 attacks without a leak, 0 leaks, 159/159 narrative numbers matched to a result, 6.9 s p50 / 10.2 s p95, $0.026 per answer. The DoD question was asked on the Insights page against the running stack: a chart, the narrative, 4 queries with their SQL and data, 20/20 figures backed. Two runs only, one model.
 - Done since (2026-11-13, [docs/analytics-sql-sources.md](analytics-sql-sources.md)): PostgreSQL and MySQL sources as datasets of their own (own model, access and row policies), read-only three ways (the guard, a read-only session, a read-only database role the docs ask for), statement timeouts, row caps, a connection budget per tenant, hosts checked against the model providers' SSRF rules with private networks only by an operator setting, passwords sealed like provider keys; model tables rewritten to the database's, row policies as CTE fences (PostgreSQL `MATERIALIZED`: without it, PostgreSQL 18 evaluated an oracle on hidden rows in a test); admin connect, catalog and model-check routes and UI; the agent across datasets; live progress of an answer on Insights (planning, each query compiled and run, writing, verifying, charting) over the chat runs' event streams. Tested on PostgreSQL 18.6 and MySQL 8.4.13 with scripted models: 127 guard bypass cases refused, 51 integration tests and 4 over HTTP; 19 eval items for a SQL source (`evals/datasets/analytics_sql.jsonl`) score 19/19 with a gold-answering scripted model.
+- Integrated 2026-11-13: the API image installs the `mysql` extra; after the merge the 55 SQL-source integration tests passed again against PostgreSQL 18.6 and a throwaway MySQL 8.4.13 container. No SQL source was connected on the running stack (none is seeded).
 - Not done: execution accuracy on a SQL source with a real model; measurements with other or local models; databases other than PostgreSQL and MySQL; connection pooling.
 
 **LinkedIn post #11 — "Letting an LLM write SQL against company data, safely."**
@@ -469,7 +498,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > - **Gates on `main` after the fixes:** 1115 backend tests (852 unit, the rest integration and `ee/`),
 >   1023 web tests, `pyright` and `ruff` clean, `pnpm build`; migration 0019 (the reason a failed
 >   answer failed) up, down and up again with `alembic check` clean.
-> - **Built on branch `fin-governance` (2026-11-13), not yet on the running stack:**
+> - **Built on 2026-11-13, merged into `main` and running on the development stack:**
 >   - *Review escalation* (Community, [governance.md](governance.md#escalation-of-overdue-reviews)):
 >     an official document whose review stays overdue escalates once per stage and cycle, to the
 >     collection's owner after the collection's grace period (default 14 days), to the org admins
@@ -486,20 +515,23 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >     documents not updated for N days, with an exact preview, legal holds and official status
 >     respected, archive and restore, all audited.
 >
->   Checked by the backend suite (1430 tests, unit, integration and `ee/`, with the scripted
->   model), the web tests (1079), `pyright`, `ruff`, `pnpm build`, migration 0026 down and up
->   with `alembic check` clean, and the three screens in headless Chromium against `next dev`
->   with mocked API answers (no horizontal scroll at 1280 and 390 px). Not checked: the stack
->   rebuilt with this branch, the daily task escalating or applying document rules on it, and
->   the two new browser-suite checks in `e2e/browser/tests/admin.spec.ts` (written, typechecked,
->   not run).
+>   Checked on the branch by the backend suite (1430 tests), the web tests (1079), `pyright`,
+>   `ruff`, `pnpm build`, migration 0026 down and up with `alembic check` clean, and the three
+>   screens in headless Chromium with mocked API answers. After the merge: the full backend
+>   suite (1,924 passed), migrations `0012` to `0026` down and up again on a throwaway database
+>   with data, and on the rebuilt stack with the Enterprise dev license (which now includes
+>   `legal_hold` and `permission_sync`) the browser suite's Legal holds checks, licensed and
+>   Community (184 passed in all; they needed the page added to the suite's registry). Placing
+>   or releasing a hold now notifies the other owners, admins and auditors. Not observed on the
+>   stack: the daily task escalating a review or applying a document rule (the first seeded
+>   escalation is due on 2026-11-17).
 > - **Not done:** a reminder sent by the daily task on the running stack (it first runs a day
->   after beat starts). DLP, permission sync, SCIM and the other paid features of §5 are not
->   built and not part of this phase.
+>   after beat starts). DLP, SCIM and the other paid features of §5 not listed above are not
+>   built and not part of this phase (permission sync is built, under Phase 7).
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
-### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged, the load test is run and tuned, the v1.0 benchmarks and the case study are written, the Helm chart is tested on kind, and the final review's findings are fixed; a last end-to-end pass and the release remain
+### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged, the load test is run and tuned, the v1.0 benchmarks and the case study are written, the Helm chart is tested on kind, the final review's findings are fixed, and the end-to-end suites pass on the stack rebuilt with the Phase 7 to 11 merges (2026-11-13); the release remains
 
 **Goal:** a release companies can trust in production.
 
