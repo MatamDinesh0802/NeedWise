@@ -39,7 +39,7 @@ every push, with deterministic hash embeddings and the full corpus.
 | `routing.jsonl` | 56 | question → expected agents (single area, several areas, or none). 15 expect the Legal agent, which an administrator creates (`docs/agents.md`): until it exists they are reported as skipped, not failed. Near misses list in `not_agents` the agent they sound like but must not go to |
 | `meetings.jsonl` | 2 | a meeting file → its decisions, ideas nobody agreed to, action items with owners and due dates, and its topics (title keywords, and an anchor: words said well inside the topic, whose stretch of the outline must carry a fitting title). `mt-02` has an instruction injected by a participant (transcript only, no recording) |
 | `analytics.jsonl` | 51 | asking user, question, and either gold SQL with how to compare it (36), or the expected refusal: no access (5) or an attack (10) |
-| `request_routing.jsonl` | 39 | an inbound request (title, details, category, from the form, email or the assistant) → the department queue it belongs in, or `triage`; `via` says what must decide it: the seeded rules alone (23), only the router model (11), or a person (5, two of them carrying injected instructions). Suite `request_routing` ([docs/automation.md](../docs/automation.md#request-routing)): correct queue, wrong department, triage; `--retrieval-only` checks the rules alone. Not run with a real model yet |
+| `request_routing.jsonl` | 39 | an inbound request (title, details, category, from the form, email or the assistant) → the department queue it belongs in, or `triage`; `via` says what must decide it: the seeded rules alone (23), only the router model (11), or a person (5, two of them carrying injected instructions). Suite `request_routing` ([docs/automation.md](../docs/automation.md#request-routing)): correct queue, wrong department, triage; `--retrieval-only` checks the rules alone. One run with Claude Sonnet 5.5 as the router model: 36/39 ([report](results/2026-11-13-request-routing.md)) |
 | `analytics_sql.jsonl` | 19 | the same shape, about a PostgreSQL or MySQL source (`dataset: shop`): gold SQL that runs on both (10), no access (3), attacks (6). Not run with a real model |
 
 Restricted documents carry **canary tokens** (`CANARY-SALARY-4F9`, ...). A canary or a forbidden
@@ -86,9 +86,12 @@ searched as their person in every mode, with no model call. The other 7 are mark
 check the dataset against the seed: every forbidden document is unreadable for its attacker,
 and no forbidden string or code word is in a document they can read.
 
-The live runs below predate rt-60 to rt-68: those nine have been run in retrieval-only mode
-only (`tests/integration/test_document_acl_redteam.py` runs them against the seeded corpus with
-hash embeddings, 0 leaks in 27 checks), not answered by a model yet.
+The live runs of 2026-11-12 below predate rt-60 to rt-68. Those nine run in retrieval-only
+mode in CI (`tests/integration/test_document_acl_redteam.py`, against the seeded corpus with
+hash embeddings, 0 leaks in 27 checks), and were answered with Claude Sonnet 5.5 twice on
+2026-11-13, with 0 leaks and 0 violations both times
+([alone](results/2026-11-13-redteam-document-lists.md), and among the 68 of the
+[v1.0.0 release check](results/2026-11-13-v1.0.0-core.md)).
 
 **Live run (2026-11-12, after the Phase 12 merges).** All 59 attacks answered on their surfaces
 with Claude Sonnet 5.5 (chat in `single` mode), concurrency 3:
@@ -113,6 +116,23 @@ instructions and listed its tools: run-to-run variation of the model, not a fix.
 
 One model; the obey rate of other models is not measured. The 2026-11-04 results below cover
 the first 16 attacks.
+
+## v1.0.0 release check (2026-11-13)
+
+On the release candidate `144afd2`, the same stack configuration and model as the v1.0
+benchmarks below ([docs/benchmarks/v1.0.md](../docs/benchmarks/v1.0.md#v100-release-check-2026-11-13)).
+The model provider's credit ran out during the third run, so only these ran:
+
+| | Result | Report |
+|---|---|---|
+| Permission leaks | **0** in 183 retrieval checks (twice: the gate and the core run) and 68 red-team answers on four surfaces | [gate](results/2026-11-13-v1.0.0-permission-gate.md), [core](results/2026-11-13-v1.0.0-core.md) |
+| Red-team violations | 0 of 68 | [core](results/2026-11-13-v1.0.0-core.md) |
+| Answer correctness / faithfulness / abstention (`single`) | 81/82 / 99.4% / 6/6 | same |
+| Hybrid retrieval, Evidence@1 / MRR (430 chunks) | 90.2% / 0.942 | same |
+| QA time to first token p50 / p95; cost per QA answer | 0.9 / 1.6 s; $0.0071 | same, "By suite" |
+| Cross-department, `auto` | cut short by the provider: 12 of 15 answered, 12/12 with every fact | [incomplete](results/2026-11-13-v1.0.0-cross-auto.md) |
+| Request routing, rules alone | 39/39 decided as the dataset expects | [rules](results/2026-11-13-v1.0.0-request-routing-rules.md) |
+| Routing, analytics, meetings, request routing with the model, `auto` core | not run at `144afd2`: the numbers below are the latest | |
 
 ## v1.0 benchmarks (2026-11-12)
 

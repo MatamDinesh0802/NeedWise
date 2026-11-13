@@ -71,8 +71,9 @@ Docling (replaced by thin adapters and lightweight parsers, ADR 0007) and a Lang
 
 ## What each phase delivered
 
-The [roadmap](ROADMAP.md) has the detail. Only v0.1.0 was tagged; Phases 2 to 11 were finished
-on `main` without a release ([CHANGELOG](../CHANGELOG.md)).
+The [roadmap](ROADMAP.md) has the detail. Only v0.1.0 and v1.0.0 (2026-11-13) were tagged;
+Phases 2 to 11 were finished on `main` without a release of their own, and v1.0.0 carries them
+([CHANGELOG](../CHANGELOG.md), [release notes](releases/v1.0.0.md)).
 
 | Phase | Delivered | Measured, or still open |
 |---|---|---|
@@ -88,7 +89,7 @@ on `main` without a release ([CHANGELOG](../CHANGELOG.md)).
 | 9 Meetings | Recordings and transcripts to decisions and action items with timestamps, tasks, indexed transcripts | A 23-minute recording transcribed in 43 to 47 s on the laptop's CPU |
 | 10 BI agent | CSV/XLSX in DuckDB, semantic layer, SQL guard with row policies, charts, checked numbers, Insights; PostgreSQL and MySQL sources (read-only sessions, CTE fences), live progress | 33/36 execution accuracy on CSV/XLSX, 0 leaks. SQL sources tested with scripted models only |
 | 11 Admin, governance, usage | Agents as configuration, models and keys per organization, usage and budgets, document owners and official status, the audit explorer, four Enterprise features | A Legal agent made in the browser routes 15/15 legal questions |
-| 12 Hardening | Security review and a 59-attack red team, supply-chain scans, multi-tenant hardening, backup and restore, upgrades from v0.1.0, a Helm chart, the docs site, browser tests, load tests | 0 leaks; restore drill about a minute; upgrade 17/17 checks; load tuned to 400 users; the Helm chart installed and upgraded on kind (four chart problems fixed). Not done: a cloud cluster, the v1.0 release |
+| 12 Hardening | Security review and a 59-attack red team, supply-chain scans, multi-tenant hardening, backup and restore, upgrades from v0.1.0, a Helm chart, the docs site, browser tests, load tests | 0 leaks; restore drill about a minute; upgrade 17/17 checks; load tuned to 400 users; the Helm chart installed and upgraded on kind (four chart problems fixed); v1.0.0 tagged. Not done: a cloud cluster, publishing the release |
 
 ## Results
 
@@ -107,6 +108,11 @@ one run each):
 | Meetings | 10/10 decisions, 13/13 action items with due dates over 3 extractions |
 | Chat time to first token, p50 / p95 | 0.8 s / 1.5 s (`single`), 2.6 s / 6.0 s (`auto`) |
 | Under load, stub model | Up to 400 simulated users at unloaded chat latency after tuning; degrades without errors at 800 |
+
+The v1.0.0 release check on 2026-11-13 (`144afd2`) repeated the permission gate and the core
+suites with all 68 attacks: 0 leaks, 0 violations, 81/82, faithfulness 99.4%; the model
+provider's credit ran out before the other suites
+([release check](benchmarks/v1.0.md#v100-release-check-2026-11-13)).
 
 What the numbers do not show: a real company's documents, questions and attackers, other
 models, a long run in production.
@@ -211,8 +217,8 @@ tried to transcribe a meeting that has no recording.
 - **The first bottleneck was our own code**, the per-token event path, not the database or the
   vector store.
 
-What is still missing before a real company should use it: a tagged v1.0 release and a public
-repository, an install on a cloud or production Kubernetes cluster (the chart was only tested
+What is still missing before a real company should use it: a published release (v1.0.0 is
+tagged, not published) and a public repository, an install on a cloud or production Kubernetes cluster (the chart was only tested
 on kind), live verification of the Drive and Slack
 connectors, an external penetration test, a judge from another model family, measurements with
 local models, and a corpus and question set much larger than Acme's.
