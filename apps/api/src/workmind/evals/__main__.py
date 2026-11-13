@@ -297,7 +297,8 @@ async def run(args: argparse.Namespace) -> int:
             f"meeting {record.id} ({record.source}): decisions {record.decisions_found}/"
             f"{record.decisions_expected}, actions {record.actions_found}/"
             f"{record.actions_expected}, "
-            f"due {record.due_correct}/{record.actions_expected}"
+            f"due {record.due_correct}/{record.actions_expected}, "
+            f"topics {record.topics_found}/{record.topics_expected} ({record.topics_source})"
             + (f", transcribed in {record.transcribe_s:.0f} s" if record.transcribe_s else ""),
             file=sys.stderr,
         )

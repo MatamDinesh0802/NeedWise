@@ -33,11 +33,13 @@ from workmind.evals.datasets import (
     AnalyticsItem,
     CrossItem,
     MeetingItem,
+    MeetingTopic,
     QAItem,
     RedTeamItem,
     RoutingItem,
     fact_present,
     keywords_match,
+    spoken,
 )
 from workmind.evals.redteam import (
     ObservedTools,
@@ -68,6 +70,7 @@ from workmind.modules.identity.service import load_identity
 from workmind.modules.knowledge.models import Document
 from workmind.modules.meetings.extract import extract as extract_meeting
 from workmind.modules.meetings.pipeline import Directory, load_directory
+from workmind.modules.meetings.topics import outline as outline_meeting
 from workmind.modules.meetings.transcripts import parse as parse_transcript
 from workmind.modules.model_catalog.resolver import LLMResolver, TenantLLM
 from workmind.modules.retrieval.service import Mode, Passage, RetrievalResult
@@ -258,6 +261,12 @@ class MeetingRecord:
     duration_s: float | None
     error: str | None = None
     missed: list[str] = field(default_factory=list[str])  # owners of expected items not found
+    topics_found: int = 0  # expected topics whose stretch of the meeting has a fitting title
+    topics_expected: int = 0
+    topics: list[str] = field(default_factory=list[str])  # the outline's titles, in order
+    topics_source: str = ""  # "model", or "words" when the model's outline was not usable
+    topics_s: float = 0.0
+    topics_missed: list[str] = field(default_factory=list[str])  # their anchors
 
 
 @dataclass
@@ -444,6 +453,29 @@ def routing_by_agent(records: Sequence[RoutingRecord]) -> dict[str, dict[str, in
     return out
 
 
+def score_topics(
+    expected: Sequence[MeetingTopic],
+    topics: Sequence[dict[str, Any]],
+    segments: Sequence[dict[str, Any]],
+) -> list[str]:
+    """The anchors of expected topics the outline missed: no segment says the anchor, or the
+    topic covering the first one that does has a title without the topic's keywords."""
+    missed: list[str] = []
+    for want in expected:
+        said = next((s for s in segments if spoken(want.anchor) in spoken(str(s["text"]))), None)
+        covering = (
+            next(
+                (t for t in reversed(topics) if float(t["start"]) <= float(said["start"])),
+                None,
+            )
+            if said
+            else None
+        )
+        if covering is None or not keywords_match(want.keywords, str(covering["title"])):
+            missed.append(want.anchor)
+    return missed
+
+
 def meeting_sources(item: MeetingItem, folder: Path, *, audio: bool) -> list[str]:
     """What a meeting is extracted from: its transcript, and with `audio` its recording too,
     when the meeting has one (mt-02 is a transcript only: no recording to transcribe)."""
@@ -533,6 +565,11 @@ class Evaluator:
                 people=directory.people,
             )
             extract_s = time.perf_counter() - started
+            started = time.perf_counter()
+            topics, fallback = await outline_meeting(
+                self.askers.llm, segments, organization=organization, speakers={}
+            )
+            topics_s = time.perf_counter() - started
         except Exception as exc:
             return MeetingRecord(
                 item.id,
@@ -581,6 +618,7 @@ class Evaluator:
         timestamped = (
             sum(i.get("segment") is not None for i in items) / len(items) if items else 0.0
         )
+        topics_missed = score_topics(item.topics, topics, segments)
         return MeetingRecord(
             item.id,
             source,
@@ -597,6 +635,12 @@ class Evaluator:
             extract_s,
             transcript.duration,
             missed=missed,
+            topics_found=len(item.topics) - len(topics_missed),
+            topics_expected=len(item.topics),
+            topics=[str(t["title"]) for t in topics],
+            topics_source="words" if fallback else "model",
+            topics_s=topics_s,
+            topics_missed=topics_missed,
         )
 
     async def analytics(

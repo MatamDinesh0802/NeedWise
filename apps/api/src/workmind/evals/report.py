@@ -261,12 +261,12 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
             "## Meetings (extraction)",
             "",
             "| Meeting | From | Decisions | Ideas nobody agreed to, reported | Action items "
-            "(owner and task) | Due dates | Timestamped | Transcribe | Extract |",
-            "|---|---|---|---|---|---|---|---|---|",
+            "(owner and task) | Due dates | Timestamped | Topics | Transcribe | Extract |",
+            "|---|---|---|---|---|---|---|---|---|---|",
         ]
         for m in run.meetings:
             if m.error:
-                out.append(f"| {m.id} | {m.source} | error: {m.error} | | | | | | |")
+                out.append(f"| {m.id} | {m.source} | error: {m.error} | | | | | | | |")
                 continue
             transcribe = (
                 f"{m.transcribe_s:.0f} s for {m.duration_s / 60:.0f} min"
@@ -282,6 +282,13 @@ def markdown(run: EvalRun, meta: dict[str, Any], modes: list[str]) -> str:
                 + (f" (missed: {', '.join(m.missed)})" if m.missed else ""),
                 f"{m.due_correct}/{m.actions_expected}",
                 _pct(m.timestamped),
+                f"{m.topics_found}/{m.topics_expected} ({len(m.topics)} topics"
+                + (
+                    ", from the words: the model's outline was not usable"
+                    if m.topics_source == "words"
+                    else ""
+                )
+                + ")",
                 transcribe,
                 f"{m.extract_s:.0f} s",
             ]
