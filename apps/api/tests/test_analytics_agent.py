@@ -19,6 +19,7 @@ from workmind.modules.analytics.agent import (
     ChartDraft,
     Composed,
     _chart,
+    agent_prompt,
     answer,
 )
 from workmind.providers.llm import LLMError
@@ -540,3 +541,131 @@ async def test_a_loop_cut_at_the_step_limit_is_still_composed(acme_file: Path) -
     assert len(result.queries) == MAX_STEPS
     (_, _), (_, compose) = llm.requests
     assert "stopped at its step limit" in compose.messages[0].content
+
+
+# --- Progress and datasets ------------------------------------------------------------------
+
+
+async def test_progress_is_reported_step_by_step(acme_file: Path) -> None:
+    analytics = LocalAnalytics(acme_file)
+    llm = model(
+        Composed(narrative="Revenue was €38.9M [Q2], €9M [Q1].", chart=None, main_query="Q2"),
+        Composed(narrative="Revenue was €38.9M [Q2].", chart=None, main_query="Q2"),
+        turns=[
+            [("run_sql", {"sql": "SELECT nope FROM customers", "purpose": "a typo"})],
+            [("query_metrics", {**MONTHLY, "dimensions": ["quarter"]})],
+            [("query_metrics", {"metrics": ["revenue"], "purpose": "Total"})],
+        ],
+    )
+    events: list[tuple[str, dict[str, object]]] = []
+
+    async def on_event(step: str, data: dict[str, object]) -> None:
+        events.append((step, data))
+
+    result = await answer(llm, analytics, CTX, "Revenue?", on_event=on_event)
+
+    assert result.status == "answered"
+    assert [step for step, _ in events] == [
+        "planning",
+        "query_compiled",
+        "executing",
+        "query_failed",
+        "query_compiled",
+        "executing",
+        "query_done",
+        "query_compiled",
+        "executing",
+        "query_done",
+        "composing",
+        "verifying",
+        "repairing",
+        "verifying",
+        "charting",
+    ]
+    steps = dict(events[:1])
+    assert steps["planning"] == {"datasets": ["uploads"]}
+    compiled = events[1][1]
+    assert compiled["sql"] == "SELECT nope FROM customers"
+    assert (compiled["dataset"], compiled["dialect"], compiled["tool"]) == (
+        "uploads",
+        "duckdb",
+        "run_sql",
+    )
+    assert compiled["purpose"] == "a typo"
+    assert str(events[3][1]["error"]).startswith("query_failed:")
+    done = events[6][1]
+    assert (done["query"], done["dataset"], done["rows"]) == ("Q1", "uploads", 3)
+    assert events[11][1] == {"verified": 1, "total": 2}
+    assert events[12][1] == {"unverified": ["€9M"]}
+    assert events[13][1] == {"verified": 1, "total": 1}
+    assert events[14][1] == {"type": None}
+    assert [q.dataset for q in result.queries] == ["uploads", "uploads"]
+
+
+async def test_a_failing_progress_callback_never_fails_the_answer(acme_file: Path) -> None:
+    analytics = LocalAnalytics(acme_file)
+    llm = model(
+        Composed(narrative="Revenue was €38.9M [Q1].", chart=None, main_query="Q1"),
+        turns=[[("query_metrics", {"metrics": ["revenue"]})]],
+    )
+
+    async def broken(step: str, data: dict[str, object]) -> None:
+        raise RuntimeError("the stream is gone")
+
+    result = await answer(llm, analytics, CTX, "Revenue?", on_event=broken)
+
+    assert result.status == "answered"
+    assert result.queries[0].rows == [[38_900_000]]
+
+
+async def test_a_tool_call_must_name_a_dataset_the_person_may_query(acme_file: Path) -> None:
+    analytics = LocalAnalytics(acme_file)
+    llm = model(
+        Composed(narrative="24 customers [Q1].", chart=None, main_query="Q1"),
+        turns=[
+            [("run_sql", {"sql": "SELECT count(*) AS n FROM customers", "dataset": "shop"})],
+            [("run_sql", {"sql": "SELECT count(*) AS n FROM customers", "dataset": "uploads"})],
+        ],
+    )
+
+    result = await answer(llm, analytics, CTX, "How many customers?")
+
+    unknown, ok = llm.tool_replies
+    assert unknown.is_error
+    assert unknown.content.startswith("unknown_dataset: There is no dataset 'shop'")
+    assert not ok.is_error
+    assert [(q.id, q.dataset, q.rows) for q in result.queries] == [("Q1", "uploads", [[24]])]
+    # With the uploaded files alone, the prompt is the one from before database sources.
+    (_, loop), _ = llm.requests
+    assert "<dataset" not in loop.system
+    assert "Run one read-only DuckDB SELECT" in llm.offered[1].description
+
+
+async def test_several_datasets_are_named_with_their_dialects(acme_file: Path) -> None:
+    analytics = LocalAnalytics(acme_file)
+    files = await analytics.describe(CTX)
+    shop = files.model_copy(
+        update={
+            "dataset": "shop",
+            "kind": "postgres",
+            "dialect": "postgres",
+            "name": "Shop orders",
+            "tables": [
+                t.model_copy(update={"rows": None, "source_table": f"shop.{t.name}"})
+                for t in files.tables[:1]
+            ],
+        }
+    )
+    dans = (await LocalAnalytics(acme_file, as_dan=True).access(CTX)).model_copy()
+    everyone = await analytics.access(CTX)
+
+    prompt = agent_prompt(
+        [files, shop], {"uploads": everyone, "shop": dans}, organization="Acme", today=TODAY
+    )
+
+    assert '<dataset key="uploads" sql="DuckDB" source="uploaded files">' in prompt
+    assert '<dataset key="shop" sql="PostgreSQL" source="a PostgreSQL database">' in prompt
+    assert "Name the dataset in every tool call" in prompt
+    assert "customers (a live database table)" in prompt
+    assert "shop: Own accounts only" in prompt  # the row policy, per dataset
+    assert "runs through 2026-09-30 (uploads), 2026-09-30 (shop)" in prompt

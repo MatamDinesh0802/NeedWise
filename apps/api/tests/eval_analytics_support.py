@@ -22,7 +22,13 @@ from workmind.core.context import RequestContext
 from workmind.evals.datasets import AnalyticsItem
 from workmind.modules.analytics.agent import Composed
 from workmind.modules.analytics.compiler import SemanticQuery
-from workmind.modules.analytics.service import AccessInfo, ModelDescription, QueryResult
+from workmind.modules.analytics.service import (
+    AccessInfo,
+    DatasetInfo,
+    ModelDescription,
+    QueryResult,
+    StepCallback,
+)
 from workmind.providers.llm import LLMRequest
 
 DATASETS = Path(__file__).resolve().parents[3] / "evals" / "datasets"
@@ -51,13 +57,19 @@ def scripted(
     The model does not know who asks: a question asked by several people gets the SQL of the
     first of them that has one (people without access never reach the model)."""
     sql_by_question: dict[str, str | None] = {}
+    dataset_of: dict[str, str | None] = {}
     for item in items:
         if not sql_by_question.get(item.question):
             sql_by_question[item.question] = sql_for(item)
+            dataset_of[item.question] = item.dataset
 
     def turns(request: LLMRequest) -> list[ToolTurn]:
-        sql = sql_by_question[asked(request)]
-        return [[("run_sql", {"sql": sql, "purpose": "the answer"})]] if sql else []
+        question = asked(request)
+        sql = sql_by_question[question]
+        arguments: dict[str, object] = {"sql": sql, "purpose": "the answer"}
+        if dataset_of.get(question):
+            arguments["dataset"] = dataset_of[question]
+        return [[("run_sql", arguments)]] if sql else []
 
     def compose(request: LLMRequest) -> Composed:
         return Composed(narrative="The answer is in [Q1].", chart=None, main_query="Q1")
@@ -94,19 +106,35 @@ class People:
     def _of(self, ctx: RequestContext) -> LocalAnalytics:
         return self.backends[ctx.user_id]
 
-    async def access(self, ctx: RequestContext) -> AccessInfo:
+    async def access(self, ctx: RequestContext, dataset: str | None = None) -> AccessInfo:
         return await self._of(ctx).access(ctx)
 
-    async def describe(self, ctx: RequestContext) -> ModelDescription:
+    async def datasets(self, ctx: RequestContext) -> list[DatasetInfo]:
+        return await self._of(ctx).datasets(ctx)
+
+    async def describe(self, ctx: RequestContext, dataset: str | None = None) -> ModelDescription:
         return await self._of(ctx).describe(ctx)
 
     async def run_sql(
-        self, ctx: RequestContext, sql: str, *, max_rows: int | None = None
+        self,
+        ctx: RequestContext,
+        sql: str,
+        *,
+        max_rows: int | None = None,
+        dataset: str | None = None,
+        on_step: StepCallback | None = None,
     ) -> QueryResult:
-        return await self._of(ctx).run_sql(ctx, sql, max_rows=max_rows)
+        return await self._of(ctx).run_sql(ctx, sql, max_rows=max_rows, on_step=on_step)
 
-    async def run_semantic(self, ctx: RequestContext, query: SemanticQuery) -> QueryResult:
-        return await self._of(ctx).run_semantic(ctx, query)
+    async def run_semantic(
+        self,
+        ctx: RequestContext,
+        query: SemanticQuery,
+        *,
+        dataset: str | None = None,
+        on_step: StepCallback | None = None,
+    ) -> QueryResult:
+        return await self._of(ctx).run_semantic(ctx, query, on_step=on_step)
 
     async def start_run(
         self, ctx: RequestContext, question: str, *, created_at: datetime | None = None

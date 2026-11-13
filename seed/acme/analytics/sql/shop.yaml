@@ -1,0 +1,86 @@
+# The semantic model of the fictional shop database in shop.sql, as a SQL source's model
+# (docs/analytics-sql-sources.md). The same YAML works for PostgreSQL and MySQL: its SQL
+# fragments use syntax both accept. Every table names the table it reads (source_table).
+#
+# Used by tests/integration/test_analytics_sources.py and evals/datasets/analytics_sql.jsonl
+# (the source's key there is `shop`).
+
+name: Shop orders
+description: >
+  Orders of the web shop and its partners, January to September 2026, by customer, region,
+  segment and channel. Amounts are in euros. Revenue counts orders that were not refunded.
+data_through: 2026-09-30
+
+examples:
+  - Monthly shop revenue this year
+  - Shop revenue by region per quarter
+  - Which shop customers ordered the most?
+
+access:
+  - department:finance
+  - department:sales
+  - group:leadership
+
+tables:
+  customers:
+    source_table: shop.customers
+    description: One row per shop customer.
+    columns:
+      customer_id: { type: text, description: "Customer id, e.g. S01." }
+      name: { type: text, description: Customer name. }
+      region: { type: text, description: "Region: North, South, East or West." }
+      segment: { type: text, description: "Retail, Wholesale or Online." }
+      account_owner: { type: text, description: E-mail of the account executive who owns the customer. }
+  orders:
+    source_table: shop.orders
+    description: One row per order. Refunded orders are not revenue; open orders are not paid yet.
+    time_column: order_date
+    columns:
+      order_id: { type: text, description: "Order id, e.g. O0001." }
+      customer_id: { type: text, description: The customer who ordered. }
+      order_date: { type: date, description: Date of the order. }
+      status: { type: text, description: "paid, open or refunded." }
+      channel: { type: text, description: "web, partner or direct." }
+      amount_eur: { type: decimal, format: eur, description: Order amount in euros. }
+
+joins:
+  - { left: orders.customer_id, right: customers.customer_id }
+
+dimensions:
+  customer: { sql: customers.name, description: Customer name. }
+  region: { sql: customers.region, description: Customer region. }
+  segment: { sql: customers.segment, description: Customer segment. }
+  channel: { sql: orders.channel, description: Order channel. }
+  order_status: { sql: orders.status, description: "Order status: paid, open, refunded." }
+
+metrics:
+  shop_revenue:
+    table: orders
+    sql: sum(amount_eur)
+    filter: status <> 'refunded'
+    description: Order amounts, refunded orders excluded.
+    format: eur
+  orders_count:
+    table: orders
+    sql: count(*)
+    description: Number of orders, any status.
+  refunded_amount:
+    table: orders
+    sql: sum(amount_eur)
+    filter: status = 'refunded'
+    description: Amount of refunded orders.
+    format: eur
+  customers_ordering:
+    table: orders
+    sql: count(DISTINCT customer_id)
+    filter: status <> 'refunded'
+    description: Customers with at least one order that was not refunded.
+
+row_policies:
+  - name: Own shop accounts only
+    description: Account executives see only the shop customers they own and those customers' orders.
+    applies_to: [department:sales]
+    unless: [department-manager:sales, group:leadership, department:finance]
+    filters:
+      customers: "account_owner = {user.email}"
+      orders: "customer_id IN (SELECT customer_id FROM customers WHERE account_owner = {user.email})"
