@@ -3747,7 +3747,7 @@
           "admin"
         ],
         "summary": "Update Source",
-        "description": "What the source syncs (its configuration), the schedule, enabled, and the staleness\nthreshold. The collection it syncs into is fixed (docs/connectors.md).",
+        "description": "What the source syncs (its configuration), the schedule, enabled, and the staleness\nthreshold. The collection it syncs into is fixed (docs/connectors.md).\n\nA change to what it reads, by anyone but the person who supplied its credentials, drops\nthem (`credentials_dropped` in the audit event): they are connected again by whoever wants\nthe new configuration read. A web source changed by someone who is not an org admin may\nreach public addresses only.",
         "operationId": "update_source_api_v1_admin_sources__key__put",
         "parameters": [
           {
@@ -4200,12 +4200,13 @@
       }
     },
     "/api/v1/admin/sources/{key}/oauth/google/start": {
-      "get": {
+      "post": {
         "tags": [
           "admin"
         ],
         "summary": "Google Start",
-        "operationId": "google_start_api_v1_admin_sources__key__oauth_google_start_get",
+        "description": "Connects a Google Drive source: the answer's `url` is Google's consent screen. A POST,\nso a link cannot start it (a CSRF-protected write, like every change).",
+        "operationId": "google_start_api_v1_admin_sources__key__oauth_google_start_post",
         "parameters": [
           {
             "name": "key",
@@ -4236,7 +4237,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthStart"
+                }
               }
             }
           },
@@ -4254,13 +4257,13 @@
       }
     },
     "/api/v1/admin/sources/{key}/oauth/slack/start": {
-      "get": {
+      "post": {
         "tags": [
           "admin"
         ],
         "summary": "Slack Start",
         "description": "Slack's consent screen for the workspace: the bot token it grants (read-only channel\nhistory) is stored encrypted, like a pasted one.",
-        "operationId": "slack_start_api_v1_admin_sources__key__oauth_slack_start_get",
+        "operationId": "slack_start_api_v1_admin_sources__key__oauth_slack_start_post",
         "parameters": [
           {
             "name": "key",
@@ -4291,7 +4294,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthStart"
+                }
               }
             }
           },
@@ -4309,13 +4314,13 @@
       }
     },
     "/api/v1/admin/sources/{key}/oauth/atlassian/start": {
-      "get": {
+      "post": {
         "tags": [
           "admin"
         ],
         "summary": "Atlassian Start",
-        "description": "Connects a Confluence source: redirects to Atlassian's consent screen.",
-        "operationId": "atlassian_start_api_v1_admin_sources__key__oauth_atlassian_start_get",
+        "description": "Connects a Confluence source: the answer's `url` is Atlassian's consent screen.",
+        "operationId": "atlassian_start_api_v1_admin_sources__key__oauth_atlassian_start_post",
         "parameters": [
           {
             "name": "key",
@@ -4346,7 +4351,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthStart"
+                }
               }
             }
           },
@@ -4364,13 +4371,13 @@
       }
     },
     "/api/v1/admin/sources/{key}/oauth/microsoft/start": {
-      "get": {
+      "post": {
         "tags": [
           "admin"
         ],
         "summary": "Microsoft Start",
-        "description": "Connects a SharePoint/OneDrive source: redirects to Microsoft's sign-in. It asks only\nfor the permission the source needs.",
-        "operationId": "microsoft_start_api_v1_admin_sources__key__oauth_microsoft_start_get",
+        "description": "Connects a SharePoint/OneDrive source: the answer's `url` is Microsoft's sign-in. It\nasks only for the permission the source needs.",
+        "operationId": "microsoft_start_api_v1_admin_sources__key__oauth_microsoft_start_post",
         "parameters": [
           {
             "name": "key",
@@ -4401,7 +4408,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthStart"
+                }
               }
             }
           },
@@ -5272,7 +5281,7 @@
           "admin"
         ],
         "summary": "Validate Workflow",
-        "description": "Checks a definition written as YAML or JSON without saving it: every problem with its\nline and column (for the editor). Approver rules and trigger filters that name people,\ndepartments or collections are checked when saving.",
+        "description": "Checks a definition written as YAML or JSON without saving it: every problem with its\nline and column (for the editor), including tools that do not exist and approver rules\nnobody can meet. Trigger filters that name departments or collections are checked when\nsaving.",
         "operationId": "validate_workflow_api_v1_admin_workflows_validate_post",
         "requestBody": {
           "content": {
@@ -12953,6 +12962,20 @@
         ],
         "title": "OAuthOut"
       },
+      "OAuthStart": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "OAuthStart",
+        "description": "Where the browser goes to connect: the provider's consent or sign-in screen."
+      },
       "OfficialIn": {
         "properties": {
           "note": {
@@ -17241,6 +17264,20 @@
             "type": "boolean",
             "title": "Has Credentials"
           },
+          "credentials_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "private_network": {
+            "type": "boolean",
+            "title": "Private Network"
+          },
           "needs": {
             "items": {
               "type": "string"
@@ -17417,6 +17454,8 @@
           "owner",
           "config",
           "has_credentials",
+          "credentials_by",
+          "private_network",
           "needs",
           "oauth",
           "interval_minutes",

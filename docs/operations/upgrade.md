@@ -7,7 +7,7 @@ back. Backups are in [backup-restore.md](backup-restore.md).
 ## Supported paths
 
 - **From any release to a later one, directly.** The database migrations are one linear chain
-  (`0001` to `0026` today) and the `migrate` service applies every missing step in order, so
+  (`0001` to `0027` today) and the `migrate` service applies every missing step in order, so
   there is no need to stop at intermediate versions.
 - **Tested:** v0.1.0 (the only tag so far, 2026-11-04; alembic `0004`) to the code of
   2026-11-12 (alembic `0019`), four times on 2026-11-12, with `scripts/upgrade-test.sh`
@@ -17,7 +17,12 @@ back. Backups are in [backup-restore.md](backup-restore.md).
   company plus a failing source with a synced document added, down to `0012` and up again (the
   backfills ran over those rows), down to `0019` and up, and `alembic check` clean. The
   upgrade-test script was not run against them. Upgrading the running development stack from
-  `0019` to `0026` worked (`docker compose up --build`).
+  `0019` to `0026` worked (`docker compose up --build`). Migration `0027` (sources'
+  `credentials_by` and `private_network`, documents' `source_deleted_at`, 2026-11-13) went down to
+  `0026` and up again on the integration-test database with its rows, with `alembic check`
+  clean, and was applied to the development stack by its rebuild. Existing sources with
+  credentials take their owner as the person who supplied them; existing web sources keep
+  reaching private addresses only when their owner is an org owner or admin.
 - **Not supported:** downgrades (the migrations go forward only; to go back, restore the backup
   you took before upgrading), and running the old and the new version side by side (a rolling
   upgrade). Plan a short downtime: from `docker compose up` to healthy took 32 to 138 seconds
