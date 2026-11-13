@@ -273,6 +273,8 @@ def build_connector(
                 start_urls=[str(u) for u in c.start_urls],
                 max_pages=c.max_pages,
                 path_prefix=c.path_prefix,
+                # Private and loopback addresses only where an org admin set the source up.
+                private_network=source.private_network,
             )
         case "github":
             c = GitHubConfig.model_validate(config)

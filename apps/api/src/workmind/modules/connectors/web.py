@@ -6,6 +6,12 @@ addresses, also through a name) before the first request to it, and redirects ar
 hand, one hop at a time, only while they stay on the site: a page that redirects elsewhere is
 skipped, so a public page cannot send the crawler to an internal address and get the answer
 indexed as a document.
+
+Private and loopback addresses are reachable only for a source an org admin set up
+(`private_network`, Source.private_network). For any other source the crawler refuses them
+when it checks a host, and checks again the address each answer actually came from, so a name
+that resolves to a public address at the check and to an internal one at the request (DNS
+rebinding) gets its answer discarded, never stored.
 """
 
 import hashlib
@@ -21,7 +27,7 @@ from urllib.robotparser import RobotFileParser
 
 import httpx
 
-from workmind.core.urls import UnsafeUrlError, check_url_resolved
+from workmind.core.urls import UnsafeUrlError, check_peer, check_url_resolved
 from workmind.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
 
 USER_AGENT = "WorkMindBot/0.6 (+https://github.com/workmind-ai)"
@@ -93,7 +99,8 @@ class WebConnector:
         start_urls: list[str],
         max_pages: int = 100,
         path_prefix: str | None = None,
-        check: UrlCheck = check_url_resolved,
+        check: UrlCheck | None = None,
+        private_network: bool = True,
     ) -> None:
         if not start_urls:
             raise ConnectorError("a web source needs at least one start URL")
@@ -105,7 +112,10 @@ class WebConnector:
         self._prefix = path_prefix if path_prefix is not None else first.path.rsplit("/", 1)[0]
         self._cache: dict[str, bytes] = {}
         self._robots: RobotFileParser | None = None
-        self._check = check
+        self._private = private_network
+        self._check: UrlCheck = check or (
+            lambda url: check_url_resolved(url, allow_private=private_network)
+        )
         self._checked: set[str] = set()  # hosts that passed the outbound URL policy
 
     async def _allowed_host(self, url: str) -> None:
@@ -125,6 +135,7 @@ class WebConnector:
             response = await self._http.get(
                 url, headers={"User-Agent": USER_AGENT}, timeout=20, follow_redirects=False
             )
+            self._answered_from_allowed(response)
             location = response.headers.get("location")
             if not response.is_redirect or not location:
                 return response, url
@@ -137,6 +148,16 @@ class WebConnector:
             if not self._in_scope(target):
                 raise _OffSite(target)
             url = target
+
+    def _answered_from_allowed(self, response: httpx.Response) -> None:
+        """Raises UnsafeUrlError when the answer came from an address this source may not
+        reach (only checked where private addresses are refused)."""
+        if self._private:
+            return
+        stream = response.extensions.get("network_stream")
+        server = stream.get_extra_info("server_addr") if stream is not None else None
+        if isinstance(server, tuple) and server:
+            check_peer(str(server[0]), allow_private=False)  # pyright: ignore[reportUnknownArgumentType]
 
     async def _allowed(self, url: str) -> bool:
         if self._robots is None:

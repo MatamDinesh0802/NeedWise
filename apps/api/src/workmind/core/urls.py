@@ -3,10 +3,14 @@ forgery): a model provider's base URL, a web source's pages.
 
 Refused: anything but http and https; credentials in the URL; cloud metadata endpoints;
 link-local, multicast, unspecified and reserved addresses, whether written as an address or
-reached through a name. Not refused: private and loopback addresses, because local model
-servers and intranets live there. An org admin can therefore point WorkMind at other hosts on
-its network (docs/security/threat-model.md). A name is resolved when it is checked, not on
-every request, so a name that later resolves elsewhere (DNS rebinding) is not caught.
+reached through a name. Private and loopback addresses are allowed only where an org admin
+configured the URL (`allow_private`, the default), because local model servers and intranets
+live there: an org admin can point WorkMind at other hosts on its network
+(docs/security/threat-model.md). Where someone else configured it (a web source a collection
+owner set up), only public addresses are allowed, a name that does not resolve is refused, and
+the crawler also checks the address it actually connected to before keeping an answer. A name
+is resolved when it is checked, not on every request, so for admin-configured URLs a name that
+later resolves elsewhere (DNS rebinding) is not caught.
 """
 
 import asyncio
@@ -41,13 +45,23 @@ class UnsafeUrlError(ValueError):
     """The URL is refused. The message says why, in words fit for an admin."""
 
 
-def check_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None:
+PRIVATE_REFUSED = (
+    "private and loopback addresses are not allowed here: only an org admin can set up a "
+    "source that reaches the internal network"
+)
+
+
+def check_address(
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address, *, allow_private: bool = True
+) -> None:
     if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
         address = address.ipv4_mapped
     if address in METADATA_ADDRESSES:
         raise UnsafeUrlError("cloud metadata endpoints are not allowed")
     if address.is_link_local:
         raise UnsafeUrlError("link-local addresses are not allowed")
+    if not allow_private and not address.is_global:
+        raise UnsafeUrlError(PRIVATE_REFUSED)
     if address.is_loopback:
         return  # a server on this host
     if address.is_multicast or address.is_unspecified:
@@ -56,21 +70,23 @@ def check_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Non
         raise UnsafeUrlError("this address cannot be used")
 
 
-def check_host(host: str) -> None:
+def check_host(host: str, *, allow_private: bool = True) -> None:
     """A host name or a literal address, without resolving it."""
     host = host.rstrip(".").lower()
     if not host:
         raise UnsafeUrlError("the URL has no host")
     if host in METADATA_HOSTS:
         raise UnsafeUrlError("cloud metadata endpoints are not allowed")
+    if not allow_private and (host == "localhost" or host.endswith(".localhost")):
+        raise UnsafeUrlError(PRIVATE_REFUSED)
     try:
         literal = ipaddress.ip_address(host.strip("[]"))
     except ValueError:
         return
-    check_address(literal)
+    check_address(literal, allow_private=allow_private)
 
 
-def check_url(url: str) -> str:
+def check_url(url: str, *, allow_private: bool = True) -> str:
     """An http(s) URL that may be fetched (a query is fine), or UnsafeUrlError. No resolving."""
     if any(c.isspace() or ord(c) < 32 for c in url):
         raise UnsafeUrlError("the URL contains spaces or control characters")
@@ -85,13 +101,14 @@ def check_url(url: str) -> str:
         raise UnsafeUrlError("the URL cannot contain a user name or password")
     if port == 0:
         raise UnsafeUrlError("the URL has an invalid port")
-    check_host(parts.hostname or "")
+    check_host(parts.hostname or "", allow_private=allow_private)
     return url
 
 
-async def check_resolved(host: str) -> None:
-    """Every address `host` resolves to right now. A name that does not resolve is accepted:
-    it may only resolve inside the deployment's network."""
+async def check_resolved(host: str, *, allow_private: bool = True) -> None:
+    """Every address `host` resolves to right now. A name that does not resolve is accepted
+    when private addresses are (it may only resolve inside the deployment's network), refused
+    otherwise."""
     host = host.rstrip(".").strip("[]")
     try:
         ipaddress.ip_address(host)
@@ -103,18 +120,30 @@ async def check_resolved(host: str) -> None:
             asyncio.get_running_loop().getaddrinfo(host, None, type=socket.SOCK_STREAM),
             RESOLVE_TIMEOUT_S,
         )
-    except (OSError, TimeoutError):
-        return
+    except (OSError, TimeoutError) as exc:
+        if allow_private:
+            return
+        raise UnsafeUrlError(f"{host} does not resolve") from exc
     for info in infos:
         try:
             address = ipaddress.ip_address(str(info[4][0]).split("%")[0])
         except ValueError:
             continue
-        check_address(address)
+        check_address(address, allow_private=allow_private)
 
 
-async def check_url_resolved(url: str) -> str:
+async def check_url_resolved(url: str, *, allow_private: bool = True) -> str:
     """check_url, plus the addresses its host resolves to now."""
-    check_url(url)
-    await check_resolved(urlsplit(url).hostname or "")
+    check_url(url, allow_private=allow_private)
+    await check_resolved(urlsplit(url).hostname or "", allow_private=allow_private)
     return url
+
+
+def check_peer(peer: str, *, allow_private: bool = True) -> None:
+    """The address a request actually connected to (a name can resolve differently between
+    the check and the request). Not an address (e.g. a proxy's name): nothing to judge."""
+    try:
+        address = ipaddress.ip_address(peer.split("%")[0])
+    except ValueError:
+        return
+    check_address(address, allow_private=allow_private)

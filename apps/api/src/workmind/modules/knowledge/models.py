@@ -192,6 +192,9 @@ class Document(Base, TenantScoped, Timestamps):
     # owner was reminded that it looks stale (once per staleness episode).
     source_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_missing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The source reported the item deleted while a legal hold kept it: the first sync after no
+    # hold covers it deletes it (connectors/sync.py).
+    source_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     stale_reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Where the item sits in its source (RemoteItem.meta): a Confluence page's space and
     # ancestors, a SharePoint file's folder path, a repository path.

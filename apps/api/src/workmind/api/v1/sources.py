@@ -6,6 +6,16 @@ Who manages what (checked here, on every request): org owners and admins manage 
 the owner of a collection manages the sources that sync into it, and adds new ones to it.
 Someone who owns no collection gets 403; a source outside the caller's collections is 404.
 Managing sources needs a browser session: access tokens cannot.
+
+Two trust boundaries between the people who manage one source:
+- Stored credentials read only what the person who supplied them chose (`credentials_by`).
+  Anyone else who changes what the source reads (its configuration) drops them: the source
+  must be connected again, by them, before it reads anything with credentials.
+- A web source reaches private and loopback addresses only when an org admin last set what it
+  reads (`private_network`); for anyone else its start URLs must be public, and the crawler
+  refuses internal addresses at every sync (core/urls.py).
+Connecting with OAuth starts with a POST (CSRF-protected like every write): a link cannot make
+someone connect their account to another person's source.
 """
 
 import asyncio
@@ -35,6 +45,7 @@ from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_key, tenant_transaction
+from workmind.core.urls import UnsafeUrlError, check_url_resolved
 from workmind.modules.connectors import oauth
 from workmind.modules.connectors.base import ConnectorError
 from workmind.modules.connectors.extensions import PERMISSION_SYNC, PermissionSync
@@ -223,6 +234,11 @@ class SourceOut(BaseModel):
     owner: PersonRef | None
     config: dict[str, Any]
     has_credentials: bool
+    # Who supplied the stored credentials: a change to what the source reads by anyone else
+    # drops them (they must connect it again).
+    credentials_by: PersonRef | None
+    # A web source set up by an org admin may reach private and loopback addresses.
+    private_network: bool
     needs: list[str]  # credential fields this kind expects
     oauth: OAuthProvider | None  # the provider "Connect" uses for this kind
     interval_minutes: int
@@ -313,6 +329,28 @@ def _config(kind: str, config: dict[str, Any]) -> dict[str, Any]:
         raise ApiError(
             422, "invalid_config", "The source configuration is invalid", str(exc)[:500]
         ) from exc
+
+
+async def _reachable(ctx: RequestContext, kind: str, config: dict[str, Any]) -> bool:
+    """Whether the source may reach private and loopback addresses: a web source an org admin
+    configures. For anyone else every start URL must resolve to public addresses now (the
+    crawler checks again at every sync)."""
+    if kind != "web":
+        return False
+    if is_org_admin(ctx):
+        return True
+    urls: list[Any] = list(config.get("start_urls") or [])
+    for url in urls:
+        try:
+            await check_url_resolved(str(url), allow_private=False)
+        except UnsafeUrlError as exc:
+            raise ApiError(
+                422,
+                "invalid_config",
+                "The source configuration is invalid",
+                f"{url}: {exc}",
+            ) from exc
+    return False
 
 
 async def _source(session: AsyncSession, scope: Scope, key: str) -> Source:
@@ -502,7 +540,9 @@ async def _outputs(
     }
     people = await _people(
         session,
-        {s.owner_id for s in sources} | {r.requested_by for r in last_runs.values()},
+        {s.owner_id for s in sources}
+        | {s.credentials_by for s in sources}
+        | {r.requested_by for r in last_runs.values()},
     )
     out: list[SourceOut] = []
     for s in sources:
@@ -522,6 +562,8 @@ async def _outputs(
                 owner=_person(people, s.owner_id),
                 config=s.config,
                 has_credentials=s.credentials is not None,
+                credentials_by=_person(people, s.credentials_by) if s.credentials else None,
+                private_network=s.private_network,
                 needs=list(CREDENTIALS.get(s.kind, ())),
                 oauth=KIND_OAUTH.get(s.kind),
                 interval_minutes=s.interval_minutes,
@@ -610,7 +652,8 @@ class CredentialFieldOut(BaseModel):
 
 class OAuthOut(BaseModel):
     provider: OAuthProvider
-    # Navigate the browser here to connect: it redirects to the provider's consent screen.
+    # POST here (a CSRF-protected write) to connect; the answer's `url` is the provider's consent
+    # screen, where the browser goes next.
     start_path: str  # with {key} for the source's key
     redirect_uri: str  # what the operator registers with the provider
     configured: bool  # the operator set the client id and secret
@@ -690,6 +733,7 @@ async def create_source(ctx: ManagerContext, request: Request, body: SourceCreat
             )
         if await session.scalar(select(Source.id).where(Source.key == body.key)):
             raise ApiError(409, "slug_taken", "A source with this key already exists")
+        private_network = await _reachable(ctx, body.kind, config)
         source = Source(
             tenant_id=ctx.tenant_id,
             key=body.key,
@@ -698,6 +742,7 @@ async def create_source(ctx: ManagerContext, request: Request, body: SourceCreat
             collection_id=collection.id,
             owner_id=ctx.user_id,
             config=config,
+            private_network=private_network,
             interval_minutes=body.interval_minutes,
             enabled=body.enabled,
             stale_after_days=body.stale_after_days
@@ -708,6 +753,7 @@ async def create_source(ctx: ManagerContext, request: Request, body: SourceCreat
         await session.flush()
         if body.credentials:
             source.credentials = _secrets(request).seal(source.id, body.credentials)
+            source.credentials_by = ctx.user_id
         await _audit(session, ctx, "admin.source.created", source)
         return await _output(session, source, _syncers(request))
 
@@ -717,18 +763,41 @@ async def update_source(
     ctx: ManagerContext, request: Request, key: str, body: SourceUpdate
 ) -> SourceOut:
     """What the source syncs (its configuration), the schedule, enabled, and the staleness
-    threshold. The collection it syncs into is fixed (docs/connectors.md)."""
+    threshold. The collection it syncs into is fixed (docs/connectors.md).
+
+    A change to what it reads, by anyone but the person who supplied its credentials, drops
+    them (`credentials_dropped` in the audit event): they are connected again by whoever wants
+    the new configuration read. A web source changed by someone who is not an org admin may
+    reach public addresses only."""
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         source = await _source(session, await _scope(session, ctx), key)
+        config = _config(source.kind, body.config)
+        dropped = False
+        if config != source.config:
+            source.private_network = await _reachable(ctx, source.kind, config)
+            if source.credentials is not None and source.credentials_by != ctx.user_id:
+                source.credentials, source.credentials_by, dropped = None, None, True
         source.name, source.interval_minutes, source.enabled = (
             body.name,
             body.interval_minutes,
             body.enabled,
         )
-        source.config = _config(source.kind, body.config)
+        source.config = config
         if "stale_after_days" in body.model_fields_set:
             source.stale_after_days = body.stale_after_days
-        await _audit(session, ctx, "admin.source.updated", source)
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="admin.source.updated",
+            resource_type="source",
+            resource_id=source.key,
+            details={
+                "kind": source.kind,
+                "enabled": source.enabled,
+                "credentials_dropped": dropped,
+            },
+        )
         return await _output(session, source, _syncers(request))
 
 
@@ -761,6 +830,7 @@ async def set_credentials(
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         source = await _source(session, await _scope(session, ctx), key)
         source.credentials = _secrets(request).seal(source.id, body) if body else None
+        source.credentials_by = ctx.user_id if body else None
         await _audit(session, ctx, "admin.source.credentials_changed", source)
     return Response(status_code=204)
 
@@ -1089,6 +1159,7 @@ async def _connect(
         if source.kind != OAUTH_KIND[provider]:
             return False
         source.credentials = _secrets(request).seal(source.id, credentials)
+        source.credentials_by = ctx.user_id
         await _audit(session, ctx, "admin.source.connected", source)
     return True
 
@@ -1097,10 +1168,18 @@ def _redirect(ctx: RequestContext, back: str | None, **query: str) -> RedirectRe
     return RedirectResponse(f"{_back_page(ctx, back)}?{urlencode(query)}", status_code=303)
 
 
-@router.get("/{key}/oauth/google/start")
+class OAuthStart(BaseModel):
+    """Where the browser goes to connect: the provider's consent or sign-in screen."""
+
+    url: str
+
+
+@router.post("/{key}/oauth/google/start")
 async def google_start(
     ctx: ManagerContext, request: Request, key: str, back: Back = "admin"
-) -> RedirectResponse:
+) -> OAuthStart:
+    """Connects a Google Drive source: the answer's `url` is Google's consent screen. A POST,
+    so a link cannot start it (a CSRF-protected write, like every change)."""
     settings = settings_of(request)
     if not settings.google_client_id:
         raise ApiError(
@@ -1123,7 +1202,7 @@ async def google_start(
             "code_challenge_method": "S256",
         }
     )
-    return RedirectResponse(f"{GOOGLE_AUTH}?{query}", status_code=302)
+    return OAuthStart(url=f"{GOOGLE_AUTH}?{query}")
 
 
 @oauth_router.get("/google/callback")
@@ -1166,10 +1245,10 @@ async def google_callback(
     )
 
 
-@router.get("/{key}/oauth/slack/start")
+@router.post("/{key}/oauth/slack/start")
 async def slack_start(
     ctx: ManagerContext, request: Request, key: str, back: Back = "admin"
-) -> RedirectResponse:
+) -> OAuthStart:
     """Slack's consent screen for the workspace: the bot token it grants (read-only channel
     history) is stored encrypted, like a pasted one."""
     settings = settings_of(request)
@@ -1186,7 +1265,7 @@ async def slack_start(
             "state": state,
         }
     )
-    return RedirectResponse(f"{SLACK_AUTH}?{query}", status_code=302)
+    return OAuthStart(url=f"{SLACK_AUTH}?{query}")
 
 
 @oauth_router.get("/slack/callback")
@@ -1230,11 +1309,11 @@ def _pkce_challenge(verifier: str) -> str:
     )
 
 
-@router.get("/{key}/oauth/atlassian/start")
+@router.post("/{key}/oauth/atlassian/start")
 async def atlassian_start(
     ctx: ManagerContext, request: Request, key: str, back: Back = "admin"
-) -> RedirectResponse:
-    """Connects a Confluence source: redirects to Atlassian's consent screen."""
+) -> OAuthStart:
+    """Connects a Confluence source: the answer's `url` is Atlassian's consent screen."""
     settings = settings_of(request)
     await _oauth_source(ctx, request, key, "atlassian")
     app = OAuthApps.from_settings(settings).atlassian
@@ -1250,15 +1329,15 @@ async def atlassian_start(
         "response_type": "code",
         "prompt": "consent",
     }
-    return RedirectResponse(f"{oauth.ATLASSIAN_AUTHORIZE}?{urlencode(query)}", status_code=302)
+    return OAuthStart(url=f"{oauth.ATLASSIAN_AUTHORIZE}?{urlencode(query)}")
 
 
-@router.get("/{key}/oauth/microsoft/start")
+@router.post("/{key}/oauth/microsoft/start")
 async def microsoft_start(
     ctx: ManagerContext, request: Request, key: str, back: Back = "admin"
-) -> RedirectResponse:
-    """Connects a SharePoint/OneDrive source: redirects to Microsoft's sign-in. It asks only
-    for the permission the source needs."""
+) -> OAuthStart:
+    """Connects a SharePoint/OneDrive source: the answer's `url` is Microsoft's sign-in. It
+    asks only for the permission the source needs."""
     settings = settings_of(request)
     config = await _oauth_source(ctx, request, key, "microsoft")
     app = OAuthApps.from_settings(settings).microsoft
@@ -1277,7 +1356,7 @@ async def microsoft_start(
         "code_challenge_method": "S256",
     }
     url = oauth.microsoft_authorize_url(app.tenant)
-    return RedirectResponse(f"{url}?{urlencode(query)}", status_code=302)
+    return OAuthStart(url=f"{url}?{urlencode(query)}")
 
 
 async def _app_callback(

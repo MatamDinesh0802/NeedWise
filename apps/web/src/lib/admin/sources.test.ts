@@ -9,6 +9,7 @@ import {
   changeCounts,
   configFieldKey,
   configPayload,
+  credentialsDropNote,
   disconnectConfirmed,
   driveFolderId,
   emptySourceForm,
@@ -185,19 +186,37 @@ describe("stats", () => {
   });
 });
 
-describe("Connect Google Drive", () => {
-  it("lets the browser continue when the API redirects to Google", async () => {
-    const fetcher = vi.fn(async () => ({ type: "opaqueredirect", ok: false, status: 0 }) as Response);
-    await expect(sourcesApi.checkGoogleStart("drive-finance", fetcher)).resolves.toBeUndefined();
-    expect(fetcher).toHaveBeenCalledWith("/api/v1/admin/sources/drive-finance/oauth/google/start", expect.objectContaining({ redirect: "manual" }));
+describe("Connect", () => {
+  it("starts with a POST and follows the URL it answers", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ url: "https://accounts.google.com/o/oauth2/v2/auth?state=x" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      await expect(sourcesApi.startOAuth("google", "drive-finance")).resolves.toEqual({ url: "https://accounts.google.com/o/oauth2/v2/auth?state=x" });
+      expect(fetcher).toHaveBeenCalledWith("/api/v1/admin/sources/drive-finance/oauth/google/start", expect.objectContaining({ method: "POST" }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("turns 409 oauth_not_configured into an ApiError to explain in place", async () => {
     const body = { title: "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET first", status: 409, code: "oauth_not_configured" };
-    const fetcher = vi.fn(async () => new Response(JSON.stringify(body), { status: 409, headers: { "Content-Type": "application/problem+json" } }));
-    const error = await sourcesApi.checkGoogleStart("drive-finance", fetcher).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(ApiError);
-    expect(error).toMatchObject({ status: 409, code: "oauth_not_configured" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body), { status: 409, headers: { "Content-Type": "application/problem+json" } })));
+    try {
+      const error = await sourcesApi.startOAuth("google", "drive-finance").catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error).toMatchObject({ status: 409, code: "oauth_not_configured" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("credentials someone else supplied", () => {
+  const erin = { id: "u-erin", display_name: "Erin Walsh" };
+  it("warns that changing what the source reads removes them", () => {
+    expect(credentialsDropNote({ has_credentials: true, credentials_by: erin }, "u-alice")).toMatch(/Erin Walsh's\. Changing what this source reads removes them/);
+    expect(credentialsDropNote({ has_credentials: true, credentials_by: erin }, "u-erin")).toBeNull();
+    expect(credentialsDropNote({ has_credentials: false, credentials_by: null }, "u-alice")).toBeNull();
   });
 });
 

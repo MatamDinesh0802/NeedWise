@@ -34,7 +34,9 @@ from workmind.core.edition import Edition, License
 from workmind.core.extensions import enable_extensions
 from workmind.core.tenancy import tenant_transaction
 from workmind.main import create_app
+from workmind.modules.connectors.models import Source
 from workmind.modules.governance.audit import Actor
+from workmind.modules.governance.models import AuditEvent
 from workmind.modules.knowledge import document_acl
 from workmind.modules.knowledge.models import Document
 from workmind.modules.retrieval.qdrant import QdrantClient
@@ -394,6 +396,157 @@ async def test_collection_owners_manage_the_sources_of_their_collections_only(
     assert source_named(api, acme, "finance-repo")["key"] == "finance-repo"  # untouched
 
 
+async def test_only_an_org_admin_points_a_web_source_at_private_addresses(
+    api: TestClient, acme: Acme, site: tuple[str, Path], app_sessions: Any
+) -> None:
+    # A collection owner made the crawler fetch Qdrant's /metrics (an internal service) and
+    # read it back as a document of their collection.
+    url, _ = site  # a server on 127.0.0.1
+    web = {"kind": "web", "config": {"start_urls": [url]}}
+    by_alice = create(api, acme, "alice", "alice-intranet", "company-handbook", **web)
+    private = create(
+        api,
+        acme,
+        "alice",
+        "alice-lan",
+        "company-handbook",
+        kind="web",
+        config={"start_urls": ["http://10.1.2.3/wiki/"]},
+    )
+    by_erin = create(api, acme, "erin", "intranet", "company-handbook", enabled=True, **web)
+
+    assert (by_alice.status_code, by_alice.json()["code"]) == (422, "invalid_config")
+    assert "only an org admin" in by_alice.json()["detail"]
+    assert private.status_code == 422
+    assert by_erin.status_code == 201, by_erin.text
+    assert by_erin.json()["private_network"] is True
+    assert sync(api, acme, "intranet")["status"] == "ok"
+
+    # Alice owns the collection and may edit the source, but her configuration reaches public
+    # addresses only: the same intranet now fails at sync, and nothing new is stored.
+    edited = api.put(
+        "/api/v1/admin/sources/intranet",
+        json={
+            "name": "Intranet",
+            "config": {"start_urls": [url], "max_pages": 5},
+            "interval_minutes": 60,
+            "enabled": True,
+        },
+        headers=acme.as_("alice", write=True),
+    )
+    assert (edited.status_code, edited.json()["code"]) == (422, "invalid_config")
+    # A source whose address was public when it was checked and is private at sync time (a
+    # name that resolves elsewhere later) is refused by the crawler itself.
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        await session.execute(
+            update(Source).where(Source.key == "intranet").values(private_network=False)
+        )
+    failed = sync(api, acme, "intranet")
+    assert failed["status"] == "error"
+    assert "not allowed" in (failed["last_error"] or "")
+
+    # An org admin saving the configuration sets it up again; renaming it keeps that.
+    put = {"name": "Intranet", "interval_minutes": 60, "enabled": True}
+    by_admin = api.put(
+        "/api/v1/admin/sources/intranet",
+        json={**put, "config": {"start_urls": [url], "max_pages": 50}},
+        headers=acme.as_("erin", write=True),
+    )
+    renamed = api.put(
+        "/api/v1/admin/sources/intranet",
+        json={**put, "name": "Intranet (HR)", "config": {"start_urls": [url], "max_pages": 50}},
+        headers=acme.as_("alice", write=True),
+    )
+    assert by_admin.json()["private_network"] is True
+    assert renamed.json()["private_network"] is True
+    assert sync(api, acme, "intranet")["status"] == "ok"
+
+
+async def test_changing_what_a_source_reads_drops_someone_elses_credentials(
+    api: TestClient, acme: Acme, app_sessions: Any
+) -> None:
+    # A collection owner repointed a source Erin had credentialed (another repository) and
+    # synced what Erin's token could read into their own collection.
+    created = create(
+        api,
+        acme,
+        "erin",
+        "hr-repo",
+        "hr-guidance",
+        config={"repo": "acme/hr-handbook", "branch": "main"},
+        credentials={"token": "ghp_dummy"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["credentials_by"]["id"] == str(acme.users["erin"])
+    alice = acme.as_("alice", write=True)
+    body = {"name": "x", "interval_minutes": 60, "enabled": False}
+
+    rescheduled = api.put(
+        "/api/v1/admin/sources/hr-repo",
+        json={**body, "config": {"repo": "acme/hr-handbook", "branch": "main"}},
+        headers=alice,
+    )
+    assert rescheduled.json()["has_credentials"] is True  # what it reads did not change
+
+    repointed = api.put(
+        "/api/v1/admin/sources/hr-repo",
+        json={**body, "config": {"repo": "acme/payroll-private", "branch": "main"}},
+        headers=alice,
+    )
+    assert repointed.status_code == 200, repointed.text
+    assert repointed.json()["config"]["repo"] == "acme/payroll-private"
+    assert (repointed.json()["has_credentials"], repointed.json()["credentials_by"]) == (
+        False,
+        None,
+    )
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        stored = (await session.scalars(select(Source).where(Source.key == "hr-repo"))).one()
+        events = (
+            await session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.action == "admin.source.updated",
+                    AuditEvent.resource_id == "hr-repo",
+                )
+            )
+        ).all()
+    assert stored.credentials is None
+    assert [e.details["credentials_dropped"] for e in events] == [False, True]
+
+    # Alice connects her own token; then the holder's own changes keep it.
+    api.put("/api/v1/admin/sources/hr-repo/credentials", json={"token": "ghp_alice"}, headers=alice)
+    mine = api.put(
+        "/api/v1/admin/sources/hr-repo",
+        json={**body, "config": {"repo": "acme/hr-policies", "branch": "main"}},
+        headers=alice,
+    )
+    assert mine.json()["has_credentials"] is True
+    assert mine.json()["credentials_by"]["id"] == str(acme.users["alice"])
+
+
+async def test_oauth_cannot_be_started_by_a_link(api: TestClient, acme: Acme) -> None:
+    # A GET start let a link sent to an admin store the admin's account on someone else's
+    # source. Starting is a POST now, refused without the CSRF headers.
+    create(
+        api,
+        acme,
+        "erin",
+        "chat",
+        "company-handbook",
+        kind="slack",
+        config={"channels": ["C0123ABCD"]},
+    )
+    by_link = api.get(
+        "/api/v1/admin/sources/chat/oauth/slack/start",
+        headers=acme.as_("erin"),
+        follow_redirects=False,
+    )
+    without_csrf = api.post(
+        "/api/v1/admin/sources/chat/oauth/slack/start", headers=acme.as_("erin")
+    )
+    assert by_link.status_code == 405
+    assert without_csrf.status_code == 403
+
+
 async def test_an_update_without_a_threshold_keeps_it_and_null_turns_it_off(
     api: TestClient, acme: Acme
 ) -> None:
@@ -605,16 +758,16 @@ async def test_connect_slack_stores_the_bot_token_encrypted_and_never_returns_it
             kind="web",
             config={"start_urls": ["https://intranet.example/"]},
         )
-        wrong_kind = client.get(
-            "/api/v1/admin/sources/web-only/oauth/slack/start", headers=acme.as_("erin")
+        wrong_kind = client.post(
+            "/api/v1/admin/sources/web-only/oauth/slack/start",
+            headers=acme.as_("erin", write=True),
         )
-        start = client.get(
+        start = client.post(
             "/api/v1/admin/sources/team-chat/oauth/slack/start",
             params={"back": "knowledge"},
-            headers=acme.as_("alice"),
-            follow_redirects=False,
+            headers=acme.as_("alice", write=True),
         )
-        location = httpx.URL(start.headers["location"])
+        location = httpx.URL(start.json()["url"])
         state = location.params["state"]
         stolen = client.get(  # the same state in someone else's session
             "/api/v1/oauth/slack/callback",
@@ -622,13 +775,12 @@ async def test_connect_slack_stores_the_bot_token_encrypted_and_never_returns_it
             headers=acme.as_("erin"),
             follow_redirects=False,
         )
-        restart = client.get(
+        restart = client.post(
             "/api/v1/admin/sources/team-chat/oauth/slack/start",
             params={"back": "knowledge"},
-            headers=acme.as_("alice"),
-            follow_redirects=False,
+            headers=acme.as_("alice", write=True),
         )
-        state = httpx.URL(restart.headers["location"]).params["state"]
+        state = httpx.URL(restart.json()["url"]).params["state"]
         done = client.get(
             "/api/v1/oauth/slack/callback",
             params={"code": "good", "state": state},
@@ -648,7 +800,7 @@ async def test_connect_slack_stores_the_bot_token_encrypted_and_never_returns_it
     assert next(k for k in options["kinds"] if k["kind"] == "gdrive")["oauth_configured"] is False
     assert slack_source.status_code == 201
     assert (wrong_kind.status_code, wrong_kind.json()["code"]) == (409, "wrong_kind")
-    assert start.status_code == 302
+    assert start.status_code == 200
     assert str(location).startswith("https://slack.com/oauth/v2/authorize?")
     assert location.params["client_id"] == "123.456"
     assert "channels:history" in location.params["scope"]
@@ -686,8 +838,9 @@ async def test_slack_and_google_oauth_need_their_clients(api: TestClient, acme: 
         config={"folder_id": "folder-12345"},
     )
 
-    slack = api.get("/api/v1/admin/sources/chat/oauth/slack/start", headers=acme.as_("erin"))
-    google = api.get("/api/v1/admin/sources/drive/oauth/google/start", headers=acme.as_("erin"))
+    erin = acme.as_("erin", write=True)
+    slack = api.post("/api/v1/admin/sources/chat/oauth/slack/start", headers=erin)
+    google = api.post("/api/v1/admin/sources/drive/oauth/google/start", headers=erin)
 
     assert (slack.status_code, slack.json()["code"]) == (409, "oauth_not_configured")
     assert (google.status_code, google.json()["code"]) == (409, "oauth_not_configured")
@@ -725,13 +878,12 @@ def provider_answers(
 
 
 def start(api: TestClient, acme: Acme, key: str, provider: str) -> dict[str, list[str]]:
-    response = api.get(
+    response = api.post(
         f"/api/v1/admin/sources/{key}/oauth/{provider}/start",
-        headers=acme.as_("erin"),
-        follow_redirects=False,
+        headers=acme.as_("erin", write=True),
     )
-    assert response.status_code == 302, response.text
-    location = response.headers["location"]
+    assert response.status_code == 200, response.text
+    location = response.json()["url"]
     return {"_url": [location.split("?")[0]], **parse_qs(urlsplit(location).query)}
 
 
@@ -968,15 +1120,13 @@ async def test_oauth_start_checks_the_kind(api: TestClient, acme: Acme) -> None:
         },
     )
 
-    wrong = api.get(
+    wrong = api.post(
         "/api/v1/admin/sources/wiki-hr/oauth/microsoft/start",
-        headers=acme.as_("erin"),
-        follow_redirects=False,
+        headers=acme.as_("erin", write=True),
     )
-    missing = api.get(
+    missing = api.post(
         "/api/v1/admin/sources/nope/oauth/atlassian/start",
-        headers=acme.as_("erin"),
-        follow_redirects=False,
+        headers=acme.as_("erin", write=True),
     )
 
     assert (wrong.status_code, wrong.json()["code"]) == (409, "wrong_kind")

@@ -160,3 +160,64 @@ def test_web_sources_accept_intranet_and_public_start_urls() -> None:
         "web", {"start_urls": ["https://intranet.example/docs/", "http://10.0.0.5:8080/wiki"]}
     )
     assert len(config["start_urls"]) == 2
+
+
+class _Peer:
+    """What httpcore puts in a response's extensions: the connection it came over."""
+
+    def __init__(self, address: str) -> None:
+        self.address = address
+
+    def get_extra_info(self, info: str) -> Any:
+        return (self.address, 80) if info == "server_addr" else None
+
+
+def from_peer(address: str, body: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        html=body,
+        headers={"content-type": "text/html"},
+        extensions={"network_stream": _Peer(address)},
+    )
+
+
+async def test_a_source_no_admin_set_up_refuses_private_addresses_at_every_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A collection owner's web source fetched Qdrant's /metrics and stored it as a document.
+    with pytest.raises(ConnectorError, match="only an org admin"):
+        await WebConnector(
+            Site({}).client(), start_urls=["http://127.0.0.1:6333/metrics"], private_network=False
+        ).scan({})
+    resolve_to(monkeypatch, "10.0.0.7")
+    with pytest.raises(ConnectorError, match="only an org admin"):
+        await WebConnector(
+            Site({}).client(), start_urls=["http://qdrant.internal/"], private_network=False
+        ).scan({})
+
+    # Public when checked, internal when requested (a name that resolves elsewhere later):
+    # the answer is discarded, never stored.
+    resolve_to(monkeypatch, "93.184.216.34")
+    rebound = Site({"https://rebind.example/": from_peer("127.0.0.1", "<title>metrics</title>")})
+    with pytest.raises(ConnectorError, match="not allowed"):
+        await WebConnector(
+            rebound.client(), start_urls=["https://rebind.example/"], private_network=False
+        ).scan({})
+    public = Site({"https://docs.example/": from_peer("93.184.216.34", "<title>Docs</title>")})
+    found = await WebConnector(
+        public.client(), start_urls=["https://docs.example/"], private_network=False
+    ).scan({})
+    assert [i.external_id for i in found.items] == ["https://docs.example/"]
+    # An org admin's source still reaches the intranet.
+    intranet = Site({"http://intranet.example/": from_peer("10.0.0.7", "<title>Intranet</title>")})
+    resolve_to(monkeypatch, "10.0.0.7")
+    assert (
+        len(
+            (
+                await WebConnector(intranet.client(), start_urls=["http://intranet.example/"]).scan(
+                    {}
+                )
+            ).items
+        )
+        == 1
+    )

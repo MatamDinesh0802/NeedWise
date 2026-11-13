@@ -42,7 +42,9 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { invalidateQueries, useApiQuery } from "@/hooks/use-api-query";
 import { usePolling } from "@/hooks/use-polling";
+import { useSession } from "@/hooks/use-session";
 import {
+  credentialsDropNote,
   accessSummary,
   afterCreate,
   anySyncing,
@@ -351,8 +353,8 @@ function OAuthResultAlert() {
 
 async function startOAuth(source: Pick<Source, "key" | "oauth">, back: OAuthBack): Promise<void> {
   if (!source.oauth) return;
-  await sourcesApi.checkOAuthStart(source.oauth, source.key, back);
-  window.location.assign(sourcesApi.oauthStartUrl(source.oauth, source.key, back)); // on to the consent screen
+  const { url } = await sourcesApi.startOAuth(source.oauth, source.key, back);
+  window.location.assign(url); // on to the consent screen
 }
 
 export function SourceCard({
@@ -594,6 +596,11 @@ function lastRunText(run: NonNullable<Source["last_run"]>, stats: string | null)
 }
 
 function credentialsText(source: Source): string {
+  const by = source.has_credentials && source.credentials_by ? ` · ${source.credentials_by.display_name}'s` : "";
+  return baseCredentialsText(source) + by;
+}
+
+function baseCredentialsText(source: Source): string {
   if (source.kind === "gdrive") return source.has_credentials ? "Google account connected (tokens stored encrypted)" : "Not connected to Google yet";
   if (source.kind === "sharepoint") return source.has_credentials ? "Microsoft account connected (tokens stored encrypted)" : "Not connected to Microsoft yet";
   if (source.kind === "confluence") return source.has_credentials ? "Connected (tokens or API token stored encrypted, never shown)" : "Not connected to Confluence yet";
@@ -635,6 +642,9 @@ function SourceFormView({
   onDone: (created: boolean) => void;
 }) {
   const creating = source === null;
+  const { state: session } = useSession();
+  const meId = session.kind === "signed_in" ? session.me.id : null;
+  const dropNote = source ? credentialsDropNote(source, meId) : null;
   const [form, setForm] = useState<SourceForm>(() => (source ? formFromSource(source) : emptySourceForm()));
   const [showErrors, setShowErrors] = useState(false);
   const [pending, setPending] = useState(false);
@@ -724,6 +734,13 @@ function SourceFormView({
       </DialogHeader>
 
       <div className="flex flex-col gap-4">
+        {dropNote ? (
+          <Alert>
+            <Info aria-hidden="true" />
+            <AlertTitle>Credentials stay with the person who connected them</AlertTitle>
+            <AlertDescription>{dropNote}</AlertDescription>
+          </Alert>
+        ) : null}
         {creating ? (
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-sm font-medium">Kind</legend>

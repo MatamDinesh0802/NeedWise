@@ -533,14 +533,12 @@ def _build_a(client: TestClient, a: Side) -> None:
         ),
         201,
     )
-    started_oauth = client.get(
-        f"/api/v1/admin/sources/{v['gdrive_key']}/oauth/google/start",
-        headers=acme.as_("erin"),
-        follow_redirects=False,
+    started_oauth = client.post(
+        f"/api/v1/admin/sources/{v['gdrive_key']}/oauth/google/start", headers=erin
     )
-    assert started_oauth.status_code == 302, started_oauth.text
+    assert started_oauth.status_code == 200, started_oauth.text
     v["table"] = TABLE
-    v["oauth_state"] = re.findall(r"[?&]state=([^&]+)", started_oauth.headers["location"])[0]
+    v["oauth_state"] = re.findall(r"[?&]state=([^&]+)", started_oauth.json()["url"])[0]
     v["slack_key"] = f"{CANARY}-slack"
     _check(
         client.post(
@@ -557,13 +555,11 @@ def _build_a(client: TestClient, a: Side) -> None:
         ),
         201,
     )
-    started_slack = client.get(
-        f"/api/v1/admin/sources/{v['slack_key']}/oauth/slack/start",
-        headers=acme.as_("erin"),
-        follow_redirects=False,
+    started_slack = client.post(
+        f"/api/v1/admin/sources/{v['slack_key']}/oauth/slack/start", headers=erin
     )
-    assert started_slack.status_code == 302, started_slack.text
-    v["slack_state"] = re.findall(r"[?&]state=([^&]+)", started_slack.headers["location"])[0]
+    assert started_slack.status_code == 200, started_slack.text
+    v["slack_state"] = re.findall(r"[?&]state=([^&]+)", started_slack.json()["url"])[0]
     # Confluence and SharePoint sources, each with an OAuth flow left open.
     for provider, kind, phrase, config in (
         (
@@ -595,13 +591,11 @@ def _build_a(client: TestClient, a: Side) -> None:
             ),
             201,
         )
-        started = client.get(
-            f"/api/v1/admin/sources/{v[f'{kind}_key']}/oauth/{provider}/start",
-            headers=acme.as_("erin"),
-            follow_redirects=False,
+        started = client.post(
+            f"/api/v1/admin/sources/{v[f'{kind}_key']}/oauth/{provider}/start", headers=erin
         )
-        assert started.status_code == 302, started.text
-        v[f"{provider}_state"] = re.findall(r"[?&]state=([^&]+)", started.headers["location"])[0]
+        assert started.status_code == 200, started.text
+        v[f"{provider}_state"] = re.findall(r"[?&]state=([^&]+)", started.json()["url"])[0]
 
     _check(
         client.post(
@@ -1254,11 +1248,13 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
     ],
     ("DELETE", "/api/v1/admin/sources/{key}"): [deny(params={"key": "source_key"})],
     ("POST", "/api/v1/admin/sources/{key}/sync"): [deny(params={"key": "source_key"})],
-    ("GET", "/api/v1/admin/sources/{key}/oauth/google/start"): [deny(params={"key": "gdrive_key"})],
-    ("GET", "/api/v1/admin/sources/{key}/oauth/atlassian/start"): [
+    ("POST", "/api/v1/admin/sources/{key}/oauth/google/start"): [
+        deny(params={"key": "gdrive_key"})
+    ],
+    ("POST", "/api/v1/admin/sources/{key}/oauth/atlassian/start"): [
         deny(params={"key": "confluence_key"})
     ],
-    ("GET", "/api/v1/admin/sources/{key}/oauth/microsoft/start"): [
+    ("POST", "/api/v1/admin/sources/{key}/oauth/microsoft/start"): [
         deny(params={"key": "sharepoint_key"})
     ],
     ("GET", "/api/v1/admin/sources/stale"): [own(query={"days": 0})],
@@ -1266,7 +1262,7 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
     ("POST", "/api/v1/admin/sources/{key}/pause"): [deny(params={"key": "source_key"})],
     ("POST", "/api/v1/admin/sources/{key}/resume"): [deny(params={"key": "source_key"})],
     ("GET", "/api/v1/admin/sources/{key}/runs"): [deny(params={"key": "source_key"})],
-    ("GET", "/api/v1/admin/sources/{key}/oauth/slack/start"): [deny(params={"key": "slack_key"})],
+    ("POST", "/api/v1/admin/sources/{key}/oauth/slack/start"): [deny(params={"key": "slack_key"})],
     ("GET", "/api/v1/admin/sources/stale-documents"): [
         own(query={"days": 1}),
         refuse(404, query=lambda w: {"source": w.a.values["source_key"]}),

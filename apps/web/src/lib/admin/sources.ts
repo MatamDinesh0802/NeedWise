@@ -6,7 +6,7 @@
  * set (`has_credentials`) and which fields it expects (`needs`).
  */
 
-import { ApiError, apiJson, buildRequestInit, parseProblem, type ProblemDetails } from "@/lib/api";
+import { apiJson } from "@/lib/api";
 import { slugError, suggestSlug } from "@/lib/slug";
 
 export type SourceKind = "web" | "github" | "slack" | "gdrive" | "confluence" | "sharepoint";
@@ -79,6 +79,10 @@ export interface Source {
   owner: PersonRef | null;
   config: Record<string, unknown>;
   has_credentials: boolean;
+  /** Who supplied the stored credentials: a change to what the source reads by anyone else drops them. */
+  credentials_by: PersonRef | null;
+  /** A web source an org admin set up may reach private and loopback addresses. */
+  private_network: boolean;
   needs: string[];
   oauth: OAuthProvider | null;
   interval_minutes: number;
@@ -210,30 +214,22 @@ export const sourcesApi = {
   stale: (days = 365) => apiJson<StaleDocument[]>(`${BASE}/stale?days=${days}`),
   oauthStartUrl: (provider: OAuthProvider, key: string, back: OAuthBack = "admin") =>
     `${BASE}/${id(key)}/oauth/${provider}/start${back === "admin" ? "" : `?back=${back}`}`,
-  googleStartUrl: (key: string) => sourcesApi.oauthStartUrl("google", key),
   /**
-   * Checks the OAuth start endpoint without following its redirect: a 409 (not configured,
-   * wrong kind) becomes an ApiError to show in place; otherwise the browser should navigate.
+   * Starts Connect: a POST (CSRF-protected, so a link cannot start it) whose answer is the
+   * provider's consent screen. A 409 (not configured, wrong kind) is an ApiError to show in place.
    */
-  checkOAuthStart: async (provider: OAuthProvider, key: string, back: OAuthBack = "admin", fetcher: typeof fetch = fetch): Promise<void> => {
-    const response = await fetcher(sourcesApi.oauthStartUrl(provider, key, back), buildRequestInit({ redirect: "manual" }));
-    if (response.type === "opaqueredirect" || response.ok) return; // on its way to the provider
-    let problem: ProblemDetails | null = null;
-    try {
-      problem = parseProblem(await response.json(), response.status);
-    } catch {
-      problem = null;
-    }
-    throw new ApiError({
-      status: response.status,
-      title: problem?.title ?? `HTTP ${response.status}`,
-      code: problem?.code ?? null,
-      detail: problem?.detail ?? null,
-      problem,
-    });
-  },
-  checkGoogleStart: (key: string, fetcher: typeof fetch = fetch) => sourcesApi.checkOAuthStart("google", key, "admin", fetcher),
+  startOAuth: (provider: OAuthProvider, key: string, back: OAuthBack = "admin") =>
+    apiJson<{ url: string }>(sourcesApi.oauthStartUrl(provider, key, back), { method: "POST" }),
 };
+
+/** What saving a new configuration does to stored credentials someone else supplied. */
+export function credentialsDropNote(source: Pick<Source, "has_credentials" | "credentials_by">, meId: string | null): string | null {
+  if (!source.has_credentials) return null;
+  const holder = source.credentials_by;
+  if (holder && meId && holder.id === meId) return null;
+  const who = holder ? holder.display_name : "someone else";
+  return `The stored credentials are ${who}'s. Changing what this source reads removes them: connect it again with your own account or token afterwards.`;
+}
 
 export const sourcesKeys = {
   all: "admin/sources",

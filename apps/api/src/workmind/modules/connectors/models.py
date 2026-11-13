@@ -24,6 +24,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy import false as sa_false
 from sqlalchemy import true as sa_true
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -58,6 +59,11 @@ class Source(Base, TenantScoped, Timestamps):
             ondelete="CASCADE",
         ),
         ForeignKeyConstraint(["tenant_id", "owner_id"], ["users.tenant_id", "users.id"]),
+        ForeignKeyConstraint(
+            ["tenant_id", "credentials_by"],
+            ["users.tenant_id", "users.id"],
+            ondelete="SET NULL (credentials_by)",
+        ),
         CheckConstraint(f"key ~ '{SLUG_PATTERN}'", name="key_format"),
         CheckConstraint(f"kind IN ({', '.join(repr(k) for k in KINDS)})", name="kind"),
         CheckConstraint(f"status IN ({', '.join(repr(s) for s in STATUSES)})", name="status"),
@@ -75,6 +81,13 @@ class Source(Base, TenantScoped, Timestamps):
     owner_id: Mapped[uuid.UUID]  # syncs run on their behalf (audit actor, created_by)
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     credentials: Mapped[bytes | None] = mapped_column(LargeBinary)  # AES-GCM ciphertext
+    # Whose credentials these are (pasted or connected). They read only what that person chose:
+    # anyone else who changes what the source reads drops them (api/v1/sources.py).
+    credentials_by: Mapped[uuid.UUID | None]
+    # A web source may reach private and loopback addresses only when an org admin last set
+    # what it reads (the threat model accepts an admin pointing WorkMind at its network; a
+    # collection owner gets public addresses only).
+    private_network: Mapped[bool] = mapped_column(server_default=sa_false())
     interval_minutes: Mapped[int] = mapped_column(Integer, server_default="60")
     enabled: Mapped[bool] = mapped_column(server_default=sa_true())
     status: Mapped[str] = mapped_column(String(16), server_default="idle")

@@ -35,6 +35,8 @@ export function sourceFixture(overrides: Partial<Source> = {}): Source {
     owner: { id: "u-erin", display_name: "Erin Takahashi" },
     config: { start_urls: ["https://intranet.example/handbook/"], max_pages: 100 },
     has_credentials: false,
+    credentials_by: null,
+    private_network: false,
     needs: [],
     oauth: null,
     interval_minutes: 60,

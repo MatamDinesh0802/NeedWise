@@ -72,6 +72,24 @@ the caller does not own answers `422 unknown_collection`, the same as a collecti
 exist. The person who creates a source is its owner: syncs run on their behalf (the audit actor,
 the documents' uploader, so by default their owner, docs/governance.md).
 
+Two limits keep the people who manage the same source from using each other's access:
+
+- **Credentials belong to whoever supplied them** (pasted or connected; `credentials_by`, shown
+  on the card). When anyone else changes what the source reads (its configuration: the
+  repository, folder, spaces, site, channels or start URLs), the stored credentials are removed
+  (`credentials_dropped: true` in the `admin.source.updated` audit event), and the source reads
+  nothing that needs them until someone connects it again with their own account or token. The
+  edit form says so before saving. Renaming, rescheduling, pausing and Sync now keep them.
+- **Only an org admin points a web source at the internal network.** For anyone else the start
+  URLs must resolve to public addresses (`422 invalid_config` otherwise; a name that does not
+  resolve is refused too), and the crawler refuses private and loopback addresses at every sync,
+  including an answer that came from one after the name was checked (`private_network: false`
+  on the source). When an org admin saves the configuration, the source may reach private
+  addresses again (`private_network: true`).
+
+Connect (OAuth) starts with a `POST` (CSRF-protected, like every write), so a link cannot make
+someone connect their account to another person's source.
+
 ## The Sources page
 
 Admin › Sources (`/admin/sources`) and Knowledge Hub › Sources (`/knowledge/sources`, linked from
@@ -363,14 +381,14 @@ All under `/api/v1/admin/sources`, for org admins and collection owners as descr
 | `GET /admin/sources/options` | Kinds, whether each one's OAuth is configured, and the collections the caller may sync into |
 | `GET /admin/sources/kinds` | Every connector: label, sign-in, credential fields, OAuth provider and configuration schema |
 | `POST /admin/sources` | Create (optional `stale_after_days`) |
-| `PUT /admin/sources/{key}` | Name, configuration, schedule, enabled, `stale_after_days` (left out: unchanged) |
+| `PUT /admin/sources/{key}` | Name, configuration, schedule, enabled, `stale_after_days` (left out: unchanged); a configuration change by anyone but the credentials' holder removes the credentials |
 | `POST /admin/sources/{key}/pause`, `/resume` | Pause or resume (audited) |
 | `PUT /admin/sources/{key}/credentials` | Replace (or with `{}` remove) the credentials; write-only |
 | `POST /admin/sources/{key}/sync` | Sync now (rate limited: `sync`; `409 source_paused` while paused) |
 | `GET /admin/sources/{key}/runs?limit=` | The run history, newest first, errors with `plain` explanations |
 | `GET /admin/sources/stale-documents?source=&days=` | Stale synced documents (titles and links withheld where the caller cannot open the collection) |
 | `DELETE /admin/sources/{key}` | Disconnect: the source, its runs and its documents |
-| `GET /admin/sources/{key}/oauth/{google,slack,atlassian,microsoft}/start` | Start Connect (`?back=knowledge` returns to Knowledge Hub › Sources) |
+| `POST /admin/sources/{key}/oauth/{google,slack,atlassian,microsoft}/start` | Start Connect: answers `{url}`, the provider's consent screen, where the browser goes next (`?back=knowledge` returns to Knowledge Hub › Sources) |
 | `GET /admin/sources/stale?days=` | Org admins only: every document (uploads too) past `valid_until` or not updated in WorkMind |
 
 ## What has and has not been tested
