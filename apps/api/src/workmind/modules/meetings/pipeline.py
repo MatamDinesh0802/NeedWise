@@ -30,7 +30,7 @@ from workmind.modules.meetings.speakers import assign_speakers, relabel
 from workmind.modules.usage.calls import attribute
 from workmind.modules.work.links import meeting_link
 from workmind.modules.work.notifications import notify
-from workmind.providers.diarization import Diarizer, DisabledDiarizer, Turn
+from workmind.providers.diarization import DiarizationError, Diarizer, DisabledDiarizer, Turn
 from workmind.providers.llm import LLMError, LLMProvider
 from workmind.providers.transcription import Transcriber, Transcript, TranscriptionError
 
@@ -264,7 +264,9 @@ async def _diarize(
         turns = await diarizer.diarize(data, filename)
     except Exception as exc:  # off, not installed, no models, a file it cannot read
         timings["diarization_skipped"] = str(exc)[:300]
-        log.info("meeting_not_diarized", reason=str(exc)[:300])
+        # Expected reasons say so in DiarizationError; anything else is worth a closer look.
+        report = log.info if isinstance(exc, DiarizationError) else log.warning
+        report("meeting_not_diarized", reason=str(exc)[:300])
         return []
     timings["diarize_s"] = round(time.perf_counter() - started, 1)
     timings["diarizer"] = diarizer.model_id

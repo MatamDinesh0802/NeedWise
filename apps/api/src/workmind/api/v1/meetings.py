@@ -403,7 +403,9 @@ async def map_speakers(
     resources = resources_of(request)
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         meeting, can_edit = await _meeting(session, ctx, meeting_id)
-        if not _can_map(ctx, meeting, can_edit):
+        if _can_map(ctx, meeting, can_edit):  # then lock: one mapping (or deletion) at a time
+            await session.refresh(meeting, with_for_update=True)
+        if not _can_map(ctx, meeting, can_edit):  # asked again of the locked row
             raise ApiError(
                 403,
                 "forbidden",
@@ -412,7 +414,6 @@ async def map_speakers(
             )
         if meeting.status != "ready":
             raise ApiError(409, "not_ready", "Name the speakers once the meeting is processed")
-        await session.refresh(meeting, with_for_update=True)  # one mapping (or deletion) at a time
         speakers = dict(meeting.speakers)
         previous = {label: str(v.get("name") or "") for label, v in speakers.items()}
         changed: dict[str, dict[str, Any]] = {}
