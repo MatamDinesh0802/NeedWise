@@ -141,6 +141,7 @@ nav:
       - Usage and budgets: usage.md
       - Knowledge governance: governance.md
       - Connectors: connectors.md
+      - Document access and permission sync: permission-sync.md
       - Automation and workflows: automation.md
       - Enterprise edition: enterprise.md
   - Deploy and operate:
@@ -171,6 +172,7 @@ nav:
           - 0009 Orchestration without a graph framework: adr/0009-orchestration-without-a-graph-framework.md
           - 0010 Analytics semantic layer: adr/0010-analytics-semantic-layer-duckdb-sqlglot.md
           - 0011 Open-core boundary and license keys: adr/0011-open-core-boundary-and-license-keys.md
+          - 0012 Document access lists: adr/0012-document-access-lists.md
   - Evaluation:
       - evals/README.md
       - v1.0 benchmarks: benchmarks/v1.0.md

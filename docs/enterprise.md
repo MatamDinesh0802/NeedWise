@@ -24,19 +24,21 @@ only with a valid license key. The Enterprise features the core knows about:
 | `department_budgets` | Spending limits on model usage per department | Built ([docs/usage.md](usage.md#enterprise)) |
 | `chargeback_reports` | Usage and model costs per department, for internal billing | Built: `GET /api/v1/usage/export.csv` ([docs/usage.md](usage.md#enterprise)) |
 | `advanced_audit_export` | Audit log exports for security tools and long-term retention | Built: [Audit export for a SIEM](#audit-export-for-a-siem) |
+| `permission_sync` | Each synced document gets its source's access list (Drive, Slack, GitHub), within its collection | Built: [Permission sync](#permission-sync) |
 
 ### What exists today
 
 Built: license verification, the edition object, `GET /api/v1/edition`, the `require_feature`
 dependency (402), the extension registry, the `workmind-ee` package, development licenses
-(`make ee-dev-license`), the web components `EnterpriseGate` and `EnterpriseBadge`, and four
+(`make ee-dev-license`), the web components `EnterpriseGate` and `EnterpriseBadge`, and five
 features, all registered in `workmind_ee.setup`: department budgets and the chargeback report
 (`ee/python/src/workmind_ee/budgets.py` and `chargeback.py`, on the usage hooks), retention
 policies and the SIEM audit export (`retention.py` and `audit_export.py`, as routers and a
+scheduled task), and permission sync (`permission_sync.py`, on the connectors hook and a
 scheduled task).
 
-Not built: the rest of the paid column in the ROADMAP (permission sync from source systems,
-SCIM, legal hold, DLP rules and the others have no feature name or code yet); official licenses
+Not built: the rest of the paid column in the ROADMAP (SCIM, legal hold, DLP rules and the
+others have no feature name or code yet); official licenses
 (no production signing key is published, so `PRODUCTION_PUBLIC_KEYS` is empty and only development
 licenses exist); license revocation, online activation, seat counts; a screen to upload a
 license. A valid license shows "enterprise" and its features in `/api/v1/edition` and turns on
@@ -108,6 +110,24 @@ web app the button is in **Admin > Audit log > Export**, inside an `EnterpriseGa
 The Community edition keeps everything else: the chain itself, **Verify integrity**, the
 explorer's filters and paging, and a CSV export of a filtered view (the newest 10,000 events);
 see [governance.md](governance.md#the-audit-explorer).
+
+## Permission sync
+
+Feature `permission_sync`, code in `ee/python/src/workmind_ee/permission_sync.py`; the full
+description is [permission-sync.md](permission-sync.md). During every sync of a Google Drive,
+Slack or GitHub source it reads who may see each item (Drive file permissions, private Slack
+channel members, private repository collaborators and teams), and the core writes that as the
+document's own access list, which only narrows the collection's access. A scheduled task,
+`workmind_ee.permission_sync.drive_changes`, reads every Drive source's changes feed every 60
+seconds and applies changed files' permissions at once.
+
+What stays in Community: document access lists themselves, their enforcement in both retrieval
+locks and every other path, identity mapping and the list of unmapped principals
+(`/api/v1/admin/identity-mappings`), and limiting an uploaded document
+(`PUT /api/v1/documents/{id}/acl`). Without the license, synced documents keep their collection's
+access, and lists written while it was licensed stay as they were (they no longer update). The
+hook is `connectors.permission_sync` (`modules/connectors/extensions.py`); a route serves
+nothing here, so there is no 402.
 
 ## How licensing works
 
@@ -308,11 +328,12 @@ reports = resources.extensions.call(CHARGEBACK_REPORT, session, query)  # [] in 
 `call` runs the licensed implementations in registration order and returns their results
 (an empty list in Community). Exceptions propagate to the caller, so a hook that guards
 something cannot fail open. Hooks compare by identity: use the core's constant. A hook is
-declared next to the code that calls it. The core declares two, both in
-`modules/usage/extensions.py`: `usage.department_budgets` (returns the object that decides which
+declared next to the code that calls it. The core declares three: in
+`modules/usage/extensions.py`, `usage.department_budgets` (returns the object that decides which
 departments a budget may name, binds, shows and warns) and `usage.chargeback_report` (returns
-the CSV). The route that serves a feature stays in the core behind `require_feature`, so it
-answers 402 in Community instead of 404.
+the CSV); in `modules/connectors/extensions.py`, `connectors.permission_sync` (returns the
+object that reads a source's ACLs during a sync). The route that serves a feature stays in the
+core behind `require_feature`, so it answers 402 in Community instead of 404.
 
 **The edition** is on `resources.edition` (and `app.state.extensions.edition`); ask
 `edition.has("feature")`, never `edition.enterprise`, so each feature follows its own license.
@@ -344,6 +365,8 @@ isolation, hooks, mounting), `tests/test_enterprise_tasks.py`, `tests/test_dev_l
 (`/edition` is Community without a license; a gated route answers 402),
 `tests/integration/test_retention.py` (every route 402 without a license; with one, the 30-day
 minimum, exact preview counts, a run that deletes only its own tenant's expired rows and files,
-the daily task) and `tests/integration/test_audit_explorer.py` (the SIEM export is Enterprise
-only, and its chain verifies). Lint `ee/python` with
+the daily task), `tests/integration/test_audit_explorer.py` (the SIEM export is Enterprise
+only, and its chain verifies), `tests/integration/test_permission_sync.py` (a Drive source
+synced with and without the license) and `ee/python/tests/test_permission_sync.py` (what is read
+from Drive, Slack and GitHub). Lint `ee/python` with
 `make lint`, which runs ruff on it too; pyright checks it in strict mode.

@@ -231,8 +231,14 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > scans, failures recorded, one sync per source), Celery beat scheduling, AES-GCM credentials,
 > web crawler (tested against a live site), GitHub (tested against a public repository), Slack and
 > Google Drive with OAuth (tested against their documented APIs), collection-level permission
-> mapping, stale-document listing. Pending: a test Drive and Slack workspace (DoD), the Sources UI,
-> Confluence and SharePoint, and owner reminders (Phase 11 notifications).
+> mapping, stale-document listing. Per-document permission sync (Enterprise `permission_sync`,
+> [docs/permission-sync.md](permission-sync.md), ADR 0012): document access lists that only
+> narrow their collection, enforced in both locks and every other path (Community), fail-closed
+> identity mapping with unmapped principals listed for admins (Community), ACLs read from Drive,
+> Slack and GitHub during every sync and Drive revocations from the changes feed every minute
+> (Enterprise), tested against fakes of the three APIs. Pending: a test Drive and Slack
+> workspace (DoD; permission sync has not met a live API either), the Sources UI, a screen for
+> identity mappings, Confluence and SharePoint, and owner reminders (Phase 11 notifications).
 
 **Goal:** knowledge flows in automatically from the tools companies already use.
 
