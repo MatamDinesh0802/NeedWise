@@ -10,7 +10,10 @@ Design: [ARCHITECTURE section 16](ARCHITECTURE.md#16-business-intelligence-agent
 Built (in `apps/api/src/workmind/modules/analytics/` and `api/v1/analytics.py`): everything on
 this page, plus the Insights page (`/insights`) and Admin › Analytics in the web app
 ([apps/web/README.md](../apps/web/README.md)), and a 51-question text-to-SQL evaluation
-([below](#evaluation)). **Not built:** see [Not built](#not-built). The tests use a scripted
+([below](#evaluation)). Live PostgreSQL and MySQL databases can be datasets too, each with its
+own model, access and row policies: [analytics-sql-sources.md](analytics-sql-sources.md).
+Answers on the Insights page stream their steps as they are made
+([Live progress](#live-progress)). **Not built:** see [Not built](#not-built). The tests use a scripted
 model (`tests/fakes.py`); the evaluation was run with Claude Sonnet 5.5: 33 of 36 questions
 answered with the gold result, 0 permission leaks in 51 answers, in three runs, the last after
 the fixes from a security and correctness review ([Measured](#measured)).
@@ -64,6 +67,12 @@ POST /analytics/ask "Monthly revenue trend this year and the top 3 drivers"
   │
   └─ store in analytics_runs (the asker's own) → AnalyticsAnswer
 ```
+
+With database sources ([analytics-sql-sources.md](analytics-sql-sources.md)) there are several
+datasets: the uploaded files (`uploads`) and each source, by its key. Access is checked per
+dataset; the agent gets every dataset the person may query (none: `no_access`, no model call),
+each tool call names one, and `run_sql` takes that dataset's SQL dialect. With the uploaded
+files alone, the prompt is the one from before.
 
 The tool-loop prompt holds the semantic model the person may see (tables with columns and row
 counts, except for tables a row policy restricts for that person: the total would tell them how
@@ -142,16 +151,45 @@ All under `/api/v1`, JSON, errors as problem documents with a `code`.
 |---|---|---|
 | `GET /analytics/model` | scope `assistant:ask` | `{"available": true, name, description, data_through, metrics [{name, description, format}], dimensions [{name, description}] (time grains included), tables [{name, description, columns}], row_policy, examples}`, or `{"available": false, "reason": "no_access" \| "not_configured", "message"}` |
 | `POST /analytics/ask` `{"question"}` (1 to 1,000 characters) | scope `assistant:ask` | 200 with an `AnalyticsAnswer`, also when its status is `no_access` or `failed`; 422 `invalid_question` for a blank question |
+| `POST /analytics/runs` `{"question"}` | scope `assistant:ask` | the same answer, made in the background: 202 `{run_id}`; follow it at `.../events`, then read it with `GET /analytics/runs/{id}` ([Live progress](#live-progress)) |
+| `GET /analytics/runs/{id}/events` | scope `assistant:ask` | Server-Sent Events of the caller's own run (anyone else's is a 404), replayable with `Last-Event-ID` for an hour |
 | `GET /analytics/runs` | scope `assistant:ask` | the caller's own finished answers, newest first, at most 100: `[{id, question, status, verified, total, created_at}]` |
 | `GET /analytics/runs/{id}` | scope `assistant:ask` | the stored `AnalyticsAnswer`; 404 `not_found` for anyone else's |
-| `POST /analytics/query` `{"sql"}` | scope `assistant:ask` | re-run SQL through the guard with the caller's row policies: `{columns, rows, row_count, truncated, elapsed_ms}`; 403 `no_access`; 422 `sql_rejected` (refused by the guard, or DuckDB could not run it) with the reason; 408 `query_timeout`; 429 `analytics_busy` (the caller's earlier query still running after the timeout, or every worker busy) |
+| `POST /analytics/query` `{"sql", "dataset"?}` | scope `assistant:ask` | re-run SQL through the guard with the caller's row policies: `{columns, rows, row_count, truncated, elapsed_ms}`; 403 `no_access`; 422 `sql_rejected` (refused by the guard, or DuckDB could not run it) with the reason; 408 `query_timeout`; 429 `analytics_busy` (the caller's earlier query still running after the timeout, or every worker busy) |
 | `GET /admin/analytics` | org owner or admin | `{"yaml", "dataset": {"version", "tables": [{name, rows, columns [{name, type}]}]}}` |
+| `/admin/analytics/sources...` | org owner or admin | PostgreSQL and MySQL sources: [analytics-sql-sources.md](analytics-sql-sources.md#the-api) |
 | `PUT /admin/analytics/model` `{"yaml"}` | org owner or admin | the GET body; 422 `invalid_model` with the problems |
 | `POST /admin/analytics/tables?name=` (CSV or XLSX body) | org owner or admin | adds or replaces a table in a new dataset version; 413 `too_large` above `MAX_UPLOAD_BYTES`; 422 `invalid_table` |
 | `DELETE /admin/analytics/tables/{name}` | org owner or admin | removes a table in a new version; 404 `not_found` |
 
 Example questions come from the model's `examples` key (Acme lists five); without one, the API
-suggests a few from the metric names.
+suggests a few from the metric names. `GET /analytics/model` describes the first dataset the
+caller may query at the top level, as before, and every one in `datasets` (`key`, `kind`,
+`dialect`, and the same fields).
+
+## Live progress
+
+`POST /analytics/runs` starts the same agent in the background and answers 202 with the run's
+id; `GET /analytics/runs/{id}/events` streams what it does, through the Valkey streams chat
+runs use (ARCHITECTURE 18: replayable with `Last-Event-ID`, kept an hour after the last event,
+readable only by the person who asked). The Insights page uses it and shows each step as it
+happens; `POST /analytics/ask` still answers in one request (the evaluation, scripts, MCP).
+
+| Event | Data |
+|---|---|
+| `run.started` | `{run_id}` |
+| `analytics.step` | `{"step": "planning", datasets}`: the tool loop starts, with the datasets it may use |
+| | `{"step": "query_compiled", dataset, dialect, sql, tool, purpose}`: a query passed the guard (the SQL as checked, before row policies) |
+| | `{"step": "executing", dataset, dialect, ...}` |
+| | `{"step": "query_done", query: "Q1", dataset, rows, truncated, elapsed_ms, ...}` or `{"step": "query_failed", error, ...}` (refused, failed, or bad tool input: the reason the model gets) |
+| | `{"step": "composing", queries}`, then `{"step": "verifying", verified, total}`; `{"step": "repairing", unverified}` and `verifying` again when numbers were not backed |
+| | `{"step": "charting", type}` (null: no chart) |
+| `run.completed` | `{run_id, status, error}`: the answer is stored (answered, no_access or failed) |
+| `run.failed` | `{code, message}`: a used-up budget (`budget_exceeded`, also stored as a failed answer) or an internal error |
+
+Progress events never fail an answer (a failed write is logged and skipped). The steps hold
+the SQL and row counts, not the rows. The run holds an in-flight slot until it ends, like a
+chat run (`MAX_INFLIGHT_PER_USER`), and the same rate limit as `/ask`.
 
 ## Tools: research mode and MCP
 
@@ -390,8 +428,8 @@ measurable (see [Measured](#measured)).
   injected instruction can at worst mislead the narrative.
 - A stored answer keeps the rows the person could see when they asked, even if their access
   changes later (like a chat history). `POST /analytics/query` always applies today's access.
-- `POST /analytics/ask` answers in one request, with no streaming of progress; with a hosted
-  model expect several model calls (the loop, compose, maybe a repair).
+- With a hosted model expect several model calls per answer (the loop, compose, maybe a
+  repair); the Insights page shows each step as it happens ([Live progress](#live-progress)).
 
 ## Data
 
@@ -490,6 +528,11 @@ file changed (SHA-256) and stores the model only when its text changed. `--skip-
 skips both.
 
 ## Evaluation
+
+Items about a PostgreSQL or MySQL source are in
+[`evals/datasets/analytics_sql.jsonl`](../evals/datasets/analytics_sql.jsonl) (`--analytics-file
+analytics_sql.jsonl`; [analytics-sql-sources.md](analytics-sql-sources.md#evaluation)); they
+have not been run with a real model.
 
 `wm eval --skip-retrieval --suites analytics` asks the 51 questions in
 [`evals/datasets/analytics.jsonl`](../evals/datasets/analytics.jsonl), each **as its user**,
@@ -661,12 +704,10 @@ start (0.4 to 0.9 s in the container).
 
 ## Not built
 
-- **Live database sources (Postgres, MySQL).** Only uploaded CSV and XLSX files, loaded into
-  DuckDB. sqlglot could check other dialects, but running on a live database needs its own
-  sandbox (a read-only role on a replica, a statement timeout, a connection budget); see
-  [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md).
-- **Streaming of the agent's progress.** `POST /analytics/ask` is one request; with a hosted
-  model expect several model calls (loop, compose, maybe a repair).
+- **Databases other than PostgreSQL and MySQL**, and what is listed under
+  [analytics-sql-sources.md › Not built](analytics-sql-sources.md#not-built).
+- **Token-by-token streaming of the narrative.** The steps stream; the narrative arrives whole,
+  once verified.
 - **Local-only routing for analytics data.** Query results go to the configured model, as
   described under [Safety](#safety).
 - **Column allow-lists, per-person quotas (how many questions), and caching of results.**

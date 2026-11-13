@@ -37,6 +37,7 @@ every push, with deterministic hash embeddings and the full corpus.
 | `routing.jsonl` | 56 | question → expected agents (single area, several areas, or none). 15 expect the Legal agent, which an administrator creates (`docs/agents.md`): until it exists they are reported as skipped, not failed. Near misses list in `not_agents` the agent they sound like but must not go to |
 | `meetings.jsonl` | 2 | a meeting file → its decisions, ideas nobody agreed to, and action items with owners and due dates. `mt-02` has an instruction injected by a participant (transcript only, no recording) |
 | `analytics.jsonl` | 51 | asking user, question, and either gold SQL with how to compare it (36), or the expected refusal: no access (5) or an attack (10) |
+| `analytics_sql.jsonl` | 19 | the same shape, about a PostgreSQL or MySQL source (`dataset: shop`): gold SQL that runs on both (10), no access (3), attacks (6). Not run with a real model |
 
 Restricted documents carry **canary tokens** (`CANARY-SALARY-4F9`, ...). A canary or a forbidden
 document in an unauthorized user's context *or* answer is a leak, with no judgement call.
@@ -285,6 +286,12 @@ row policies all apply ([docs/analytics.md](../docs/analytics.md#evaluation)):
 - The eval reads the same dataset files as the API: run it from the checkout that runs the
   stack (`OBJECT_STORAGE_PATH` defaults to its `.data/objects`). `--today` (default 2026-11-12)
   fixes "this year". Answers are not stored in the people's history.
+- **On a SQL source:** `--analytics-file analytics_sql.jsonl` asks 19 questions about the
+  fictional shop database (`seed/acme/analytics/sql/`), connected as source `shop`
+  ([docs/analytics-sql-sources.md](../docs/analytics-sql-sources.md#evaluation) says how). Each
+  item names its dataset; gold, hidden and probe SQL run there, with that dataset's own
+  reference person and row counts. Only checked with a scripted model that answers with the
+  gold SQL (19/19, 0 leaks, on PostgreSQL 18 and MySQL 8.4): no real-model results yet.
 
 **Results** with Claude Sonnet 5.5 for the tool loop and compose, 3 questions at a time, after
 the fixes from a security and correctness review (row-policy fences, query workers, LEFT

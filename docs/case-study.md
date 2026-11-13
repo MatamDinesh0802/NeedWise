@@ -86,7 +86,7 @@ on `main` without a release ([CHANGELOG](../CHANGELOG.md)).
 | 7 Connectors | Drive, Slack, GitHub and a web crawler with a sync engine | Not verified against a live Drive or Slack workspace |
 | 8 Workflows and approvals | Approvals, tasks, queues, email with approval, workflows with cron and document triggers | The weekly ops report flow ran live. Not built: escalation, email or Slack notifications, request routing |
 | 9 Meetings | Recordings and transcripts to decisions and action items with timestamps, tasks, indexed transcripts | A 23-minute recording transcribed in 43 to 47 s on the laptop's CPU |
-| 10 BI agent | CSV/XLSX in DuckDB, semantic layer, SQL guard with row policies, charts, checked numbers, Insights | 33/36 execution accuracy, 0 leaks. Not built: Postgres and MySQL sources |
+| 10 BI agent | CSV/XLSX in DuckDB, semantic layer, SQL guard with row policies, charts, checked numbers, Insights; PostgreSQL and MySQL sources (read-only sessions, CTE fences), live progress | 33/36 execution accuracy on CSV/XLSX, 0 leaks. SQL sources tested with scripted models only |
 | 11 Admin, governance, usage | Agents as configuration, models and keys per organization, usage and budgets, document owners and official status, the audit explorer, four Enterprise features | A Legal agent made in the browser routes 15/15 legal questions |
 | 12 Hardening | Security review and a 59-attack red team, supply-chain scans, multi-tenant hardening, backup and restore, upgrades from v0.1.0, a Helm chart, the docs site, browser tests, load tests | 0 leaks; restore drill about a minute; upgrade 17/17 checks; load tuned to 400 users; the Helm chart installed and upgraded on kind (four chart problems fixed). Not done: a cloud cluster, the v1.0 release |
 

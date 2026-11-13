@@ -132,6 +132,7 @@ nav:
       - Assistant and citations: user-guide/assistant.md
       - Knowledge and uploads: user-guide/knowledge.md
       - Insights (BI): analytics.md
+      - Insights on PostgreSQL and MySQL: analytics-sql-sources.md
       - Meetings: meetings.md
       - Approvals and tasks: user-guide/approvals-and-tasks.md
       - MCP in Claude, Cursor and IDEs: mcp.md
