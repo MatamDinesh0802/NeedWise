@@ -203,6 +203,8 @@ and re-create it, or license the feature again.
 - Push notifications from Drive (`changes.watch` needs a public HTTPS endpoint); the changes
   feed is polled every minute instead.
 - Immediate revocation for Slack and GitHub (their events are not read: changes apply at the
-  next sync), SharePoint and Confluence (no connectors yet).
+  next sync).
+- Permission sync for Confluence and SharePoint/OneDrive sources: their connectors are built,
+  but they sync with the collection-level mapping only ([connectors](connectors.md)).
 - Mapping by Slack or GitHub profile without an admin (only e-mail is matched on its own).
 - Per-section or per-message permissions inside a document: a Slack month is one document.
