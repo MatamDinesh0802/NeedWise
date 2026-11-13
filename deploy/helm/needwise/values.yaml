@@ -799,7 +799,7 @@ keycloak:
   image:
     registry: quay.io
     repository: keycloak/keycloak
-    tag: 26.8.1
+    tag: 26.8.2-2
     digest: ""
     pullPolicy: IfNotPresent
   extraEnv: []

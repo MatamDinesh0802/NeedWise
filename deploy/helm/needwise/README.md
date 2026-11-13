@@ -67,7 +67,7 @@ Other setups:
 | valkey | StatefulSet, Services | `valkey/valkey:9.1.3-alpine`, password required |
 | qdrant | StatefulSet, Services | `qdrant/qdrant:v1.20.0` |
 | openfga | Deployment, Service, migrate Job | `openfga/openfga:v1.22.1`, pre-shared key |
-| keycloak | Deployment, Service, ConfigMap | `quay.io/keycloak/keycloak:26.8.1` in production mode, realm imported |
+| keycloak | Deployment, Service, ConfigMap | `quay.io/keycloak/keycloak:26.8.2-2` in production mode, realm imported |
 | embeddings | Deployment, Service, optional PVC | `ghcr.io/ggml-org/llama.cpp:server-b12098` with EmbeddingGemma-300M |
 | Ingress or HTTPRoute | | The routes of `deploy/caddy/Caddyfile` |
 | NetworkPolicies | optional | Ingress rules per component |

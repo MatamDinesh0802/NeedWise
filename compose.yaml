@@ -131,7 +131,7 @@ services:
     restart: unless-stopped
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332
+    image: quay.io/keycloak/keycloak:26.8.2-2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0
     # Imports deploy/keycloak/realm-needwise.json once, when the realm doesn't exist yet.
     command: ["start-dev", "--import-realm"]
     volumes:
@@ -273,7 +273,7 @@ services:
 
   # Catches all outgoing mail in development: http://localhost:8025 (never delivers anything).
   mailpit:
-    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    image: axllent/mailpit:v1.32@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498
     ports: ["127.0.0.1:${MAILPIT_PORT:-8025}:8025"]
     restart: unless-stopped
 
@@ -338,7 +338,7 @@ services:
     restart: unless-stopped
 
   caddy:
-    image: caddy:2.11.7-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
+    image: caddy:2.11.8-alpine@sha256:f6228111e5fafa1a5238258d0858e103f10599b8d1659a146e7726681a002bb9
     environment:
       API_UPSTREAM: ${API_UPSTREAM:-api:8000}
       WEB_UPSTREAM: ${WEB_UPSTREAM:-web:3000}
