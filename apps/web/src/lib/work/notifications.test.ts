@@ -43,6 +43,12 @@ describe("badge", () => {
     expect(notificationTone("approval.rejected")).toBe("problem");
     expect(notificationTone("workflow.failed")).toBe("problem");
     expect(notificationTone("task.assigned")).toBe("task");
+    expect(notificationTone("approval.escalated")).toBe("approval");
+    expect(notificationTone("approval.reminder")).toBe("approval");
+    expect(notificationTone("approval.forwarded")).toBe("done");
+    expect(notificationTone("task.escalated")).toBe("problem");
+    expect(notificationTone("request.triage")).toBe("task");
+    expect(notificationTone("mention")).toBe("task");
     expect(notificationTone("something.else")).toBe("info");
   });
 

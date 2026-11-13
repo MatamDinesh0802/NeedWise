@@ -12,8 +12,11 @@ import type { Approval, DecisionBody } from "@/lib/work/api";
 
 // --- Status ---------------------------------------------------------------------------------
 
-/** What the card shows. "running": approved, the action is being carried out right now. */
-export type DisplayStatus = "pending" | "running" | "executed" | "failed" | "rejected" | "expired" | "superseded";
+/**
+ * What the card shows. "running": approved, the action is being carried out right now.
+ * "forwarded": approved at this step of a chain; the next step's approvers decide now.
+ */
+export type DisplayStatus = "pending" | "running" | "executed" | "failed" | "rejected" | "expired" | "superseded" | "forwarded";
 
 export function displayStatus(approval: Pick<Approval, "status" | "expires_at">, now: number = Date.now()): DisplayStatus {
   switch (approval.status) {
@@ -36,6 +39,7 @@ export const STATUS_LABELS: Record<DisplayStatus, string> = {
   rejected: "Rejected",
   expired: "Expired",
   superseded: "Decided by another approver",
+  forwarded: "Approved, with the next approver",
 };
 
 /** The badge: a copy closed because the request went to someone else says so. */
@@ -45,7 +49,7 @@ export function statusLabel(approval: Pick<Approval, "status" | "expires_at" | "
   return STATUS_LABELS[status];
 }
 
-const TERMINAL: ReadonlySet<DisplayStatus> = new Set(["executed", "failed", "rejected", "expired", "superseded"]);
+const TERMINAL: ReadonlySet<DisplayStatus> = new Set(["executed", "failed", "rejected", "expired", "superseded", "forwarded"]);
 
 // --- Approval kinds the core carries out (not tool calls) ----------------------------------
 
@@ -109,9 +113,30 @@ export function outcomeText(approval: Approval, now?: number): string | null {
       return approval.tool === OFFICIAL_KIND
         ? "Another approver decided this request first. Nothing more to do."
         : "Another approver decided this first.";
+    case "forwarded": {
+      const next = approval.result?.stage;
+      return next ? `Approved at this step. Step ${next} decides next; nothing runs until the last step approves.` : "Approved at this step; the next approver decides now.";
+    }
     default:
       return null;
   }
+}
+
+/**
+ * "Step 2 of 3: a manager of the requester's department, then …" for a request with approver
+ * rules; null for a single approver.
+ */
+export function stepText(approval: Pick<Approval, "stage" | "stages" | "rule">): string | null {
+  const stages = approval.stages ?? 1;
+  if (stages < 2 && !approval.rule) return null;
+  const step = stages > 1 ? `Step ${approval.stage ?? 1} of ${stages}` : "Approver rule";
+  return approval.rule ? `${step}: ${approval.rule}` : step;
+}
+
+/** Where the request was decided, for a superseded copy (or the next step, for a forwarded one). */
+export function relatedApprovalHref(approval: Pick<Approval, "status" | "result">): `/approvals/${string}` | null {
+  const target = approval.status === "superseded" ? approval.result?.decided_in : approval.status === "forwarded" ? approval.result?.next?.[0] : undefined;
+  return target ? `/approvals/${encodeURIComponent(target)}` : null;
 }
 
 // --- Reading the arguments ------------------------------------------------------------------

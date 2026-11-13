@@ -47,6 +47,8 @@ import {
   OFFICIAL_KIND,
   originLabel,
   outcomeText,
+  relatedApprovalHref,
+  stepText,
   reduceCard,
   serverFieldErrors,
   statusLabel,
@@ -72,6 +74,7 @@ const STATUS_STYLE: Record<DisplayStatus, string> = {
   rejected: "bg-muted text-muted-foreground",
   expired: "bg-muted text-muted-foreground",
   superseded: "bg-muted text-muted-foreground",
+  forwarded: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
 };
 
 export function ApprovalStatusBadge({ approval }: { approval: Approval }) {
@@ -124,6 +127,8 @@ export function ApprovalCard({
   const fieldErrors: DraftErrors = { ...serverFieldErrors(state.error), ...state.draftErrors };
   const meaning = decisionMeaning(approval.tool);
   const subject = subjectLink(approval);
+  const step = stepText(approval);
+  const related = relatedApprovalHref(approval);
 
   async function submit(kind: SubmitKind) {
     const request = decisionRequest(state, kind);
@@ -167,6 +172,17 @@ export function ApprovalCard({
         </div>
         <ApprovalStatusBadge approval={approval} />
       </header>
+
+      {step || approval.escalated_from ? (
+        <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {step ? <span>{step}</span> : null}
+          {approval.escalated_from ? (
+            <Badge variant="outline" className="font-normal">
+              Escalated to you: the first approver had not decided in time
+            </Badge>
+          ) : null}
+        </p>
+      ) : null}
 
       {status === "pending" ? (
         <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200" role="note">
@@ -231,6 +247,11 @@ export function ApprovalCard({
       ) : null}
 
       {outcome ? <Outcome status={status} text={outcome} approval={approval} /> : null}
+      {related ? (
+        <Link href={related} className="w-fit text-sm text-primary hover:underline">
+          {approval.status === "forwarded" ? "See the next step" : "See the decision"}
+        </Link>
+      ) : null}
 
       {state.error?.kind === "not_pending" ? (
         <Alert>
@@ -375,6 +396,14 @@ function Outcome({ status, text, approval }: { status: DisplayStatus; text: stri
           <span className="font-medium">{approval.edited_arguments ? "Approved with changes. " : "Approved. "}</span>
           {text}
         </p>
+      </div>
+    );
+  }
+  if (status === "forwarded") {
+    return (
+      <div className="flex items-start gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-900 dark:text-emerald-200" role="status">
+        <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <p>{text}</p>
       </div>
     );
   }

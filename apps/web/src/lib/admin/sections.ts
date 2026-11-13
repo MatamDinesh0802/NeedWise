@@ -15,6 +15,7 @@ export type AdminSectionKey =
   | "sources"
   | "agents"
   | "workflows"
+  | "automation"
   | "analytics"
   | "models"
   | "budgets"
@@ -85,7 +86,14 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     key: "workflows",
     title: "Workflows",
     href: "/admin/workflows",
-    description: "Scheduled and manual automations. Steps that change something wait for approval.",
+    description: "Scheduled, manual and event-driven automations, written in YAML. Steps that change something wait for approval.",
+    roles: MANAGERS,
+  },
+  {
+    key: "automation",
+    title: "Automation",
+    href: "/admin/automation",
+    description: "Reminders and escalation for approvals and tasks, who approves the assistant's actions, request routing, and Slack.",
     roles: MANAGERS,
   },
   {
