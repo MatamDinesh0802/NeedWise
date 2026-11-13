@@ -51,8 +51,12 @@ MAX_DEPTH = 500  # folder nesting, against a cycle in a damaged tree
 Folders = dict[str, list[str | None]]  # folder id -> [parent id, name]
 
 
-class _ResyncRequiredError(Exception):
-    """Graph answered 410 Gone: the delta token is no longer valid."""
+class _ResyncRequiredError(ConnectorError):
+    """Graph answered 410 Gone: for a delta link, the token is no longer valid (the scan
+    starts over); anywhere else, an ordinary failure."""
+
+    def __init__(self) -> None:
+        super().__init__("Microsoft Graph answered HTTP 410 (gone)")
 
 
 def _graph_link(url: object) -> str | None:
@@ -358,10 +362,7 @@ class SharePointConnector:
             f"{GRAPH}/drives/{quote(drive_id, safe='')}"
             f"/items/{quote(item.external_id, safe='')}/content"
         )
-        try:
-            response = await self._call(url)
-        except _ResyncRequiredError as exc:
-            raise ConnectorError(f"{item.title}: no longer available (HTTP 410)") from exc
+        response = await self._call(url)
         if response.status_code in REDIRECTS:
             # A pre-authenticated download URL (valid for a few minutes): no token goes there.
             target = httpx.URL(url).join(response.headers.get("location", ""))
