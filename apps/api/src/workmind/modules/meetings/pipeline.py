@@ -1,10 +1,14 @@
-"""Processing one meeting: transcribe (or read the transcript) -> extract -> index the transcript
-as a document of the meeting's collection, so it is searchable with that collection's access."""
+"""Processing one meeting: transcribe (or read the transcript), and for a recording tell its
+speakers apart -> extract -> outline the topics -> index the transcript as a document of the
+meeting's collection, so it is searchable with that collection's access."""
 
+import asyncio
 import re
 import time
 import uuid
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import Any
 
 import structlog
 from sqlalchemy import select
@@ -17,15 +21,18 @@ from workmind.modules.identity.models import Tenant, User
 from workmind.modules.knowledge import service
 from workmind.modules.knowledge.dispatch import Dispatcher
 from workmind.modules.knowledge.models import Collection
+from workmind.modules.knowledge.service import UploadResult
 from workmind.modules.knowledge.storage import ObjectStorage, owned_key
-from workmind.modules.meetings import transcripts
+from workmind.modules.meetings import topics, transcripts
 from workmind.modules.meetings.extract import clock, extract, speaker_name
 from workmind.modules.meetings.models import Meeting, held_on
+from workmind.modules.meetings.speakers import assign_speakers, relabel
 from workmind.modules.usage.calls import attribute
 from workmind.modules.work.links import meeting_link
 from workmind.modules.work.notifications import notify
+from workmind.providers.diarization import Diarizer, DisabledDiarizer, Turn
 from workmind.providers.llm import LLMError, LLMProvider
-from workmind.providers.transcription import Transcriber, TranscriptionError
+from workmind.providers.transcription import Transcriber, Transcript, TranscriptionError
 
 log = structlog.get_logger("workmind.meetings")
 SECTION_SECONDS = 300  # transcript sections of 5 minutes: citations say *when* it was said
@@ -38,6 +45,7 @@ class MeetingDeps:
     llm: LLMProvider
     transcriber: Transcriber
     ingestion: Dispatcher
+    diarizer: Diarizer = field(default_factory=DisabledDiarizer)
 
 
 class MeetingDeletedError(RuntimeError):
@@ -88,6 +96,13 @@ def document_title(meeting: Meeting) -> str:
 
 def transcript_markdown(meeting: Meeting) -> str:
     lines = [f"# {document_title(meeting)}", ""]
+    if meeting.topics:
+        lines += ["Topics:", ""]
+        lines += [
+            f"- {clock(float(t['start']))} {relabel(str(t['title']), meeting.speakers)}"
+            for t in meeting.topics
+        ]
+        lines.append("")
     current = -1
     for s in meeting.segments:
         section = int(float(s["start"]) // SECTION_SECONDS)
@@ -122,17 +137,17 @@ async def _process(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUI
         tenant = await session.get(Tenant, tenant_id)
         directory = await load_directory(session)
     people = directory.people
-    timings: dict[str, float] = {}
+    timings: dict[str, Any] = {}
     try:
-        # 1. Words with times
+        # 1. Words with times, and for a recording who spoke when (at the same time)
         await _status(deps, meeting, "transcribing")
-        started = time.perf_counter()
         data = await deps.storage.get(owned_key(tenant_id, meeting.media_key))
         if transcripts.kind(meeting.filename) == "audio":
-            transcript = await deps.transcriber.transcribe(
-                data, meeting.filename, vocabulary=directory.names
+            transcript, turns = await asyncio.gather(
+                _transcribe(deps.transcriber, data, meeting.filename, directory.names, timings),
+                _diarize(deps.diarizer, data, meeting.filename, timings),
             )
-            timings["transcribe_s"] = round(time.perf_counter() - started, 1)
+            transcript.segments = assign_speakers(transcript.segments, turns)
         else:
             transcript = transcripts.parse(data, meeting.filename)
         if not transcript.segments:
@@ -177,11 +192,24 @@ async def _process(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUI
         )
         timings["extract_s"] = round(time.perf_counter() - started, 1)
 
-        # 3. Searchable transcript in the meeting's collection
+        # 3. Topics: the model's outline checked against the transcript, else one from its words
+        started = time.perf_counter()
+        outline, fallback = await topics.outline(
+            deps.llm,
+            segments,
+            organization=tenant.name if tenant else "the company",
+            speakers=meeting.speakers,
+        )
+        timings["topics_s"] = round(time.perf_counter() - started, 1)
+        if fallback:
+            timings["topics_fallback"] = fallback
+        meeting.topics = outline
+
+        # 4. Searchable transcript in the meeting's collection
         document_id = await _index(deps, meeting)
         async with tenant_transaction(deps.sessions, tenant_id) as session:
             stored = _still_there(await session.get(Meeting, meeting_id))
-            stored.summary = outcome["summary"]
+            stored.summary, stored.topics = outcome["summary"], outline
             stored.decisions, stored.action_items = outcome["decisions"], outcome["action_items"]
             stored.document_id, stored.timings = document_id, {**timings, "model": usage.model}
             stored.status, stored.error = "ready", None
@@ -213,6 +241,67 @@ async def _process(deps: MeetingDeps, tenant_id: uuid.UUID, meeting_id: uuid.UUI
         log.warning("meeting_failed", meeting_id=str(meeting_id), error=str(exc)[:300])
 
 
+async def _transcribe(
+    transcriber: Transcriber,
+    data: bytes,
+    filename: str,
+    vocabulary: Sequence[str],
+    timings: dict[str, Any],
+) -> Transcript:
+    started = time.perf_counter()
+    transcript = await transcriber.transcribe(data, filename, vocabulary=vocabulary)
+    timings["transcribe_s"] = round(time.perf_counter() - started, 1)
+    return transcript
+
+
+async def _diarize(
+    diarizer: Diarizer, data: bytes, filename: str, timings: dict[str, Any]
+) -> list[Turn]:
+    """Who spoke when. Without it the meeting still gets a transcript, unlabelled, and the
+    reason is kept (`diarization_skipped`)."""
+    started = time.perf_counter()
+    try:
+        turns = await diarizer.diarize(data, filename)
+    except Exception as exc:  # off, not installed, no models, a file it cannot read
+        timings["diarization_skipped"] = str(exc)[:300]
+        log.info("meeting_not_diarized", reason=str(exc)[:300])
+        return []
+    timings["diarize_s"] = round(time.perf_counter() - started, 1)
+    timings["diarizer"] = diarizer.model_id
+    timings["speakers_found"] = len({t.speaker for t in turns})
+    return turns
+
+
+def transcript_filename(meeting: Meeting) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", meeting.title.lower()).strip("-")[:50] or "meeting"
+    return f"meeting-{slug}-{str(meeting.id)[-8:]}.md"
+
+
+async def store_transcript(
+    session: AsyncSession, ctx: RequestContext, storage: ObjectStorage, meeting: Meeting
+) -> UploadResult:
+    """The transcript as a document of the meeting's collection: a new version of it when the
+    transcript changed (speakers were named), nothing new when it did not. The caller holds the
+    meeting locked, and dispatches the version for indexing after committing."""
+    collection = await session.get(Collection, meeting.collection_id)
+    assert collection is not None  # noqa: S101
+    result = await service.upload(
+        session,
+        ctx,
+        storage,
+        collection,
+        filename=transcript_filename(meeting),
+        declared_mime="text/markdown",
+        data=transcript_markdown(meeting).encode(),
+        source="meeting",
+        trust="discussion",
+    )
+    result.document.url = f"/meetings/{meeting.id}"
+    result.document.title = document_title(meeting)
+    meeting.document_id = result.document.id
+    return result
+
+
 async def _index(deps: MeetingDeps, meeting: Meeting) -> uuid.UUID:
     owner = RequestContext(
         request_id=f"meeting-{meeting.id}",
@@ -223,28 +312,12 @@ async def _index(deps: MeetingDeps, meeting: Meeting) -> uuid.UUID:
         auth_method="service",
         scopes=frozenset({"*"}),
     )
-    slug = re.sub(r"[^a-z0-9]+", "-", meeting.title.lower()).strip("-")[:50] or "meeting"
     async with tenant_transaction(deps.sessions, meeting.tenant_id) as session:
         # Locked, and the document recorded on it in this same transaction: a deletion either
         # happens first (we stop here) or waits and then finds the document to delete with it.
-        _still_there(await session.get(Meeting, meeting.id, with_for_update=True))
-        collection = await session.get(Collection, meeting.collection_id)
-        assert collection is not None  # noqa: S101
-        result = await service.upload(
-            session,
-            owner,
-            deps.storage,
-            collection,
-            filename=f"meeting-{slug}-{str(meeting.id)[-8:]}.md",
-            declared_mime="text/markdown",
-            data=transcript_markdown(meeting).encode(),
-            source="meeting",
-            trust="discussion",
-        )
-        result.document.url = f"/meetings/{meeting.id}"
-        result.document.title = document_title(meeting)
-        stored = _still_there(await session.get(Meeting, meeting.id))
-        stored.document_id = result.document.id
+        stored = _still_there(await session.get(Meeting, meeting.id, with_for_update=True))
+        stored.topics = meeting.topics
+        result = await store_transcript(session, owner, deps.storage, stored)
     if not result.unchanged:
         await deps.ingestion.dispatch(meeting.tenant_id, result.document.id, result.version.id)
     return result.document.id

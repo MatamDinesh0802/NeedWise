@@ -1,8 +1,12 @@
 """Builds the configured providers from settings."""
 
+import os
+from pathlib import Path
+
 import httpx
 
 from workmind.core.config import Settings
+from workmind.providers.diarization import Diarizer, DisabledDiarizer, SherpaOnnxDiarizer
 from workmind.providers.embeddings import (
     EmbeddingProvider,
     HashEmbeddings,
@@ -104,6 +108,24 @@ def create_transcriber(settings: Settings, http: httpx.AsyncClient) -> Transcrib
             )
         case _:
             return DisabledTranscriber()
+
+
+def diarization_model_dir(settings: Settings) -> Path:
+    if settings.diarization_model_dir:
+        return Path(settings.diarization_model_dir)
+    if hf_home := os.environ.get("HF_HOME"):
+        return Path(hf_home) / "diarization"
+    return Path.home() / ".cache" / "workmind" / "diarization"
+
+
+def create_diarizer(settings: Settings) -> Diarizer:
+    if settings.diarization_provider == "sherpa_onnx":
+        return SherpaOnnxDiarizer(
+            diarization_model_dir(settings),
+            threshold=settings.diarization_threshold,
+            window_shift=settings.diarization_window_shift,
+        )
+    return DisabledDiarizer()
 
 
 def create_embeddings(settings: Settings, http: httpx.AsyncClient) -> EmbeddingProvider:

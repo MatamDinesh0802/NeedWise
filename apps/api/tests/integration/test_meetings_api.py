@@ -9,21 +9,27 @@ import asyncio
 import os
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from tests.fakes import FakeLLM
-from tests.integration.conftest import VALKEY_URL, Acme, Database
+from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory
 from workmind.core.config import Settings
+from workmind.core.tenancy import tenant_transaction
 from workmind.main import create_app
+from workmind.modules.governance.models import AuditEvent
 from workmind.modules.meetings.extract import ActionItem, Decision, Extraction
+from workmind.modules.meetings.topics import Outline, TopicStart
 from workmind.modules.retrieval.qdrant import QdrantClient
-from workmind.providers.transcription import DisabledTranscriber
+from workmind.providers.diarization import DisabledDiarizer, Turn
+from workmind.providers.transcription import DisabledTranscriber, Transcript
+from workmind.providers.transcription import Segment as TranscriptSegment
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(
@@ -95,7 +101,7 @@ def drop_test_collection(collection_name: str) -> Iterator[None]:
     asyncio.run(drop())
 
 
-def _model(api: TestClient, *replies: Extraction) -> FakeLLM:
+def _model(api: TestClient, *replies: Extraction | Outline) -> FakeLLM:
     llm = FakeLLM(structured=list(replies))
     app: Any = api.app
     app.state.resources.llm = llm
@@ -148,7 +154,12 @@ async def test_a_transcript_becomes_notes_tasks_and_commitments(
     )
     assert olivia_item["owner_user_id"] == str(acme.users["olivia.grant"])
     assert meeting["can_edit"] is True
-    assert [role for role, _ in llm.requests] == ["generator"]
+    # Extraction, then the topic outline (both the extraction's role). The outline was not
+    # scripted, so it came from the transcript's words, and the meeting says so.
+    assert [role for role, _ in llm.requests] == ["generator", "generator"]
+    assert [t["source"] for t in meeting["topics"]] == ["words"]
+    assert meeting["topics"][0]["start"] == 1.0
+    assert meeting["timings"]["topics_fallback"].startswith("the model's outline failed")
 
     # The transcript is a document of the meeting's collection, linked back to the meeting.
     document = api.get(f"/api/v1/documents/{meeting['document_id']}", headers=acme.as_("bob"))
@@ -344,3 +355,230 @@ async def test_members_look_up_colleagues_and_guests_cannot(api: TestClient, acm
     everyone = api.get("/api/v1/people", headers=acme.as_("bob")).json()
     assert len(everyone) == len(acme.users)
     assert api.get("/api/v1/people", headers=acme.as_("mallory")).status_code == 403
+
+
+DIARIZED_VTT = b"""WEBVTT
+
+00:00:01.000 --> 00:00:05.000
+SPEAKER_1: Can you send Bluefin the quote for the spare packs?
+
+00:00:06.000 --> 00:00:10.000
+SPEAKER_2: Yes, I'll send the quote by Friday.
+"""
+QUOTE = Extraction(
+    summary="SPEAKER_1 asked SPEAKER_2 for the Bluefin quote.",
+    decisions=[Decision(text="SPEAKER_2 owns the Bluefin quote", segment="T2")],
+    action_items=[
+        ActionItem(text="SPEAKER_2 sends the quote", owner="SPEAKER_2", due="", segment="T2")
+    ],
+)
+QUOTE_TOPICS = Outline(
+    topics=[TopicStart(title="The quote SPEAKER_2 owes Bluefin", first_segment="T1")]
+)
+
+
+def _speakers(api: TestClient, acme: Acme, who: str, meeting_id: str, mapping: Any) -> Any:
+    return api.put(
+        f"/api/v1/meetings/{meeting_id}/speakers",
+        json={"speakers": mapping},
+        headers=acme.as_(who, write=True),
+    )
+
+
+def _chunk_text(api: TestClient, acme: Acme, document_id: str, expect: str) -> str:
+    """The indexed transcript's chunks, once they contain `expect` (indexing runs inline)."""
+    deadline, text = time.monotonic() + 30, ""
+    while time.monotonic() < deadline:
+        chunks = api.get(
+            f"/api/v1/documents/{document_id}/chunks", headers=acme.as_("olivia.grant")
+        )
+        text = " ".join(c["text"] for c in chunks.json()["items"])
+        if expect in text:
+            break
+        time.sleep(0.2)
+    return text
+
+
+async def test_naming_speakers_relabels_the_transcript_the_notes_and_search(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    _model(api, QUOTE, QUOTE_TOPICS)
+    uploaded = _upload(api, acme, "olivia.grant", "leadership-strategy", "quote.vtt", DIARIZED_VTT)
+    meeting = _wait(api, acme, "olivia.grant", uploaded.json()["id"])
+    meeting_id, hannah = meeting["id"], str(acme.users["hannah.schmidt"])
+
+    assert meeting["status"] == "ready", meeting["error"]
+    assert meeting["topics"] == [
+        {
+            "title": "The quote SPEAKER_2 owes Bluefin",
+            "segment": "T1",
+            "start": 1.0,
+            "end": 10.0,
+            "source": "model",
+        }
+    ]
+    assert meeting["can_map_speakers"] is True  # the uploader
+    # Hannah can edit the collection, but nobody said she was there: she may not name voices.
+    as_hannah = api.get(f"/api/v1/meetings/{meeting_id}", headers=acme.as_("hannah.schmidt"))
+    assert (as_hannah.json()["can_edit"], as_hannah.json()["can_map_speakers"]) == (True, False)
+    refused = _speakers(api, acme, "hannah.schmidt", meeting_id, {"SPEAKER_1": hannah})
+    assert refused.status_code == 403
+
+    named = _speakers(
+        api,
+        acme,
+        "olivia.grant",
+        meeting_id,
+        {"SPEAKER_1": hannah, "SPEAKER_2": {"name": "  Jonas   Brandt "}},
+    )
+
+    assert named.status_code == 200, named.text
+    body = named.json()
+    assert body["speakers"] == {
+        "SPEAKER_1": {"name": "Hannah Schmidt", "user_id": hannah},
+        "SPEAKER_2": {"name": "Jonas Brandt", "user_id": None, "guest": True},
+    }
+    # What the model wrote with the labels now reads with the names.
+    assert body["summary"] == "Hannah Schmidt asked Jonas Brandt for the Bluefin quote."
+    assert body["decisions"][0]["text"] == "Jonas Brandt owns the Bluefin quote"
+    assert body["topics"][0]["title"] == "The quote Jonas Brandt owes Bluefin"
+    item = body["action_items"][0]
+    assert (item["text"], item["owner"], item["owner_user_id"]) == (
+        "Jonas Brandt sends the quote",
+        "Jonas Brandt",
+        None,
+    )
+    assert [s["speaker"] for s in body["segments"]] == ["SPEAKER_1", "SPEAKER_2"]  # labels kept
+
+    # The indexed transcript is a new version with the names, and search reads them.
+    document_id = body["document_id"]
+    document = api.get(f"/api/v1/documents/{document_id}", headers=acme.as_("olivia.grant"))
+    assert len(document.json()["versions"]) == 2
+    text = _chunk_text(api, acme, document_id, "Hannah Schmidt:")
+    assert "Hannah Schmidt: Can you send Bluefin" in text
+    assert "Jonas Brandt: Yes, I'll send the quote" in text
+    assert "SPEAKER_1" not in text
+
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        (event,) = (
+            await session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.action == "meeting.speakers_mapped",
+                    AuditEvent.resource_id == meeting_id,
+                )
+            )
+        ).all()
+    assert event.actor_id == acme.users["olivia.grant"]
+    assert event.details == {
+        "speakers": {"SPEAKER_1": hannah, "SPEAKER_2": "guest"},  # never the guest's name
+        "action_items_relinked": 1,
+        "transcript_version": 2,
+    }
+
+    # Now Hannah is an attendee who can edit: she may name the others.
+    as_hannah = api.get(f"/api/v1/meetings/{meeting_id}", headers=acme.as_("hannah.schmidt"))
+    assert as_hannah.json()["can_map_speakers"] is True
+    marcus = str(acme.users["marcus.bell"])
+    renamed = _speakers(api, acme, "hannah.schmidt", meeting_id, {"SPEAKER_2": marcus}).json()
+    assert (renamed["action_items"][0]["owner"], renamed["action_items"][0]["owner_user_id"]) == (
+        "Marcus Bell",
+        marcus,
+    )
+    unnamed = _speakers(api, acme, "hannah.schmidt", meeting_id, {"SPEAKER_2": None}).json()
+    assert unnamed["speakers"]["SPEAKER_2"] == {"name": "SPEAKER_2", "user_id": None}
+    assert unnamed["summary"] == "Hannah Schmidt asked SPEAKER_2 for the Bluefin quote."
+    assert (unnamed["action_items"][0]["owner"], unnamed["action_items"][0]["owner_user_id"]) == (
+        "SPEAKER_2",
+        None,
+    )
+    # Nothing to change: no new transcript version.
+    assert (
+        _speakers(api, acme, "hannah.schmidt", meeting_id, {"SPEAKER_2": None}).status_code == 200
+    )
+    document = api.get(f"/api/v1/documents/{document_id}", headers=acme.as_("olivia.grant"))
+    assert len(document.json()["versions"]) == 4
+
+
+async def test_admins_who_see_a_meeting_may_name_its_speakers_viewers_may_not(
+    api: TestClient, acme: Acme
+) -> None:
+    _model(api, QUOTE)
+    uploaded = _upload(api, acme, "olivia.grant", "operations-sops", "call.vtt", DIARIZED_VTT)
+    meeting_id = _wait(api, acme, "olivia.grant", uploaded.json()["id"])["id"]
+    wei = str(acme.users["wei.zhang"])
+
+    as_erin = api.get(f"/api/v1/meetings/{meeting_id}", headers=acme.as_("erin")).json()
+    as_bob = api.get(f"/api/v1/meetings/{meeting_id}", headers=acme.as_("bob")).json()
+    assert (as_erin["can_edit"], as_erin["can_map_speakers"]) == (False, True)  # an admin
+    assert (as_bob["can_edit"], as_bob["can_map_speakers"]) == (False, False)  # a viewer
+    assert _speakers(api, acme, "bob", meeting_id, {"SPEAKER_1": wei}).status_code == 403
+    assert _speakers(api, acme, "mallory", meeting_id, {"SPEAKER_1": wei}).status_code == 404
+    blank = _speakers(api, acme, "erin", meeting_id, {"SPEAKER_1": {"name": "   "}})
+    stranger = _speakers(api, acme, "erin", meeting_id, {"SPEAKER_1": str(uuid.uuid4())})
+    assert (blank.status_code, blank.json()["code"]) == (422, "empty_name")
+    assert (stranger.status_code, stranger.json()["code"]) == (422, "unknown_user")
+
+    named = _speakers(api, acme, "erin", meeting_id, {"SPEAKER_2": wei})
+
+    assert named.status_code == 200, named.text
+    item = named.json()["action_items"][0]
+    assert (item["owner"], item["owner_user_id"]) == ("Wei Zhang", wei)
+
+
+class _Transcriber:
+    """Speech to text without a model: two people, no speaker labels (as Whisper gives them)."""
+
+    model_id = "scripted"
+
+    async def transcribe(
+        self, data: bytes, filename: str, *, vocabulary: Sequence[str] = ()
+    ) -> Transcript:
+        return Transcript(
+            [
+                TranscriptSegment(0.5, 4.0, "Can you send Bluefin the quote?"),
+                TranscriptSegment(4.6, 8.0, "Yes, by Friday."),
+                TranscriptSegment(8.4, 10.0, "Thanks."),
+            ],
+            "en",
+            10.0,
+        )
+
+
+class _Diarizer:
+    model_id = "scripted-diarizer"
+
+    async def diarize(self, data: bytes, filename: str) -> list[Turn]:
+        return [Turn(0.3, 4.2, 7), Turn(4.5, 8.1, 2), Turn(8.3, 10.0, 7)]
+
+
+async def test_a_recording_gets_speaker_labels_from_diarization(
+    api: TestClient, acme: Acme
+) -> None:
+    app: Any = api.app
+    app.state.resources.transcriber = _Transcriber()
+    app.state.resources.diarizer = _Diarizer()
+    _model(api, Extraction(summary="A quote.", decisions=[], action_items=[]))
+
+    uploaded = _upload(api, acme, "olivia.grant", "operations-sops", "call.m4a", b"\x00audio")
+    meeting = _wait(api, acme, "olivia.grant", uploaded.json()["id"])
+
+    assert meeting["status"] == "ready", meeting["error"]
+    assert [s["speaker"] for s in meeting["segments"]] == ["SPEAKER_1", "SPEAKER_2", "SPEAKER_1"]
+    assert meeting["speakers"] == {
+        "SPEAKER_1": {"name": "SPEAKER_1", "user_id": None},
+        "SPEAKER_2": {"name": "SPEAKER_2", "user_id": None},
+    }
+    assert (meeting["timings"]["diarizer"], meeting["timings"]["speakers_found"]) == (
+        "scripted-diarizer",
+        2,
+    )
+
+    # Diarization off: the recording is still transcribed, unlabelled, and says why.
+    app.state.resources.diarizer = DisabledDiarizer()
+    _model(api, Extraction(summary="A quote.", decisions=[], action_items=[]))
+    plain = _upload(api, acme, "olivia.grant", "operations-sops", "call-2.m4a", b"\x01audio")
+    plain_meeting = _wait(api, acme, "olivia.grant", plain.json()["id"])
+    assert plain_meeting["status"] == "ready", plain_meeting["error"]
+    assert {s["speaker"] for s in plain_meeting["segments"]} == {None}
+    assert plain_meeting["speakers"] == {}
+    assert "DIARIZATION_PROVIDER=none" in plain_meeting["timings"]["diarization_skipped"]

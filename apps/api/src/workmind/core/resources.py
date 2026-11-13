@@ -39,9 +39,11 @@ from workmind.modules.tools.registry import ToolRegistry
 from workmind.modules.usage.meter import UsageMeter
 from workmind.modules.work.tools import create_task_tool, send_email_tool
 from workmind.modules.work.workflows import WorkflowDeps, start_queued
+from workmind.providers.diarization import Diarizer
 from workmind.providers.email import SmtpMailer
 from workmind.providers.embeddings import EmbeddingProvider
 from workmind.providers.factory import (
+    create_diarizer,
     create_embeddings,
     create_llm,
     create_local_llm,
@@ -75,6 +77,7 @@ class Resources:
     agent_router: FastRouter | None
     tools: ToolRegistry
     transcriber: Transcriber
+    diarizer: Diarizer
     remote_servers: list[RemoteServer]
     assistant_mode: str
     analytics: Analytics
@@ -220,6 +223,7 @@ class Resources:
             assistant_mode=settings.assistant_mode,
             tools=tools,
             transcriber=create_transcriber(settings, http),
+            diarizer=create_diarizer(settings),
             remote_servers=[
                 RemoteServer(RemoteServerConfig.model_validate(c)) for c in settings.mcp_servers
             ],

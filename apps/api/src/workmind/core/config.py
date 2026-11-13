@@ -177,6 +177,15 @@ class Settings(BaseSettings):
     transcription_model: str = "base.en"
     transcription_base_url: str = "http://localhost:8000/v1"
     transcription_api_key: SecretStr | None = None
+    # Who spoke when in recordings: sherpa_onnx runs pyannote's segmentation model and a speaker
+    # embedding model on the worker's CPU (the `diarization` extra), downloading them (46 MB)
+    # on the first recording. Transcripts that name their speakers are never diarized.
+    diarization_provider: Literal["sherpa_onnx", "none"] = "sherpa_onnx"
+    # Where the models are kept. Empty: $HF_HOME/diarization (the image's /models volume),
+    # else ~/.cache/workmind/diarization.
+    diarization_model_dir: str = ""
+    diarization_threshold: float = Field(default=0.6, gt=0, le=2)  # higher: fewer speakers
+    diarization_window_shift: float = Field(default=0.5, ge=0.05, le=1)
 
     # --- Business intelligence (ARCHITECTURE 16). Datasets are DuckDB files under
     # <object_storage_path>/analytics; every query is read-only, sandboxed and capped. ---

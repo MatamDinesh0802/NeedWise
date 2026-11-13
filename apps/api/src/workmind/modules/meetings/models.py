@@ -57,8 +57,11 @@ class Meeting(Base, TenantScoped, Timestamps):
     segments: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, server_default=text("'[]'::jsonb")
     )
-    # speaker label -> {"user_id": ..., "name": ...} (set in the speaker mapping UI)
+    # speaker label -> {"user_id": ..., "name": ...}, plus "guest": true for a name typed in the
+    # speaker mapping UI. Labels are the transcript's names, or SPEAKER_1, ... from diarization.
     speakers: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    # [{"title", "segment", "start", "end", "source": "model" | "words"}] (topics.py)
+    topics: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
     summary: Mapped[str] = mapped_column(Text, server_default="")
     # decisions: [{"text", "segment", "start"}]
     # action items: [{"text", "owner", "owner_user_id", "due", "segment", "start", "task_id"}]

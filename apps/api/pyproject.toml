@@ -42,6 +42,14 @@ meetings = [
     # faster-whisper 1.2.1 passes `metadata_errors` to av.open, which PyAV 19 removed.
     "av>=17.1,<19",
 ]
+# Who spoke when in recordings (docs/meetings.md): sherpa-onnx runs pyannote's segmentation model
+# and a speaker-embedding model, both ONNX, on the CPU. No PyTorch, no Hugging Face token: the
+# models download from sherpa-onnx's GitHub releases on first use. PyAV decodes the audio.
+diarization = [
+    "sherpa-onnx>=2.0.1",
+    "numpy>=2.0",
+    "av>=17.1,<19",
+]
 # The Enterprise Edition (ee/, commercial license). Installed or not, it runs only with a valid
 # license key; without one the core never imports it (docs/enterprise.md).
 ee = ["workmind-ee"]

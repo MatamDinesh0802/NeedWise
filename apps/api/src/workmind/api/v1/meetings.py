@@ -7,7 +7,7 @@ import re
 import uuid
 from datetime import UTC, date, datetime, time
 from pathlib import PurePath
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field
@@ -27,7 +27,8 @@ from workmind.modules.knowledge.storage import object_key, owned_key
 from workmind.modules.meetings import transcripts
 from workmind.modules.meetings.deletion import delete_meeting
 from workmind.modules.meetings.models import Meeting, held_on
-from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
+from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting, store_transcript
+from workmind.modules.meetings.speakers import relabel, relink_owners
 from workmind.modules.work.links import task_link
 from workmind.modules.work.models import Task
 from workmind.modules.work.notifications import notify
@@ -47,6 +48,7 @@ MEDIA_TYPES = {
     ".mov": "video/quicktime",
 }
 _RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+ADMIN_ROLES = ("owner", "admin")
 
 
 class MeetingSummary(BaseModel):
@@ -80,15 +82,29 @@ class MeetingOut(BaseModel):
     summary: str
     decisions: list[dict[str, Any]]
     action_items: list[dict[str, Any]]
+    # [{"title", "segment", "start", "end", "source": "model" | "words"}]: what the meeting
+    # talked about, in order, with the transcript's own times.
+    topics: list[dict[str, Any]]
     document_id: uuid.UUID | None
     timings: dict[str, Any]
     can_edit: bool
+    # Naming speakers: the uploader, attendees (a speaker mapped to them) who can edit, admins.
+    can_map_speakers: bool
     held_on: date
     created_at: datetime
 
 
+class Guest(BaseModel):
+    """Someone outside the directory: shown by this name, linked to nobody."""
+
+    name: str = Field(min_length=1, max_length=100)
+
+
 class SpeakerMap(BaseModel):
-    speakers: dict[str, uuid.UUID | None] = Field(description="speaker label -> colleague, or null")
+    speakers: dict[str, uuid.UUID | Guest | None] = Field(
+        description='speaker label -> a colleague\'s id, a guest ({"name": "..."}), or null to '
+        "leave it unnamed"
+    )
 
 
 class ActionEdit(BaseModel):
@@ -151,7 +167,42 @@ def _summary(m: Meeting) -> MeetingSummary:
     )
 
 
-def _out(m: Meeting, can_edit: bool) -> MeetingOut:
+def _shown(m: Meeting) -> dict[str, Any]:
+    """The extraction as people read it: a diarization label the model wrote (SPEAKER_2) shows
+    the name it is mapped to. Stored as extracted, so a later mapping can change it again."""
+    speakers = m.speakers
+
+    def named(items: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+        return [{**item, key: relabel(str(item.get(key) or ""), speakers)} for item in items]
+
+    return {
+        "summary": relabel(m.summary, speakers),
+        "decisions": named(m.decisions, "text"),
+        "action_items": named(m.action_items, "text"),
+        "topics": named(m.topics, "title"),
+    }
+
+
+def _can_map(ctx: RequestContext, m: Meeting, can_edit: bool) -> bool:
+    """Who may say who is who: the person who uploaded the meeting (they were there, or know
+    who was), an attendee (a colleague a speaker is mapped to) who can edit the meeting, or an
+    admin who can see it. Not every editor of the collection: naming a voice puts words in
+    someone's mouth."""
+    if m.owner_id == ctx.user_id:
+        return True
+    if ctx.has_role(*ADMIN_ROLES) and ctx.has_scope("admin"):
+        return True
+    attended = any(_user_of(entry) == str(ctx.user_id) for entry in m.speakers.values())
+    return can_edit and attended
+
+
+def _user_of(entry: object) -> str | None:
+    """The colleague a speaker entry is mapped to, if any."""
+    value = cast(dict[str, Any], entry).get("user_id") if isinstance(entry, dict) else None
+    return value if isinstance(value, str) else None
+
+
+def _out(m: Meeting, can_edit: bool, ctx: RequestContext) -> MeetingOut:
     return MeetingOut(
         id=m.id,
         title=m.title,
@@ -166,12 +217,11 @@ def _out(m: Meeting, can_edit: bool) -> MeetingOut:
         language=m.language,
         segments=m.segments,
         speakers=m.speakers,
-        summary=m.summary,
-        decisions=m.decisions,
-        action_items=m.action_items,
+        **_shown(m),
         document_id=m.document_id,
         timings=m.timings,
         can_edit=can_edit,
+        can_map_speakers=_can_map(ctx, m, can_edit),
         held_on=held_on(m),
         created_at=m.created_at,
     )
@@ -253,6 +303,7 @@ async def upload_meeting(
             await resources.models.for_tenant(ctx.tenant_id),
             resources.transcriber,
             resources.ingestion,
+            resources.diarizer,
         )
         resources.runs.start(process_meeting(deps, ctx.tenant_id, summary.id))
     return summary
@@ -277,7 +328,7 @@ async def list_meetings(ctx: AskContext, request: Request) -> list[MeetingSummar
 async def get_meeting(ctx: AskContext, request: Request, meeting_id: uuid.UUID) -> MeetingOut:
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         meeting, can_edit = await _meeting(session, ctx, meeting_id)
-    return _out(meeting, can_edit)
+    return _out(meeting, can_edit, ctx)
 
 
 @router.delete("/meetings/{meeting_id}", status_code=204)
@@ -345,40 +396,69 @@ async def meeting_media(ctx: AskContext, request: Request, meeting_id: uuid.UUID
 async def map_speakers(
     ctx: AskContext, request: Request, meeting_id: uuid.UUID, body: SpeakerMap
 ) -> MeetingOut:
-    """Who is who: maps transcript speaker labels to colleagues, and re-links action items whose
-    owner was named by that label."""
-    async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
+    """Who is who: names transcript speakers (SPEAKER_2, or a name the transcript gave) as
+    colleagues or guests. The transcript shows the names, its indexed copy is rewritten with them
+    (a new version of the transcript document), and action items owned by a renamed speaker
+    name that colleague or guest. For the uploader, attendees who can edit, and admins."""
+    resources = resources_of(request)
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         meeting, can_edit = await _meeting(session, ctx, meeting_id)
-        if not can_edit:
+        if not _can_map(ctx, meeting, can_edit):
             raise ApiError(
                 403,
                 "forbidden",
-                "Only the meeting's owner or the collection's editors can change it",
+                "Only the person who uploaded it, attendees who can edit it, or an admin can "
+                "name its speakers",
             )
+        if meeting.status != "ready":
+            raise ApiError(409, "not_ready", "Name the speakers once the meeting is processed")
+        await session.refresh(meeting, with_for_update=True)  # one mapping (or deletion) at a time
         speakers = dict(meeting.speakers)
         previous = {label: str(v.get("name") or "") for label, v in speakers.items()}
-        for label, user_id in body.speakers.items():
+        changed: dict[str, dict[str, Any]] = {}
+        for label, choice in body.speakers.items():
             if label not in speakers:
                 raise ApiError(422, "unknown_speaker", f"No speaker {label!r} in this meeting")
-            user = await session.get(User, user_id) if user_id else None
-            if user_id and user is None:
-                raise ApiError(422, "unknown_user", "Unknown colleague")
-            speakers[label] = {
-                "name": user.display_name if user else label,
-                "user_id": str(user.id) if user else None,
-            }
-        items: list[dict[str, Any]] = []
-        for item in meeting.action_items:
-            for label, mapped in speakers.items():
-                # The owner as extracted (the label), as the label's colleague is now called,
-                # or as it was called before this change (an item an earlier mapping renamed).
-                names = {label, str(mapped["name"]), previous.get(label, "")}
-                if item.get("owner", "").strip().lower() in {n.lower() for n in names if n}:
-                    # Like a correction, the item names its owner: shown, and in notifications.
-                    item = {**item, "owner_user_id": mapped["user_id"], "owner": mapped["name"]}
-            items.append(item)
+            if isinstance(choice, uuid.UUID):
+                user = await session.get(User, choice)
+                if user is None or user.status != "active":
+                    raise ApiError(422, "unknown_user", "Unknown colleague")
+                entry: dict[str, Any] = {"name": user.display_name, "user_id": str(user.id)}
+            elif isinstance(choice, Guest):
+                name = " ".join(choice.name.split())
+                if not name:
+                    raise ApiError(422, "empty_name", "Type the guest's name")
+                entry = {"name": name, "user_id": None, "guest": True}
+            else:
+                entry = {"name": label, "user_id": None}
+            if entry != speakers[label]:
+                speakers[label] = changed[label] = entry
+        if not changed:
+            return _out(meeting, can_edit, ctx)
+        items, relinked = relink_owners(meeting.action_items, changed, previous)
         meeting.speakers, meeting.action_items = speakers, items
-        return _out(meeting, can_edit)
+        upload = await store_transcript(session, ctx, resources.storage, meeting)
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="meeting.speakers_mapped",
+            resource_type="meeting",
+            resource_id=str(meeting.id),
+            details={
+                # Colleagues by id; a guest's name is personal data, so only that it was a guest.
+                "speakers": {
+                    label: "guest" if entry.get("guest") else entry["user_id"]
+                    for label, entry in changed.items()
+                },
+                "action_items_relinked": relinked,
+                "transcript_version": upload.version.version_no,
+            },
+        )
+        out = _out(meeting, can_edit, ctx)
+    if not upload.unchanged:
+        await resources.ingestion.dispatch(ctx.tenant_id, upload.document.id, upload.version.id)
+    return out
 
 
 @router.patch("/meetings/{meeting_id}/actions/{index}")
@@ -420,7 +500,7 @@ async def edit_action(
             resource_id=str(meeting.id),
             details={"index": index, "fields": sorted(changed)},
         )
-        return _out(meeting, can_edit)
+        return _out(meeting, can_edit, ctx)
 
 
 @router.post("/meetings/{meeting_id}/actions/{index}/task", status_code=201)
@@ -441,9 +521,10 @@ async def action_to_task(
             raise ApiError(409, "already_a_task", "This action item is already a task")
         assignee = uuid.UUID(item["owner_user_id"]) if item.get("owner_user_id") else None
         due = item.get("due")
+        text = relabel(item["text"], meeting.speakers)  # as it is shown
         task = Task(
             tenant_id=ctx.tenant_id,
-            title=item["text"][:200],
+            title=text[:200],
             description=f"From the meeting “{meeting.title}”"
             + (
                 f" at {int(item['start'] // 60)}:{int(item['start'] % 60):02d}"
@@ -467,7 +548,7 @@ async def action_to_task(
                 ctx.tenant_id,
                 assignee,
                 kind="task.assigned",
-                title=f"New task from {meeting.title}: {item['text'][:120]}",
+                title=f"New task from {meeting.title}: {text[:120]}",
                 link=task_link(task.id),
             )
         await record_event(
@@ -482,7 +563,7 @@ async def action_to_task(
                 "assignee": str(assignee) if assignee else None,
             },
         )
-        return _out(meeting, can_edit)
+        return _out(meeting, can_edit, ctx)
 
 
 @router.get("/me/commitments")
@@ -517,7 +598,7 @@ async def my_commitments(ctx: AskContext, request: Request) -> list[Commitment]:
             meeting_title=m.title,
             meeting_date=held_on(m),
             index=i,
-            text=item["text"],
+            text=relabel(item["text"], m.speakers),
             due=item.get("due"),
             start=item.get("start"),
             task_id=item.get("task_id"),
