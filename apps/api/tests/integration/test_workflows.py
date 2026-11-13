@@ -58,6 +58,9 @@ class CapturingMailer:
 class ReportModel:
     external = True
 
+    def __init__(self) -> None:
+        self.systems: list[str] = []
+
     async def run_tools(
         self,
         role: Role,
@@ -67,6 +70,7 @@ class ReportModel:
         *,
         max_steps: int = 6,
     ) -> ToolLoopResult:
+        self.systems.append(request.system)
         return ToolLoopResult(
             text="No incidents. 42 robots shipped.",
             usage=[LLMUsage(model="fake", input_tokens=10, output_tokens=5)],
@@ -117,6 +121,11 @@ async def test_research_then_an_edited_approval_sends_the_report(
     assert approval.approver_id == acme.users["priya.raman"]
     assert approval.arguments["body"] == "No incidents. 42 robots shipped."
     assert approval.summary.startswith("Weekly ops report: Send an email to leadership@acme.test")
+    # The research text goes into the email as it is: asked for as a plain-text report, not a
+    # chat answer (Markdown asterisks and "If you want..." reached leadership).
+    (system,) = deps.llm.systems  # type: ignore[attr-defined]
+    assert "plain text, without Markdown" in system
+    assert "Do not address the reader" in system
 
     edited = {**approval.arguments, "body": "No incidents. 42 robots shipped. Great week. Priya"}
     await decide(

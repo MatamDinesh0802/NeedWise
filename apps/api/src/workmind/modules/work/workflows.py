@@ -318,6 +318,7 @@ async def advance(deps: WorkflowDeps, tenant_id: uuid.UUID, run_id: uuid.UUID) -
                         question,
                         organization=tenant.name if tenant else "the company",
                         propose_actions=False,  # research steps only read
+                        unattended=True,  # plain text for the email or task it fills
                     )
                 outputs[step.id] = {"status": "done", "text": result.text}
             else:

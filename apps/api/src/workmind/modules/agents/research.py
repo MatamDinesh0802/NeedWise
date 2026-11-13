@@ -50,6 +50,14 @@ such actions completely (recipients, subject, full text) and say they await appr
 - If the tools do not give you the answer, say so. Never invent facts.
 - Lead with the answer. Be concise."""
 
+# A workflow step's text goes on unread into an email or a task: no chat around it.
+UNATTENDED = """
+
+This is an unattended step of a scheduled workflow: your answer is pasted as it is into an \
+email or a task, and nobody can reply to you. Write it as a finished report in plain text, \
+without Markdown (no asterisks, no # headings; simple lines and "-" lists are fine). Do not \
+address the reader, ask questions, or offer further help or other data sources."""
+
 
 @dataclass
 class ResearchStep:
@@ -80,7 +88,9 @@ async def research(
     propose_actions: bool = True,
     origin: dict[str, Any] | None = None,
     on_step: Callable[[ResearchStep], Awaitable[None]] | None = None,
+    unattended: bool = False,
 ) -> ResearchResult:
+    """`unattended`: a workflow step, whose text is pasted into an email or a task as it is."""
     # Only tools this person may use are offered (scopes; e.g. analytics access for query_data).
     available = await registry.usable(ctx, tool_names)
     specs = [ToolSpec(t.name, t.description, t.input_schema()) for t in available]
@@ -160,7 +170,8 @@ async def research(
         return result.content, False
 
     request = LLMRequest(
-        system=RESEARCH_SYSTEM.format(organization=organization),
+        system=RESEARCH_SYSTEM.format(organization=organization)
+        + (UNATTENDED if unattended else ""),
         messages=[LLMMessage("user", question)],
         max_tokens=8000,
     )
