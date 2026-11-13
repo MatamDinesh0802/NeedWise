@@ -27,7 +27,7 @@ export const siteConfig = {
   shortTagline: "Permission-Aware AI",
   description:
     "Open-source, self-hostable AI workspace: cited answers from company knowledge, specialized agents, and human-approved workflows.",
-  stage: "pre-alpha",
+  stage: "v1.0",
 } as const;
 
 export type NavGroup = "workspace" | "administration" | "account";
