@@ -418,10 +418,33 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > - **Gates on `main` after the fixes:** 1115 backend tests (852 unit, the rest integration and `ee/`),
 >   1023 web tests, `pyright` and `ruff` clean, `pnpm build`; migration 0019 (the reason a failed
 >   answer failed) up, down and up again with `alembic check` clean.
+> - **Built on branch `fin-governance` (2026-11-13), not yet on the running stack:**
+>   - *Review escalation* (Community, [governance.md](governance.md#escalation-of-overdue-reviews)):
+>     an official document whose review stays overdue escalates once per stage and cycle, to the
+>     collection's owner after the collection's grace period (default 14 days), to the org admins
+>     one period later, and, only when the collection sets it, is demoted to reference; each
+>     stage audited and notified once.
+>   - *Legal hold* (Enterprise feature `legal_hold`, [enterprise.md](enterprise.md#legal-hold)):
+>     holds on documents, collections, people (their conversations, meetings and Insights
+>     questions), meetings and Insights questions, with a matter and a reason, in Admin › Legal
+>     holds. The core enforces them whatever the license says: deletions by people, connectors'
+>     deletion propagation, retention runs and `wm tenant delete` (without the typed override)
+>     are refused, and every attempt is audited.
+>   - *Document retention* (Enterprise, part of `retention_policies`,
+>     [enterprise.md](enterprise.md#document-retention)): per collection, delete or archive
+>     documents not updated for N days, with an exact preview, legal holds and official status
+>     respected, archive and restore, all audited.
+>
+>   Checked by the backend suite (1430 tests, unit, integration and `ee/`, with the scripted
+>   model), the web tests (1079), `pyright`, `ruff`, `pnpm build`, migration 0026 down and up
+>   with `alembic check` clean, and the three screens in headless Chromium against `next dev`
+>   with mocked API answers (no horizontal scroll at 1280 and 390 px). Not checked: the stack
+>   rebuilt with this branch, the daily task escalating or applying document rules on it, and
+>   the two new browser-suite checks in `e2e/browser/tests/admin.spec.ts` (written, typechecked,
+>   not run).
 > - **Not done:** a reminder sent by the daily task on the running stack (it first runs a day
->   after beat starts); review escalation, legal hold and retention of documents. DLP,
->   permission sync, SCIM and the other paid features of §5 are not built and not part of this
->   phase.
+>   after beat starts). DLP, permission sync, SCIM and the other paid features of §5 are not
+>   built and not part of this phase.
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
