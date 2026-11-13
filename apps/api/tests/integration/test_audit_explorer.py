@@ -13,14 +13,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.config import Settings
+from needwise.core.edition import Edition, License
+from needwise.core.extensions import enable_extensions
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.governance.audit import Actor, record_event
+from needwise.modules.governance.models import AuditEvent
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
-from workmind.core.config import Settings
-from workmind.core.edition import Edition, License
-from workmind.core.extensions import enable_extensions
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.governance.audit import Actor, record_event
-from workmind.modules.governance.models import AuditEvent
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL to run")
 
@@ -164,7 +164,7 @@ async def test_the_siem_export_is_enterprise_only(api: TestClient, acme: Acme) -
 async def test_the_siem_export_streams_a_chain_anyone_can_verify(
     database: Database, tmp_path: Path, acme: Acme, app_sessions: SessionFactory
 ) -> None:
-    pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra ee")
+    pytest.importorskip("needwise_ee", reason="install the ee extra: uv sync --extra ee")
     await add_events(app_sessions, acme)
     now = datetime.now(UTC)
     license_ = License(

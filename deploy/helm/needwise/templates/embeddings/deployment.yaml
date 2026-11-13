@@ -1,0 +1,116 @@
+{{- if .Values.embeddings.enabled }}
+{{- $c := .Values.embeddings -}}
+{{- $name := include "needwise.componentName" (list . "embeddings") -}}
+{{ include "needwise.service" (list . "embeddings" (dict "ports" (list (dict "name" "http" "port" 8080 "appProtocol" "http")))) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "needwise.labels" (list . "embeddings") | nindent 4 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  {{- if $c.persistence.enabled }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "needwise.selectorLabels" (list . "embeddings") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "needwise.selectorLabels" (list . "embeddings") | nindent 8 }}
+      {{- with $c.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "needwise.podCommon" (list . $c) | nindent 6 }}
+      securityContext:
+        {{- toYaml $c.podSecurityContext | nindent 8 }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: embeddings
+          image: {{ include "needwise.image" (list . $c.image "") }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
+          args:
+            - -hf
+            - {{ $c.model | quote }}
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8080"
+            {{- range $c.args }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            # The model downloads here (the image's default is root's home directory).
+            - name: LLAMA_CACHE
+              value: /models
+            - name: HOME
+              value: /tmp
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # Same check as compose (GET /health). The first start downloads the model.
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 180
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          securityContext:
+            {{- include "needwise.infraSecurityContext" true | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: models
+          {{- if $c.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default $name $c.persistence.existingClaim }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ $c.cacheSizeLimit }}
+          {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+{{- if and $c.persistence.enabled (not $c.persistence.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "needwise.labels" (list . "embeddings") | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with (default .Values.global.storageClass $c.persistence.storageClass) }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $c.persistence.size }}
+{{- end }}
+{{- end }}

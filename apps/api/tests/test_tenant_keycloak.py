@@ -11,13 +11,13 @@ from typing import Any, cast
 import httpx
 import pytest
 
-from workmind.modules.identity.lifecycle import (
+from needwise.modules.identity.lifecycle import (
     Stores,
     TenantError,
     create_tenant,
     delete_keycloak_organization,
 )
-from workmind.seed.keycloak_admin import KeycloakAdmin
+from needwise.seed.keycloak_admin import KeycloakAdmin
 
 
 class FakeKeycloak:
@@ -35,7 +35,7 @@ class FakeKeycloak:
         self.calls.append(f"{method} {path}")
         if path.startswith("/realms/master"):
             return httpx.Response(200, json={"access_token": "t"})
-        rest = path.removeprefix("/admin/realms/workmind")
+        rest = path.removeprefix("/admin/realms/needwise")
         if method == "GET" and rest == "/organizations":
             search = request.url.params.get("search", "").lower()
             first = int(request.url.params.get("first", "0"))
@@ -70,7 +70,7 @@ class FakeKeycloak:
 
 
 async def _admin(fake: FakeKeycloak, http: httpx.AsyncClient) -> KeycloakAdmin:
-    admin = KeycloakAdmin(http, "http://kc", "workmind")
+    admin = KeycloakAdmin(http, "http://kc", "needwise")
     await admin.login("admin", "admin")
     return admin
 
@@ -79,13 +79,13 @@ async def test_the_organization_and_its_own_users_go_shared_users_stay() -> None
     fake = FakeKeycloak()
     async with httpx.AsyncClient(transport=httpx.MockTransport(fake)) as http:
         admin = await _admin(fake, http)
-        # u-linked: a WorkMind user of the tenant whose Keycloak account is in no organization.
+        # u-linked: a NeedWise user of the tenant whose Keycloak account is in no organization.
         deleted = await delete_keycloak_organization(admin, "acme", ["u-linked"])
 
     assert deleted == 2
     assert fake.users == {"u-shared", "u-only-b"}
     assert fake.orgs == {"org-b": "globex"}
-    assert "DELETE /admin/realms/workmind/users/u-shared" not in fake.calls
+    assert "DELETE /admin/realms/needwise/users/u-shared" not in fake.calls
 
 
 async def test_a_tenant_without_an_organization_deletes_only_its_unshared_users() -> None:

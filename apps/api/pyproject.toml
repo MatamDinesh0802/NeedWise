@@ -1,7 +1,7 @@
 [project]
-name = "workmind"
+name = "needwise"
 version = "1.0.0"
-description = "WorkMind AI API: open-source, permission-aware enterprise AI workspace"
+description = "NeedWise API: open-source, permission-aware enterprise AI workspace"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 dependencies = [
@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [project.scripts]
-wm = "workmind.cli:main"
+nw = "needwise.cli:main"
 
 [project.optional-dependencies]
 meetings = [
@@ -52,20 +52,20 @@ diarization = [
 ]
 # The Enterprise Edition (ee/, commercial license). Installed or not, it runs only with a valid
 # license key; without one the core never imports it (docs/enterprise.md).
-ee = ["workmind-ee"]
+ee = ["needwise-ee"]
 # MySQL data sources for analytics (docs/analytics-sql-sources.md). PostgreSQL sources use asyncpg,
 # which the core already needs. The image installs it.
 mysql = ["pymysql>=1.1.1"]
 
 [tool.uv.sources]
-workmind-ee = { path = "../../ee/python", editable = true }
+needwise-ee = { path = "../../ee/python", editable = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/workmind"]
+packages = ["src/needwise"]
 
 [dependency-groups]
 dev = [

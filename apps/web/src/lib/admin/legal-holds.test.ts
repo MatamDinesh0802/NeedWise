@@ -21,7 +21,7 @@ describe("what a hold can name", () => {
 
   it("finds the id in an id or a link to the item", () => {
     expect(parseTargetId(ID)).toBe(ID);
-    expect(parseTargetId(`https://workmind.acme.test/knowledge/documents/${ID.toUpperCase()}`)).toBe(ID);
+    expect(parseTargetId(`https://needwise.acme.test/knowledge/documents/${ID.toUpperCase()}`)).toBe(ID);
     expect(parseTargetId(`/insights?run=${ID}`)).toBe(ID);
     expect(parseTargetId("the travel policy")).toBeNull();
   });

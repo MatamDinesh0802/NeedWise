@@ -1,6 +1,6 @@
 # Quickstart
 
-This runs WorkMind on your machine with **Acme Robotics**, a fictional 180-person company with
+This runs NeedWise on your machine with **Acme Robotics**, a fictional 180-person company with
 departments, demo logins and 49 documents in 14 collections, some of them restricted and two with
 their own access lists.
 
@@ -22,7 +22,7 @@ The [full walkthrough](../media/demo.mp4) (1 min 44 s) shows what the steps belo
 ## Start it
 
 ```bash
-git clone <repo-url> workmind && cd workmind
+git clone https://github.com/MatamDinesh0802/NeedWise needwise && cd needwise
 cp .env.example .env
 ```
 
@@ -43,7 +43,7 @@ make quickstart
    agents, analytics data, and the documents, indexed through the real ingestion pipeline.
 
 It ends by listing the demo logins. Open **http://localhost:8480**, sign in as `alice@acme.test`
-with the password `workmind-demo`, and ask *"What is the salary band for an L3 engineer?"*
+with the password `needwise-demo`, and ask *"What is the salary band for an L3 engineer?"*
 
 ## How long it takes
 
@@ -84,7 +84,7 @@ How it was run:
 
 ## Demo logins
 
-Every demo login uses the development password `workmind-demo` (the `DEMO_PASSWORD` setting).
+Every demo login uses the development password `needwise-demo` (the `DEMO_PASSWORD` setting).
 These accounts exist only in a seeded development stack.
 
 | Login | Who | Org role | Can read |
@@ -155,7 +155,7 @@ More to try:
 | http://localhost:8480 | The app: UI, API and login on one origin, through Caddy |
 | http://localhost:8480/api/docs | Interactive API docs (not served when `APP_ENV=production`) |
 | http://localhost:8480/auth | Keycloak (its admin console uses `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`, development values in `.env.example`) |
-| http://localhost:8025 | Mailpit: every email WorkMind sends in development lands here, none is delivered |
+| http://localhost:8025 | Mailpit: every email NeedWise sends in development lands here, none is delivered |
 
 ## Everyday commands
 

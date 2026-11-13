@@ -1,11 +1,11 @@
-"""WorkMind AI load test (docs/load-testing.md).
+"""NeedWise load test (docs/load-testing.md).
 
-    uv run python -m workmind_load.tokens create
+    uv run python -m needwise_load.tokens create
     uv run locust --host http://localhost:8480                      # web UI on :8089
-    uv run locust --host http://localhost:8480 --headless -u 20 -r 2 -t 5m --wm-no-model
-    uv run python -m workmind_load.tokens revoke
+    uv run locust --host http://localhost:8480 --headless -u 20 -r 2 -t 5m --nw-no-model
+    uv run python -m needwise_load.tokens revoke
 
-`make loadtest` does all of it, then writes a report (workmind_load/run.py).
+`make loadtest` does all of it, then writes a report (needwise_load/run.py).
 """
 
 from typing import Any
@@ -13,7 +13,7 @@ from typing import Any
 from locust import events
 from locust.env import Environment
 
-from workmind_load.users import (
+from needwise_load.users import (
     Admin,
     AgentsAsker,
     Analyst,

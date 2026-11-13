@@ -44,6 +44,6 @@ Repo and the full evaluation report in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
-Evaluation datasets, method and every result: <GITHUB_REPO_URL>/tree/main/evals
-Why these fusion settings (ADR 0008): <GITHUB_REPO_URL>/blob/main/docs/adr/0008-retrieval-fusion-and-sensitivity-routing.md
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
+Evaluation datasets, method and every result: https://github.com/MatamDinesh0802/NeedWise/tree/main/evals
+Why these fusion settings (ADR 0008): https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/adr/0008-retrieval-fusion-and-sensitivity-routing.md

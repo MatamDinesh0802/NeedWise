@@ -48,7 +48,7 @@ for (const user of ALL_USERS) {
       await expect(page.getByRole("navigation", { name: "Administration sections" })).toHaveCount(0);
     }
 
-    // Sign out: the WorkMind session and the Keycloak session both end.
+    // Sign out: the NeedWise session and the Keycloak session both end.
     await accountMenu(page, user).click();
     await page.getByRole("menuitem", { name: "Sign out" }).click();
     await expect(page.getByRole("link", { name: "Sign in" }).first()).toBeVisible();

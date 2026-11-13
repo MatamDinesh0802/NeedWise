@@ -29,30 +29,30 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy import select, text
 
+from needwise.core.context import RequestContext
+from needwise.core.resources import Resources
+from needwise.core.tenancy import global_transaction, tenant_transaction
+from needwise.evals.analytics import Table, match
+from needwise.evals.datasets import load_analytics
+from needwise.evals.runner import Askers, Evaluator
+from needwise.modules.analytics import engine, remote
+from needwise.modules.analytics.compiler import SemanticQuery
+from needwise.modules.analytics.models import AnalyticsSource
+from needwise.modules.analytics.rotation import rotate_source_passwords
+from needwise.modules.analytics.service import Analytics, AnalyticsError
+from needwise.modules.analytics.sources import SourceIn, SourcePatch
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.identity.models import User
+from needwise.modules.identity.service import load_identity
+from needwise.modules.model_catalog.secrets import KeyRing
+from needwise.seed.apply import seed_database
+from needwise.seed.company import load_company
 from tests.eval_analytics_support import DATASETS, gold_oracle
 from tests.integration.conftest import SeededTenant, SessionFactory, seed_tenant
 from tests.integration.shop_databases import SHOP_YAML, ShopServer
-from workmind.core.context import RequestContext
-from workmind.core.resources import Resources
-from workmind.core.tenancy import global_transaction, tenant_transaction
-from workmind.evals.analytics import Table, match
-from workmind.evals.datasets import load_analytics
-from workmind.evals.runner import Askers, Evaluator
-from workmind.modules.analytics import engine, remote
-from workmind.modules.analytics.compiler import SemanticQuery
-from workmind.modules.analytics.models import AnalyticsSource
-from workmind.modules.analytics.rotation import rotate_source_passwords
-from workmind.modules.analytics.service import Analytics, AnalyticsError
-from workmind.modules.analytics.sources import SourceIn, SourcePatch
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.identity.models import User
-from workmind.modules.identity.service import load_identity
-from workmind.modules.model_catalog.secrets import KeyRing
-from workmind.seed.apply import seed_database
-from workmind.seed.company import load_company
 
 ACME = SHOP_YAML.parents[2] / "company.yaml"
-KEY = "d29ya21pbmQtZGV2LW9ubHktTk9ULUEtU0VDUkVUISE="
+KEY = "bmVlZHdpc2UtZGV2LW9ubHktTk9ULUEtU0VDUkVUISE="
 LOCAL = (ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("::1/128"))
 DAN_CUSTOMERS = {"S01", "S04", "S07", "S10"}
 HIDDEN_CUSTOMERS = {"S02", "S03", "S05", "S06", "S08", "S09"}
@@ -382,8 +382,8 @@ async def test_dan_sees_only_his_shop_accounts(shop: Shop) -> None:
     assert sum(float(cast(float, r[1])) for r in mine.rows) == pytest.approx(380_841.5)
     assert sum(float(cast(float, r[1])) for r in everyone.rows) == pytest.approx(870_066.75)
     assert mine.row_policies == ["Own shop accounts only"]
-    assert "_wm_rows_orders" in mine.executed_sql
-    assert "_wm_rows" not in mine.sql  # what is shown has the model's names
+    assert "_nw_rows_orders" in mine.executed_sql
+    assert "_nw_rows" not in mine.sql  # what is shown has the model's names
     monthly = await shop.service.run_semantic(
         diego,
         SemanticQuery(metrics=["shop_revenue"], dimensions=["month"], date_from=date(2026, 1, 1)),
@@ -647,7 +647,7 @@ async def test_the_eval_items_hold_and_score_on_a_sql_source(shop: Shop) -> None
 
 
 async def _slug(shop: Shop) -> str:
-    from workmind.modules.identity.models import Tenant
+    from needwise.modules.identity.models import Tenant
 
     async with global_transaction(shop.sessions) as session:
         tenant = await session.get(Tenant, shop.tenant_id)

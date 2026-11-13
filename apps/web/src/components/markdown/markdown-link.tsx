@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 
 // Links are resolved as the browser would, against a page on an origin no link can name.
-const PAGE = "https://workmind.invalid/page";
+const PAGE = "https://needwise.invalid/page";
 
 /**
  * The host a link leads to when it leaves the app, or null (relative links, anchors, mailto:).

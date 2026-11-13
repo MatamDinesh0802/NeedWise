@@ -16,7 +16,7 @@ import { caption, card, clearOverlay, installOverlay } from "./overlay";
  */
 
 const OUT = path.resolve(__dirname, "out");
-const PASSWORD = process.env.DEMO_PASSWORD ?? "workmind-demo";
+const PASSWORD = process.env.DEMO_PASSWORD ?? "needwise-demo";
 const MAILPIT = process.env.DEMO_MAILPIT_URL ?? "http://localhost:8025";
 const MODEL = 4 * 60_000; // the longest model step (research, then an approval) gets this long
 const TYPING = 28; // ms per character: readable, not slow
@@ -145,7 +145,7 @@ test("record the demo walkthrough", async ({ browser, baseURL }) => {
   try {
     // Title card over the signed-out start page.
     await page.goto("/");
-    await card(page, "WorkMind AI", [
+    await card(page, "NeedWise", [
       "Answers from your company's knowledge, with citations,",
       "drawn only from what each person is allowed to read.",
       "Open source · self-hosted · fictional demo company: Acme Robotics",
@@ -292,7 +292,7 @@ test("record the demo walkthrough", async ({ browser, baseURL }) => {
     await caption(page, "8/8", "Questions route to it from now on. Every change is versioned and can be restored.");
     await page.waitForTimeout(4000);
 
-    await card(page, "WorkMind AI", [
+    await card(page, "NeedWise", [
       "Permission-aware, cited, measured. Apache-2.0, with an Enterprise edition.",
       "Try it: git clone … && make quickstart",
     ]);

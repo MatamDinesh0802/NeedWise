@@ -23,21 +23,21 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, update
 
+from needwise.core.config import Settings
+from needwise.core.edition import FEATURES, Edition, License
+from needwise.core.extensions import ExtensionRegistry, enable_extensions
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.connectors.models import Source
+from needwise.modules.governance.audit import Actor
+from needwise.modules.governance.models import AuditEvent, LegalHold
+from needwise.modules.knowledge.governance import OFFICIAL_KIND
+from needwise.modules.knowledge.models import Collection, Document, DocumentVersion
+from needwise.modules.knowledge.storage import LocalObjectStorage
+from needwise.modules.meetings.models import Meeting
+from needwise.modules.retrieval.qdrant import QdrantClient, match
+from needwise.modules.work.models import Approval
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory
-from workmind.core.config import Settings
-from workmind.core.edition import FEATURES, Edition, License
-from workmind.core.extensions import ExtensionRegistry, enable_extensions
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.connectors.models import Source
-from workmind.modules.governance.audit import Actor
-from workmind.modules.governance.models import AuditEvent, LegalHold
-from workmind.modules.knowledge.governance import OFFICIAL_KIND
-from workmind.modules.knowledge.models import Collection, Document, DocumentVersion
-from workmind.modules.knowledge.storage import LocalObjectStorage
-from workmind.modules.meetings.models import Meeting
-from workmind.modules.retrieval.qdrant import QdrantClient, match
-from workmind.modules.work.models import Approval
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(
@@ -77,7 +77,7 @@ def _settings(database: Database, storage: Path, model_name: str) -> Settings:
 
 
 def _licensed() -> ExtensionRegistry:
-    pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra ee")
+    pytest.importorskip("needwise_ee", reason="install the ee extra: uv sync --extra ee")
     now = datetime.now(UTC)
     license_ = License(
         "Acme Robotics",
@@ -385,7 +385,7 @@ async def test_the_preview_is_exact_and_a_run_does_exactly_that(
 async def test_a_draft_is_previewed_without_saving_it_and_the_daily_task_applies_the_rules(
     licensed: TestClient, acme: Acme, app_sessions: SessionFactory, tmp_path: Path
 ) -> None:
-    from workmind_ee import document_retention  # the licensed fixture skipped without the package
+    from needwise_ee import document_retention  # the licensed fixture skipped without the package
 
     eng = await _collection(app_sessions, acme, "engineering-docs")
     stale = await _document(app_sessions, acme, "engineering-docs", "Old design note")

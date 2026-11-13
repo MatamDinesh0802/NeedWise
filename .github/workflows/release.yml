@@ -77,12 +77,12 @@ jobs:
           import json, os, re, sys, tomllib
 
           want = os.environ["VERSION"]
-          chart = re.search(r'^appVersion:\s*"?([^"\s#]+)', open("deploy/helm/workmind/Chart.yaml").read(), re.M)
+          chart = re.search(r'^appVersion:\s*"?([^"\s#]+)', open("deploy/helm/needwise/Chart.yaml").read(), re.M)
           found = {
               "apps/api/pyproject.toml": tomllib.load(open("apps/api/pyproject.toml", "rb"))["project"]["version"],
               "ee/python/pyproject.toml": tomllib.load(open("ee/python/pyproject.toml", "rb"))["project"]["version"],
               "apps/web/package.json": json.load(open("apps/web/package.json"))["version"],
-              "deploy/helm/workmind/Chart.yaml": chart.group(1) if chart else "missing appVersion",
+              "deploy/helm/needwise/Chart.yaml": chart.group(1) if chart else "missing appVersion",
           }
           wrong = {path: v for path, v in found.items() if v != want}
           for path, v in wrong.items():
@@ -108,15 +108,15 @@ jobs:
           - image: api
             context: apps/api
             build-contexts: ee=ee
-            licenses: Apache-2.0 AND LicenseRef-WorkMind-Enterprise
-            description: WorkMind AI API, workers and migrations (Enterprise code inactive without a license)
+            licenses: Apache-2.0 AND LicenseRef-NeedWise-Enterprise
+            description: NeedWise API, workers and migrations (Enterprise code inactive without a license)
           - image: web
             context: apps/web
             build-contexts: ""
             licenses: Apache-2.0
-            description: WorkMind AI web app (Next.js)
+            description: NeedWise web app (Next.js)
     env:
-      REPO: ${{ needs.prepare.outputs.registry }}/workmind-${{ matrix.image }}
+      REPO: ${{ needs.prepare.outputs.registry }}/needwise-${{ matrix.image }}
       IMAGE: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@v7
@@ -158,7 +158,7 @@ jobs:
           provenance: mode=max
           sbom: true
           labels: |
-            org.opencontainers.image.title=workmind-${{ matrix.image }}
+            org.opencontainers.image.title=needwise-${{ matrix.image }}
             org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ steps.src.outputs.revision }}
@@ -197,7 +197,7 @@ jobs:
           for arch in amd64 arm64; do
             docker buildx imagetools inspect "$REPO@$DIGEST" \
               --format "{{ json (index .SBOM \"linux/$arch\").SPDX }}" \
-              >"$out/workmind-$IMAGE-$VERSION-linux-$arch.spdx.json"
+              >"$out/needwise-$IMAGE-$VERSION-linux-$arch.spdx.json"
           done
           echo "$DIGEST" >"$out/digest-$IMAGE"
       - uses: actions/upload-artifact@v7
@@ -235,8 +235,8 @@ jobs:
           REGISTRY: ${{ needs.prepare.outputs.registry }}
         run: |
           {
-            echo "WORKMIND_API_IMAGE=$REGISTRY/workmind-api@$(cat "$RUNNER_TEMP/release/digest-api")"
-            echo "WORKMIND_WEB_IMAGE=$REGISTRY/workmind-web@$(cat "$RUNNER_TEMP/release/digest-web")"
+            echo "NEEDWISE_API_IMAGE=$REGISTRY/needwise-api@$(cat "$RUNNER_TEMP/release/digest-api")"
+            echo "NEEDWISE_WEB_IMAGE=$REGISTRY/needwise-web@$(cat "$RUNNER_TEMP/release/digest-web")"
           } >>"$GITHUB_ENV"
           # As in ci.yml: deterministic hash embeddings (no embedding model server here).
           printf 'EMBEDDING_PROVIDER=hash\nEMBEDDING_MODEL=hash-ci\n' >.env
@@ -254,9 +254,9 @@ jobs:
           # relevance floor: the gate checks every candidate a search can return.
           mkdir -p "$RUNNER_TEMP/gate-out" && chmod a+rwx "$RUNNER_TEMP/gate-out"
           docker compose --profile tools run --rm -v "$PWD/evals:/evals:ro" \
-            -v "$RUNNER_TEMP/gate-out:/gate-out" -e WORKMIND_EVALS_DIR=/evals \
+            -v "$RUNNER_TEMP/gate-out:/gate-out" -e NEEDWISE_EVALS_DIR=/evals \
             -e RETRIEVAL_MIN_SIMILARITY=0 seed \
-            python -m workmind.evals --retrieval-only --out /gate-out --label "permission-gate-$TAG"
+            python -m needwise.evals --retrieval-only --out /gate-out --label "permission-gate-$TAG"
       # The image has no git, so the report says "commit: unknown": record what was tested.
       - name: Add the release and the image digests to the report
         if: ${{ !cancelled() }}
@@ -268,8 +268,8 @@ jobs:
             echo "## Release"
             echo
             echo "- tag: \`$TAG\`, commit \`$(git rev-parse HEAD)\`"
-            echo "- api image: \`$WORKMIND_API_IMAGE\`"
-            echo "- web image: \`$WORKMIND_WEB_IMAGE\`"
+            echo "- api image: \`$NEEDWISE_API_IMAGE\`"
+            echo "- web image: \`$NEEDWISE_WEB_IMAGE\`"
             echo "- run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           } >>"$RUNNER_TEMP/gate/permission-gate-$TAG.md"
       - uses: actions/upload-artifact@v7
@@ -313,7 +313,7 @@ jobs:
           MINOR: ${{ needs.prepare.outputs.minor }}
         run: |
           for image in api web; do
-            repo="$REGISTRY/workmind-$image"
+            repo="$REGISTRY/needwise-$image"
             digest="$(cat "$RUNNER_TEMP/release/digest-$image")"
             tags=(-t "$repo:$VERSION")
             if [ -n "$MINOR" ]; then tags+=(-t "$repo:$MINOR"); fi
@@ -369,26 +369,26 @@ jobs:
         run: |
           body="$RUNNER_TEMP/notes.md"
           gh release view "$TAG" --json body --jq .body >"$body"
-          if grep -q '<!-- workmind-images -->' "$body"; then exit 0; fi
+          if grep -q '<!-- needwise-images -->' "$body"; then exit 0; fi
           a="$RUNNER_TEMP/artifacts"
           {
             echo
-            echo '<!-- workmind-images -->'
+            echo '<!-- needwise-images -->'
             echo '## Container images'
             echo
             echo 'linux/amd64 and linux/arm64. Pin the digest in production.'
             echo
             echo '```text'
             for image in api web; do
-              echo "$REGISTRY/workmind-$image:$VERSION@$(cat "$a/digest-$image")"
+              echo "$REGISTRY/needwise-$image:$VERSION@$(cat "$a/digest-$image")"
             done
             echo '```'
             echo
             echo 'Verify the build provenance (public repository) and inspect the SBOMs:'
             echo
             echo '```bash'
-            echo "gh attestation verify oci://$REGISTRY/workmind-api:$VERSION --owner $OWNER"
-            echo "docker buildx imagetools inspect $REGISTRY/workmind-api:$VERSION --format '{{ json .SBOM }}'"
+            echo "gh attestation verify oci://$REGISTRY/needwise-api:$VERSION --owner $OWNER"
+            echo "docker buildx imagetools inspect $REGISTRY/needwise-api:$VERSION --format '{{ json .SBOM }}'"
             echo '```'
             echo
             echo "Attached: SPDX SBOMs per image and platform, \`permission-gate-$TAG.md\` (the"

@@ -4,7 +4,7 @@ They need a superuser DSN in TEST_DATABASE_ADMIN_URL, for example the compose Po
     TEST_DATABASE_ADMIN_URL=postgresql://postgres:postgres@localhost:5432/postgres
 `make test` sets it (start Postgres first with `make infra`). Without it, they are skipped.
 
-The fixture builds a throwaway database `workmind_test` with its own owner/app roles,
+The fixture builds a throwaway database `needwise_test` with its own owner/app roles,
 configured exactly like deploy/postgres/init, and migrates it with Alembic as the owner role,
 so the tests exercise the same RLS policies and grants as production.
 """
@@ -26,23 +26,24 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from needwise.core.config import Settings
+from needwise.core.db import create_engine, create_session_factory
+from needwise.core.tenancy import global_transaction, tenant_transaction
+from needwise.main import create_app
+from needwise.modules.identity.models import Tenant, User
+from needwise.modules.identity.sessions import SessionStore
+from needwise.seed.apply import seed_database
+from needwise.seed.company import load_company
+
 # Throwaway PostgreSQL and MySQL shop databases for the SQL-source tests (session fixtures).
 from tests.integration.shop_databases import shop_mysql, shop_postgres  # noqa: F401
-from workmind.core.config import Settings
-from workmind.core.db import create_engine, create_session_factory
-from workmind.core.tenancy import global_transaction, tenant_transaction
-from workmind.main import create_app
-from workmind.modules.identity.models import Tenant, User
-from workmind.modules.identity.sessions import SessionStore
-from workmind.seed.apply import seed_database
-from workmind.seed.company import load_company
 
 ADMIN_URL = os.environ.get("TEST_DATABASE_ADMIN_URL")
 API_DIR = Path(__file__).resolve().parents[2]
 # Override to run several test sessions side by side (each gets its own throwaway database).
-TEST_DB = os.environ.get("TEST_DATABASE_NAME", "workmind_test")
-OWNER_ROLE = "workmind_test_owner"
-APP_ROLE = "workmind_test_app"
+TEST_DB = os.environ.get("TEST_DATABASE_NAME", "needwise_test")
+OWNER_ROLE = "needwise_test_owner"
+APP_ROLE = "needwise_test_app"
 PASSWORD = "test-only-password"
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -185,7 +186,7 @@ class Acme:
     slug: str = ""
 
     def as_(self, name: str, *, write: bool = False) -> dict[str, str]:
-        headers = {"Cookie": f"wm_session={self.sessions[name]}"}
+        headers = {"Cookie": f"nw_session={self.sessions[name]}"}
         return {**headers, **WRITE} if write else headers
 
 

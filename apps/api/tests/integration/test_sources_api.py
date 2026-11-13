@@ -28,18 +28,18 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
+from needwise.core.config import Settings
+from needwise.core.edition import Edition, License
+from needwise.core.extensions import enable_extensions
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.connectors.models import Source
+from needwise.modules.governance.audit import Actor
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.knowledge import document_acl
+from needwise.modules.knowledge.models import Document
+from needwise.modules.retrieval.qdrant import QdrantClient
 from tests.integration.conftest import VALKEY_URL, Acme, Database
-from workmind.core.config import Settings
-from workmind.core.edition import Edition, License
-from workmind.core.extensions import enable_extensions
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.connectors.models import Source
-from workmind.modules.governance.audit import Actor
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.knowledge import document_acl
-from workmind.modules.knowledge.models import Document
-from workmind.modules.retrieval.qdrant import QdrantClient
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(
@@ -1152,7 +1152,7 @@ async def test_each_source_says_whether_permission_sync_applies_to_it(
         s["key"]: s["permission_sync"]
         for s in api.get("/api/v1/admin/sources", headers=acme.as_("erin")).json()
     }
-    pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra ee")
+    pytest.importorskip("needwise_ee", reason="install the ee extra: uv sync --extra ee")
     now = datetime.now(UTC)
     license_ = License(
         "Acme Robotics",

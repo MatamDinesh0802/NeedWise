@@ -18,7 +18,7 @@ const filled: SourceForm = {
   key: "sales-warehouse",
   host: "db.internal.example",
   database: "sales",
-  username: "workmind_reader",
+  username: "needwise_reader",
   password: "s3cret",
   schemas: "shop, finance",
 };
@@ -32,7 +32,7 @@ describe("the connection form", () => {
       kind: "postgres",
       host: "db.internal.example",
       database: "sales",
-      username: "workmind_reader",
+      username: "needwise_reader",
       password: "s3cret",
       tls_mode: "verify-full",
       tls_ca: null,

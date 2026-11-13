@@ -11,8 +11,7 @@ import httpx
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from tests.fakes import FakeLLM
-from workmind.modules.work.approvers import (
+from needwise.modules.work.approvers import (
     RuleError,
     describe,
     is_single_person,
@@ -20,7 +19,7 @@ from workmind.modules.work.approvers import (
     rule_json,
     stored_rule,
 )
-from workmind.modules.work.delivery import (
+from needwise.modules.work.delivery import (
     APP_URL,
     Channels,
     Preferences,
@@ -29,20 +28,21 @@ from workmind.modules.work.delivery import (
     digest_body,
     message_body,
 )
-from workmind.modules.work.mentions import mentioned
-from workmind.modules.work.models import Notification
-from workmind.modules.work.policy import ApproverRules, EscalationPolicy, RoutingPolicy
-from workmind.modules.work.routing import (
+from needwise.modules.work.mentions import mentioned
+from needwise.modules.work.models import Notification
+from needwise.modules.work.policy import ApproverRules, EscalationPolicy, RoutingPolicy
+from needwise.modules.work.routing import (
     DepartmentView,
     RouteChoice,
     RuleView,
     decide_route,
     match_rules,
 )
-from workmind.modules.work.slack import SlackClient, SlackError, webhook_allowed
-from workmind.modules.work.workflow_source import parse_source, to_yaml
-from workmind.modules.work.workflows import Definition, Step, Trigger
-from workmind.providers.llm import LLMError
+from needwise.modules.work.slack import SlackClient, SlackError, webhook_allowed
+from needwise.modules.work.workflow_source import parse_source, to_yaml
+from needwise.modules.work.workflows import Definition, Step, Trigger
+from needwise.providers.llm import LLMError
+from tests.fakes import FakeLLM
 
 # --- Approver rules ----------------------------------------------------------------------------
 
@@ -159,7 +159,7 @@ def test_preferences_default_to_in_app_only() -> None:
 def test_messages_are_plain_text_with_a_link_to_the_page() -> None:
     text = message_body("Approval needed: Send the report", "Step 1 of 2.", "/approvals/1")
     assert text == (
-        f"Approval needed: Send the report\n\nStep 1 of 2.\n\nOpen in WorkMind: {APP_URL}"
+        f"Approval needed: Send the report\n\nStep 1 of 2.\n\nOpen in NeedWise: {APP_URL}"
         "/approvals/1"
     )
     assert message_body("Title", "", None) == "Title"

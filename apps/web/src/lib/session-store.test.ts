@@ -69,7 +69,7 @@ describe("session store", () => {
 
   it("signs out: posts logout, goes signed out, then navigates to the redirect", async () => {
     const postLogout = vi.fn(async () => ({
-      redirect_url: "http://localhost:8480/auth/realms/workmind/protocol/openid-connect/logout?x=1",
+      redirect_url: "http://localhost:8480/auth/realms/needwise/protocol/openid-connect/logout?x=1",
     }));
     const navigate = vi.fn();
     const store = createSessionStore({ fetchMe: async () => alice, postLogout, navigate });
@@ -80,7 +80,7 @@ describe("session store", () => {
     expect(postLogout).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot()).toEqual({ kind: "signed_out" });
     expect(navigate).toHaveBeenCalledWith(
-      "http://localhost:8480/auth/realms/workmind/protocol/openid-connect/logout?x=1",
+      "http://localhost:8480/auth/realms/needwise/protocol/openid-connect/logout?x=1",
     );
     expect(seen).toEqual(["signed_in", "signed_in", "signed_out"]); // loaded, signingOut, done
   });
@@ -200,7 +200,7 @@ function memoryStorage() {
 describe("switchAccount (demo view as)", () => {
   it("ends the Keycloak session first and remembers whom to sign in as next", async () => {
     // With a live SSO session, prompt=login would re-authenticate the *current* user.
-    const keycloakLogout = "http://localhost:8480/auth/realms/workmind/protocol/openid-connect/logout?id_token_hint=x";
+    const keycloakLogout = "http://localhost:8480/auth/realms/needwise/protocol/openid-connect/logout?id_token_hint=x";
     const postLogout = vi.fn(async () => ({ redirect_url: keycloakLogout }));
     const navigate = vi.fn();
     const storage = memoryStorage();
@@ -211,7 +211,7 @@ describe("switchAccount (demo view as)", () => {
     await store.switchAccount("bob@acme.test");
     expect(postLogout).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledWith(keycloakLogout);
-    expect(JSON.parse(storage.data.get("workmind:view-as") ?? "{}")).toMatchObject({ email: "bob@acme.test" });
+    expect(JSON.parse(storage.data.get("needwise:view-as") ?? "{}")).toMatchObject({ email: "bob@acme.test" });
     expect(store.getSnapshot()).toEqual({ kind: "signed_out" });
   });
 

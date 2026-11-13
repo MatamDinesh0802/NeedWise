@@ -1,7 +1,7 @@
 # gitleaks configuration: the default rules, plus the places where made-up keys are expected.
 # CI scans the whole history (ci.yml, "secrets"), so inline `gitleaks:allow` comments cannot
 # clear findings in older commits; this file does. Keep each entry narrow.
-title = "WorkMind AI"
+title = "NeedWise"
 
 [extend]
 useDefault = true
@@ -18,8 +18,8 @@ description = "The fictional demo company's documents (example tokens in its API
 paths = ['''^seed/acme/corpus/''']
 
 [[allowlists]]
-description = "The documented development-only encryption key (refused outside development), under its current and its earlier name in apps/api/src/workmind/core/config.py"
-paths = ['''^apps/api/src/workmind/core/config\.py$''']
+description = "The documented development-only encryption key (refused outside development), under its current and its earlier name in apps/api/src/needwise/core/config.py (apps/api/src/workmind/ before the rename: CI scans the whole history)"
+paths = ['''^apps/api/src/(needwise|workmind)/core/config\.py$''']
 regexTarget = "line"
 regexes = ['''\bDEV_SECRETS(_ENCRYPTION)?_KEY = "''']
 condition = "AND"

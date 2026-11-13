@@ -8,7 +8,7 @@
 
 import { ApiError, apiJson } from "@/lib/api";
 
-/** The Enterprise features the API knows about (workmind.core.edition.FEATURES). */
+/** The Enterprise features the API knows about (needwise.core.edition.FEATURES). */
 export type EnterpriseFeature =
   | "retention_policies"
   | "department_budgets"
@@ -81,6 +81,6 @@ export function enterpriseNotice(feature: EnterpriseFeature): { title: string; d
   const info = ENTERPRISE_FEATURES[feature];
   return {
     title: `Enterprise feature: ${featureLabel(feature)}`,
-    description: `${info ? `${info.description} ` : ""}It needs a WorkMind Enterprise license, which this deployment doesn't have.`,
+    description: `${info ? `${info.description} ` : ""}It needs a NeedWise Enterprise license, which this deployment doesn't have.`,
   };
 }

@@ -52,7 +52,7 @@ describe("UsageReport for an admin (whole organization)", () => {
 
   it("offers the chargeback report behind the Enterprise gate, and the request list on demand", () => {
     expect(html).toContain("Chargeback report");
-    expect(html).toContain("Chargeback reports is part of WorkMind Enterprise");
+    expect(html).toContain("Chargeback reports is part of NeedWise Enterprise");
     expect(html).toContain('aria-label="Checking the license"');
     expect(html).toMatch(/aria-expanded="false"[^>]*>.*Show requests/);
   });

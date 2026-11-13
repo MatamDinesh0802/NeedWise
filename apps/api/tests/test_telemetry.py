@@ -11,9 +11,9 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from workmind.core.config import Settings
-from workmind.core.logging import add_trace_ids
-from workmind.core.telemetry import configure_telemetry
+from needwise.core.config import Settings
+from needwise.core.logging import add_trace_ids
+from needwise.core.telemetry import configure_telemetry
 
 
 def settings() -> Settings:
@@ -29,7 +29,7 @@ def test_with_an_endpoint_requests_become_spans_of_the_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9")  # never reached
-    monkeypatch.setenv("OTEL_SERVICE_NAME", "workmind-api-test")
+    monkeypatch.setenv("OTEL_SERVICE_NAME", "needwise-api-test")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "1")
     app = FastAPI()
 
@@ -47,7 +47,7 @@ def test_with_an_endpoint_requests_become_spans_of_the_service(
         spans = exported.get_finished_spans()
         assert spans, "the request made no span"
         resource: dict[str, Any] = dict(spans[0].resource.attributes)
-        assert resource["service.name"] == "workmind-api-test"
+        assert resource["service.name"] == "needwise-api-test"
         assert resource["deployment.environment.name"] == "test"
         assert any(s.attributes and s.attributes.get("http.route") == "/ping" for s in spans)
     finally:

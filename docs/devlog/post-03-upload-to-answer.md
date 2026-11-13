@@ -2,7 +2,7 @@
 
 - **Status:** Draft, not posted
 - **Milestone:** Phase 2 (knowledge ingestion)
-- **Image:** `assets/post-03-ingestion-pipeline.png` (1080×1350). Every step is real code in `apps/api/src/workmind/modules/knowledge/`; the numbers come from `wm reindex acme` on the maintainer's laptop.
+- **Image:** `assets/post-03-ingestion-pipeline.png` (1080×1350). Every step is real code in `apps/api/src/needwise/modules/knowledge/`; the numbers come from `nw reindex acme` on the maintainer's laptop.
 - **Post only after** the repo is public.
 
 ---
@@ -11,7 +11,7 @@
 
 "Just upload your PDFs and ask questions."
 
-That sentence hides most of the work. This week WorkMind AI got its ingestion pipeline: the part between a file and an answer you can trust.
+That sentence hides most of the work. This week NeedWise got its ingestion pipeline: the part between a file and an answer you can trust.
 
 Six steps, and what each one taught me:
 
@@ -49,6 +49,6 @@ Repo link in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
-The pipeline: <GITHUB_REPO_URL>/tree/main/apps/api/src/workmind/modules/knowledge
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
+The pipeline: https://github.com/MatamDinesh0802/NeedWise/tree/main/apps/api/src/needwise/modules/knowledge
 Try it with the fictional company: `make quickstart`

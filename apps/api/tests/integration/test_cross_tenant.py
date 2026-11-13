@@ -40,6 +40,35 @@ from fastapi.testclient import TestClient
 from redis.asyncio import Redis
 from sqlalchemy import select, text
 
+from needwise.core.config import Settings
+from needwise.core.context import RequestContext
+from needwise.core.db import create_engine, create_session_factory
+from needwise.core.edition import FEATURES, Edition, License
+from needwise.core.extensions import enable_extensions
+from needwise.core.tenancy import GLOBAL_KEY_PREFIXES, key_tenant, tenant_transaction
+from needwise.main import create_app
+from needwise.modules.analytics import dataset
+from needwise.modules.analytics.agent import Composed
+from needwise.modules.analytics.models import AnalyticsRun, AnalyticsSource
+from needwise.modules.authz.openfga import OpenFgaClient, RelationTuple
+from needwise.modules.authz.sync import ensure_store, process_outbox, reconcile
+from needwise.modules.connectors.models import Source
+from needwise.modules.governance.models import LegalHold
+from needwise.modules.identity.models import Department, Group
+from needwise.modules.knowledge.models import Collection, Document, DocumentVersion
+from needwise.modules.knowledge.storage import (
+    ForeignObjectKeyError,
+    LocalObjectStorage,
+    object_key,
+    owned_key,
+)
+from needwise.modules.meetings.extract import ActionItem, Decision, Extraction
+from needwise.modules.retrieval.qdrant import QdrantClient, match, match_any
+from needwise.modules.retrieval.sparse import encode_query
+from needwise.modules.work.approvals import propose
+from needwise.modules.work.models import Notification, Workflow, WorkflowRun
+from needwise.modules.work.routing import RouteChoice
+from needwise.seed.analytics_load import seed_analytics
 from tests.analytics_support import ACME_ANALYTICS
 from tests.fakes import FakeLLM
 from tests.integration.conftest import (
@@ -49,35 +78,6 @@ from tests.integration.conftest import (
     SessionFactory,
     seed_acme,
 )
-from workmind.core.config import Settings
-from workmind.core.context import RequestContext
-from workmind.core.db import create_engine, create_session_factory
-from workmind.core.edition import FEATURES, Edition, License
-from workmind.core.extensions import enable_extensions
-from workmind.core.tenancy import GLOBAL_KEY_PREFIXES, key_tenant, tenant_transaction
-from workmind.main import create_app
-from workmind.modules.analytics import dataset
-from workmind.modules.analytics.agent import Composed
-from workmind.modules.analytics.models import AnalyticsRun, AnalyticsSource
-from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
-from workmind.modules.authz.sync import ensure_store, process_outbox, reconcile
-from workmind.modules.connectors.models import Source
-from workmind.modules.governance.models import LegalHold
-from workmind.modules.identity.models import Department, Group
-from workmind.modules.knowledge.models import Collection, Document, DocumentVersion
-from workmind.modules.knowledge.storage import (
-    ForeignObjectKeyError,
-    LocalObjectStorage,
-    object_key,
-    owned_key,
-)
-from workmind.modules.meetings.extract import ActionItem, Decision, Extraction
-from workmind.modules.retrieval.qdrant import QdrantClient, match, match_any
-from workmind.modules.retrieval.sparse import encode_query
-from workmind.modules.work.approvals import propose
-from workmind.modules.work.models import Notification, Workflow, WorkflowRun
-from workmind.modules.work.routing import RouteChoice
-from workmind.seed.analytics_load import seed_analytics
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 OPENFGA_URL = os.environ.get("TEST_OPENFGA_URL")
@@ -188,7 +188,7 @@ class World:
     collection_name: str
     a_ids: frozenset[str]  # every id of every row A owns, and A's tenant id, slug and store
     keys_before: frozenset[str]  # Valkey keys that existed before the world was built
-    enterprise: bool  # workmind_ee installed: its routes run (else the core's 402 stand-ins)
+    enterprise: bool  # needwise_ee installed: its routes run (else the core's 402 stand-ins)
     before: Snapshot | None = None
 
     @property
@@ -928,7 +928,7 @@ def world(database: Database, tmp_path_factory: pytest.TempPathFactory) -> Itera
 # --- Every route ---------------------------------------------------------------------------------
 
 NOT_FOUND = frozenset({403, 404})
-# Served by workmind_ee when it is installed (the gate installs it: uv sync --extra ee).
+# Served by needwise_ee when it is installed (the gate installs it: uv sync --extra ee).
 ENTERPRISE_ONLY = frozenset(
     {
         "/api/v1/admin/retention",
@@ -1800,7 +1800,7 @@ def test_mcp_as_b_never_reaches_a(world: World) -> None:
 def test_another_tenants_token_does_not_open_mcp_for_a_forged_slug(world: World) -> None:
     """The token names its tenant; changing the slug sends it to a tenant without that hash."""
     secret = world.b.token.rsplit("_", 1)[1]
-    forged = f"wm_pat_{world.a.acme.slug}_{secret}"
+    forged = f"nw_pat_{world.a.acme.slug}_{secret}"
     response = world.client.post(
         "/mcp",
         content=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}),
@@ -1958,7 +1958,7 @@ async def test_openfga_checks_for_a_objects_in_b_store_fail(world: World) -> Non
 @pytest.fixture
 def worker(world: World, monkeypatch: pytest.MonkeyPatch) -> Any:
     """The Celery tasks, run in this process (no broker) against the test database."""
-    from workmind.workers import celery_app
+    from needwise.workers import celery_app
 
     monkeypatch.setattr(celery_app, "settings", world.settings)
     return celery_app
@@ -1986,7 +1986,7 @@ def test_tenant_tasks_take_the_tenant_first(worker: Any) -> None:
     tasks = {
         name: task
         for name, task in worker.app.tasks.items()
-        if name.startswith("workmind.") and inspect.signature(task.run).parameters
+        if name.startswith("needwise.") and inspect.signature(task.run).parameters
     }
     assert set(tasks) == {
         worker.INGEST_TASK,

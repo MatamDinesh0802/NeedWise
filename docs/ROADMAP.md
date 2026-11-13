@@ -1,13 +1,13 @@
-# WorkMind AI — Roadmap, Releases and Go-to-Market
+# NeedWise — Roadmap, Releases and Go-to-Market
 
 > **Status:** plan v0.2 · **Phases 0 to 12 built; v1.0.0 tagged on 2026-11-13**, not yet published (no public repository; Phase 7 has work remaining) · **Last updated:** 2026-11-13
 > **Companion doc:** [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## 1. Strategy in one paragraph
 
-Build the **complete product in public, one phase at a time**. Every phase ends in a **tagged release that works on its own**, plus a **LinkedIn post** showing something real: a demo, a diagram, a measured number. The repo is open source from the start, under an **open-core** model. The free Community edition is genuinely useful and self-hostable. Later, a paid Enterprise edition and a hosted WorkMind Cloud add what large organizations need (compliance, scale, administration, support). Recognition and career value come first. The business is the upside once there are real users.
+Build the **complete product in public, one phase at a time**. Every phase ends in a **tagged release that works on its own**, plus a **LinkedIn post** showing something real: a demo, a diagram, a measured number. The repo is open source from the start, under an **open-core** model. The free Community edition is genuinely useful and self-hostable. Later, a paid Enterprise edition and a hosted NeedWise Cloud add what large organizations need (compliance, scale, administration, support). Recognition and career value come first. The business is the upside once there are real users.
 
-**Our wedge** (why someone picks WorkMind over other open-source AI assistants):
+**Our wedge** (why someone picks NeedWise over other open-source AI assistants):
 - **Provably permission-safe:** a public leak-test suite where the leak rate must be 0 to merge.
 - **Measured:** every release publishes quality, latency and cost numbers.
 - **Self-hosted and model-agnostic:** run fully local, or plug in paid providers. Sensitive data never leaves your servers.
@@ -26,14 +26,14 @@ Sizes are rough estimates in **weeks of focused work**; part-time takes longer. 
 | 3 ✅ | v0.3 | Retrieval engine + evaluation harness | 2–3 wk | First published eval numbers |
 | 4 ✅ | **v0.4** | **AI Assistant — first usable product** | 2 wk | **Public launch** (HN, Reddit, LinkedIn video) |
 | 5 ✅ | v0.5 | Multi-agent orchestration | 2–3 wk | "Do you need multi-agent? I measured it." |
-| 6 ✅ | v0.6 | Tools and MCP | 2 wk | WorkMind inside Claude Desktop / Cursor |
+| 6 ✅ | v0.6 | Tools and MCP | 2 wk | NeedWise inside Claude Desktop / Cursor |
 | 7 🚧 | v0.7 | Connectors and sync | 3 wk | Google Drive + Slack live sync |
 | 8 ✅ | v0.8 | Workflow automation and approvals | 2–3 wk | Human-in-the-loop demo |
 | 9 ✅ | v0.9 | Meeting intelligence | 2 wk | Recording → decisions and action items |
 | 10 ✅ | v0.10 | Business intelligence agent | 3 wk | Question → chart + SQL + explanation |
 | 11 ✅ | v0.11 | Admin, governance and usage analytics | 2 wk | New agent created without code |
 | 12 ✅ | **v1.0** | **Production hardening** | 2–3 wk | **v1.0 launch** (HN, Product Hunt) |
-| — | after 1.0 | Commercial track | ongoing | WorkMind Cloud + Enterprise edition |
+| — | after 1.0 | Commercial track | ongoing | NeedWise Cloud + Enterprise edition |
 
 ✅ built (4: launch pending the public repository; 8 to 11: with the gaps their sections list;
 12: tagged as v1.0.0, publishing pending the public repository);
@@ -112,7 +112,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **DoD:** log in as each demo user and see the correct capabilities. The audit log shows logins and admin changes. Isolation tests pass.
 
-> **Not built:** invitations by email. **Add person** creates the WorkMind user (status
+> **Not built:** invitations by email. **Add person** creates the NeedWise user (status
 > *invited*), who can sign in only once a Keycloak user with the same verified email exists
 > (created by an operator, or through a federated identity provider); no email is sent
 > ([administration guide](user-guide/administration.md#adding-people)). The principal set is not
@@ -141,7 +141,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **DoD:** the full Acme corpus ingests with zero unhandled failures. Re-uploading an unchanged file is skipped. Throughput (docs/min) is measured and recorded.
 
-> **Throughput, measured 2026-11-13** (commit `8dc326c`): `wm reindex acme` inside the API
+> **Throughput, measured 2026-11-13** (commit `8dc326c`): `nw reindex acme` inside the API
 > container re-indexed the demo tenant's 51 documents (the 49 seeded and 2 meeting transcripts;
 > 430 chunks) from their stored originals, one document at a time: parse, chunk, label, embed,
 > index. Two runs, 0 failed: 18.9 s (about 160 documents or 1,370 chunks a minute; the first run,
@@ -156,7 +156,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > (lightweight parsers instead, [ADR 0007](adr/0007-model-providers-and-lightweight-parsing.md));
 > the Presidio PII scan (a regex scan for IBANs, US SSNs and pay figures suggests the label; no
 > names, addresses, phone numbers or emails); metadata enrichment beyond the title; the Qdrant
-> alias (a collection per model, `wm reindex` to switch); a ~500-document corpus (49 documents
+> alias (a collection per model, `nw reindex` to switch); a ~500-document corpus (49 documents
 > in 14 collections, [case study](case-study.md)).
 
 **LinkedIn post #3 — "What actually happens between 'upload PDF' and 'AI answers'."**
@@ -167,7 +167,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 ### Phase 3 — Retrieval engine and evaluation harness (v0.3) ✅ Done (see `evals/README.md`)
 
 > Done: hybrid search with tuned fusion, both locks, citations, abstention, sensitivity routing,
-> `wm eval` with QA / red-team / abstention suites, the CI permission gate, and the ablation.
+> `nw eval` with QA / red-team / abstention suites, the CI permission gate, and the ablation.
 > Deferred: the reranker adapter (no measurable headroom yet: Evidence@3 is 98.8%), the
 > local-vs-paid comparison (D3: the maintainer runs Claude), and growing QA from 82 to ~200 items.
 > Not built: metadata filters extracted from the question (department, dates, document type)
@@ -187,7 +187,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Eval harness:
   - Datasets: retrieval QA (~200), red team with canaries, abstention.
   - Metrics (ARCHITECTURE §22).
-  - `wm eval` CLI.
+  - `nw eval` CLI.
   - CI smoke + red-team gate.
 - **Ablation report:** dense-only vs. hybrid vs. hybrid + rerank.
 - **Local vs. paid model comparison.** Decide the default local model (D3).
@@ -225,7 +225,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > links "Open PDF at page N", which opens the PDF at that page with nothing highlighted (the
 > parsers record page numbers, not positions).
 
-**Goal:** a real person can install WorkMind and get cited, permission-aware answers in minutes.
+**Goal:** a real person can install NeedWise and get cited, permission-aware answers in minutes.
 
 **Scope:**
 - Chat UI with streaming (run + SSE events), conversation history.
@@ -278,10 +278,10 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 > Done: tool registry with side-effect levels, execution wrapper (scopes, approval gate, sanitizing,
 > audit), `search_knowledge` / `draft_email` / `web_search` (SearXNG, optional), research agent,
-> MCP client for operator-configured servers, WorkMind MCP server with token auth, injection tests.
+> MCP client for operator-configured servers, NeedWise MCP server with token auth, injection tests.
 > `create_task` moves to Phase 8 with the Tasks module.
 
-**Goal:** agents can act through governed tools, and WorkMind plugs into the MCP ecosystem.
+**Goal:** agents can act through governed tools, and NeedWise plugs into the MCP ecosystem.
 
 **Scope:**
 - Tool registry with side-effect levels and policies.
@@ -289,11 +289,11 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Built-in tools: `search_knowledge`, `create_task`, `draft_email`, `web_search` (SearXNG).
 - Research agent.
 - MCP client: register remote MCP servers, import their tools.
-- **WorkMind MCP server** at `/mcp` with personal access token auth.
+- **NeedWise MCP server** at `/mcp` with personal access token auth.
 - Injection tests on tool outputs.
 
 **DoD:**
-- Ask a permission-aware question from Claude Desktop or Cursor through the WorkMind MCP server.
+- Ask a permission-aware question from Claude Desktop or Cursor through the NeedWise MCP server.
 - An agent successfully uses an external MCP tool.
 
 **LinkedIn post #7 — "Your company knowledge inside your IDE, with permissions intact."**
@@ -352,11 +352,11 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Source health dashboard. Stale-document detection and owner reminders.
 - **Community:** collection-level permission mapping (e.g. "this Drive folder → Finance department").
 - **Enterprise (`ee/`):** per-document permission sync that mirrors source ACLs.
-- *Stretch:* Slack/Teams bot — ask WorkMind inside chat.
+- *Stretch:* Slack/Teams bot — ask NeedWise inside chat.
 
 **DoD:**
 - A test Google Drive and Slack workspace stay in sync within the configured interval.
-- Deletions in the source disappear from WorkMind.
+- Deletions in the source disappear from NeedWise.
 
 **LinkedIn post #8 — "Connecting to Google Drive is easy. Keeping permissions in sync is the hard part."**
 
@@ -389,7 +389,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >
 > Integrated 2026-11-13: on the rebuilt stack the browser suite (184 passed) covers Requests and
 > Admin › Automation (page, accessibility and layout checks); beat schedules
-> `workmind.escalate_work` hourly and `workmind.deliver_notifications` every minute, and the
+> `needwise.escalate_work` hourly and `needwise.deliver_notifications` every minute, and the
 > seed added the 7 Acme routing rules. Every notification kind now has a delivery category,
 > including two new ones (Sources, Legal holds). Not observed on the stack: an escalation, an
 > email or a Slack message actually sent by the beat tasks.
@@ -398,7 +398,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > reading a mailbox for email requests (only an endpoint for a bridge); per-workflow SLAs and
 > working hours; events for inbound email.
 
-**Goal:** WorkMind does work, safely, with humans in control.
+**Goal:** NeedWise does work, safely, with humans in control.
 
 **Scope:**
 - Approval service, approvals inbox, inline approval cards (approve / edit / reject).
@@ -467,7 +467,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 **DoD:** *"Monthly revenue trend this year and the top 3 drivers"* → chart + explanation + SQL + data link. Execution accuracy is published.
 
 **Status:**
-- Done: CSV/XLSX → versioned DuckDB per tenant; semantic layer YAML; sqlglot guard with row policies; sandboxed read-only engine; the BI agent (tool loop, compose, chart spec, number verification with one repair pass); `/api/v1/analytics/*` and admin routes; `describe_data` / `query_data` for research mode and MCP; the Insights page and Admin › Analytics; the text-to-SQL eval (`wm eval --suites analytics`, [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md)).
+- Done: CSV/XLSX → versioned DuckDB per tenant; semantic layer YAML; sqlglot guard with row policies; sandboxed read-only engine; the BI agent (tool loop, compose, chart spec, number verification with one repair pass); `/api/v1/analytics/*` and admin routes; `describe_data` / `query_data` for research mode and MCP; the Insights page and Admin › Analytics; the text-to-SQL eval (`nw eval --suites analytics`, [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md)).
 - Measured with Claude Sonnet 5.5 ([evals/results/2026-11-12-analytics.md](../evals/results/2026-11-12-analytics.md)): execution accuracy 33/36 (28/29 with full access, 5/7 under Dan's row policy), 5/5 people without access refused with no model call, 10/10 attacks without a leak, 0 leaks, 159/159 narrative numbers matched to a result, 6.9 s p50 / 10.2 s p95, $0.026 per answer. The DoD question was asked on the Insights page against the running stack: a chart, the narrative, 4 queries with their SQL and data, 20/20 figures backed. Two runs only, one model.
 - Done since (2026-11-13, [docs/analytics-sql-sources.md](analytics-sql-sources.md)): PostgreSQL and MySQL sources as datasets of their own (own model, access and row policies), read-only three ways (the guard, a read-only session, a read-only database role the docs ask for), statement timeouts, row caps, a connection budget per tenant, hosts checked against the model providers' SSRF rules with private networks only by an operator setting, passwords sealed like provider keys; model tables rewritten to the database's, row policies as CTE fences (PostgreSQL `MATERIALIZED`: without it, PostgreSQL 18 evaluated an oracle on hidden rows in a test); admin connect, catalog and model-check routes and UI; the agent across datasets; live progress of an answer on Insights (planning, each query compiled and run, writing, verifying, charting) over the chat runs' event streams. Tested on PostgreSQL 18.6 and MySQL 8.4.13 with scripted models: 127 guard bypass cases refused, 51 integration tests and 4 over HTTP; 19 eval items for a SQL source (`evals/datasets/analytics_sql.jsonl`) score 19/19 with a gold-answering scripted model.
 - Integrated 2026-11-13: the API image installs the `mysql` extra; after the merge the 55 SQL-source integration tests passed again against PostgreSQL 18.6 and a throwaway MySQL 8.4.13 container. No SQL source was connected on the running stack (none is seeded).
@@ -477,7 +477,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 ### Phase 11 — Admin, governance and usage analytics (v0.11) ✅ Built and merged; the DoD is measured with the Legal agent created in the browser (routes 15/15, 53/56 overall); the review findings are fixed
 
-**Goal:** organizations can run WorkMind themselves: configure, control and account for it.
+**Goal:** organizations can run NeedWise themselves: configure, control and account for it.
 
 **Scope:**
 - Agent configuration UI: prompt, tools, scopes, model, limits, versions, test console.
@@ -518,7 +518,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >   Admin › Budgets and "Your usage this month" on the Overview; organization budgets, personal
 >   and default caps that warn or block (429 `budget_exceeded`, the chat run's error event, or
 >   an MCP tool error), checked before every model call, including every turn of a tool loop
->   (fixed 2026-11-12: a loop was checked once); `wm usage backfill` for older answers.
+>   (fixed 2026-11-12: a loop was checked once); `nw usage backfill` for older answers.
 >   On the running stack, one real Claude Sonnet 5.5 answer was recorded as one event with the
 >   provider's tokens and the right cost, and the backfill imported 33 older records (21 chat
 >   answers, 10 Insights answers, 2 meetings). Failed and stopped calls are tested with scripted
@@ -566,7 +566,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 >     holds on documents, collections, people (their conversations, meetings and Insights
 >     questions), meetings and Insights questions, with a matter and a reason, in Admin › Legal
 >     holds. The core enforces them whatever the license says: deletions by people, connectors'
->     deletion propagation, retention runs and `wm tenant delete` (without the typed override)
+>     deletion propagation, retention runs and `nw tenant delete` (without the typed override)
 >     are refused, and every attempt is audited.
 >   - *Document retention* (Enterprise, part of `retention_policies`,
 >     [enterprise.md](enterprise.md#document-retention)): per collection, delete or archive
@@ -615,7 +615,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   log's per-tenant lock are the limits. Not measured: a real model, a large corpus, many
   tenants. The sizing for 50, 200 and 1,000 employees is an extrapolation.
 - [x] **Multi-tenant hardening** ([multi-tenancy](multi-tenancy.md)): tenant-prefixed Valkey
-  keys, the tenant scope inside the Qdrant client, rate limits, `wm tenant`, and a test that
+  keys, the tenant scope inside the Qdrant client, rate limits, `nw tenant`, and a test that
   sends every route another tenant's ids. Load with many tenants is not measured.
 - [x] **Backup and restore; upgrades tested from v0.x** ([backup and restore](operations/backup-restore.md),
   [upgrades](operations/upgrade.md)): a restore drill into a separate stack with identical rows,
@@ -628,8 +628,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   through the Ingress, the "restricted" Pod Security Standard enforced, NetworkPolicies
   enforced, an upgrade to two API replicas with every request answered, an uninstall and a
   reinstall over the kept data. Four chart problems found and fixed (among them, upgrades now
-  run `wm authz sync`). Not tested: a cloud cluster, TLS, managed databases, the embedding
-  server, model calls, an upgrade between two WorkMind versions.
+  run `nw authz sync`). Not tested: a cloud cluster, TLS, managed databases, the embedding
+  server, model calls, an upgrade between two NeedWise versions.
 - [x] **Docs site** (MkDocs, `make docs`, strict build in CI), with the configuration and HTTP
   API reference generated from the code. Not published: Pages needs a public repository.
 - [x] **Browser end-to-end suite** in CI (`e2e/browser`): 162 tests pass on the rebuilt stack,
@@ -648,7 +648,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   tagged on 2026-11-13 as an annotated tag in the maintainer's repository, not published (no
   public repository, so no GitHub Release and no images). See *Release check* below.
 - [x] **A final review** of the merged code (2026-11-13): security, operations, CI and the
-  published claims. Fixed, each security and correctness fix with a regression test: `wm tenant
+  published claims. Fixed, each security and correctness fix with a regression test: `nw tenant
   delete --keycloak` missed organizations whose name did not contain the slug (Keycloak searches
   names, not aliases), so a reused slug let the old tenant's people in; a guest could hand their
   own task to any employee with PATCH; markdown images with a line break in the alt text and
@@ -723,10 +723,10 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 ### After v1.0 — Commercial track
 
-- **WorkMind Cloud:** hosted multi-tenant SaaS.
+- **NeedWise Cloud:** hosted multi-tenant SaaS.
 - **Enterprise edition** features (§5).
 - **Premium connectors:** Salesforce, ServiceNow, Zendesk, HubSpot, Jira Service Management, SAP.
-- **A2A interoperability:** publish WorkMind agents to external agent ecosystems.
+- **A2A interoperability:** publish NeedWise agents to external agent ecosystems.
 - Zoom / Teams / Meet meeting connectors.
 
 ---
@@ -761,7 +761,7 @@ Earlier drafts proposed a CLA. With Apache-2.0 it isn't needed: the license alre
 | Capability | Community (free, self-hosted) | Enterprise / Cloud (paid) |
 |---|---|---|
 | AI assistant: hybrid RAG, citations (a reranker is not built) | ✅ | ✅ |
-| Permission-aware retrieval (WorkMind-managed permissions) | ✅ | ✅ |
+| Permission-aware retrieval (NeedWise-managed permissions) | ✅ | ✅ |
 | Multi-agent orchestration, agents as configuration | ✅ | ✅ |
 | Local models and bring-your-own API keys | ✅ | ✅ |
 | Login via Keycloak (including connecting your own IdP) | ✅ | ✅ |
@@ -777,7 +777,7 @@ Earlier drafts proposed a CLA. With Apache-2.0 it isn't needed: the license alre
 | Premium connectors (Salesforce, ServiceNow, SAP…) | — | ✅ |
 | White-labeling, multi-org administration | — | ✅ |
 | High-availability deployment, priority support, SLA | — | ✅ |
-| Fully managed hosting (WorkMind Cloud) | — | ✅ |
+| Fully managed hosting (NeedWise Cloud) | — | ✅ |
 
 ---
 

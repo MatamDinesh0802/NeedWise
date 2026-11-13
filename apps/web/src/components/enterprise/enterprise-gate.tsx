@@ -79,7 +79,7 @@ export function EnterpriseNotice({ feature, className }: { feature: EnterpriseFe
 
 /** Marks Enterprise-only UI, e.g. next to a section title. */
 export function EnterpriseBadge({ feature, className }: { feature?: EnterpriseFeature; className?: string }) {
-  const title = feature ? `${featureLabel(feature)} is part of WorkMind Enterprise` : "Part of WorkMind Enterprise";
+  const title = feature ? `${featureLabel(feature)} is part of NeedWise Enterprise` : "Part of NeedWise Enterprise";
   return (
     <Badge variant="outline" title={title} aria-label={title} className={className}>
       <Gem aria-hidden="true" data-icon="inline-start" />

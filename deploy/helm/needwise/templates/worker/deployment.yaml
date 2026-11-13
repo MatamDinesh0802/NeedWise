@@ -1,0 +1,113 @@
+{{- $c := .Values.worker -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "needwise.componentName" (list . "worker") }}
+  labels:
+    {{- include "needwise.labels" (list . "worker") | nindent 4 }}
+spec:
+  {{- if not $c.autoscaling.enabled }}
+  replicas: {{ $c.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "needwise.selectorLabels" (list . "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "needwise.selectorLabels" (list . "worker") | nindent 8 }}
+        needwise.io/object-storage: "true"
+        {{- with $c.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- include "needwise.checksums" . | nindent 8 }}
+        {{- with $c.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "needwise.podCommon" (list . $c) | nindent 6 }}
+      securityContext:
+        {{- include "needwise.podSecurityContext" (list . $c.podSecurityContext) | nindent 8 }}
+      terminationGracePeriodSeconds: {{ $c.terminationGracePeriodSeconds }}
+      {{- with include "needwise.objectStorageAffinity" (list . $c.affinity) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "needwise.apiImage" . }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          command:
+            - celery
+            - -A
+            - needwise.workers.celery_app
+            - worker
+            - -Q
+            - {{ join "," $c.queues | quote }}
+            - --concurrency
+            - {{ $c.concurrency | quote }}
+            - --loglevel
+            - {{ $c.logLevel | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "needwise.componentName" (list . "config") }}
+            {{- with $c.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- include "needwise.appEnv" . | nindent 12 }}
+            {{- with $c.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with $c.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- include "needwise.securityContext" (list . $c.securityContext) | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: objects
+              mountPath: /data/objects
+            - name: models
+              mountPath: /models
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: objects
+          persistentVolumeClaim:
+            claimName: {{ include "needwise.objectStorageClaim" . }}
+        - name: models
+          {{- if $c.models.persistence }}
+          persistentVolumeClaim:
+            claimName: {{ default (include "needwise.componentName" (list . "models")) $c.models.existingClaim }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ $c.models.sizeLimit }}
+          {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ $c.tmpSizeLimit }}
+{{- if and $c.models.persistence (not $c.models.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "needwise.componentName" (list . "models") }}
+  labels:
+    {{- include "needwise.labels" (list . "worker") | nindent 4 }}
+spec:
+  # Every worker replica mounts it: ReadWriteMany when they run on several nodes.
+  accessModes: {{ toYaml .Values.objectStorage.accessModes | nindent 4 }}
+  {{- with (default .Values.global.storageClass $c.models.storageClass) }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $c.models.size }}
+{{- end }}
+{{- include "needwise.hpa" (list . "worker" $c) }}
+{{- include "needwise.pdb" (list . "worker" $c) }}

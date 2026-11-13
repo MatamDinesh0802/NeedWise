@@ -1,12 +1,12 @@
 # Load testing
 
-A Locust harness that loads WorkMind the way people use it: browsing, searching, asking and
+A Locust harness that loads NeedWise the way people use it: browsing, searching, asking and
 streaming answers, the agents, insights, polling, uploads and sign-ins. A stub model server
-answers in place of a real model, so a run measures WorkMind's own overhead (retrieval,
+answers in place of a real model, so a run measures NeedWise's own overhead (retrieval,
 permission checks, the database, Valkey, the event stream, Keycloak) and costs nothing.
 
 Code: `loadtests/`, its own uv project with Locust pinned (2.47.0). The stub is
-`loadtests/stub_llm.py`; the proof that WorkMind's model adapter works against it is
+`loadtests/stub_llm.py`; the proof that NeedWise's model adapter works against it is
 `apps/api/tests/test_stub_llm.py`. Reports go to `loadtests/results/`.
 
 This page says how to run it, what each scenario does, how the stub behaves, how to read a
@@ -26,7 +26,7 @@ make loadtest USERS=5 DURATION=60s NO_MODEL=1 LABEL=smoke
 make loadtest USERS=50 SPAWN_RATE=5 DURATION=10m STUB_URL=http://127.0.0.1:8490 LABEL=stub-50
 ```
 
-`make loadtest` runs `python -m workmind_load.run`, which:
+`make loadtest` runs `python -m needwise_load.run`, which:
 
 1. checks the target (`/api/v1/system/status`) and, unless `NO_MODEL=1`, signs in as the org
    admin and refuses to start unless every model call of the demo organization would reach the
@@ -48,7 +48,7 @@ make loadtest USERS=50 SPAWN_RATE=5 DURATION=10m STUB_URL=http://127.0.0.1:8490 
 | `UPLOAD_COLLECTION` | none | Collection key for the upload scenario; unset: no uploads |
 | `THINK` | `3,10` | Seconds between a person's actions (min,max) |
 | `PROCESSES` | 1 | Locust processes; `-1`: one per CPU |
-| `MONITOR` | none | A compose project's name (`workmind`): record its resource use for the report (see "Resource use") |
+| `MONITOR` | none | A compose project's name (`needwise`): record its resource use for the report (see "Resource use") |
 | `LOADTEST_HOST` | `http://localhost:8480` | The target |
 
 Other targets: `make loadtest-stub` (the stub; `STUB_PORT`, `TTFT_MS`, `TPS`, `ANSWER_TOKENS`),
@@ -56,23 +56,23 @@ Other targets: `make loadtest-stub` (the stub; `STUB_PORT`, `TTFT_MS`, `TPS`, `A
 `make loadtest-sweep` (revoke leftover tokens, delete leftover conversations and uploads), and
 `make loadtest-check` (the harness's lint, types and tests; no stack needed).
 
-Locust's web UI works too: `uv run python -m workmind_load.tokens create`, then
+Locust's web UI works too: `uv run python -m needwise_load.tokens create`, then
 `uv run locust --host http://localhost:8480` and open http://localhost:8089; afterwards
-`uv run python -m workmind_load.tokens revoke`. Every `--wm-*` option below also reads its
+`uv run python -m needwise_load.tokens revoke`. Every `--nw-*` option below also reads its
 environment variable.
 
 | Locust option | Variable | |
 |---|---|---|
-| `--wm-tokens` | `WM_LOAD_TOKENS` | Token file (default `loadtests/.secrets/tokens.json`) |
-| `--wm-mix` | `WM_LOAD_MIX` | Class weights |
-| `--wm-no-model` | `WM_LOAD_NO_MODEL` | Leave out tasks tagged `model` and the classes that only ask |
-| `--wm-think` | `WM_LOAD_THINK` | `min,max` seconds between actions |
-| `--wm-datasets` | `WM_LOAD_DATASETS` | Question sets (default `evals/datasets`) |
-| `--wm-answer-timeout` | `WM_LOAD_ANSWER_TIMEOUT` | Seconds before an answer counts as timed out (180) |
-| `--wm-follow-up` | `WM_LOAD_FOLLOW_UP` | Share of chat questions asked in the same conversation (0.3) |
-| `--wm-upload-collection` | `WM_LOAD_UPLOAD_COLLECTION` | Collection key for uploads |
-| `--wm-uploader`, `--wm-admin` | `WM_LOAD_UPLOADER`, `WM_LOAD_ADMIN` | Logins for those scenarios (erin) |
-| `--wm-password` | `DEMO_PASSWORD` | The demo logins' password (`workmind-demo`) |
+| `--nw-tokens` | `NW_LOAD_TOKENS` | Token file (default `loadtests/.secrets/tokens.json`) |
+| `--nw-mix` | `NW_LOAD_MIX` | Class weights |
+| `--nw-no-model` | `NW_LOAD_NO_MODEL` | Leave out tasks tagged `model` and the classes that only ask |
+| `--nw-think` | `NW_LOAD_THINK` | `min,max` seconds between actions |
+| `--nw-datasets` | `NW_LOAD_DATASETS` | Question sets (default `evals/datasets`) |
+| `--nw-answer-timeout` | `NW_LOAD_ANSWER_TIMEOUT` | Seconds before an answer counts as timed out (180) |
+| `--nw-follow-up` | `NW_LOAD_FOLLOW_UP` | Share of chat questions asked in the same conversation (0.3) |
+| `--nw-upload-collection` | `NW_LOAD_UPLOAD_COLLECTION` | Collection key for uploads |
+| `--nw-uploader`, `--nw-admin` | `NW_LOAD_UPLOADER`, `NW_LOAD_ADMIN` | Logins for those scenarios (erin) |
+| `--nw-password` | `DEMO_PASSWORD` | The demo logins' password (`needwise-demo`) |
 
 ## Point the stack at the stub
 
@@ -81,7 +81,7 @@ The stub runs on the host; containers reach it at `host.docker.internal`.
 ```bash
 make loadtest-stub                                  # terminal 1: 127.0.0.1:8490
 docker compose -f compose.yaml -f loadtests/compose.stub.yaml up -d --wait api worker beat
-(cd loadtests && uv run python -m workmind_load.preflight --expect-model workmind-stub)
+(cd loadtests && uv run python -m needwise_load.preflight --expect-model needwise-stub)
 make loadtest USERS=50 SPAWN_RATE=5 DURATION=10m STUB_URL=http://127.0.0.1:8490 LABEL=stub-50
 docker compose up -d --wait api worker beat         # back to the model in .env
 ```
@@ -92,7 +92,7 @@ docker compose up -d --wait api worker beat         # back to the model in .env
 |---|---|---|
 | `LLM_PROVIDER` | `openai_compatible` | The adapter the stub speaks to |
 | `LLM_BASE_URL` | `http://host.docker.internal:${STUB_PORT:-8490}/v1` | The stub |
-| `LLM_MODEL`, `LLM_MODEL_<ROLE>` | `workmind-stub` | Every role, so per-role models in `.env` do not leak through |
+| `LLM_MODEL`, `LLM_MODEL_<ROLE>` | `needwise-stub` | Every role, so per-role models in `.env` do not leak through |
 | `LLM_API_KEY` | empty | The stub needs none |
 | `LLM_EXTERNAL` | `false` | The stub counts as a model on your own infrastructure, as a local model would: restricted sources are not withheld or rerouted (ARCHITECTURE 11.6). Set `true` to load the routing path instead. |
 | `RATE_LIMITS_ENABLED` | `false` (`LOADTEST_RATE_LIMITS_ENABLED`) | Many simulated users share nine demo logins and one client address, so the per-person, per-tenant and sign-in request limits ([multi-tenancy](multi-tenancy.md#abuse-limits)) would answer `429 rate_limited` and the run would measure the limits, not capacity |
@@ -110,17 +110,17 @@ own choices:
   provider, real key included. Set the roles back to "Deployment default" for the run
   (`PUT /api/v1/admin/models/roles` with `null`s);
 - a role mapped to a deployment model that no longer exists (`system:claude-sonnet-5-5` once the
-  deployment serves `workmind-stub`) falls back to the default: the stub;
+  deployment serves `needwise-stub`) falls back to the default: the stub;
 - an agent with its own model (Admin › Agents) does not fall back: with that model gone it fails
   ("model unavailable"); with a model on the organization's own provider it calls that provider.
   Clear the agent's model for the run, or expect its failures;
 - the data policy's local model receives restricted sources when the answering model is external;
   with `LLM_EXTERNAL=false` the stub is not external, so this does not happen.
 
-**Preflight.** `python -m workmind_load.preflight --expect-model workmind-stub` signs in as the
+**Preflight.** `python -m needwise_load.preflight --expect-model needwise-stub` signs in as the
 org admin, reads Admin › Models and Admin › Agents (keys are never returned) and fails on each
 of the cases above: a deployment provider that is not `openai_compatible`, any role not on
-`system:workmind-stub`, a data-policy local model, an enabled agent with another model.
+`system:needwise-stub`, a data-policy local model, an enabled agent with another model.
 `make loadtest` runs it before any question is sent and stops on a problem. `--allow-real-model`
 (run.py) skips the check; then questions go to whatever model is configured.
 
@@ -145,7 +145,7 @@ ingestion keep using `EMBEDDING_*`, so retrieval costs what it costs in producti
 
 ## Scenarios
 
-Each kind of person is a Locust user class (`workmind_load/users.py`); Locust spreads `USERS` over
+Each kind of person is a Locust user class (`needwise_load/users.py`); Locust spreads `USERS` over
 the classes by weight. With few users a class with a small weight may get none: give it a
 `MIX` weight of its own (the smoke run below used one user per class).
 
@@ -157,7 +157,7 @@ the classes by weight. With few users a class with a small weight may get none: 
 | `AgentsAsker` (`agents`) | access token | Cross-department questions (`cross_department.jsonl`); one in four is a research-mode question (tool loop) | yes | 1 |
 | `Analyst` (`analyst`) | access token | An insights question (`analytics.jsonl`), the data model, past answers, and re-running the SQL that answers one of the person's questions | ask only | 2 |
 | `Admin` (`admin`) | browser session | People, audit log, usage by department, models, collections, agents | no | 1 |
-| `Login` (`login`) | Keycloak | The whole sign-in (WorkMind → Keycloak email page → password → callback), `/me`, sign-out | no | 1 |
+| `Login` (`login`) | Keycloak | The whole sign-in (NeedWise → Keycloak email page → password → callback), `/me`, sign-out | no | 1 |
 | `Uploader` (`upload`) | browser session | Uploads a 2 KB Markdown file, polls until it is `ready` (parsed, chunked, embedded, indexed), deletes it | no | 1 |
 
 **Who asks.** Most users use access tokens, as scripts and MCP clients do: the API serves token
@@ -189,7 +189,7 @@ A failed metric is timed until the failure was noticed, not recorded as 0 ms.
 ## The stub
 
 `loadtests/stub_llm.py` (Starlette and Uvicorn, both already in `apps/api`) answers the four
-request shapes of `OpenAICompatibleLLM` (`apps/api/src/workmind/providers/llm.py`):
+request shapes of `OpenAICompatibleLLM` (`apps/api/src/needwise/providers/llm.py`):
 
 | Request | Answer |
 |---|---|
@@ -212,7 +212,7 @@ prompt token and one word per output token.
 and the peak since the stub started; `run.py` reads it before and after a run for the report.
 `GET /v1/models` and `GET /healthz` exist too. The stub has no authentication and no limits.
 
-**Tests.** `apps/api/tests/test_stub_llm.py` runs WorkMind's own adapter against the stub, in
+**Tests.** `apps/api/tests/test_stub_llm.py` runs NeedWise's own adapter against the stub, in
 process: a streamed answer through `answer_stream` comes back word by word with both sources
 cited and no unknown markers; a follow-up rewrite; the agents pipeline end to end
 (`orchestrate`: a fan-out plan, both department agents with findings, a cited composed answer);
@@ -221,12 +221,12 @@ answer); the analytics agent on the Acme dataset (a `COUNT(*)` query whose numbe
 the meetings extraction, judge and plan schemas; the admin provider test; and the timing over a
 real socket (first token after latency + ttft, then the configured rate).
 `loadtests/tests/test_stub.py` covers the stub's own edges. Building these tests found a bug in
-WorkMind: a single value charted as a table failed the whole insights answer
+NeedWise: a single value charted as a table failed the whole insights answer
 (`_chart` raised `IndexError`); it is fixed, with a test.
 
 ## Access tokens and what a run leaves behind
 
-`python -m workmind_load.tokens` (also used by `run.py`):
+`python -m needwise_load.tokens` (also used by `run.py`):
 
 | Command | |
 |---|---|
@@ -269,19 +269,19 @@ Percentiles are Locust's, from its histogram: times are rounded to 10 ms above 1
 100 ms above 1 s, so "2,000" means 1,950 to 2,049 ms. A percentile over few requests is just the
 slowest one: read p99 only where an endpoint has hundreds of requests.
 
-**WorkMind's own share** of an answer's time is the measured time minus the stub's configured
+**NeedWise's own share** of an answer's time is the measured time minus the stub's configured
 delays of the calls made before it. With the defaults, a single-mode answer's first token
 cannot come sooner than 620 ms (one streamed call); a follow-up adds its rewrite (latency + ttft
 + the rewrite's words at 60/s); `auto` and `agents` add the planner and, for two-area plans, the
 department agents. "Time to sources" ends before the answering call starts, so with the
-single mode it is all WorkMind (plus a rewrite for follow-ups). The report does not subtract
+single mode it is all NeedWise (plus a rewrite for follow-ups). The report does not subtract
 these yet: the stub counts calls but not their durations per run.
 
 Compare runs only with the same machine, stub timing, mix, think time and assistant mode.
 
 ### Resource use
 
-`MONITOR=<compose project>` (`--monitor`, `workmind_load/monitor.py`) records what the stack spent
+`MONITOR=<compose project>` (`--monitor`, `needwise_load/monitor.py`) records what the stack spent
 while Locust ran, from the host with the Docker CLI only:
 
 - every 5 s, `docker stats` for each container of the project (CPU in % of one core, memory) and
@@ -328,13 +328,13 @@ harness works; they are not performance results.
 | [2026-11-12 throwaway stack](../loadtests/results/2026-11-12-1730-isolated-stack-stub.md) | Its own compose project (Community edition, hash embeddings, `ASSISTANT_MODE=auto`, fast path off) pointed at the stub, 15 users, 2 min | every class | 464 HTTP requests, 0 failures; 33 chat, 20 cross-department and 3 research answers streamed (chat time to first token p50 1,700 ms, p95 3,300 ms); 4 insights answers; 6 uploads indexed and deleted (time to ready p50 1,100 ms); stub calls: 53 streams, 65 structured outputs, 14 tool-loop turns, 7 plain |
 
 The harness's own checks (`make loadtest-check`): ruff, pyright and 43 tests, among them a few
-seconds of headless Locust against a fake WorkMind API that checks the token users' scenarios,
+seconds of headless Locust against a fake NeedWise API that checks the token users' scenarios,
 their custom metrics and that each user deletes its conversations. `--processes 2` was checked
 against the throwaway stack.
 
 The benchmark on the main stack (Enterprise dev license, real embeddings, `ASSISTANT_MODE=auto`,
 the stub model) ran 10, 25, 50, 100, 200 and 400 users before tuning and the same steps plus 800
-after, 3 minutes each, with `MONITOR=workmind`: [load benchmarks](benchmarks/load.md). It found
+after, 3 minutes each, with `MONITOR=needwise`: [load benchmarks](benchmarks/load.md). It found
 the API's single process saturated at 400 users and led to batched token events and two API
 processes by default. It also found three harness bugs, now fixed: readers opened documents the
 uploader had deleted (a correct 404 counted as a failure), Locust's worker processes outlived a

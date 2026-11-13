@@ -1,7 +1,7 @@
 import asyncio
 
+from needwise.core.health import run_check
 from tests.conftest import ALL_HEALTHY, ClientFactory, refused
-from workmind.core.health import run_check
 
 
 def test_healthz_is_ok_without_dependencies(make_client: ClientFactory) -> None:
@@ -53,7 +53,7 @@ def test_system_status_is_always_200_for_the_ui(make_client: ClientFactory) -> N
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "degraded"
-    assert body["product"] == "WorkMind AI"
+    assert body["product"] == "NeedWise"
     assert body["environment"] == "test"
     assert body["version"]
 

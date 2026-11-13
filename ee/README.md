@@ -9,9 +9,9 @@ the design.
 ```text
 ee/
 ├── LICENSE                     the Enterprise Edition license
-└── python/                     the workmind-ee package (module workmind_ee)
-    ├── pyproject.toml          declares the "workmind.ee" entry point -> workmind_ee:setup
-    ├── src/workmind_ee/        setup(registry, edition) registers routers, tasks and hooks
+└── python/                     the needwise-ee package (module needwise_ee)
+    ├── pyproject.toml          declares the "needwise.ee" entry point -> needwise_ee:setup
+    ├── src/needwise_ee/        setup(registry, edition) registers routers, tasks and hooks
     └── tests/
 ```
 
@@ -40,7 +40,7 @@ Rules that keep the boundary clean:
 - Code outside `ee/` never imports from `ee/` (a test enforces it). Enterprise code plugs in
   through the core's extension registry, and every extension names the licensed feature the
   core checks before running it.
-- Security basics are never placed here. Everything needed to run WorkMind safely is in the
+- Security basics are never placed here. Everything needed to run NeedWise safely is in the
   Apache-2.0 core.
 - Tables for Enterprise features come from the core's migrations, with forced Row-Level
   Security like every tenant table.

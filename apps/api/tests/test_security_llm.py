@@ -8,21 +8,21 @@ from typing import Any
 
 from mcp.server import MCPServer
 
+from needwise.core.context import RequestContext
+from needwise.modules.agents.department import ToolOutput, render_tool_outputs
+from needwise.modules.agents.research import research
+from needwise.modules.assistant.answer import answer, build_request, finish, render_sources
+from needwise.modules.assistant.safety import escape_tags, quote_markers, without_images
+from needwise.modules.conversations.runner import rewrite_question
+from needwise.modules.meetings.extract import render as render_transcript
+from needwise.modules.retrieval.service import Passage, RetrievalResult
+from needwise.modules.tools.builtin import search_knowledge_tool
+from needwise.modules.tools.mcp_client import RemoteServer, RemoteServerConfig, import_tools
+from needwise.modules.tools.registry import ToolRegistry
+from needwise.modules.work.workflows import quoted
+from needwise.modules.work.workflows import render as render_workflow
+from needwise.providers.llm import LLMMessage, LLMUsage
 from tests.fakes import FakeLLM
-from workmind.core.context import RequestContext
-from workmind.modules.agents.department import ToolOutput, render_tool_outputs
-from workmind.modules.agents.research import research
-from workmind.modules.assistant.answer import answer, build_request, finish, render_sources
-from workmind.modules.assistant.safety import escape_tags, quote_markers, without_images
-from workmind.modules.conversations.runner import rewrite_question
-from workmind.modules.meetings.extract import render as render_transcript
-from workmind.modules.retrieval.service import Passage, RetrievalResult
-from workmind.modules.tools.builtin import search_knowledge_tool
-from workmind.modules.tools.mcp_client import RemoteServer, RemoteServerConfig, import_tools
-from workmind.modules.tools.registry import ToolRegistry
-from workmind.modules.work.workflows import quoted
-from workmind.modules.work.workflows import render as render_workflow
-from workmind.providers.llm import LLMMessage, LLMUsage
 
 CTX = RequestContext(
     request_id="t",
@@ -231,7 +231,7 @@ async def test_a_remote_mcp_tool_cannot_close_its_external_element() -> None:
     result = await tool.handler(CTX, tool.validate({"model": "AMR-200"}))
 
     assert result.content.startswith('<external source="erp">')
-    assert result.content.count("</external>") == 1  # only the closing tag WorkMind wrote
+    assert result.content.count("</external>") == 1  # only the closing tag NeedWise wrote
     assert "&lt;/external&gt;" in result.content
     assert "[S1]" not in result.content
 

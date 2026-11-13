@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter
 
-from workmind.core.edition import Edition
-from workmind.core.extensions import ExtensionRegistry
+from needwise.core.edition import Edition
+from needwise.core.extensions import ExtensionRegistry
 
 router = APIRouter()
 

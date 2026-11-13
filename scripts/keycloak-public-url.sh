@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Point WorkMind's Keycloak client at a new public URL (docs/operations/backup-restore.md).
+# Point NeedWise's Keycloak client at a new public URL (docs/operations/backup-restore.md).
 #
-#   scripts/keycloak-public-url.sh https://workmind.example.com
+#   scripts/keycloak-public-url.sh https://needwise.example.com
 #
-# Keycloak keeps the address people sign in through in its database, in WorkMind's client: the
+# Keycloak keeps the address people sign in through in its database, in NeedWise's client: the
 # redirect URI (<url>/api/auth/callback) and the post-logout redirect (<url>/*). They were set
-# when the realm was first imported (deploy/keycloak/realm-workmind.json, from PUBLIC_URL), and a
+# when the realm was first imported (deploy/keycloak/realm-needwise.json, from PUBLIC_URL), and a
 # restore brings back the source's values. On another address, sign-in then stops on Keycloak's
 # "Invalid parameter: redirect_uri" page until this script updates them.
 #
@@ -20,16 +20,16 @@ set -euo pipefail
 . "$(dirname "$0")/lib/common.sh"
 
 URL=${1:-}
-[[ $URL =~ ^https?://[^/]+$|^https?://[^/]+/$ ]] || die "usage: $0 <public URL, e.g. https://workmind.example.com>"
+[[ $URL =~ ^https?://[^/]+$|^https?://[^/]+/$ ]] || die "usage: $0 <public URL, e.g. https://needwise.example.com>"
 URL=${URL%/}
-REALM=${KEYCLOAK_REALM:-workmind}
-CLIENT_ID=${OIDC_CLIENT_ID:-workmind-api}
+REALM=${KEYCLOAK_REALM:-needwise}
+CLIENT_ID=${OIDC_CLIENT_ID:-needwise-api}
 ADMIN_USER=$(env_value KEYCLOAK_ADMIN_USER admin)
 KC_CLI_PASSWORD=$(env_value KEYCLOAK_ADMIN_PASSWORD admin)
 export KC_CLI_PASSWORD
 
 kcadm() {
-  compose exec -T -e KC_CLI_PASSWORD keycloak /opt/keycloak/bin/kcadm.sh "$@" --config /tmp/wm-kcadm.config
+  compose exec -T -e KC_CLI_PASSWORD keycloak /opt/keycloak/bin/kcadm.sh "$@" --config /tmp/nw-kcadm.config
 }
 
 say "Keycloak: client $CLIENT_ID of realm $REALM -> $URL"
@@ -42,7 +42,7 @@ kcadm update "clients/$id" -r "$REALM" \
   -s "redirectUris=[\"$URL/api/auth/callback\"]" \
   -s "attributes.\"post.logout.redirect.uris\"=$URL/*"
 after=$(kcadm get "clients/$id" -r "$REALM" --fields redirectUris --format csv --noquotes | tr -d '\r')
-compose exec -T keycloak rm -f /tmp/wm-kcadm.config
+compose exec -T keycloak rm -f /tmp/nw-kcadm.config
 info "redirect URIs: $before -> $after"
 current=$(env_value PUBLIC_URL http://localhost:8480)
 if [[ ${current%/} != "$URL" ]]; then

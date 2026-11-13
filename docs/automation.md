@@ -1,6 +1,6 @@
 # Automation: approvals, tasks and workflows
 
-WorkMind does work, with people in control. **Anything that changes something** (sending an
+NeedWise does work, with people in control. **Anything that changes something** (sending an
 email, creating a task, a remote tool marked external) becomes an *approval*: a stored proposal
 that a person approves (possibly after editing it) or rejects. Nothing waits in memory, so a
 decision can come days later, from another device, after restarts (ADR 0009).
@@ -81,7 +81,7 @@ approver:                                           # all of these steps, in ord
 
 ### Reminders and escalation
 
-A beat task (`workmind.escalate_work`, hourly) applies the organization's SLAs, set in
+A beat task (`needwise.escalate_work`, hourly) applies the organization's SLAs, set in
 Admin › Automation (`PUT /api/v1/admin/automation`, `escalation`):
 
 | Setting | Default | What happens |
@@ -145,13 +145,13 @@ goes out (Settings › Notifications, `GET/PUT /api/v1/me/work-preferences`):
   `@channel` or show a disguised link.
 - **Never blocking:** `notify()` writes the notification and its outbox rows
   (`notification_deliveries`) in the action's own transaction; the beat task
-  (`workmind.deliver_notifications`, every minute) queues digests and sends what is due. A
+  (`needwise.deliver_notifications`, every minute) queues digests and sends what is due. A
   failure is logged and retried after 1, 5, 25 and 120 minutes, then marked failed; a wrong
   token, a person Slack doesn't know, or missing SMTP is not retried. The action and its in-app
   notification are never affected. Sent and failed rows are pruned after 30 days.
 - **Secrets:** the bot token and webhook URL are sealed with the deployment's key ring
   (`SECRETS_ENCRYPTION_KEY`, AES-256-GCM, bound to the tenant and purpose), never returned by the
-  API, never written to the audit log, and re-encrypted by `wm secrets rotate`. Webhook URLs must
+  API, never written to the audit log, and re-encrypted by `nw secrets rotate`. Webhook URLs must
   start with `SLACK_WEBHOOK_PREFIX` (default `https://hooks.slack.com/`); `SLACK_API_URL` points
   the Web API at a stub for tests. "Send me a test message" and "Post a test message" check them.
 
@@ -188,7 +188,7 @@ A **request** is a task for whichever team handles it. Three ways in:
 - **email** (a stub): a mail bridge holding an org admin's access token posts each message to
   `POST /api/v1/admin/requests/inbound-email {from, subject, body}`; the sender must be an active
   member (else `422 unknown_sender`, audited as `request.email_refused`) and the request is
-  theirs. Nothing in WorkMind reads a mailbox;
+  theirs. Nothing in NeedWise reads a mailbox;
 - the assistant's **`create_task`** with neither an assignee nor a department (after approval).
 
 Each is routed:
@@ -222,7 +222,7 @@ who may see what (queue members see the task as for any task in their queue).
 
 **Evaluation:** `evals/datasets/request_routing.jsonl` (39 requests: 23 the seeded rules must
 route alone, 11 only the model can, 5 too vague for anyone but a person, two with injected
-instructions). `uv run wm eval --skip-retrieval --suites request_routing` runs them through the
+instructions). `uv run nw eval --skip-retrieval --suites request_routing` runs them through the
 same decision with the tenant's rules, threshold and model and reports the correct queue, wrong
 departments (the costly error) and triage counts; with `--retrieval-only` it checks the rules
 alone. The unit tests check the rules part on every run. A failed router call is counted as a
@@ -308,7 +308,7 @@ trigger: {event: document.ready, collection: company-handbook}   # the filter is
 - **When:** the event's own transaction (ingestion marking the version ready, the meeting
   pipeline marking it ready, the task update, the decision) queues one run per enabled workflow
   whose trigger matches. Whoever caused the event then starts the runs (the Celery worker sends
-  one `workmind.start_workflow_run` task per run; the API process starts them in the
+  one `needwise.start_workflow_run` task per run; the API process starts them in the
   background); the `beat` service starts any run still queued after a minute.
 - **Exactly once per event:** each run carries a key unique per workflow:
   `document.ready:<version id>`, `document.updated:<version id>`, `meeting.processed:<meeting

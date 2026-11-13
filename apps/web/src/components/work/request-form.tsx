@@ -36,7 +36,7 @@ export function RequestsView() {
       <header>
         <h2 className="text-xl font-semibold tracking-tight">Send a request</h2>
         <p className="text-sm text-muted-foreground">
-          Describe what you need. WorkMind sends it to the team that handles it, and tells you where it went and why.
+          Describe what you need. NeedWise sends it to the team that handles it, and tells you where it went and why.
         </p>
       </header>
       <SignedInGate purpose="send a request">
@@ -141,7 +141,7 @@ function RequestFormCard({ me }: { me: Me }) {
                   describedBy={describedBy}
                   disabled={pending || categories.length === 0}
                   onChange={(category) => update({ category })}
-                  options={[{ value: "", label: "Let WorkMind decide" }, ...categories.map((c) => ({ value: c, label: c }))]}
+                  options={[{ value: "", label: "Let NeedWise decide" }, ...categories.map((c) => ({ value: c, label: c }))]}
                 />
               )}
             </Field>

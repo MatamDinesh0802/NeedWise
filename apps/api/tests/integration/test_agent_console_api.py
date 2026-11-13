@@ -14,6 +14,11 @@ from typing import Any
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.agents.department import EvidenceOut, Finding
+from needwise.modules.agents.planning import PlanOut, Subtask
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.knowledge.models import Collection
 from tests.fakes import FakeLLM
 from tests.integration.conftest import Acme, SessionFactory
 from tests.integration.test_conversations_api import (  # noqa: F401  (pytest fixtures)
@@ -27,11 +32,6 @@ from tests.integration.test_conversations_api import (  # noqa: F401  (pytest fi
     synced,
     use_model,
 )
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.agents.department import EvidenceOut, Finding
-from workmind.modules.agents.planning import PlanOut, Subtask
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.knowledge.models import Collection
 
 MATRIX = (
     b"# Contract Signature Authority Matrix\n\n## Supplier contracts\n"

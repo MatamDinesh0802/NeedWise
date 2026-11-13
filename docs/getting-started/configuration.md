@@ -1,6 +1,6 @@
 # Configuration
 
-WorkMind is configured in two places:
+NeedWise is configured in two places:
 
 - **The deployment**, by whoever runs it: environment variables, usually in a `.env` file at
   the repository root. They choose the services, the default models, limits and keys. Every
@@ -36,9 +36,9 @@ development defaults.
 | `PUBLIC_URL` | `http://localhost:8480` | The URL people open. Keep it in step with `HTTP_PORT`; it is passed to the API and to Keycloak |
 | `API_PORT`, `WEB_PORT` | `8400`, `3400` | Direct access to the API and the UI, for debugging |
 | `POSTGRES_PORT`, `VALKEY_PORT`, `QDRANT_PORT`, `OPENFGA_PORT`, `MAILPIT_PORT` | `5432`, `6379`, `6333`, `8401`, `8025` | Infrastructure ports on `127.0.0.1` |
-| `POSTGRES_PASSWORD`, `WORKMIND_OWNER_PASSWORD`, `WORKMIND_APP_PASSWORD`, `KEYCLOAK_DB_PASSWORD`, `OPENFGA_DB_PASSWORD` | development values | The database roles' passwords, set when the database is first created |
+| `POSTGRES_PASSWORD`, `NEEDWISE_OWNER_PASSWORD`, `NEEDWISE_APP_PASSWORD`, `KEYCLOAK_DB_PASSWORD`, `OPENFGA_DB_PASSWORD` | development values | The database roles' passwords, set when the database is first created |
 | `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_PASSWORD` | development values | Keycloak's bootstrap admin, also used by `make seed` |
-| `OIDC_CLIENT_SECRET` | development value | Shared by Keycloak's `workmind-api` client and the API |
+| `OIDC_CLIENT_SECRET` | development value | Shared by Keycloak's `needwise-api` client and the API |
 | `OPENFGA_API_KEY` | development value | Shared by OpenFGA and the API |
 | `COMPOSE_PROFILES` | unset | `embeddings` runs the embedding model in a container (`make quickstart` sets it) |
 | `NEXT_PUBLIC_DEMO` | `1` | Shows the **View as…** demo switcher in the UI; set `0` outside demos |
@@ -69,7 +69,7 @@ The defaults are for a laptop. Before a deployment that other people can reach:
       [Models and keys](../models.md#the-data-policy-what-may-leave). New organizations default
       to keeping `restricted` documents away from external models.
 
-This list covers the settings. Running WorkMind in production also means TLS in front of it
+This list covers the settings. Running NeedWise in production also means TLS in front of it
 (the Compose file's Caddy serves plain HTTP; on [Kubernetes](../deploy/kubernetes.md) it is your
 ingress), [backups](../operations/backup-restore.md) and [upgrades](../operations/upgrade.md).
 
@@ -87,7 +87,7 @@ ingress), [backups](../operations/backup-restore.md) and [upgrades](../operation
 | Sync Google Drive | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | [Connectors](../connectors.md) |
 | Connect Slack with OAuth (instead of pasting a bot token) | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | [Connectors](../connectors.md) |
 | Give the research agent web search | `SEARXNG_URL` | [Configuration reference](../reference/configuration.md#searxng_url) |
-| Give agents tools from other MCP servers | `MCP_SERVERS` | [MCP](../mcp.md#the-other-direction-workmind-using-mcp-tools) |
+| Give agents tools from other MCP servers | `MCP_SERVERS` | [MCP](../mcp.md#the-other-direction-needwise-using-mcp-tools) |
 | Transcribe meetings elsewhere, or not at all | `TRANSCRIPTION_PROVIDER`, `TRANSCRIPTION_MODEL`, `TRANSCRIPTION_BASE_URL` | [Meetings](../meetings.md) |
 | Limit analytics queries | `ANALYTICS_MAX_ROWS`, `ANALYTICS_TIMEOUT_S`, `ANALYTICS_WORKERS` | [Insights](../analytics.md) |
 | Turn on Enterprise features | `LICENSE_KEY` or `LICENSE_FILE` (development: `make ee-dev-license`) | [Enterprise edition](../enterprise.md) |
@@ -97,17 +97,17 @@ ingress), [backups](../operations/backup-restore.md) and [upgrades](../operation
 reference): with `OTEL_EXPORTER_OTLP_ENDPOINT` set, it exports traces to any OTLP-compatible
 backend; without it, tracing is off.
 
-## The `wm` command
+## The `nw` command
 
-The API image and the development environment (`cd apps/api && uv run wm ...`) include a
+The API image and the development environment (`cd apps/api && uv run nw ...`) include a
 command line for operators. With Docker Compose, run it in a container that has the settings,
-for example `docker compose exec api wm secrets rotate`.
+for example `docker compose exec api nw secrets rotate`.
 
 | Command | What it does |
 |---|---|
-| `wm reindex <tenant>` | Re-index every document of an organization (after changing the embedding model) |
-| `wm secrets rotate` | Re-encrypt stored model provider keys with the current `SECRETS_ENCRYPTION_KEY` ([rotation](../models.md#rotating-the-key)) |
-| `wm usage backfill [<tenant>]` | Import usage recorded before usage events existed; safe to run again ([Usage](../usage.md)) |
-| `wm license dev` | Write a development Enterprise license (`APP_ENV=dev` only; `make ee-dev-license`) |
-| `wm eval` | Run the evaluation suites against a running, seeded stack ([Evaluation](../evals/README.md)) |
-| `wm seed` | Create a demo company from a company file (development only; `make seed`) |
+| `nw reindex <tenant>` | Re-index every document of an organization (after changing the embedding model) |
+| `nw secrets rotate` | Re-encrypt stored model provider keys with the current `SECRETS_ENCRYPTION_KEY` ([rotation](../models.md#rotating-the-key)) |
+| `nw usage backfill [<tenant>]` | Import usage recorded before usage events existed; safe to run again ([Usage](../usage.md)) |
+| `nw license dev` | Write a development Enterprise license (`APP_ENV=dev` only; `make ee-dev-license`) |
+| `nw eval` | Run the evaluation suites against a running, seeded stack ([Evaluation](../evals/README.md)) |
+| `nw seed` | Create a demo company from a company file (development only; `make seed`) |

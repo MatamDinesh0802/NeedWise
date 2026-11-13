@@ -81,7 +81,7 @@ own_objects() {
 # Elapsed seconds since $1 (a `date +%s` value).
 since() { echo $(($(date +%s) - $1)); }
 
-# The row counts of every table in WorkMind's public schema, as `table|count` lines. Run as a
+# The row counts of every table in NeedWise's public schema, as `table|count` lines. Run as a
 # superuser, so Row-Level Security does not hide other tenants' rows.
 # shellcheck disable=SC2034 # used by the scripts that source this file
 ROW_COUNTS_SQL="SELECT table_name || '|' || (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name), false, true, '')))[1]::text FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1;"

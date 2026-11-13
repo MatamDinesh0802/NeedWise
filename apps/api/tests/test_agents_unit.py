@@ -8,19 +8,19 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from workmind.core.context import RequestContext
-from workmind.modules.agents.department import AgentResult, EvidenceOut, Finding, run_agent
-from workmind.modules.agents.orchestrator import (
+from needwise.core.context import RequestContext
+from needwise.modules.agents.department import AgentResult, EvidenceOut, Finding, run_agent
+from needwise.modules.agents.orchestrator import (
     AgentStepEvent,
     OrchestratorDeps,
     PlanEvent,
     aggregate,
     orchestrate,
 )
-from workmind.modules.agents.planning import Agent, FastRouter, PlanOut, Subtask, plan_question
-from workmind.modules.assistant.answer import AnswerEvent
-from workmind.modules.retrieval.service import Passage, RetrievalResult
-from workmind.providers.llm import Done, LLMRequest, LLMUsage, Role, StreamEvent, TextDelta
+from needwise.modules.agents.planning import Agent, FastRouter, PlanOut, Subtask, plan_question
+from needwise.modules.assistant.answer import AnswerEvent
+from needwise.modules.retrieval.service import Passage, RetrievalResult
+from needwise.providers.llm import Done, LLMRequest, LLMUsage, Role, StreamEvent, TextDelta
 
 CTX = RequestContext(
     request_id="t",
@@ -229,7 +229,7 @@ async def test_when_every_agent_fails_the_question_is_still_answered(
     async def two_agents(*_: Any) -> list[Agent]:
         return [agent("hr"), agent("finance")]
 
-    monkeypatch.setattr("workmind.modules.agents.orchestrator.load_agents", two_agents)
+    monkeypatch.setattr("needwise.modules.agents.orchestrator.load_agents", two_agents)
     plan = PlanOut(
         mode="fan_out", subtasks=[Subtask(agent="hr", goal="a"), Subtask(agent="finance", goal="b")]
     )
@@ -257,7 +257,7 @@ async def test_when_no_agent_finds_anything_the_plain_search_still_answers(
     async def one_agent(*_: Any) -> list[Agent]:
         return [agent("engineering", ("eng-docs",)), agent("hr")]
 
-    monkeypatch.setattr("workmind.modules.agents.orchestrator.load_agents", one_agent)
+    monkeypatch.setattr("needwise.modules.agents.orchestrator.load_agents", one_agent)
     plan = PlanOut(mode="single", subtasks=[Subtask(agent="engineering", goal="NDA?")])
     llm = ScriptedLLM([plan], answer="Sign the NDA [S1].")
     retriever = ScopedRetriever({"q": [passage("guide")]})  # only the unscoped search finds it

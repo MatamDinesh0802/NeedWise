@@ -1,13 +1,13 @@
 # Seed data: Acme Robotics
 
-WorkMind is demonstrated and evaluated on **Acme Robotics**, a fictional 180-person warehouse
+NeedWise is demonstrated and evaluated on **Acme Robotics**, a fictional 180-person warehouse
 robotics company. No real company data is ever used.
 
 | Path | What it holds |
 |---|---|
-| `acme/company.yaml` | Departments, groups, 20 people, the 9 demo logins, 14 collections with who can see them, and the department agents. `make seed` loads it into Keycloak and WorkMind. |
+| `acme/company.yaml` | Departments, groups, 20 people, the 9 demo logins, 14 collections with who can see them, and the department agents. `make seed` loads it into Keycloak and NeedWise. |
 | `acme/corpus_plan.yaml` | Every document's brief and the exact facts it must state: the ground truth the evaluation questions are graded against (`evals/`). |
-| `acme/corpus/` | The 49 documents (Word, Markdown, Excel, PDF, PowerPoint and two Slack exports; two have their own access lists, `viewers:` in the manifest), written from the plan by `python -m workmind.seed.corpus` and committed; `manifest.yaml` lists them. `make seed` indexes them through the real ingestion pipeline (the 47 before 2026-11-13 gave 364 chunks). |
+| `acme/corpus/` | The 49 documents (Word, Markdown, Excel, PDF, PowerPoint and two Slack exports; two have their own access lists, `viewers:` in the manifest), written from the plan by `python -m needwise.seed.corpus` and committed; `manifest.yaml` lists them. `make seed` indexes them through the real ingestion pipeline (the 47 before 2026-11-13 gave 364 chunks). |
 | `acme/analytics/` | The tables Insights queries (customers, products, invoice lines, the sales pipeline, January to September 2026), the script that generates them, and the semantic layer with its row policies. |
 | `acme/meetings/` | A 23-minute weekly operations meeting (transcript and audio, with its fact plan) and a support team transcript, to upload in **Meetings**. Not loaded by `make seed`. |
 
@@ -36,5 +36,5 @@ answer and a known source. The corpus includes the hard cases on purpose:
 | olivia.grant@acme.test | Head of operations | Leadership strategy, finance reports, enterprise docs; edits the Operations SOPs |
 | mallory@acme.test | External contractor (guest) | Only the contractor-onboarding collection: the red-team user |
 
-Every demo login uses the password `workmind-demo` (the `DEMO_PASSWORD` setting). What to try
+Every demo login uses the password `needwise-demo` (the `DEMO_PASSWORD` setting). What to try
 with each: [Quickstart](../docs/getting-started/quickstart.md#try-it).

@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import { json } from "./fixtures";
 
-/** GET /api/v1/edition (apps/api/src/workmind/api/v1/edition.py). */
+/** GET /api/v1/edition (apps/api/src/needwise/api/v1/edition.py). */
 export interface Edition {
   edition: "community" | "enterprise";
   features: readonly string[];

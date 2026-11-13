@@ -173,7 +173,7 @@ at 0. The run is not yet an automated test in CI, and it did not use a real mode
 
 ## Measured
 
-`wm eval --suites meetings --meetings-audio`
+`nw eval --suites meetings --meetings-audio`
 ([dataset](../evals/datasets/meetings.jsonl), [results](../evals/results/2026-11-04-meetings.md)).
 The demo meeting is a synthetic weekly operations sync in `seed/acme/meetings/`, with five
 participants, 3,445 words and a fact plan that lists what it must contain: 4 decisions, 5 action
@@ -271,7 +271,7 @@ at thresholds 0.8 and 0.9; 8 threads were no faster than 1.
 **Topic outlines.** The meetings eval scores them: each expected topic has title keywords and an
 anchor, words said well inside it, and counts when the outline's topic covering the anchor has a
 fitting title. The model-based outline has not been run with a real model yet (no model key
-where this was built): `wm eval --suites meetings` measures it. The deterministic fallback, with
+where this was built): `nw eval --suites meetings` measures it. The deterministic fallback, with
 no model at all, found 4/4 topics of the operations sync from its transcript and from its
 Whisper transcription (titles such as "Packs, battery, Blufen", "Claim, answer, hours",
 "Drill, Tuesday, Thursday"), and 1/2 of the 2-minute support sync, which it keeps as one topic.

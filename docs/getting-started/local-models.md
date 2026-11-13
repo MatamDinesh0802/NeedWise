@@ -1,6 +1,6 @@
 # Local models
 
-WorkMind uses models for three different jobs. Each can run on your own hardware:
+NeedWise uses models for three different jobs. Each can run on your own hardware:
 
 | Job | Default | Local by default? |
 |---|---|---|
@@ -81,9 +81,9 @@ without re-indexing.
 
 **Another embedding model** (`EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS`, `EMBEDDING_BASE_URL`)
 starts a new search index, named after the model and its dimensions. Re-index each
-organization with `wm reindex <tenant>`. The relevance floor (`RETRIEVAL_MIN_SIMILARITY`) and the
+organization with `nw reindex <tenant>`. The relevance floor (`RETRIEVAL_MIN_SIMILARITY`) and the
 agents' fast-path thresholds are calibrated for EmbeddingGemma: check them with
-`wm eval --retrieval-only` before relying on another model.
+`nw eval --retrieval-only` before relying on another model.
 
 ## Speech to text
 
@@ -104,5 +104,5 @@ it on the demo company:
 
 ```bash
 cd apps/api
-uv run wm eval --judge     # answers graded by a judge model (LLM_MODEL_JUDGE)
+uv run nw eval --judge     # answers graded by a judge model (LLM_MODEL_JUDGE)
 ```

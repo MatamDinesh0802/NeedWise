@@ -1,4 +1,4 @@
-"""Tenant lifecycle through `wm tenant` (docs/multi-tenancy.md): a tenant is created with its
+"""Tenant lifecycle through `nw tenant` (docs/multi-tenancy.md): a tenant is created with its
 authorization store, gets data in every layer, and is deleted from every one of them, after
 which `verify-empty` finds nothing; another tenant's data is untouched throughout.
 
@@ -20,24 +20,24 @@ from fastapi.testclient import TestClient
 from redis.asyncio import Redis
 from sqlalchemy import select, text, update
 
+from needwise import cli
+from needwise.core import middleware
+from needwise.core.config import Settings
+from needwise.core.db import create_engine, create_session_factory
+from needwise.core.tenancy import global_transaction, tenant_transaction
+from needwise.main import create_app
+from needwise.modules.authz.openfga import OpenFgaClient
+from needwise.modules.authz.sync import ensure_store, process_outbox, reconcile
+from needwise.modules.governance.models import AuditEvent, LegalHold
+from needwise.modules.identity import tenant_cli
+from needwise.modules.identity.lifecycle import Stores, tenant_tables, verify_empty
+from needwise.modules.identity.models import Tenant, User
+from needwise.modules.identity.service import sign_in
+from needwise.modules.identity.sessions import SessionStore
+from needwise.modules.knowledge.storage import LocalObjectStorage
+from needwise.modules.retrieval.qdrant import QdrantClient
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, seed_acme
-from workmind import cli
-from workmind.core import middleware
-from workmind.core.config import Settings
-from workmind.core.db import create_engine, create_session_factory
-from workmind.core.tenancy import global_transaction, tenant_transaction
-from workmind.main import create_app
-from workmind.modules.authz.openfga import OpenFgaClient
-from workmind.modules.authz.sync import ensure_store, process_outbox, reconcile
-from workmind.modules.governance.models import AuditEvent, LegalHold
-from workmind.modules.identity import tenant_cli
-from workmind.modules.identity.lifecycle import Stores, tenant_tables, verify_empty
-from workmind.modules.identity.models import Tenant, User
-from workmind.modules.identity.service import sign_in
-from workmind.modules.identity.sessions import SessionStore
-from workmind.modules.knowledge.storage import LocalObjectStorage
-from workmind.modules.retrieval.qdrant import QdrantClient
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 OPENFGA_URL = os.environ.get("TEST_OPENFGA_URL")
@@ -282,7 +282,7 @@ def test_a_tenant_is_created_filled_and_deleted_from_every_store(
     signed_in = _run(first_sign_in())
     assert (signed_in.id, signed_in.status) == (owner.id, "active")
     session_id = _run(_session_for(settings, tenant_id, owner.id))
-    headers = {"Cookie": f"wm_session={session_id}"}
+    headers = {"Cookie": f"nw_session={session_id}"}
     assert api.get("/api/v1/me", headers=headers).status_code == 200
     filled = _fill(api, headers, owner.id, "handbook")
 
@@ -449,7 +449,7 @@ def test_a_tenant_under_legal_hold_is_deleted_only_with_the_typed_override(
     assert _run(_tenant(settings, slug)) is None
 
 
-def test_the_wm_command_routes_to_the_tenant_commands(capsys: pytest.CaptureFixture[str]) -> None:
+def test_the_nw_command_routes_to_the_tenant_commands(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["tenant", "--help"]) == 0
     assert "verify-empty" in capsys.readouterr().out
     assert cli.main(["tenant"]) == 2

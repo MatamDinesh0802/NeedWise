@@ -9,22 +9,22 @@ from typing import Any
 
 import pytest
 
-from workmind.modules.meetings import pipeline
-from workmind.modules.meetings.speakers import (
+from needwise.modules.meetings import pipeline
+from needwise.modules.meetings.speakers import (
     assign_speakers,
     relabel,
     relink_owners,
     speaker_at,
 )
-from workmind.providers import diarization
-from workmind.providers.diarization import (
+from needwise.providers import diarization
+from needwise.providers.diarization import (
     DiarizationError,
     DisabledDiarizer,
     ModelFile,
     Turn,
     fetch,
 )
-from workmind.providers.transcription import Segment
+from needwise.providers.transcription import Segment
 
 TURNS = [Turn(0.0, 4.0, 3), Turn(4.5, 9.0, 0), Turn(9.2, 12.0, 3)]
 

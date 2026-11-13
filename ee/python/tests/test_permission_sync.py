@@ -8,17 +8,17 @@ from typing import Any
 import httpx
 import pytest
 
-pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra ee")
+pytest.importorskip("needwise_ee", reason="install the ee extra: uv sync --extra ee")
 
-from workmind.modules.connectors.base import ConnectorError, RemoteItem
-from workmind.modules.connectors.extensions import ItemAcl
-from workmind.modules.connectors.gdrive import GoogleDriveConnector
-from workmind.modules.connectors.github import GitHubConnector
-from workmind.modules.connectors.models import Source
-from workmind.modules.connectors.slack import SlackConnector
-from workmind.modules.connectors.web import WebConnector
+from needwise.modules.connectors.base import ConnectorError, RemoteItem
+from needwise.modules.connectors.extensions import ItemAcl
+from needwise.modules.connectors.gdrive import GoogleDriveConnector
+from needwise.modules.connectors.github import GitHubConnector
+from needwise.modules.connectors.models import Source
+from needwise.modules.connectors.slack import SlackConnector
+from needwise.modules.connectors.web import WebConnector
 
-from workmind_ee.permission_sync import (
+from needwise_ee.permission_sync import (
     SourcePermissions,
     drive_acls,
     drive_principal,

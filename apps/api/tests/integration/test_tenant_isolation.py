@@ -9,10 +9,10 @@ from sqlalchemy import select, text, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from needwise.core.db import create_session_factory
+from needwise.core.tenancy import global_transaction, tenant_transaction
+from needwise.modules.identity.models import Department, DepartmentMember, Tenant, User
 from tests.integration.conftest import Database, SeededTenant, SessionFactory
-from workmind.core.db import create_session_factory
-from workmind.core.tenancy import global_transaction, tenant_transaction
-from workmind.modules.identity.models import Department, DepartmentMember, Tenant, User
 
 TenantPair = tuple[SeededTenant, SeededTenant]
 

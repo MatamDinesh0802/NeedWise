@@ -85,12 +85,12 @@ jobs:
         run: |
           options=()
           if [ "$NO_MODEL" = "true" ]; then options+=(--no-model); fi
-          uv run python -m workmind_load.run --host "$HOST" --users "$USERS" \
+          uv run python -m needwise_load.run --host "$HOST" --users "$USERS" \
             --spawn-rate "$SPAWN_RATE" --duration "$DURATION" --label ci "${options[@]}" \
             --note "Run from GitHub Actions (ubuntu-latest) against $HOST."
       - name: Revoke anything left behind
         if: always()
-        run: uv run python -m workmind_load.tokens sweep --host "$HOST"
+        run: uv run python -m needwise_load.tokens sweep --host "$HOST"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

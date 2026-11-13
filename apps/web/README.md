@@ -80,7 +80,7 @@ Refresh (`POST /api/v1/analytics/query`, on the query's dataset). Saved answers 
 ## Docker
 
 ```bash
-docker build -t workmind-web:dev .
+docker build -t needwise-web:dev .
 ```
 
 The image runs `node server.js` as a non-root user on port 3000 and includes a `HEALTHCHECK`.

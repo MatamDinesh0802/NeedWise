@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from needwise.modules.model_catalog.resolver import LLMResolver
 from tests.integration.test_assistant_api import (  # noqa: F401  (fixtures)
     FakeLLM,
     api,
@@ -26,7 +27,6 @@ from tests.integration.test_model_catalog_api import (
     add_provider,
     put,
 )
-from workmind.modules.model_catalog.resolver import LLMResolver
 
 assert pytestmark  # the same requirements as the assistant tests
 

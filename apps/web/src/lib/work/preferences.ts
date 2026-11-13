@@ -1,7 +1,7 @@
 /**
  * Settings › Notifications: where a person's notifications go besides the app (email now or in a
  * daily digest, Slack direct messages), per category, and their backup approver. Shapes mirror
- * apps/api/src/workmind/api/v1/automation.py (`/me/work-preferences`). Pure helpers; the card in
+ * apps/api/src/needwise/api/v1/automation.py (`/me/work-preferences`). Pure helpers; the card in
  * components/settings/notifications-card.tsx renders them.
  */
 

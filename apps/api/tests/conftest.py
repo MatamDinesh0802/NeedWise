@@ -3,9 +3,9 @@ from collections.abc import Callable, Iterator, Mapping
 import pytest
 from fastapi.testclient import TestClient
 
-from workmind.core.config import Settings
-from workmind.core.health import HealthCheck
-from workmind.main import create_app
+from needwise.core.config import Settings
+from needwise.core.health import HealthCheck
+from needwise.main import create_app
 
 
 async def healthy() -> None:

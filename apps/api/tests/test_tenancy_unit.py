@@ -6,8 +6,8 @@ import uuid
 import httpx
 import pytest
 
-from workmind.core.tenancy import GLOBAL_KEY_PREFIXES, key_tenant, tenant_key, tenant_key_pattern
-from workmind.modules.retrieval.qdrant import QdrantClient, match, scoped
+from needwise.core.tenancy import GLOBAL_KEY_PREFIXES, key_tenant, tenant_key, tenant_key_pattern
+from needwise.modules.retrieval.qdrant import QdrantClient, match, scoped
 
 A = uuid.UUID("00000000-0000-7000-8000-00000000000a")
 B = uuid.UUID("00000000-0000-7000-8000-00000000000b")

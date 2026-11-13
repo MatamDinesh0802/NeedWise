@@ -12,7 +12,7 @@ const shop: SqlSource = {
   host: "db.internal.example",
   port: 5432,
   database: "shop",
-  username: "workmind_reader",
+  username: "needwise_reader",
   password_set: true,
   tls_mode: "verify-full",
   tls_ca: null,
@@ -44,7 +44,7 @@ describe("SourceCard", () => {
   it("shows where it connects, its status and its actions, never a password", () => {
     const html = renderToStaticMarkup(<SourceCard source={shop} />);
     expect(html).toContain("Shop orders");
-    expect(html).toContain("workmind_reader@db.internal.example:5432/shop · shop · TLS verify-full");
+    expect(html).toContain("needwise_reader@db.internal.example:5432/shop · shop · TLS verify-full");
     expect(html).toContain("Connected: PostgreSQL 18.1.");
     expect(html).toContain("Test connection");
     expect(html).toContain("Turn off");

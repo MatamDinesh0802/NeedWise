@@ -10,19 +10,17 @@ from typing import Any
 
 import pytest
 
-from tests.fakes import FakeLLM
-from tests.test_assistant_unit import passage
-from workmind.core.config import Settings
-from workmind.core.errors import redact_errors
-from workmind.modules.assistant.answer import route, withheld_notice
-from workmind.modules.model_catalog import urls
-from workmind.modules.model_catalog.catalog import Catalog, TenantConfig, system_catalog
-from workmind.modules.model_catalog.policy import above, default_threshold, threshold
-from workmind.modules.model_catalog.resolver import Target, TenantLLM, scrub, with_model
-from workmind.modules.model_catalog.secrets import KeyRing, SecretsError
-from workmind.modules.model_catalog.store import key_context, key_hint
-from workmind.modules.model_catalog.urls import UnsafeUrlError, check_base_url
-from workmind.providers.llm import (
+from needwise.core.config import Settings
+from needwise.core.errors import redact_errors
+from needwise.modules.assistant.answer import route, withheld_notice
+from needwise.modules.model_catalog import urls
+from needwise.modules.model_catalog.catalog import Catalog, TenantConfig, system_catalog
+from needwise.modules.model_catalog.policy import above, default_threshold, threshold
+from needwise.modules.model_catalog.resolver import Target, TenantLLM, scrub, with_model
+from needwise.modules.model_catalog.secrets import KeyRing, SecretsError
+from needwise.modules.model_catalog.store import key_context, key_hint
+from needwise.modules.model_catalog.urls import UnsafeUrlError, check_base_url
+from needwise.providers.llm import (
     Done,
     LLMError,
     LLMMessage,
@@ -32,7 +30,9 @@ from workmind.providers.llm import (
     StreamEvent,
     TextDelta,
 )
-from workmind.providers.pricing import cost_usd
+from needwise.providers.pricing import cost_usd
+from tests.fakes import FakeLLM
+from tests.test_assistant_unit import passage
 
 OLD = base64.b64encode(os.urandom(32)).decode()
 NEW = base64.b64encode(os.urandom(32)).decode()

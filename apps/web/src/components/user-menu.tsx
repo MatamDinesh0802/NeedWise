@@ -151,7 +151,7 @@ export function UserMenu() {
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-64">
                 <DropdownMenuGroup>
-                  <DropdownMenuLabel>Demo accounts · password workmind-demo</DropdownMenuLabel>
+                  <DropdownMenuLabel>Demo accounts · password needwise-demo</DropdownMenuLabel>
                   {DEMO_ACCOUNTS.map((account) => {
                     const current = account.email === me.email;
                     return (

@@ -18,7 +18,7 @@ import asyncpg
 import pytest
 
 ADMIN_URL = os.environ.get("TEST_DATABASE_ADMIN_URL")
-TEST_DB = os.environ.get("TEST_DATABASE_NAME", "workmind_test")
+TEST_DB = os.environ.get("TEST_DATABASE_NAME", "needwise_test")
 
 SHOP_SQL = Path(__file__).resolve().parents[4] / "seed" / "acme" / "analytics" / "sql" / "shop.sql"
 SHOP_YAML = SHOP_SQL.with_name("shop.yaml")
@@ -105,7 +105,7 @@ def shop_postgres() -> Iterator[ShopServer]:
 
 # --- MySQL -----------------------------------------------------------------------------------
 
-MY_READER, MY_WRITER = "wm_shop_reader", "wm_shop_writer"
+MY_READER, MY_WRITER = "nw_shop_reader", "nw_shop_writer"
 
 
 @pytest.fixture(scope="session")

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Back up a WorkMind deployment (docs/operations/backup-restore.md).
+# Back up a NeedWise deployment (docs/operations/backup-restore.md).
 #
 #   scripts/backup.sh [--output DIR] [--pause | --offline | --online] [--keep N] [--no-compose]
 #   make backup                      the same, into ./backups
 #
-# Writes DIR/workmind-<UTC time>/ (mode 0700; default DIR: ./backups):
-#   postgres/<db>.dump         pg_dump, custom format: workmind, keycloak, openfga (PG_DATABASES)
+# Writes DIR/needwise-<UTC time>/ (mode 0700; default DIR: ./backups):
+#   postgres/<db>.dump         pg_dump, custom format: needwise, keycloak, openfga (PG_DATABASES)
 #   postgres/globals.sql       roles and their attributes, without passwords
-#   qdrant/<name>.snapshot     a snapshot of every WorkMind collection (chunks_*)
+#   qdrant/<name>.snapshot     a snapshot of every NeedWise collection (chunks_*)
 #   objects.tar.gz             the object storage tree (uploads, recordings, analytics data)
 #   objects.sha256             SHA-256 of every object, checked after a restore
 #   license/                   license.key and dev-public.key, when present
@@ -16,11 +16,11 @@
 #
 # Consistency:
 #   --pause    (default) stops worker and beat while it runs, so no ingestion, sync or scheduled
-#              job writes; people can keep working. WorkMind's database is dumped from one
+#              job writes; people can keep working. NeedWise's database is dumped from one
 #              snapshot, and the row counts in the manifest come from that same snapshot.
 #   --offline  also stops api and web: nothing changes during the backup (downtime).
 #   --online   stops nothing: what changes during the backup may be missing or half-present
-#              across the stores (repaired after a restore with `wm reindex`, `wm authz sync`).
+#              across the stores (repaired after a restore with `nw reindex`, `nw authz sync`).
 #
 # Not backed up, on purpose: Valkey (sessions, the job queue, caches: see the docs for what that
 # loses), the beat schedule volume, the model caches, and your secrets (.env,
@@ -57,18 +57,18 @@ fi
 # A plain number: bash evaluates `[[ $KEEP -gt 0 ]]` as arithmetic, which can run commands.
 [[ $KEEP =~ ^[0-9]+$ ]] || die "--keep takes a number of backups, not '$KEEP'"
 
-PG_DATABASES=${PG_DATABASES:-workmind keycloak openfga}
-APP_DB=${APP_DB:-workmind}
+PG_DATABASES=${PG_DATABASES:-needwise keycloak openfga}
+APP_DB=${APP_DB:-needwise}
 QDRANT_URL=${QDRANT_URL:-http://127.0.0.1:$(env_value QDRANT_PORT 6333)}
 API_URL=${API_URL:-http://127.0.0.1:$(env_value API_PORT 8400)}
 OBJECTS_DIR=${OBJECTS_DIR:-$DEPLOY_DIR/.data/objects}
-LICENSE_DIR=${LICENSE_DIR:-$DEPLOY_DIR/.workmind}
+LICENSE_DIR=${LICENSE_DIR:-$DEPLOY_DIR/.needwise}
 STOP_TIMEOUT=${STOP_TIMEOUT:-120}
 
 umask 077
 STARTED=$(date +%s)
 CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-TARGET="$OUTPUT/workmind-$(date -u +%Y%m%dT%H%M%SZ)"
+TARGET="$OUTPUT/needwise-$(date -u +%Y%m%dT%H%M%SZ)"
 TMP="$TARGET/tmp"
 # Hard links to the object tree (see "Objects" below), inside it so they are on its filesystem.
 PIN="$OBJECTS_DIR/.backup-pin-${TARGET##*/}"
@@ -99,13 +99,13 @@ say "Backup of $(if [[ -n $NO_COMPOSE ]]; then echo "$PGHOST:${PGPORT:-5432}"; e
 command -v docker >/dev/null || die "docker is required"
 command -v "${PYTHON:-python3}" >/dev/null || die "python3 is required"
 PG_VERSION=$(psql_value -d postgres -c 'SHOW server_version') || die "cannot reach Postgres"
-# Every WorkMind table has FORCE ROW LEVEL SECURITY. pg_dump runs with row_security off, which
+# Every NeedWise table has FORCE ROW LEVEL SECURITY. pg_dump runs with row_security off, which
 # only a superuser or a BYPASSRLS role may do (not the table owner), and the row counts would
 # see nothing under RLS. Refuse early instead of failing in the middle.
 PG_ROLE_OK=$(psql_value -d postgres -c "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user") ||
   die "cannot read the Postgres role's attributes"
 [[ $PG_ROLE_OK == t ]] ||
-  die "the Postgres role ${PGUSER:-postgres} is neither SUPERUSER nor BYPASSRLS, so pg_dump cannot read WorkMind's tables (row-level security); use such a role (docs/operations/backup-restore.md)"
+  die "the Postgres role ${PGUSER:-postgres} is neither SUPERUSER nor BYPASSRLS, so pg_dump cannot read NeedWise's tables (row-level security); use such a role (docs/operations/backup-restore.md)"
 tool http-json "$QDRANT_URL/collections" >/dev/null || die "cannot reach Qdrant at $QDRANT_URL"
 
 # --- What is running ---------------------------------------------------------------------------
@@ -116,11 +116,11 @@ if [[ -z $NO_COMPOSE ]] && is_running api; then
   # Version and embedding settings as the running API sees them; getattr: older versions lack some.
   compose exec -T api python - >"$TMP/app.json" 2>/dev/null <<'PY' || rm -f "$TMP/app.json"
 import json
-import workmind
-from workmind.core.config import Settings
+import needwise
+from needwise.core.config import Settings
 s = Settings()
 print(json.dumps({
-    "version": workmind.__version__,
+    "version": needwise.__version__,
     "app_env": s.app_env,
     "public_url": s.public_url,
     "embedding_model": getattr(s, "embedding_model", None),
@@ -171,7 +171,7 @@ fi
 # --- Postgres ----------------------------------------------------------------------------------
 say "Postgres $PG_VERSION: $PG_DATABASES"
 step=$(date +%s)
-# WorkMind's database: one exported snapshot shared by pg_dump and the counting queries, so the
+# NeedWise's database: one exported snapshot shared by pg_dump and the counting queries, so the
 # manifest describes exactly what the dump holds, even while people keep working.
 fifo=$(mktemp -d "$TMP/psql.XXXX")
 mkfifo "$fifo/in" "$fifo/out"
@@ -212,7 +212,7 @@ in_list=$(printf "'%s'," $PG_DATABASES)
 psql_value -d postgres -c \
   "SELECT datname || '|' || pg_get_userbyid(datdba) FROM pg_database WHERE datname IN (${in_list%,}) ORDER BY 1" |
   tool rows-json --strings >"$TMP/owners.json"
-# Roles (workmind_owner, workmind_app NOBYPASSRLS, keycloak, openfga) without their password
+# Roles (needwise_owner, needwise_app NOBYPASSRLS, keycloak, openfga) without their password
 # hashes: the restore target creates the roles with its own passwords (deploy/postgres/init).
 pg pg_dumpall --globals-only --no-role-passwords >"$TARGET/postgres/globals.sql"
 T_POSTGRES=$(since "$step")
@@ -279,7 +279,7 @@ say "Done in $(since "$STARTED")s: $TARGET ($(du -sh "$TARGET" | cut -f 1))"
 
 if [[ $KEEP -gt 0 ]]; then
   # Names sort by time; everything but the newest KEEP complete backups goes.
-  find "$OUTPUT" -mindepth 1 -maxdepth 1 -type d -name 'workmind-*' -exec test -f '{}/manifest.json' ';' -print |
+  find "$OUTPUT" -mindepth 1 -maxdepth 1 -type d -name 'needwise-*' -exec test -f '{}/manifest.json' ';' -print |
     sort | awk -v keep="$KEEP" '{ line[NR] = $0 } END { for (i = 1; i <= NR - keep; i++) print line[i] }' |
     while IFS= read -r dir; do
       info "removing old backup $dir (--keep $KEEP)"

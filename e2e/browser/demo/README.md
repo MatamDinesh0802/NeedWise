@@ -1,6 +1,6 @@
 # The demo video
 
-`record.spec.ts` drives a real browser through WorkMind with captions drawn on the page, and
+`record.spec.ts` drives a real browser through NeedWise with captions drawn on the page, and
 `render.mjs` turns the recording into the files the README and the docs use:
 
 | File | What |
@@ -60,7 +60,7 @@ DEMO_STOP_AFTER=4 pnpm exec playwright test -c demo/playwright.config.ts   # ste
 | Variable | Default | |
 |---|---|---|
 | `E2E_BASE_URL` | `http://localhost:8480` | The stack, as a browser reaches it. |
-| `DEMO_PASSWORD` | `workmind-demo` | The demo logins' password. |
+| `DEMO_PASSWORD` | `needwise-demo` | The demo logins' password. |
 | `DEMO_MAILPIT_URL` | `http://localhost:8025` | Mailpit, to delete the email step 5 sends. |
 | `DEMO_STOP_AFTER` | `8` | Record steps 1 to N only, while working on the script. |
 

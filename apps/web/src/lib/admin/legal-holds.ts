@@ -1,5 +1,5 @@
 /**
- * Legal holds (Enterprise feature "legal_hold", ee/python/src/workmind_ee/legal_hold.py,
+ * Legal holds (Enterprise feature "legal_hold", ee/python/src/needwise_ee/legal_hold.py,
  * docs/enterprise.md#legal-hold). Owners and admins place a hold on a document, a collection, a
  * person, a meeting or an Insights question; while it is active nothing it covers can be deleted.
  * The API enforces the license (402), who may place or release a hold, and the holds themselves on

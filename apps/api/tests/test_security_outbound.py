@@ -13,10 +13,10 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from workmind.core.urls import UnsafeUrlError
-from workmind.modules.connectors.base import ConnectorError, RemoteItem
-from workmind.modules.connectors.registry import validate_config
-from workmind.modules.connectors.web import WebConnector
+from needwise.core.urls import UnsafeUrlError
+from needwise.modules.connectors.base import ConnectorError, RemoteItem
+from needwise.modules.connectors.registry import validate_config
+from needwise.modules.connectors.web import WebConnector
 
 METADATA = "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
 

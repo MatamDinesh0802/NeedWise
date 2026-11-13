@@ -63,7 +63,7 @@ that many days after its last review, or after it was added: `next_review_at`. W
 interval nothing is ever due. Changing the interval reschedules every document of the collection
 from its last review.
 
-**Reminders.** The Celery beat task `workmind.send_review_reminders` runs once a day. For each
+**Reminders.** The Celery beat task `needwise.send_review_reminders` runs once a day. For each
 document past `next_review_at`, it creates **once per review cycle**:
 
 - a task for the owner, "Review <title>", due in 14 days, linking to the document;
@@ -98,7 +98,7 @@ and show nothing.
 ## Escalation of overdue reviews
 
 A reminder goes to the document's owner. When the owner ignores it and the document is
-**official** (answers rank it first), the same daily task (`workmind.send_review_reminders`,
+**official** (answers rank it first), the same daily task (`needwise.send_review_reminders`,
 right after the reminders) escalates it, one stage at a time:
 
 | Stage | When | Who is told |

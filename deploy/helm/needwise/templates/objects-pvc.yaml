@@ -1,0 +1,26 @@
+{{- if not .Values.objectStorage.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "needwise.objectStorageClaim" . }}
+  labels:
+    {{- include "needwise.labels" (list . "objects") | nindent 4 }}
+  {{- if or .Values.objectStorage.keepOnUninstall .Values.objectStorage.annotations }}
+  annotations:
+    {{- if .Values.objectStorage.keepOnUninstall }}
+    helm.sh/resource-policy: keep
+    {{- end }}
+    {{- with .Values.objectStorage.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.objectStorage.accessModes | nindent 4 }}
+  {{- with (default .Values.global.storageClass .Values.objectStorage.storageClass) }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.objectStorage.size }}
+{{- end }}

@@ -9,13 +9,13 @@ lifecycle. Storing OAuth tokens in browser JavaScript exposes them to XSS. The s
 identity must work for the web UI, API clients and MCP clients.
 
 ## Decision
-- Keycloak is the identity provider: login, MFA, federation, organizations. WorkMind never
+- Keycloak is the identity provider: login, MFA, federation, organizations. NeedWise never
   stores passwords.
 - The FastAPI backend acts as a Backend-for-Frontend: it runs the OIDC Authorization Code flow
   with PKCE, keeps tokens server-side in Valkey, and gives the browser only an opaque
   `HttpOnly; Secure; SameSite=Lax` session cookie.
 - UI, API and Keycloak share one origin behind Caddy, so the cookie works without CORS.
-- Application permissions (departments, groups, document access) live in WorkMind, not in
+- Application permissions (departments, groups, document access) live in NeedWise, not in
   Keycloak (see ADR 0006).
 - Machine clients use scoped personal access tokens or Keycloak service accounts. (*As built,
   2026-11-13:* personal access tokens only; Keycloak service accounts with client credentials are

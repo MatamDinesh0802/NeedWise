@@ -17,20 +17,20 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.config import Settings
+from needwise.core.context import RequestContext
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.knowledge.models import Collection, Document
+from needwise.modules.retrieval.qdrant import QdrantClient
+from needwise.modules.tools.registry import ToolRegistry
+from needwise.modules.work.approvals import propose
+from needwise.modules.work.events import DocumentReady, document_ready, meeting_processed
+from needwise.modules.work.models import Approval, Workflow, WorkflowRun
+from needwise.modules.work.workflows import WorkflowDeps, queued_runs, start_queued
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory
-from workmind.core.config import Settings
-from workmind.core.context import RequestContext
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.knowledge.models import Collection, Document
-from workmind.modules.retrieval.qdrant import QdrantClient
-from workmind.modules.tools.registry import ToolRegistry
-from workmind.modules.work.approvals import propose
-from workmind.modules.work.events import DocumentReady, document_ready, meeting_processed
-from workmind.modules.work.models import Approval, Workflow, WorkflowRun
-from workmind.modules.work.workflows import WorkflowDeps, queued_runs, start_queued
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(

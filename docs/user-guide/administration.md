@@ -34,7 +34,7 @@ appears with the status **Invited**.
 
 What it does and does not do today:
 
-- It creates the WorkMind user only. When a person signs in through Keycloak for the first time
+- It creates the NeedWise user only. When a person signs in through Keycloak for the first time
   with that **verified** email, the sign-in links to this user and the status becomes **Active**.
   An email that is not verified never links (otherwise anyone able to set an unverified address
   in an identity provider could take over the account).
@@ -43,7 +43,7 @@ What it does and does not do today:
   - With an identity provider connected to Keycloak (Okta, Entra ID, Google), the person signs
     in with it; nothing else is needed if the provider sends a verified email.
   - Without one, an operator creates the user in Keycloak's admin console
-    (`/auth`, realm `workmind`): the same email, marked verified, a temporary password or the
+    (`/auth`, realm `needwise`): the same email, marked verified, a temporary password or the
     *Update Password* required action, and membership of the organization whose alias is the
     tenant's slug (for the demo, `acme`). `make seed` does this for the demo people.
 - Only an owner can add an owner (`403 owner_required`); an email already in the organization
@@ -92,10 +92,10 @@ members of the outer group, at any depth. A nesting that would make two groups c
 other is refused (`409 group_cycle`).
 
 Groups with a **Source** other than local come from an identity provider or a connector and are
-changed there; WorkMind refuses to edit them (`409 managed_externally`).
+changed there; NeedWise refuses to edit them (`409 managed_externally`).
 
 Where groups are used: collection and document access (`group:`), approver `any_of` lists are
-people rather than groups, and identity mappings can map a source's group to a WorkMind group
+people rather than groups, and identity mappings can map a source's group to a NeedWise group
 ([permission sync](../permission-sync.md)).
 
 ## Where to look next

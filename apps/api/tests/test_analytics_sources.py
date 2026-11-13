@@ -14,14 +14,14 @@ import sqlglot
 from pydantic import ValidationError
 from sqlglot import exp
 
-from workmind.core.context import RequestContext
-from workmind.modules.analytics import guard, remote, semantic, sources
-from workmind.modules.analytics.compiler import QueryFilter, SemanticQuery, compile_query
-from workmind.modules.model_catalog.secrets import KeyRing, SecretsError
+from needwise.core.context import RequestContext
+from needwise.modules.analytics import guard, remote, semantic, sources
+from needwise.modules.analytics.compiler import QueryFilter, SemanticQuery, compile_query
+from needwise.modules.model_catalog.secrets import KeyRing, SecretsError
 
 SHOP = Path(__file__).resolve().parents[3] / "seed" / "acme" / "analytics" / "sql" / "shop.yaml"
 DIALECTS: list[guard.Dialect] = ["postgres", "mysql"]
-KEY = "d29ya21pbmQtZGV2LW9ubHktTk9ULUEtU0VDUkVUISE="
+KEY = "bmVlZHdpc2UtZGV2LW9ubHktTk9ULUEtU0VDUkVUISE="
 
 
 def shop(dialect: guard.Dialect) -> semantic.SemanticModel:
@@ -120,7 +120,7 @@ ATTACKS = [
     # CTE tricks
     "WITH d AS (DELETE FROM orders RETURNING *) SELECT * FROM d",
     "WITH orders AS (SELECT * FROM customers) SELECT * FROM orders",
-    "WITH _wm_rows_orders AS (SELECT * FROM orders) SELECT * FROM _wm_rows_orders",
+    "WITH _nw_rows_orders AS (SELECT * FROM orders) SELECT * FROM _nw_rows_orders",
     "WITH RECURSIVE salaries AS (SELECT * FROM salaries) SELECT * FROM salaries",
     "WITH x AS (SELECT * FROM y), y AS (SELECT 1) SELECT * FROM x",
     # locks, INTO, variables, parameters
@@ -226,7 +226,7 @@ def test_row_policies_are_fences_at_the_head_of_the_query(dialect: guard.Dialect
     tree = sqlglot.parse_one(checked.sql, dialect=dialect)
     with_ = tree.args["with_"]
     names = [cte.alias for cte in with_.expressions]
-    assert names[:2] == ["_wm_rows_customers", "_wm_rows_orders"]  # first, before the query's
+    assert names[:2] == ["_nw_rows_customers", "_nw_rows_orders"]  # first, before the query's
     assert names[2] == "totals"
     materialized = [cte.args.get("materialized") for cte in with_.expressions[:2]]
     assert materialized == ([True, True] if dialect == "postgres" else [None, None])
@@ -328,7 +328,7 @@ def test_database_models_refuse_unknown_functions(dialect: guard.Dialect) -> Non
         )
 
 
-# --- Where WorkMind may connect -------------------------------------------------------------
+# --- Where NeedWise may connect -------------------------------------------------------------
 
 PRIVATE = (ipaddress.ip_network("10.20.0.0/16"), ipaddress.ip_network("127.0.0.0/8"))
 

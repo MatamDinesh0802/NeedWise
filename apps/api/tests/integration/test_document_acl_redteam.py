@@ -18,20 +18,20 @@ import httpx
 import pytest
 from sqlalchemy import select
 
+from needwise.core.resources import Resources
+from needwise.core.tenancy import tenant_transaction
+from needwise.evals.datasets import load_red_team
+from needwise.evals.runner import Askers, Evaluator
+from needwise.modules.authz.openfga import OpenFgaClient
+from needwise.modules.authz.sync import ensure_store, reconcile
+from needwise.modules.knowledge.models import Document
+from needwise.modules.knowledge.pipeline import IngestionDeps
+from needwise.modules.knowledge.storage import LocalObjectStorage
+from needwise.modules.retrieval.qdrant import QdrantClient
+from needwise.modules.retrieval.service import Retriever
+from needwise.providers.embeddings import HashEmbeddings
+from needwise.seed.corpus_load import load_corpus
 from tests.integration.conftest import VALKEY_URL, SessionFactory, seed_acme
-from workmind.core.resources import Resources
-from workmind.core.tenancy import tenant_transaction
-from workmind.evals.datasets import load_red_team
-from workmind.evals.runner import Askers, Evaluator
-from workmind.modules.authz.openfga import OpenFgaClient
-from workmind.modules.authz.sync import ensure_store, reconcile
-from workmind.modules.knowledge.models import Document
-from workmind.modules.knowledge.pipeline import IngestionDeps
-from workmind.modules.knowledge.storage import LocalObjectStorage
-from workmind.modules.retrieval.qdrant import QdrantClient
-from workmind.modules.retrieval.service import Retriever
-from workmind.providers.embeddings import HashEmbeddings
-from workmind.seed.corpus_load import load_corpus
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 OPENFGA_URL = os.environ.get("TEST_OPENFGA_URL")
@@ -136,7 +136,7 @@ async def test_reseeding_keeps_the_lists(
             await session.scalars(select(Document.filename).where(Document.own_acl.is_(True)))
         )
     assert listed == {
-        "security-advisory-wm-sa-2026-07-embargoed.md",
+        "security-advisory-nw-sa-2026-07-embargoed.md",
         "organisation-changes-2027-draft.md",
     }
     records = await runner.context_checks(ATTACKS, ["hybrid"])

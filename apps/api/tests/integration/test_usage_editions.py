@@ -1,4 +1,4 @@
-"""The Enterprise half of usage accounting, with the real workmind-ee package loaded through its
+"""The Enterprise half of usage accounting, with the real needwise-ee package loaded through its
 entry point: department budgets (saved, shown, enforced, warned about) and the chargeback CSV,
 and what happens when the license ends. The Community half (402 for both) is in
 test_usage_budgets.py. Needs the ee extra (`uv sync --extra ee`) and TEST_VALKEY_URL.
@@ -18,23 +18,23 @@ from fastapi.testclient import TestClient
 from redis.asyncio import Redis
 from sqlalchemy import select
 
+from needwise.core.config import Settings
+from needwise.core.edition import FEATURES, Edition, License
+from needwise.core.extensions import ExtensionRegistry, enable_extensions
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.identity.models import Department, DepartmentMember
+from needwise.modules.usage.calls import Attribution, ModelCall
+from needwise.modules.usage.departments import primary_department_query
+from needwise.modules.usage.extensions import CHARGEBACK_REPORT, DEPARTMENT_BUDGETS
+from needwise.modules.usage.meter import UsageMeter
+from needwise.modules.usage.models import Budget, UsageEvent
+from needwise.modules.work.models import Notification
+from needwise.providers.llm import LLMUsage
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory
-from workmind.core.config import Settings
-from workmind.core.edition import FEATURES, Edition, License
-from workmind.core.extensions import ExtensionRegistry, enable_extensions
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.identity.models import Department, DepartmentMember
-from workmind.modules.usage.calls import Attribution, ModelCall
-from workmind.modules.usage.departments import primary_department_query
-from workmind.modules.usage.extensions import CHARGEBACK_REPORT, DEPARTMENT_BUDGETS
-from workmind.modules.usage.meter import UsageMeter
-from workmind.modules.usage.models import Budget, UsageEvent
-from workmind.modules.work.models import Notification
-from workmind.providers.llm import LLMUsage
 
-pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra ee")
+pytest.importorskip("needwise_ee", reason="install the ee extra: uv sync --extra ee")
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL")
 
 
@@ -251,7 +251,7 @@ async def test_the_chargeback_report_lists_cost_per_department(
     assert response.status_code == 200, response.text
     assert response.headers["content-type"].startswith("text/csv")
     assert response.headers["content-disposition"] == (
-        f'attachment; filename="workmind-chargeback-{today}-to-{today}.csv"'
+        f'attachment; filename="needwise-chargeback-{today}-to-{today}.csv"'
     )
     table = list(csv.DictReader(io.StringIO(response.text)))
     hr = str(await department(app_sessions, acme, "hr"))

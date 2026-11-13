@@ -1,6 +1,8 @@
-# WorkMind load tests
+# NeedWise load tests
 
-Locust scenarios for WorkMind AI, a stub model server, and a report generator. The full guide
+> NeedWise was called WorkMind until v1.0.0; older reports and commits use that name and the `wm` command.
+
+Locust scenarios for NeedWise, a stub model server, and a report generator. The full guide
 is [docs/load-testing.md](../docs/load-testing.md).
 
 ```bash
@@ -13,7 +15,7 @@ make -C .. loadtest-check                                        # lint, types, 
 | Path | |
 |---|---|
 | `locustfile.py` | Entry point for Locust (`uv run locust --host http://localhost:8480`) |
-| `workmind_load/` | Users, tokens, preflight, SSE timing, report, the run script |
+| `needwise_load/` | Users, tokens, preflight, SSE timing, report, the run script |
 | `stub_llm.py` | The stub model server (OpenAI-compatible, configurable timing) |
 | `compose.stub.yaml` | Points the stack's model roles at the stub |
 | `results/` | Markdown reports (committed); `results/raw/` holds Locust's output (ignored) |

@@ -8,12 +8,12 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from needwise.core.context import RequestContext
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.tools.execute import execute_tool
+from needwise.modules.tools.registry import Tool, ToolError, ToolRegistry, ToolResult
 from tests.integration.conftest import SessionFactory, seed_tenant
-from workmind.core.context import RequestContext
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.tools.execute import execute_tool
-from workmind.modules.tools.registry import Tool, ToolError, ToolRegistry, ToolResult
 
 
 class Message(BaseModel):

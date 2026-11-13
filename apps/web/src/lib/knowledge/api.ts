@@ -1,6 +1,6 @@
 /**
  * Typed client for the Knowledge API. Shapes mirror the Pydantic models in
- * apps/api/src/workmind/api/v1/knowledge.py.
+ * apps/api/src/needwise/api/v1/knowledge.py.
  */
 
 import { apiJson, uploadRaw, type UploadOptions } from "@/lib/api";
@@ -209,7 +209,7 @@ export const knowledgeKeys = {
 
 // --- Upload -------------------------------------------------------------------------------
 
-/** Mirrors MIME_TYPES in apps/api/src/workmind/modules/knowledge/parsing.py. */
+/** Mirrors MIME_TYPES in apps/api/src/needwise/modules/knowledge/parsing.py. */
 export const SUPPORTED_TYPES: Record<string, string> = {
   ".md": "text/markdown",
   ".markdown": "text/markdown",

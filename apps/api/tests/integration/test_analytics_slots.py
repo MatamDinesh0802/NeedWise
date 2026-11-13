@@ -11,9 +11,9 @@ from collections.abc import AsyncIterator
 import pytest
 from redis.asyncio import Redis
 
+from needwise.core.tenancy import key_tenant, tenant_key
+from needwise.modules.analytics.slots import ValkeySlots
 from tests.integration.conftest import VALKEY_URL
-from workmind.core.tenancy import key_tenant, tenant_key
-from workmind.modules.analytics.slots import ValkeySlots
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL")
 

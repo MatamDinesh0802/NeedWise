@@ -12,14 +12,14 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from needwise.core.config import Settings
+from needwise.main import create_app
+from needwise.modules.analytics.agent import ChartDraft, Composed
+from needwise.seed.analytics_load import seed_analytics
 from tests.analytics_support import ACME_ANALYTICS
 from tests.fakes import FakeLLM, ToolTurn
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
 from tests.integration.shop_databases import SHOP_YAML, ShopServer
-from workmind.core.config import Settings
-from workmind.main import create_app
-from workmind.modules.analytics.agent import ChartDraft, Composed
-from workmind.seed.analytics_load import seed_analytics
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL")
 TOTAL = "SELECT sum(amount_eur) AS shop_revenue FROM orders WHERE status <> 'refunded'"

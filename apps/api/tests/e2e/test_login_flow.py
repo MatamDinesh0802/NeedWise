@@ -8,7 +8,7 @@ def test_alice_signs_in_and_sees_her_hr_identity(browser: httpx.Client) -> None:
 
     assert callback.status_code == 303
     assert callback.headers["location"] == "/admin"
-    assert "wm_session" in browser.cookies
+    assert "nw_session" in browser.cookies
 
     me = browser.get("/api/v1/me")
     assert me.status_code == 200, me.text
@@ -23,7 +23,7 @@ def test_the_session_cookie_is_httponly_and_lax(browser: httpx.Client) -> None:
     callback = sign_in(browser, "bob@acme.test")
 
     cookie_header = next(
-        v for k, v in callback.headers.multi_items() if k == "set-cookie" and "wm_session" in v
+        v for k, v in callback.headers.multi_items() if k == "set-cookie" and "nw_session" in v
     )
     assert "HttpOnly" in cookie_header
     assert "SameSite=lax" in cookie_header
@@ -41,7 +41,7 @@ def test_wrong_password_never_creates_a_session(browser: httpx.Client) -> None:
     response = sign_in(browser, "alice@acme.test", password="not-the-password")
 
     assert response.status_code == 200  # Keycloak shows the form again
-    assert "wm_session" not in browser.cookies
+    assert "nw_session" not in browser.cookies
     assert browser.get("/api/v1/me").status_code == 401
 
 

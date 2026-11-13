@@ -1,7 +1,7 @@
 /**
  * Sources (connectors) and their health: Admin → Sources for org admins, Knowledge Hub → Sources
  * for the owners of the collections they sync into. Shapes mirror
- * apps/api/src/workmind/api/v1/sources.py; the per-kind configuration mirrors
+ * apps/api/src/needwise/api/v1/sources.py; the per-kind configuration mirrors
  * modules/connectors/registry.py. Credentials are write-only: the API only says whether they are
  * set (`has_credentials`) and which fields it expects (`needs`).
  */
@@ -26,7 +26,7 @@ export interface SourceStats {
   items?: number;
   /** Permission sync (Enterprise): documents whose own access list changed in the run. */
   acl_changed?: number;
-  /** Entries the source named that map to nobody in WorkMind (they grant nothing). */
+  /** Entries the source named that map to nobody in NeedWise (they grant nothing). */
   acl_unmapped?: number;
   [key: string]: unknown;
 }
@@ -308,7 +308,7 @@ export const CREDENTIAL_LABELS: Record<string, { label: string; hint: string; op
   token: { label: "Access token", hint: "Only needed for private repositories (read-only scope is enough).", optional: true },
   bot_token: { label: "Bot token", hint: "xoxb-… with channels:history and channels:read (groups:* for private channels)." },
   refresh_token: { label: "Account", hint: "Set by “Connect”." },
-  email: { label: "Account email", hint: "The Atlassian account WorkMind reads with (with an API token, instead of connecting)." },
+  email: { label: "Account email", hint: "The Atlassian account NeedWise reads with (with an API token, instead of connecting)." },
   api_token: { label: "API token", hint: "From id.atlassian.com › Security › API tokens; that account's read access is enough." },
 };
 

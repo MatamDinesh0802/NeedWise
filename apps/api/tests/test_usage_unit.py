@@ -11,10 +11,8 @@ import httpx
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from tests.fakes import FakeLLM
-from tests.test_llm_adapters import Block, Message, anthropic_with
-from workmind.modules.model_catalog.resolver import Target, TenantLLM
-from workmind.modules.usage.budgets import (
+from needwise.modules.model_catalog.resolver import Target, TenantLLM
+from needwise.modules.usage.budgets import (
     Binding,
     BudgetExceededError,
     BudgetRule,
@@ -22,9 +20,9 @@ from workmind.modules.usage.budgets import (
     state_of,
     status_of,
 )
-from workmind.modules.usage.calls import Attribution, ModelCall, attribute, current, refine
-from workmind.modules.usage.meter import call_cost, warning_text
-from workmind.providers.llm import (
+from needwise.modules.usage.calls import Attribution, ModelCall, attribute, current, refine
+from needwise.modules.usage.meter import call_cost, warning_text
+from needwise.providers.llm import (
     Done,
     LLMError,
     LLMMessage,
@@ -42,6 +40,8 @@ from workmind.providers.llm import (
     ToolSpec,
     UsageProbe,
 )
+from tests.fakes import FakeLLM
+from tests.test_llm_adapters import Block, Message, anthropic_with
 
 REQUEST = LLMRequest(system="sys", messages=[LLMMessage("user", "question")])
 ROLES: tuple[Role, ...] = ("answer", "router", "judge", "generator", "agent")
@@ -182,7 +182,7 @@ def test_attribution_is_scoped_to_its_block_and_can_be_narrowed() -> None:
 def test_an_evaluation_run_is_attributed_to_eval_and_never_blocked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from workmind.evals import __main__ as evals
+    from needwise.evals import __main__ as evals
 
     seen: list[Attribution | None] = []
 

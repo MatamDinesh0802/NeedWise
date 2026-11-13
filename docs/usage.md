@@ -1,12 +1,12 @@
 # Usage, costs and budgets
 
-WorkMind records every model call it makes for an organization, prices it, and lets owners and
+NeedWise records every model call it makes for an organization, prices it, and lets owners and
 admins set budgets that warn or stop model use. This page says what is recorded and what is
 not, how each call is attributed, who sees which usage, how budgets are enforced (and by how
 much they can be overshot), what is Enterprise, and how older usage is imported.
 
-Code: `apps/api/src/workmind/modules/usage/`, the API in `api/v1/usage.py`, the Enterprise
-parts in `ee/python/src/workmind_ee/` (`budgets.py`, `chargeback.py`). Screens: the Usage page
+Code: `apps/api/src/needwise/modules/usage/`, the API in `api/v1/usage.py`, the Enterprise
+parts in `ee/python/src/needwise_ee/` (`budgets.py`, `chargeback.py`). Screens: the Usage page
 (`/analytics`), Admin › Budgets, and "Your usage this month" on the Overview.
 
 ## What is recorded
@@ -67,7 +67,7 @@ and counts it in the process (`UsageMeter.dropped`). It costs one insert per mod
 
 - Embeddings (indexing documents, searching) and transcription (meeting audio).
 - The provider test in Admin › Models (one small request to check a key).
-- `wm seed` corpus generation (it belongs to no organization).
+- `nw seed` corpus generation (it belongs to no organization).
 - Model calls that do not go through the organization's model resolution. None are known; if
   one happens anyway it is recorded with feature `other` and no person, and the API logs
   `usage_unattributed`.
@@ -86,7 +86,7 @@ tasks it starts inherit, `modules/usage/calls.py`):
 | `meetings` | Extracting notes from a meeting | the person who uploaded it | `meeting` |
 | `analytics` | `POST /analytics/ask` (Insights) | the asker | `analytics_run` |
 | `agent_test` | The test console in Admin › Agents | the administrator | — |
-| `eval` | `wm eval` | nobody | — |
+| `eval` | `nw eval` | nobody | — |
 | `routing` | The router model deciding a request's queue (the Request form, email, the assistant's `create_task`, the admins' routing preview) | the person who asked (the admin, for a preview) | — |
 
 A department agent's calls carry its key (`agent_key`); in the test console every call carries
@@ -168,7 +168,7 @@ budget of the department their usage counts for. When a blocking one is used up:
   research step and ends `failed` with it (the owner is notified as for any failed run). Neither
   answers 429: they run in the background.
 - When several budgets are used up, the one that resets last is reported.
-- Evaluations (`wm eval`) are recorded but never blocked.
+- Evaluations (`nw eval`) are recorded but never blocked.
 - Calls to local models are refused like any other while a blocking budget is used up, although
   they add nothing to it.
 
@@ -218,8 +218,8 @@ A call that starts after the spending has reached the limit is always refused.
 
 ## Enterprise
 
-Two parts are WorkMind Enterprise ([docs/enterprise.md](enterprise.md)); the core stores every
-budget and records every event, and `workmind-ee` plugs in through two hooks
+Two parts are NeedWise Enterprise ([docs/enterprise.md](enterprise.md)); the core stores every
+budget and records every event, and `needwise-ee` plugs in through two hooks
 (`usage.department_budgets`, `usage.chargeback_report`, declared in
 `modules/usage/extensions.py`):
 
@@ -249,9 +249,9 @@ chargeback CSV are Community.
 ## Importing older usage
 
 ```bash
-cd apps/api && uv run wm usage backfill            # every active organization
-cd apps/api && uv run wm usage backfill acme       # one, by slug
-docker compose exec api wm usage backfill          # the same, inside the Docker Compose stack
+cd apps/api && uv run nw usage backfill            # every active organization
+cd apps/api && uv run nw usage backfill acme       # one, by slug
+docker compose exec api nw usage backfill          # the same, inside the Docker Compose stack
 ```
 
 On the demo stack (after `make seed` and some use), the Compose command printed
@@ -293,7 +293,7 @@ record; a chat run stopped half way by a budget), `test_usage_analytics.py` (Ins
 `test_usage_budgets.py` (saving and validating budgets, 429 on every entry point and the MCP
 `ask` tool error, caps, period boundaries, warnings once, append-only, tenant isolation, the
 backfill, who sees what, the event list) and `test_usage_editions.py` (department budgets and the chargeback CSV with the real
-`workmind-ee` loaded; nothing enforced once the license expires).
+`needwise-ee` loaded; nothing enforced once the license expires).
 
 Checked on the running stack (2026-11-12, `ASSISTANT_MODE=auto`): one real assistant answer with
 Claude Sonnet 5.5 was recorded as one live event (`agents`, the asker, their department, the

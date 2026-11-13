@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from workmind.providers.llm import (
+from needwise.providers.llm import (
     Done,
     LLMError,
     LLMRequest,

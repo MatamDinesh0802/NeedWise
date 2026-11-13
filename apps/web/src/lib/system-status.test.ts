@@ -9,7 +9,7 @@ import {
 
 const healthy: SystemStatus = {
   status: "ok",
-  product: "WorkMind AI",
+  product: "NeedWise",
   version: "0.0.1",
   environment: "dev",
   components: [

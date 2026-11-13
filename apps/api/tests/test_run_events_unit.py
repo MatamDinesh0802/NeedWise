@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from workmind.modules.conversations.events import RunEvents, RunMeta, TokenBatcher
+from needwise.modules.conversations.events import RunEvents, RunMeta, TokenBatcher
 
 RUN = RunMeta(uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4())
 

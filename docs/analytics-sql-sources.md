@@ -9,7 +9,7 @@ MCP) and the evaluation all use it through the same path as uploaded data: the s
 and the SQL guard (in the database's dialect), the person's row policies as fences, a worker
 process with memory and time limits, number verification and charts.
 
-Code: `apps/api/src/workmind/modules/analytics/` (`sources.py`, `remote.py`, the dialect parts
+Code: `apps/api/src/needwise/modules/analytics/` (`sources.py`, `remote.py`, the dialect parts
 of `guard.py`, `compiler.py` and `semantic.py`), the routes in `api/v1/analytics.py`, the table
 `analytics_sources` (migration `0025`), Admin › Analytics › Databases in the web app. Design
 decisions: [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md#update-database-sources-2026-11-13).
@@ -59,23 +59,23 @@ A query reaches the database only if all three agree it reads.
    Tests run, as a user with write privileges, `DELETE`, `UPDATE`, `INSERT`, `CREATE TABLE`,
    `DROP TABLE` and `SELECT 1; DELETE ...` directly through this layer (no guard): every one
    fails and no row changes, on PostgreSQL 18 and MySQL 8.4.
-3. **The database role.** Give WorkMind a user that may only read the tables people may ask
-   about. This is the lock that does not depend on WorkMind's code. For PostgreSQL:
+3. **The database role.** Give NeedWise a user that may only read the tables people may ask
+   about. This is the lock that does not depend on NeedWise's code. For PostgreSQL:
 
    ```sql
-   CREATE ROLE workmind_reader LOGIN PASSWORD '...';
-   GRANT CONNECT ON DATABASE sales TO workmind_reader;
-   GRANT USAGE ON SCHEMA shop TO workmind_reader;
-   GRANT SELECT ON shop.customers, shop.orders TO workmind_reader;  -- or ON ALL TABLES IN SCHEMA
-   ALTER ROLE workmind_reader SET default_transaction_read_only = on;
+   CREATE ROLE needwise_reader LOGIN PASSWORD '...';
+   GRANT CONNECT ON DATABASE sales TO needwise_reader;
+   GRANT USAGE ON SCHEMA shop TO needwise_reader;
+   GRANT SELECT ON shop.customers, shop.orders TO needwise_reader;  -- or ON ALL TABLES IN SCHEMA
+   ALTER ROLE needwise_reader SET default_transaction_read_only = on;
    ```
 
    For MySQL:
 
    ```sql
-   CREATE USER 'workmind_reader'@'%' IDENTIFIED BY '...';
-   GRANT SELECT ON shop.customers TO 'workmind_reader'@'%';
-   GRANT SELECT ON shop.orders TO 'workmind_reader'@'%';
+   CREATE USER 'needwise_reader'@'%' IDENTIFIED BY '...';
+   GRANT SELECT ON shop.customers TO 'needwise_reader'@'%';
+   GRANT SELECT ON shop.orders TO 'needwise_reader'@'%';
    ```
 
    Prefer a replica: analytical queries can be heavy, and the statement timeout bounds their
@@ -102,7 +102,7 @@ instead, because the certificate must match it; a rebinding server would need a 
 that name. A name that does not resolve can be saved (it may only resolve inside the
 deployment's network) but cannot be connected to.
 
-Mind what you allow: a listed network includes every database in it, WorkMind's own PostgreSQL
+Mind what you allow: a listed network includes every database in it, NeedWise's own PostgreSQL
 too if it is there. A source still needs a user name and password that work.
 
 ## The password
@@ -116,7 +116,7 @@ stored password at a server of their choosing. Weakening TLS (a lower `tls_mode`
 `tls_ca`) also needs the password again, so it cannot be sent without the verification it was
 entered with; a stronger mode keeps it. The API never returns it (`password_set: true`
 says one is stored), audit events never contain it, and connection errors never quote it.
-`wm secrets rotate` re-encrypts source passwords with the active key, next to the provider keys
+`nw secrets rotate` re-encrypts source passwords with the active key, next to the provider keys
 (`modules/analytics/rotation.py`); keep the old key in `SECRETS_ENCRYPTION_PREVIOUS_KEYS` until
 it reports no failures.
 
@@ -176,14 +176,14 @@ of its own, first in the query, and every reference to the table reads it:
 -- sent, as Dan
 SELECT c.region, sum(o.amount_eur) FROM orders o JOIN customers c USING (customer_id) GROUP BY 1
 -- executed on PostgreSQL
-WITH _wm_rows_customers AS MATERIALIZED (
+WITH _nw_rows_customers AS MATERIALIZED (
        SELECT * FROM "shop"."customers" AS customers
        WHERE (customers.account_owner = 'dan@acme.test')),
-     _wm_rows_orders AS MATERIALIZED (
+     _nw_rows_orders AS MATERIALIZED (
        SELECT * FROM "shop"."orders" AS orders
        WHERE (orders.customer_id IN (SELECT customer_id FROM "shop"."customers" AS customers
                                      WHERE account_owner = 'dan@acme.test')))
-SELECT c.region, SUM(o.amount_eur) FROM _wm_rows_orders AS o JOIN _wm_rows_customers AS c ...
+SELECT c.region, SUM(o.amount_eur) FROM _nw_rows_orders AS o JOIN _nw_rows_customers AS c ...
 LIMIT 1001
 ```
 
@@ -270,7 +270,7 @@ without access (Bob, Mallory, Erin), and 6 attacks (`hr.salaries`, `internal_not
    address, which is refused until an operator lists its network in
    `ANALYTICS_SOURCE_PRIVATE_NETWORKS` (e.g. `172.16.0.0/12` for Docker's networks, or
    `127.0.0.1/32`) and restarts the API;
-3. `uv run wm eval --skip-retrieval --suites analytics --analytics-file analytics_sql.jsonl`.
+3. `uv run nw eval --skip-retrieval --suites analytics --analytics-file analytics_sql.jsonl`.
 
 Each item runs on its dataset with that dataset's reference person (who sees every row) for the
 leak checks, and the row counts of the source's tables are compared before and after. **It has

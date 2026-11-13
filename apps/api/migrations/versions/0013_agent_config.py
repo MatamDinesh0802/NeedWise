@@ -17,7 +17,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 # Version 1 for definitions that existed before versioning, with the same fields as
-# workmind.modules.agents.definitions.snapshot().
+# needwise.modules.agents.definitions.snapshot().
 BACKFILL_SQL = """
     INSERT INTO agent_definition_versions (tenant_id, agent_id, version, snapshot, note)
     SELECT tenant_id, id, 1,

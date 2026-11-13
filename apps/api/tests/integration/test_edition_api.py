@@ -8,13 +8,13 @@ import pytest
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
+from needwise.api.deps import require_feature
+from needwise.core.config import Settings
+from needwise.core.context import RequestContext
+from needwise.core.edition import Edition, License
+from needwise.core.extensions import ExtensionRegistry
+from needwise.main import create_app
 from tests.integration.conftest import VALKEY_URL, Acme, Database
-from workmind.api.deps import require_feature
-from workmind.core.config import Settings
-from workmind.core.context import RequestContext
-from workmind.core.edition import Edition, License
-from workmind.core.extensions import ExtensionRegistry
-from workmind.main import create_app
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL to run")
 

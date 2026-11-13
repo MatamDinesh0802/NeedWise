@@ -15,7 +15,7 @@ secrets:
 misconfigurations:
   - id: KSV-0014
     paths:
-      - "*/workmind/templates/keycloak/deployment.yaml"
+      - "*/needwise/templates/keycloak/deployment.yaml"
     statement: >-
       Helm chart (scripts/security-scan.sh chart): the bundled Keycloak's root filesystem is
       writable, because the stock image builds itself on `start` and writes to /opt/keycloak/lib;

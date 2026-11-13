@@ -9,9 +9,9 @@ from typing import get_args
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from workmind.core import config, edition
-from workmind.core.config import Settings
-from workmind.core.edition import (
+from needwise.core import config, edition
+from needwise.core.config import Settings
+from needwise.core.edition import (
     FEATURES,
     PRODUCTION_PUBLIC_KEYS,
     Edition,
@@ -74,7 +74,7 @@ def logs(monkeypatch: pytest.MonkeyPatch) -> Logs:
 
 @pytest.fixture(autouse=True)
 def no_license_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A developer's own .workmind/ must not leak into these tests."""
+    """A developer's own .needwise/ must not leak into these tests."""
     monkeypatch.setattr(config, "LICENSE_DIRS", (tmp_path / "none",))
     for name in ("LICENSE_KEY", "LICENSE_FILE", "LICENSE_DEV_PUBLIC_KEY", "DEPLOYMENT_ID"):
         monkeypatch.delenv(name, raising=False)
@@ -334,7 +334,7 @@ def test_a_missing_license_file_means_community(tmp_path: Path, logs: Logs) -> N
 def test_the_settings_default_to_the_license_directory(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    mounted, repo = tmp_path / "run-workmind", tmp_path / "repo-workmind"
+    mounted, repo = tmp_path / "run-needwise", tmp_path / "repo-needwise"
     mounted.mkdir()
     repo.mkdir()
     monkeypatch.setattr(config, "LICENSE_DIRS", (mounted, repo))

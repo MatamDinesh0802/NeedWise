@@ -9,17 +9,17 @@ import pytest
 from fastapi.routing import iter_route_contexts
 from pydantic import ValidationError
 
-from workmind.api.deps import RateLimit
-from workmind.core.config import Settings
-from workmind.core.errors import problem_response
-from workmind.core.ratelimit import (
+from needwise.api.deps import RateLimit
+from needwise.core.config import Settings
+from needwise.core.errors import problem_response
+from needwise.core.ratelimit import (
     BUCKETS,
     DEFAULT_LIMITS,
     RateLimitedError,
     RateLimiter,
     merge_limits,
 )
-from workmind.main import create_app
+from needwise.main import create_app
 
 TENANT, USER = uuid.uuid4(), uuid.uuid4()
 

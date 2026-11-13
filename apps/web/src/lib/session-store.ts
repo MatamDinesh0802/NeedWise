@@ -20,7 +20,7 @@ export interface SessionStore {
   subscribe: (listener: () => void) => () => void;
   /** (Re)load the session from the API. */
   load: () => Promise<void>;
-  /** End the WorkMind session, then navigate to the identity provider's logout. */
+  /** End the NeedWise session, then navigate to the identity provider's logout. */
   signOut: () => Promise<void>;
   /**
    * Demo "view as": end this session, then sign in again with `email` pre-filled.

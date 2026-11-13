@@ -12,23 +12,23 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy import select, update
 
-from tests.integration.conftest import Acme, SessionFactory
-from workmind.core.context import RequestContext
-from workmind.core.errors import ApiError
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.identity.models import User
-from workmind.modules.tools.registry import Tool, ToolRegistry, ToolResult
-from workmind.modules.work.approvals import decide, expire_due, propose
-from workmind.modules.work.approvers import RuleError, parse_rule
-from workmind.modules.work.escalation import run_escalation
-from workmind.modules.work.models import (
+from needwise.core.context import RequestContext
+from needwise.core.errors import ApiError
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.identity.models import User
+from needwise.modules.tools.registry import Tool, ToolRegistry, ToolResult
+from needwise.modules.work.approvals import decide, expire_due, propose
+from needwise.modules.work.approvers import RuleError, parse_rule
+from needwise.modules.work.escalation import run_escalation
+from needwise.modules.work.models import (
     Approval,
     AutomationSettings,
     Notification,
     Task,
     WorkPreference,
 )
+from tests.integration.conftest import Acme, SessionFactory
 
 
 class Mail(BaseModel):
@@ -521,7 +521,7 @@ async def add_task(sessions: SessionFactory, acme: Acme, **fields: Any) -> Task:
 
 
 async def department(sessions: SessionFactory, acme: Acme, slug: str) -> uuid.UUID:
-    from workmind.modules.identity.models import Department
+    from needwise.modules.identity.models import Department
 
     async with tenant_transaction(sessions, acme.tenant_id) as session:
         return (await session.scalars(select(Department.id).where(Department.slug == slug))).one()

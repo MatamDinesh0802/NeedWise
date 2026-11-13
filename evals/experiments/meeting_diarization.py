@@ -30,14 +30,14 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from workmind.core.config import Settings
-from workmind.evals.datasets import load_meetings
-from workmind.evals.runner import score_topics
-from workmind.modules.meetings.speakers import assign_speakers
-from workmind.modules.meetings.topics import word_outline
-from workmind.providers.diarization import SherpaOnnxDiarizer, decode_audio
-from workmind.providers.factory import diarization_model_dir
-from workmind.providers.transcription import FasterWhisperTranscriber, Segment
+from needwise.core.config import Settings
+from needwise.evals.datasets import load_meetings
+from needwise.evals.runner import score_topics
+from needwise.modules.meetings.speakers import assign_speakers
+from needwise.modules.meetings.topics import word_outline
+from needwise.providers.diarization import SherpaOnnxDiarizer, decode_audio
+from needwise.providers.factory import diarization_model_dir
+from needwise.providers.transcription import FasterWhisperTranscriber, Segment
 
 ROOT = Path(__file__).resolve().parents[2]
 MEETINGS = ROOT / "seed" / "acme" / "meetings"

@@ -10,6 +10,25 @@ from pathlib import Path
 import openpyxl
 import pytest
 
+from needwise.core.context import RequestContext
+from needwise.evals.analytics import (
+    AnalyticsRecord,
+    Table,
+    evaluate,
+    leaks,
+    match,
+    match_rows,
+    match_value,
+    summarize,
+    text,
+)
+from needwise.evals.datasets import AnalyticsItem, load_analytics
+from needwise.evals.report import as_json, markdown
+from needwise.evals.runner import EvalRun
+from needwise.modules.analytics import guard
+from needwise.modules.analytics.agent import AnswerQuery
+from needwise.modules.analytics.service import AccessInfo
+from needwise.seed.company import load_company
 from tests.analytics_support import (
     ACME_ANALYTICS,
     DAN_POLICY,
@@ -27,25 +46,6 @@ from tests.eval_analytics_support import (
     gold_oracle,
     scripted,
 )
-from workmind.core.context import RequestContext
-from workmind.evals.analytics import (
-    AnalyticsRecord,
-    Table,
-    evaluate,
-    leaks,
-    match,
-    match_rows,
-    match_value,
-    summarize,
-    text,
-)
-from workmind.evals.datasets import AnalyticsItem, load_analytics
-from workmind.evals.report import as_json, markdown
-from workmind.evals.runner import EvalRun
-from workmind.modules.analytics import guard
-from workmind.modules.analytics.agent import AnswerQuery
-from workmind.modules.analytics.service import AccessInfo
-from workmind.seed.company import load_company
 
 ITEMS = load_analytics(DATASETS)
 BY_ID = {i.id: i for i in ITEMS}

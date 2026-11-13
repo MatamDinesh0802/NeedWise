@@ -11,15 +11,15 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.config import Settings
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.analytics.agent import ChartDraft, Composed
+from needwise.modules.governance.models import AuditEvent
+from needwise.seed.analytics_load import seed_analytics
 from tests.analytics_support import ACME_ANALYTICS, csv_rows
 from tests.fakes import FakeLLM, ToolTurn
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
-from workmind.core.config import Settings
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.analytics.agent import ChartDraft, Composed
-from workmind.modules.governance.models import AuditEvent
-from workmind.seed.analytics_load import seed_analytics
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL")
 MAX_UPLOAD = 200_000

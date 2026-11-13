@@ -39,7 +39,7 @@ file is uploaded, then indexed in the background; the table shows its status (*p
   uploading identical bytes again changes nothing. Only documents you can see count: a document
   whose own access list leaves you out, or one synced from a source, is never updated by your
   upload (your file becomes a new document of its own).
-- **Scanned PDFs** have no text layer, and WorkMind does not run OCR: they fail with "no
+- **Scanned PDFs** have no text layer, and NeedWise does not run OCR: they fail with "no
   readable text found (a scanned PDF needs OCR)".
 - **In a browser only.** Uploads need a signed-in browser session; personal access tokens
   cannot upload. To pull documents in automatically, use a [connector](../connectors.md)
@@ -114,7 +114,7 @@ Which labels may reach an external model is the organization's data policy
 
 Some collections are kept up to date by a **source**: a website, a GitHub repository, Slack
 channels or a Google Drive folder. A synced document changes when it changes in its source, and
-disappears from WorkMind when it is deleted there. If you own a collection, **Knowledge Hub ›
+disappears from NeedWise when it is deleted there. If you own a collection, **Knowledge Hub ›
 Sources** shows the sources that sync into it: whether they are healthy, when they last synced,
 what went wrong, and which documents look stale. If you own a synced document that has not
 changed in its source for a long time, or that the source no longer lists, you get a task once

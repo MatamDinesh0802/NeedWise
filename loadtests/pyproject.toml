@@ -1,7 +1,7 @@
 [project]
-name = "workmind-loadtests"
+name = "needwise-loadtests"
 version = "1.0.0"
-description = "Load tests for WorkMind AI (Locust), a stub model server and a report generator"
+description = "Load tests for NeedWise (Locust), a stub model server and a report generator"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 dependencies = [
@@ -32,7 +32,7 @@ ignore = ["S104"]
 "tests/**" = ["S101", "S105", "S106"]
 
 [tool.pyright]
-include = ["workmind_load", "tests", "locustfile.py", "stub_llm.py"]
+include = ["needwise_load", "tests", "locustfile.py", "stub_llm.py"]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 venvPath = "."

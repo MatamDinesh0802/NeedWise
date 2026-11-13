@@ -1,5 +1,5 @@
-"""A stand-in model server for load tests: speaks the OpenAI-compatible API that WorkMind's
-`openai_compatible` provider uses (apps/api/src/workmind/providers/llm.py), answers instantly
+"""A stand-in model server for load tests: speaks the OpenAI-compatible API that NeedWise's
+`openai_compatible` provider uses (apps/api/src/needwise/providers/llm.py), answers instantly
 in content but with configurable timing, and costs nothing.
 
     uv run python stub_llm.py --port 8490 --ttft-ms 600 --tokens-per-s 60
@@ -51,10 +51,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-MODEL = "workmind-stub"
+MODEL = "needwise-stub"
 ABSTAIN = "I couldn't find this in the sources available to you."
 PADDING = (
-    "This answer was written by the WorkMind load-test stub, which repeats what the sources "
+    "This answer was written by the NeedWise load-test stub, which repeats what the sources "
     "say without reading them closely."
 )
 MAX_CITED_SOURCES = 3
@@ -359,7 +359,7 @@ def tool_turn(
         if "search_knowledge" in offered:
             call = ("search_knowledge", {"query": question[:500] or "company policy"})
         elif "run_sql" in offered and (table := _TABLES.search(system_of(messages))):
-            # A table name from WorkMind's own prompt; WorkMind's SQL guard checks the query.
+            # A table name from NeedWise's own prompt; NeedWise's SQL guard checks the query.
             sql = f"SELECT COUNT(*) AS row_count FROM {table.group(1)}"  # noqa: S608
             call = ("run_sql", {"sql": sql, "purpose": f"Count the rows of {table.group(1)}"})
     if call is None:
@@ -559,7 +559,7 @@ def create_app(timing: Timing | None = None) -> Starlette:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="WorkMind load-test model stub")
+    parser = argparse.ArgumentParser(description="NeedWise load-test model stub")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8490)
     parser.add_argument("--latency-ms", type=float, default=Timing.latency_ms)
@@ -581,7 +581,7 @@ def main(argv: list[str] | None = None) -> None:
         tool_calls=not args.no_tool_calls,
         seed=args.seed,
     )
-    print(f"WorkMind model stub on http://{args.host}:{args.port}/v1 ({timing})", flush=True)
+    print(f"NeedWise model stub on http://{args.host}:{args.port}/v1 ({timing})", flush=True)
     uvicorn.run(
         create_app(timing),
         host=args.host,

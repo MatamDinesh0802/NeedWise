@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 import pytest
 from redis.asyncio import Redis
 
-from workmind.modules.identity.sessions import SessionStore
+from needwise.modules.identity.sessions import SessionStore
 
 VALKEY_URL = os.environ.get("TEST_VALKEY_URL")
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL to run")

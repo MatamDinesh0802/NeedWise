@@ -1,6 +1,6 @@
 name: Helm chart
 
-# Lints and renders deploy/helm/workmind, validates the output against the Kubernetes schemas
+# Lints and renders deploy/helm/needwise, validates the output against the Kubernetes schemas
 # and the chart's own rules (deploy/helm/validate.sh). No cluster: installing the chart is
 # tested separately.
 on:

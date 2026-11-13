@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Installs the WorkMind Helm chart on a throwaway kind cluster and exercises it
+# Installs the NeedWise Helm chart on a throwaway kind cluster and exercises it
 # (docs/deploy/kubernetes.md, "Tested on a cluster"):
-#   1. builds workmind-api:kind, workmind-web:kind and workmind-seed:kind from this checkout,
+#   1. builds needwise-api:kind, needwise-web:kind and needwise-seed:kind from this checkout,
 #      creates the kind cluster (deploy/helm/kind/cluster.yaml) and loads the images into it;
 #   2. ingress-nginx (pinned manifest, checked by SHA-256) on the control plane, published on
 #      127.0.0.1:$HTTP_PORT;
@@ -16,7 +16,7 @@
 #
 # Needs Docker, kind, kubectl, helm (3.19 or later, or 4), uv, pnpm, python3 and curl. Override
 # the commands with KIND, KUBECTL, HELM and PYTHON. Other settings: KIND_NODE_IMAGE, CLUSTER
-# (workmind-test), HTTP_PORT (8680), SKIP_BROWSER=1. It never touches ~/.kube/config: the
+# (needwise-test), HTTP_PORT (8680), SKIP_BROWSER=1. It never touches ~/.kube/config: the
 # cluster's kubeconfig is in a temporary directory.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -25,15 +25,15 @@ KIND=${KIND:-kind}
 KUBECTL=${KUBECTL:-kubectl}
 HELM=${HELM:-helm}
 PYTHON=${PYTHON:-python3}
-CLUSTER=${CLUSTER:-workmind-test}
+CLUSTER=${CLUSTER:-needwise-test}
 HTTP_PORT=${HTTP_PORT:-8680}
 # The default node image of kind v0.33.0 (its release notes list the digests of the others).
 KIND_NODE_IMAGE=${KIND_NODE_IMAGE:-kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5}
 INGRESS_NGINX_URL=https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
 INGRESS_NGINX_SHA256=2a3ae008c8786431115502644e77ab398fdebfb721a5d1195ed3089cde3299df
-CHART=deploy/helm/workmind
-NS=workmind
-RELEASE=workmind
+CHART=deploy/helm/needwise
+NS=needwise
+RELEASE=needwise
 BASE_URL=http://localhost:$HTTP_PORT
 WORK=$(mktemp -d)
 export KUBECONFIG=$WORK/kubeconfig
@@ -53,7 +53,7 @@ finish() {
   else
     step "Delete the cluster and the images"
     $KIND delete cluster --name "$CLUSTER" || true
-    docker image rm workmind-api:kind workmind-web:kind workmind-seed:kind >/dev/null || true
+    docker image rm needwise-api:kind needwise-web:kind needwise-seed:kind >/dev/null || true
     rm -rf "$WORK"
   fi
   [ $status = 0 ] && echo "All kind checks passed." || echo "kind test failed (exit $status)."
@@ -67,15 +67,15 @@ trap finish EXIT
 echo "kind $($KIND version | cut -d' ' -f2), $($HELM version --short), node image $KIND_NODE_IMAGE"
 
 step "Build the images"
-docker build -q --build-context ee=ee -t workmind-api:kind apps/api
-docker build -q -t workmind-web:kind apps/web
+docker build -q --build-context ee=ee -t needwise-api:kind apps/api
+docker build -q -t needwise-web:kind apps/web
 # The seed data image of docs/deploy/kubernetes.md ("Demo data").
-printf 'FROM busybox:1.37\nCOPY seed /seed\n' | docker build -q -t workmind-seed:kind -f - .
+printf 'FROM busybox:1.37\nCOPY seed /seed\n' | docker build -q -t needwise-seed:kind -f - .
 
 step "Create the kind cluster $CLUSTER"
 sed "s/hostPort: 8680/hostPort: $HTTP_PORT/" deploy/helm/kind/cluster.yaml >"$WORK/cluster.yaml"
 $KIND create cluster --name "$CLUSTER" --config "$WORK/cluster.yaml" --image "$KIND_NODE_IMAGE" --wait 5m
-$KIND load docker-image --name "$CLUSTER" workmind-api:kind workmind-web:kind workmind-seed:kind
+$KIND load docker-image --name "$CLUSTER" needwise-api:kind needwise-web:kind needwise-seed:kind
 $KUBECTL get nodes
 
 step "ingress-nginx on the control plane"
@@ -138,7 +138,7 @@ from pathlib import Path
 base, stop = sys.argv[1], Path(sys.argv[2])
 results: dict[str, dict[str, int]] = {}
 while not stop.exists():
-    for path in ("/api/v1/system/status", "/", "/auth/realms/workmind"):
+    for path in ("/api/v1/system/status", "/", "/auth/realms/needwise"):
         try:
             with urllib.request.urlopen(base + path, timeout=5) as response:
                 ok = response.status == 200

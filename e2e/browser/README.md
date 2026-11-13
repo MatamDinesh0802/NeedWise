@@ -25,7 +25,7 @@ pnpm report                                                            # the HTM
 |---|---|---|
 | `E2E_BASE_URL` | `http://localhost:8480` | The stack, as a browser reaches it (Caddy). |
 | `E2E_MODEL` | unset | `1` also runs the tests tagged `@model`. They make paid model calls. |
-| `DEMO_PASSWORD` | `workmind-demo` | The demo logins' password (the seed's `DEMO_PASSWORD`). |
+| `DEMO_PASSWORD` | `needwise-demo` | The demo logins' password (the seed's `DEMO_PASSWORD`). |
 
 ## How it works
 

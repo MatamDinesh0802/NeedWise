@@ -5,8 +5,8 @@ from collections.abc import AsyncIterator
 from dataclasses import replace
 from typing import Any
 
-from workmind.core.context import RequestContext
-from workmind.modules.assistant.answer import (
+from needwise.core.context import RequestContext
+from needwise.modules.assistant.answer import (
     ABSTAIN,
     answer,
     extract_markers,
@@ -14,8 +14,8 @@ from workmind.modules.assistant.answer import (
     render_sources,
     route,
 )
-from workmind.modules.retrieval.service import Passage, RetrievalResult, fuse
-from workmind.providers.llm import Done, LLMRequest, LLMUsage, Role, StreamEvent, TextDelta
+from needwise.modules.retrieval.service import Passage, RetrievalResult, fuse
+from needwise.providers.llm import Done, LLMRequest, LLMUsage, Role, StreamEvent, TextDelta
 
 
 def passage(marker: str, sensitivity: str = "internal", text: str = "text") -> Passage:

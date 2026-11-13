@@ -8,17 +8,17 @@ from importlib.metadata import EntryPoint
 import pytest
 from fastapi.testclient import TestClient
 
-from tests import ee_fakes
-from workmind.core import extensions as extensions_module
-from workmind.core.config import Settings
-from workmind.core.edition import Edition, License
-from workmind.core.extensions import (
+from needwise.core import extensions as extensions_module
+from needwise.core.config import Settings
+from needwise.core.edition import Edition, License
+from needwise.core.extensions import (
     ENTRY_POINT_GROUP,
     ExtensionRegistry,
     Hook,
     enable_extensions,
 )
-from workmind.main import create_app
+from needwise.main import create_app
+from tests import ee_fakes
 
 NOW = datetime(2026, 11, 12, tzinfo=UTC)
 
@@ -29,7 +29,7 @@ def enterprise(*features: str, clock: list[datetime] | None = None) -> Edition:
     return Edition(lic, clock=lambda: now[0])
 
 
-def entry_point(target: str, name: str = "workmind_ee") -> EntryPoint:
+def entry_point(target: str, name: str = "needwise_ee") -> EntryPoint:
     return EntryPoint(name=name, value=target, group=ENTRY_POINT_GROUP)
 
 
@@ -61,7 +61,7 @@ def _reset_calls() -> Iterator[None]:
 def test_community_never_loads_enterprise_code() -> None:
     # A target that cannot even be imported proves it is never touched.
     registry = enable_extensions(
-        Edition.community(), entry_points=[entry_point("workmind_ee_missing:setup")]
+        Edition.community(), entry_points=[entry_point("needwise_ee_missing:setup")]
     )
     assert registry.edition.name == "community"
     assert registry.routers == ()
@@ -82,7 +82,7 @@ def test_a_licensed_setup_registers_its_extensions(logs: Logs) -> None:
 
 @pytest.mark.parametrize(
     "target",
-    ["tests.ee_fakes:broken_setup", "workmind_ee_missing:setup", "tests.ee_fakes:not_callable"],
+    ["tests.ee_fakes:broken_setup", "needwise_ee_missing:setup", "tests.ee_fakes:not_callable"],
 )
 def test_a_failing_setup_leaves_a_clean_community_registry(target: str, logs: Logs) -> None:
     registry = enable_extensions(
@@ -111,19 +111,19 @@ async def _noop(_resources: object) -> None:
 def test_scheduled_tasks_are_named_unique_and_not_too_frequent() -> None:
     registry = ExtensionRegistry(enterprise("retention_policies"))
     registry.add_scheduled_task(
-        "workmind_ee.retention.apply", _noop, every_s=3600, feature="retention_policies"
+        "needwise_ee.retention.apply", _noop, every_s=3600, feature="retention_policies"
     )
-    assert [t.name for t in registry.scheduled_tasks] == ["workmind_ee.retention.apply"]
+    assert [t.name for t in registry.scheduled_tasks] == ["needwise_ee.retention.apply"]
     with pytest.raises(ValueError, match="twice"):
         registry.add_scheduled_task(
-            "workmind_ee.retention.apply", _noop, every_s=3600, feature="retention_policies"
+            "needwise_ee.retention.apply", _noop, every_s=3600, feature="retention_policies"
         )
-    for name in ("workmind.sync_due_sources", "workmind_ee.", "retention"):
-        with pytest.raises(ValueError, match=r"start with 'workmind_ee\.'"):
+    for name in ("needwise.sync_due_sources", "needwise_ee.", "retention"):
+        with pytest.raises(ValueError, match=r"start with 'needwise_ee\.'"):
             registry.add_scheduled_task(name, _noop, every_s=3600, feature="retention_policies")
     with pytest.raises(ValueError, match="at most every"):
         registry.add_scheduled_task(
-            "workmind_ee.fast", _noop, every_s=1, feature="retention_policies"
+            "needwise_ee.fast", _noop, every_s=1, feature="retention_policies"
         )
 
 

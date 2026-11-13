@@ -44,7 +44,7 @@ Repo and a short demo in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
 90-second demo, Alice vs. Mallory: <DEMO_VIDEO_URL>
-How permissions are enforced (two locks): <GITHUB_REPO_URL>/blob/main/docs/ARCHITECTURE.md#7-permissions-authorization
-Evaluation results: <GITHUB_REPO_URL>/tree/main/evals/results
+How permissions are enforced (two locks): https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/ARCHITECTURE.md#7-permissions-authorization
+Evaluation results: https://github.com/MatamDinesh0802/NeedWise/tree/main/evals/results

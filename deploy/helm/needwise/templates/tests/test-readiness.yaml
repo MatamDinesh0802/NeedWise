@@ -1,0 +1,53 @@
+{{- if .Values.tests.enabled }}
+# helm test <release>: the API's /readyz (Postgres, Valkey, Qdrant, OpenFGA and Keycloak all
+# answer) and the web app's home page.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "needwise.componentName" (list . "test") }}
+  labels:
+    {{- include "needwise.labels" (list . "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  {{- include "needwise.podCommon" (list . (dict)) | nindent 2 }}
+  securityContext:
+    {{- include "needwise.podSecurityContext" (list . (dict)) | nindent 4 }}
+  containers:
+    - name: test
+      image: {{ include "needwise.apiImage" . }}
+      imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+      command:
+        - python
+        - -c
+        - |
+          import json, sys, urllib.error, urllib.request
+          failed = False
+          for url in sys.argv[1:]:
+              try:
+                  with urllib.request.urlopen(url, timeout=20) as response:
+                      body = response.read().decode(errors="replace")
+                      print("OK", response.status, url)
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode(errors="replace")
+                  print("FAILED", error.code, url)
+                  failed = True
+              except Exception as error:
+                  print("FAILED", url, error)
+                  failed = True
+                  continue
+              if url.endswith("/readyz"):
+                  for component in json.loads(body).get("components", []):
+                      print(f"  {component['name']}: {component['status']} {component.get('detail') or ''}")
+          sys.exit(1 if failed else 0)
+      args:
+        - {{ printf "%s/readyz" (include "needwise.apiInternalUrl" .) | quote }}
+        - {{ printf "http://%s.%s.svc:%v/" (include "needwise.componentName" (list . "web")) .Release.Namespace .Values.web.service.port | quote }}
+      securityContext:
+        {{- include "needwise.securityContext" (list . (dict)) | nindent 8 }}
+      resources:
+        requests: {cpu: 10m, memory: 64Mi}
+        limits: {cpu: 200m, memory: 256Mi}
+{{- end }}

@@ -13,16 +13,16 @@ from pathlib import Path
 
 import pytest
 
-from workmind.core.config import Settings
-from workmind.modules.meetings.speakers import assign_speakers, speaker_at
-from workmind.providers.diarization import (
+from needwise.core.config import Settings
+from needwise.modules.meetings.speakers import assign_speakers, speaker_at
+from needwise.providers.diarization import (
     EMBEDDING,
     SEGMENTATION,
     SherpaOnnxDiarizer,
     decode_audio,
 )
-from workmind.providers.factory import diarization_model_dir
-from workmind.providers.transcription import Segment
+from needwise.providers.factory import diarization_model_dir
+from needwise.providers.transcription import Segment
 
 AUDIO = (
     Path(__file__).resolve().parents[4]
@@ -76,7 +76,7 @@ async def test_the_voices_at_the_start_of_the_demo_meeting_are_told_apart() -> N
 
 
 async def test_a_file_without_audio_is_refused_with_a_reason() -> None:
-    from workmind.providers.diarization import DiarizationError
+    from needwise.providers.diarization import DiarizationError
 
     with pytest.raises(DiarizationError, match="could not"):
         await SherpaOnnxDiarizer(MODELS).diarize(b"not audio at all", "notes.m4a")

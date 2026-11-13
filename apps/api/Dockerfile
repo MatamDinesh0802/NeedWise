@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# WorkMind API image: FastAPI app + Alembic migrations.
+# NeedWise API image: FastAPI app + Alembic migrations.
 # It also holds the Enterprise package (ee/python, commercial license), so one image runs either
 # edition: without a valid license the core never imports it (docs/enterprise.md). ee/ comes in
 # as the named build context "ee"; compose passes it, by hand:
@@ -37,7 +37,7 @@ COPY pyproject.toml uv.lock ./
 # hadolint ignore=DL3022
 COPY --from=ee python/pyproject.toml python/LICENSE /build/ee/python/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-project --no-install-package workmind-ee \
+    uv sync --locked --no-dev --no-install-project --no-install-package needwise-ee \
         --extra meetings --extra diarization --extra ee --extra mysql
 COPY src ./src
 # hadolint ignore=DL3022
@@ -48,9 +48,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM base AS runtime
 # /models: speech and diarization models download here. /var/lib/celerybeat: beat's schedule.
 # Both are volumes.
-RUN groupadd --system --gid 10001 workmind \
-    && useradd --system --uid 10001 --gid 10001 --no-create-home workmind \
-    && mkdir -p /models /var/lib/celerybeat && chown workmind:workmind /models /var/lib/celerybeat
+RUN groupadd --system --gid 10001 needwise \
+    && useradd --system --uid 10001 --gid 10001 --no-create-home needwise \
+    && mkdir -p /models /var/lib/celerybeat && chown needwise:needwise /models /var/lib/celerybeat
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY alembic.ini ./
@@ -62,4 +62,4 @@ ENV PATH="/app/.venv/bin:$PATH" \
 # here: the same image runs the API, workers, beat and migrations; compose checks each service.
 USER 10001:10001
 EXPOSE 8000
-CMD ["uvicorn", "workmind.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["uvicorn", "needwise.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

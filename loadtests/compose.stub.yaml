@@ -10,7 +10,7 @@
 # counts as a model on your own infrastructure (so restricted sources are not rerouted or
 # withheld, as with a local model), and the agents mode follows ASSISTANT_MODE as usual.
 # Organizations that chose other models in Admin > Models keep them: run
-# `python -m workmind_load.preflight --expect-model workmind-stub` (docs/load-testing.md).
+# `python -m needwise_load.preflight --expect-model needwise-stub` (docs/load-testing.md).
 #
 # Abuse limits are lifted by default, because a run shares the nine demo logins among many
 # simulated users: without this, the per-person request limits, the per-address sign-in limit
@@ -22,12 +22,12 @@ x-stub-llm: &stub-llm
   LLM_PROVIDER: openai_compatible
   LLM_BASE_URL: http://host.docker.internal:${STUB_PORT:-8490}/v1
   LLM_API_KEY: ""
-  LLM_MODEL: workmind-stub
-  LLM_MODEL_ANSWER: workmind-stub
-  LLM_MODEL_ROUTER: workmind-stub
-  LLM_MODEL_JUDGE: workmind-stub
-  LLM_MODEL_GENERATOR: workmind-stub
-  LLM_MODEL_AGENT: workmind-stub
+  LLM_MODEL: needwise-stub
+  LLM_MODEL_ANSWER: needwise-stub
+  LLM_MODEL_ROUTER: needwise-stub
+  LLM_MODEL_JUDGE: needwise-stub
+  LLM_MODEL_GENERATOR: needwise-stub
+  LLM_MODEL_AGENT: needwise-stub
   LLM_EXTERNAL: "false"
   RATE_LIMITS_ENABLED: ${LOADTEST_RATE_LIMITS_ENABLED:-false}
   MAX_INFLIGHT_PER_USER: ${LOADTEST_MAX_INFLIGHT_PER_USER:-100}

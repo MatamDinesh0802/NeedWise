@@ -92,7 +92,7 @@ class _RepositoryLinks(Extension):
 
     def extendMarkdown(self, md: Markdown) -> None:  # noqa: N802 (Python-Markdown's name)
         # After inline parsing (20), before MkDocs resolves and validates links ("relpath", 0).
-        md.treeprocessors.register(_LinkRewriter(md, self.config), "workmind_repo_links", 2)
+        md.treeprocessors.register(_LinkRewriter(md, self.config), "needwise_repo_links", 2)
 
 
 class _LinkRewriter(Treeprocessor):

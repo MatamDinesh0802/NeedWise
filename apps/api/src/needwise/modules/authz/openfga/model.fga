@@ -1,0 +1,48 @@
+model
+  schema 1.1
+
+# NeedWise authorization model (ARCHITECTURE section 7.4). One OpenFGA store per tenant.
+# Edit this file, then run `make authz-model` to regenerate model.json and run model.fga.yaml.
+
+type user
+
+type organization
+  relations
+    define owner: [user]
+    define admin: [user] or owner
+    define member: [user] or admin
+    # Auditors read audit logs and usage, never knowledge content, so they are not members.
+    define auditor: [user]
+    define can_manage: admin
+    define can_view_audit: auditor or admin
+
+type group
+  relations
+    define organization: [organization]
+    define member: [user, group#member]
+
+type department
+  relations
+    define organization: [organization]
+    define manager: [user]
+    define member: [user, group#member] or manager
+
+# Org admins are deliberately not editors or viewers of every collection: separation of duties.
+type collection
+  relations
+    define organization: [organization]
+    define department: [department]
+    define owner: [user]
+    define editor: [user, group#member, department#manager] or owner
+    define viewer: [user, group#member, department#member, organization#member] or editor
+
+# A document's own access list only ever narrows its collection's (ADR 0012,
+# docs/permission-sync.md): to view a document you must view its collection AND be a grantee.
+# A document without its own list has the wildcard grantee user:*. One with a list names its
+# principals and nobody else, so an empty list (every source principal unmapped) means nobody.
+type document
+  relations
+    define collection: [collection]
+    define grantee: [user, user:*, group#member, department#member, department#manager, organization#member]
+    define viewer: viewer from collection and grantee
+    define editor: editor from collection and grantee

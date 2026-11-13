@@ -18,23 +18,23 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, update
 
+from needwise.core.config import Settings
+from needwise.core.context import RequestContext
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.governance.audit import Actor
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.identity.models import User
+from needwise.modules.identity.service import load_identity
+from needwise.modules.knowledge import document_acl, governance
+from needwise.modules.knowledge.models import Collection, CollectionGrant, Document, DocumentVersion
+from needwise.modules.retrieval.qdrant import QdrantClient
+from needwise.modules.retrieval.service import Retriever
+from needwise.modules.work.models import Approval, Notification, Task
+from needwise.providers.factory import create_embeddings
+from needwise.seed.company import load_company
+from needwise.seed.governance_load import seed_governance
 from tests.integration.conftest import ACME, VALKEY_URL, Acme, Database, SessionFactory
-from workmind.core.config import Settings
-from workmind.core.context import RequestContext
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.governance.audit import Actor
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.identity.models import User
-from workmind.modules.identity.service import load_identity
-from workmind.modules.knowledge import document_acl, governance
-from workmind.modules.knowledge.models import Collection, CollectionGrant, Document, DocumentVersion
-from workmind.modules.retrieval.qdrant import QdrantClient
-from workmind.modules.retrieval.service import Retriever
-from workmind.modules.work.models import Approval, Notification, Task
-from workmind.providers.factory import create_embeddings
-from workmind.seed.company import load_company
-from workmind.seed.governance_load import seed_governance
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(

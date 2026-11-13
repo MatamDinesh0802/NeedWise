@@ -4,13 +4,16 @@ name: Upgrade test
 # release as a throwaway stack, seeds it, creates data through its API, backs it up, upgrades it
 # in place to this commit and checks that the data survived and the new features work
 # (scripts/upgrade-test.sh, docs/operations/upgrade.md). It builds both releases' images.
+# Upgrade testing starts at v1.0.0, the first NeedWise release (older tags predate the
+# rename). While that tag does not exist, or is the commit under test, the script skips with a
+# notice and the job passes.
 on:
   workflow_dispatch:
     inputs:
       from:
         description: Release tag to upgrade from
         required: true
-        default: v0.1.0
+        default: v1.0.0
 
 permissions:
   contents: read
@@ -30,5 +33,5 @@ jobs:
           # No embedding server on the runner: the compose `embeddings` profile (CPU llama.cpp).
           EMBEDDINGS: container
           FROM_TAG: ${{ inputs.from }}
-          UPGRADE_WORK_DIR: ${{ runner.temp }}/wm-upgrade
+          UPGRADE_WORK_DIR: ${{ runner.temp }}/nw-upgrade
         run: scripts/upgrade-test.sh "$FROM_TAG"

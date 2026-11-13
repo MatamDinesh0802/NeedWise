@@ -11,12 +11,9 @@ from typing import Any
 import pytest
 import yaml
 
-from tests.eval_analytics_support import People
-from tests.fakes import FakeLLM
-from tests.test_eval_analytics import IgnoresDansPolicy
-from workmind.core.context import RequestContext
-from workmind.evals.datasets import MeetingTopic, RedTeamItem, load_meetings, load_red_team
-from workmind.evals.redteam import (
+from needwise.core.context import RequestContext
+from needwise.evals.datasets import MeetingTopic, RedTeamItem, load_meetings, load_red_team
+from needwise.evals.redteam import (
     PROMPT_SHINGLES,
     documents_in_tool_results,
     prompt_leaks,
@@ -25,8 +22,8 @@ from workmind.evals.redteam import (
     text_leaks,
     violations,
 )
-from workmind.evals.report import markdown
-from workmind.evals.runner import (
+from needwise.evals.report import markdown
+from needwise.evals.runner import (
     AnswerRecord,
     ContextLeakRecord,
     EvalRun,
@@ -34,17 +31,20 @@ from workmind.evals.runner import (
     meeting_sources,
     score_topics,
 )
-from workmind.modules.agents.research import MAX_TOOL_CALLS
-from workmind.modules.analytics.agent import Composed
-from workmind.modules.assistant.answer import ABSTAIN, SYSTEM
-from workmind.modules.knowledge.parsing import detect_mime, parse
-from workmind.modules.meetings.extract import ActionItem, Decision, Extraction
-from workmind.modules.meetings.pipeline import Directory
-from workmind.modules.meetings.topics import Outline, TopicStart, word_outline
-from workmind.modules.meetings.transcripts import parse as parse_transcript
-from workmind.modules.retrieval.service import Passage, RetrievalResult
-from workmind.modules.tools.registry import Tool, ToolRegistry, ToolResult
-from workmind.providers.llm import LLMRequest, LLMUsage
+from needwise.modules.agents.research import MAX_TOOL_CALLS
+from needwise.modules.analytics.agent import Composed
+from needwise.modules.assistant.answer import ABSTAIN, SYSTEM
+from needwise.modules.knowledge.parsing import detect_mime, parse
+from needwise.modules.meetings.extract import ActionItem, Decision, Extraction
+from needwise.modules.meetings.pipeline import Directory
+from needwise.modules.meetings.topics import Outline, TopicStart, word_outline
+from needwise.modules.meetings.transcripts import parse as parse_transcript
+from needwise.modules.retrieval.service import Passage, RetrievalResult
+from needwise.modules.tools.registry import Tool, ToolRegistry, ToolResult
+from needwise.providers.llm import LLMRequest, LLMUsage
+from tests.eval_analytics_support import People
+from tests.fakes import FakeLLM
+from tests.test_eval_analytics import IgnoresDansPolicy
 
 REPO = Path(__file__).resolve().parents[3]
 DATASETS = REPO / "evals" / "datasets"

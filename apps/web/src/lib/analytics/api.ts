@@ -1,6 +1,6 @@
 /**
  * Typed client for the analytics (BI) API: /api/v1/analytics and /api/v1/admin/analytics.
- * Shapes follow the Phase 10 analytics contract (apps/api/src/workmind/api/v1/analytics.py).
+ * Shapes follow the Phase 10 analytics contract (apps/api/src/needwise/api/v1/analytics.py).
  * Everything goes through the shared wrapper (CSRF header, problem+json errors as ApiError).
  */
 
@@ -343,7 +343,7 @@ export const analyticsApi = {
 
   // Database sources (owner/admin)
   sources: () => apiJson<SqlSource[]>(`${ADMIN}/sources`),
-  /** 422 "invalid_source" for a host WorkMind may not connect to; 409 for a key in use. */
+  /** 422 "invalid_source" for a host NeedWise may not connect to; 409 for a key in use. */
   createSource: (input: SqlSourceInput) => apiJson<SqlSource>(`${ADMIN}/sources`, { method: "POST", json: input }),
   /** 422 "password_required" when the change points it elsewhere without the password. */
   updateSource: (key: string, patch: SqlSourcePatch) =>

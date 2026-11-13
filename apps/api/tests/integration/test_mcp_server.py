@@ -1,4 +1,4 @@
-"""The WorkMind MCP server over real HTTP (JSON-RPC, as MCP clients send it), with both
+"""The NeedWise MCP server over real HTTP (JSON-RPC, as MCP clients send it), with both
 permission locks. Embeddings are the hash provider; the language model is a scripted fake.
 
 Needs TEST_QDRANT_URL, TEST_VALKEY_URL and TEST_OPENFGA_URL (+ TEST_OPENFGA_API_KEY).
@@ -18,16 +18,16 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.config import Settings
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.authz.openfga import OpenFgaClient
+from needwise.modules.authz.sync import ensure_store, reconcile
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.knowledge.models import Collection
+from needwise.modules.retrieval.qdrant import QdrantClient
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
-from workmind.core.config import Settings
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.authz.openfga import OpenFgaClient
-from workmind.modules.authz.sync import ensure_store, reconcile
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.knowledge.models import Collection
-from workmind.modules.retrieval.qdrant import QdrantClient
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 OPENFGA_URL = os.environ.get("TEST_OPENFGA_URL")
@@ -145,7 +145,7 @@ def call(api: TestClient, bearer: str, tool: str, **arguments: Any) -> tuple[str
 
 async def test_no_token_means_no_mcp(api: TestClient, acme: Acme) -> None:
     missing = rpc(api, None, "tools/list")
-    forged = rpc(api, "wm_pat_acme_not-a-real-token", "tools/list")
+    forged = rpc(api, "nw_pat_acme_not-a-real-token", "tools/list")
 
     assert missing.status_code == 401
     assert missing.headers["www-authenticate"].startswith("Bearer")

@@ -6,7 +6,7 @@ the media service), cursor pagination through `_links.next` (and a `Link` header
 api.atlassian.com gateway for OAuth (/ex/confluence/<cloud id>) and the token endpoint.
 
 It cannot prove the real service behaves the same: it is built from the documentation, and
-WorkMind has not been run against a live Confluence site (docs/connectors.md).
+NeedWise has not been run against a live Confluence site (docs/connectors.md).
 """
 
 import base64

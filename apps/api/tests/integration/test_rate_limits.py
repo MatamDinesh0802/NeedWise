@@ -11,10 +11,10 @@ import pytest
 from fastapi.testclient import TestClient
 from redis.asyncio import Redis
 
+from needwise.core.config import Settings
+from needwise.core.ratelimit import RateLimitedError, RateLimiter, merge_limits
+from needwise.main import create_app
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
-from workmind.core.config import Settings
-from workmind.core.ratelimit import RateLimitedError, RateLimiter, merge_limits
-from workmind.main import create_app
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL")
 WINDOW_START = 1_800_000_000.0  # a fixed clock: every test starts at the beginning of a window

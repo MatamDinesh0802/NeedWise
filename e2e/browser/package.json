@@ -1,9 +1,9 @@
 {
-  "name": "workmind-e2e-browser",
+  "name": "needwise-e2e-browser",
   "version": "1.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "Browser end-to-end tests for WorkMind AI, run against a running, seeded stack.",
+  "description": "Browser end-to-end tests for NeedWise, run against a running, seeded stack.",
   "packageManager": "pnpm@10.33.3",
   "engines": {
     "node": ">=22"

@@ -1,0 +1,68 @@
+{{- /*
+`nw authz sync` after every install and upgrade: the step the Compose upgrade procedure runs by
+hand (docs/operations/upgrade.md). Each active tenant's OpenFGA store gets the current
+authorization model, and its tuples are recomputed from Postgres. Without tenants (a first
+install) it does nothing. A post-install/post-upgrade hook after the migrate hook and before the
+seed (weights), with the owner role, as the seed. It reads every setting, as the API does: in
+production the settings refuse to load without the real credentials.
+*/ -}}
+{{- if .Values.migrate.authzSync }}
+{{- $c := .Values.migrate -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "needwise.componentName" (list . "authz-sync") }}
+  labels:
+    {{- include "needwise.labels" (list . "authz-sync") | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "0"
+    # Kept after it ran (its logs), replaced by the next run.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ $c.backoffLimit }}
+  activeDeadlineSeconds: {{ $c.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "needwise.selectorLabels" (list . "authz-sync") | nindent 8 }}
+      {{- with $c.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      {{- include "needwise.podCommon" (list . $c) | nindent 6 }}
+      securityContext:
+        {{- include "needwise.podSecurityContext" (list . (dict)) | nindent 8 }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        {{- include "needwise.waitContainer" (list . $c.waitTimeoutSeconds (printf "tcp://%s:%s" (include "needwise.postgresHost" .) (include "needwise.postgresPort" .)) (printf "%s/healthz" (include "needwise.openfgaUrl" .))) | nindent 8 }}
+      containers:
+        - name: authz-sync
+          image: {{ include "needwise.apiImage" . }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          command: ["nw", "authz", "sync"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "needwise.componentName" (list . "config") }}
+          env:
+            {{- include "needwise.appEnv" . | nindent 12 }}
+            {{- include "needwise.credentialEnv" (list . "databaseOwnerPassword" "NW_DATABASE_OWNER_PASSWORD") | nindent 12 }}
+            - name: MIGRATIONS_DATABASE_URL
+              value: {{ include "needwise.databaseUrl" (list . .Values.database.ownerUser "NW_DATABASE_OWNER_PASSWORD") | quote }}
+          securityContext:
+            {{- include "needwise.securityContext" (list . (dict)) | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+{{- end }}

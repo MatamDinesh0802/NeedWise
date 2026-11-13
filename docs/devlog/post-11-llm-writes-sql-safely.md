@@ -14,7 +14,7 @@
 
 In a company, a sales rep must only see their own accounts, whatever SQL the model writes.
 
-What I built in WorkMind:
+What I built in NeedWise:
 • Tables are described once in a semantic layer: metrics, dimensions, joins, and who may see which rows
 • The model writes SQL; code decides what runs. A parser checks every query (one SELECT, known tables only, no file or catalog access), and row policies are applied by rewriting the query, not by asking the model to add a WHERE
 • Queries run read-only in a sandbox with time, memory and row limits
@@ -43,7 +43,7 @@ Repo and the full evaluation in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
-The v1.0 text-to-SQL run (51 questions): <GITHUB_REPO_URL>/blob/main/evals/results/2026-11-12-v1.0-analytics.md
-How the guard and the row-policy fences work: <GITHUB_REPO_URL>/blob/main/docs/analytics.md
-Why a semantic layer, DuckDB and sqlglot (ADR 0010): <GITHUB_REPO_URL>/blob/main/docs/adr/0010-analytics-semantic-layer-duckdb-sqlglot.md
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
+The v1.0 text-to-SQL run (51 questions): https://github.com/MatamDinesh0802/NeedWise/blob/main/evals/results/2026-11-12-v1.0-analytics.md
+How the guard and the row-policy fences work: https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/analytics.md
+Why a semantic layer, DuckDB and sqlglot (ADR 0010): https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/adr/0010-analytics-semantic-layer-duckdb-sqlglot.md

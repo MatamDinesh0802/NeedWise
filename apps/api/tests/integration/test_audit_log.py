@@ -4,9 +4,9 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.governance.audit import Actor, record_event, verify_chain
 from tests.integration.conftest import SeededTenant, SessionFactory
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.governance.audit import Actor, record_event, verify_chain
 
 TenantPair = tuple[SeededTenant, SeededTenant]
 

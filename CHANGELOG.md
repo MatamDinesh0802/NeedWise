@@ -1,6 +1,8 @@
 # Changelog
 
-Notable changes to WorkMind AI. Versions follow [Semantic Versioning](https://semver.org); before
+> NeedWise was called WorkMind until v1.0.0; older reports and commits use that name and the `wm` command.
+
+Notable changes to NeedWise. Versions follow [Semantic Versioning](https://semver.org); before
 1.0, a minor version is a phase of the [roadmap](docs/ROADMAP.md). From the first release made
 with release-please on, entries are generated from Conventional Commits and edited in the release
 PR ([docs/operations/releasing.md](docs/operations/releasing.md)).
@@ -57,7 +59,7 @@ Supply chain and releases ([docs/security/supply-chain.md](docs/security/supply-
   7 to 0 in the api image and from 6 to 0 in the web image, which now has no known vulnerability
   at any severity.
 - Every third-party image in `compose.yaml` and CI is pinned by digest; the app images can be
-  replaced with released ones (`WORKMIND_API_IMAGE`, `WORKMIND_WEB_IMAGE`); third-party actions are
+  replaced with released ones (`NEEDWISE_API_IMAGE`, `NEEDWISE_WEB_IMAGE`); third-party actions are
   pinned to commit SHAs; the gitleaks download in CI is checked against its SHA-256.
 - Releases: release-please, and a release workflow that builds linux/amd64 and linux/arm64 images
   for GHCR with SBOM and provenance attestations, scans both platforms, runs the seeded stack from
@@ -84,7 +86,7 @@ Multi-tenant hardening ([docs/multi-tenancy.md](docs/multi-tenancy.md)):
   client; suspended tenants' sessions end; Celery tasks refuse a missing tenant; stored file keys
   checked against the reading tenant; grants to another tenant's people refused (422
   `unknown_principal`).
-- `wm tenant list|create|delete|verify-empty`.
+- `nw tenant list|create|delete|verify-empty`.
 - Request rate limits per person, per tenant and per sign-in address (429 `rate_limited`;
   `RATE_LIMITS`, `RATE_LIMITS_ENABLED`).
 - A cross-tenant suite that calls every route with another tenant's ids.
@@ -119,9 +121,9 @@ Connectors, the rest of Phase 7 ([docs/connectors.md](docs/connectors.md)):
 
 Operations: `make backup` and `make restore` with a measured restore drill
 ([backup and restore](docs/operations/backup-restore.md)); an upgrade test from a release tag,
-passed from v0.1.0 ([upgrades](docs/operations/upgrade.md)); `wm authz sync`.
+passed from v0.1.0 ([upgrades](docs/operations/upgrade.md)); `nw authz sync`.
 
-Deployment and docs: a Helm chart in `deploy/helm/workmind`, validated, and installed, tested,
+Deployment and docs: a Helm chart in `deploy/helm/needwise`, validated, and installed, tested,
 upgraded and uninstalled on kind clusters with Kubernetes 1.34 and 1.37 (`make helm-kind-test`;
 [docs/deploy/kubernetes.md](docs/deploy/kubernetes.md#tested-on-a-cluster)); the docs site (`make docs`,
 `make docs-serve`) with the configuration and HTTP API reference generated from the code.
@@ -148,7 +150,7 @@ Upgrade notes so far:
   redirects to other sites.
 - Re-seed demo deployments (`make seed`): three new documents and a renamed sheet in the
   signature authority workbook.
-- After an upgrade or a restore, `wm authz sync` brings each tenant's OpenFGA store to the
+- After an upgrade or a restore, `nw authz sync` brings each tenant's OpenFGA store to the
   current model.
 - Migration `0020` adds the source run history and staleness columns. Existing synced documents
   start their staleness clock at their current version's date, so the first daily run after the
@@ -165,10 +167,10 @@ Automation: what Phase 8 left out ([docs/automation.md](docs/automation.md)):
   per tool for the assistant's actions (Admin › Automation).
 - Reminders before an approval expires and escalation after the organization's SLA (backup
   approver, then managers, then org admins), once per approval step; due-date reminders and
-  escalations for tasks. Hourly beat task `workmind.escalate_work`. Expiry stays the last step.
+  escalations for tasks. Hourly beat task `needwise.escalate_work`. Expiry stays the last step.
 - Notifications by email (right away or a daily digest) and Slack (bot DMs, a channel webhook),
-  per person and category, from an outbox sent and retried by `workmind.deliver_notifications`
-  (every minute). Slack secrets are sealed and rotate with `wm secrets rotate`. Mentions in task
+  per person and category, from an outbox sent and retried by `needwise.deliver_notifications`
+  (every minute). Slack secrets are sealed and rotate with `nw secrets rotate`. Mentions in task
   descriptions notify colleagues who can open the task.
 - Request routing: the Request form, an email-to-request endpoint for a mail bridge, and
   `create_task` without a queue are routed by admin rules, then the router model above a
@@ -233,7 +235,7 @@ More upgrade notes (2026-11-13 merges):
   identity mappings, `0024` meeting topics, `0025` SQL sources, `0026` review escalation, legal
   holds and document retention; every new tenant table has forced row-level security.
 - The OpenFGA model changed (a document's viewers are its collection's viewers who are also on
-  its list): run `wm authz sync` after deploying (the Helm `authz-sync` hook does; `make seed`
+  its list): run `nw authz sync` after deploying (the Helm `authz-sync` hook does; `make seed`
   reconciles the demo tenant).
 - Rebuild the api, worker and beat images: they now install the `diarization` and `mysql`
   extras. Re-run `make ee-dev-license` so a development license includes `permission_sync` and
@@ -281,14 +283,14 @@ Final review fixes (2026-11-13), each with a regression test:
 
 - **Open-core boundary** ([ADR 0011](docs/adr/0011-open-core-boundary-and-license-keys.md)):
   Ed25519-signed license keys decide the edition; an extension registry, `GET /edition` and
-  `require_feature`; the `workmind-ee` package is built into the API image and stays inactive
-  without a license; `wm license dev` for development licenses.
+  `require_feature`; the `needwise-ee` package is built into the API image and stays inactive
+  without a license; `nw license dev` for development licenses.
 - **Agents as configuration** ([docs/agents.md](docs/agents.md)): tools, model, limits, numbered
   versions with restore, and a test console in Admin › Agents. A Legal agent created in the
   browser, with no code, routes 15/15 legal questions and 53/56 overall with Claude Sonnet 5.5.
 - **Models per organization** ([docs/models.md](docs/models.md)): providers with encrypted,
   write-only keys, a catalog with prices, a model per role and per agent, a policy for sensitive
-  data sent to external models, `wm secrets rotate`.
+  data sent to external models, `nw secrets rotate`.
 - **Usage and budgets** ([docs/usage.md](docs/usage.md)): every model call recorded (tokens and
   cost, never text) per person, department, agent and feature; budgets checked before model work
   and on every turn of a tool loop; the Usage page and Admin › Budgets. Enterprise: department
@@ -346,7 +348,7 @@ Final review fixes (2026-11-13), each with a regression test:
 
 - Governed tools with side-effect levels, permission checks and audit; a research agent;
   "Research & act" in chat.
-- WorkMind as an MCP server at `/mcp`, authenticated with personal access tokens, so Claude Code,
+- NeedWise as an MCP server at `/mcp`, authenticated with personal access tokens, so Claude Code,
   Cursor or Claude Desktop ask with the user's permissions ([docs/mcp.md](docs/mcp.md)).
 
 ## v0.5 — Phase 5: multi-agent orchestration (2026-11-04, not tagged)
@@ -374,7 +376,7 @@ Final review fixes (2026-11-13), each with a regression test:
   lock (OpenFGA re-checks every source), citations and abstention.
 - Sensitivity routing: restricted sources go only to a local model, or are left out
   (`restricted_data: local_only` by default).
-- `wm eval`: retrieval QA, a red team with canary tokens, abstention. The permission gate runs in
+- `nw eval`: retrieval QA, a red team with canary tokens, abstention. The permission gate runs in
   CI. With the default configuration (Claude Sonnet 5.5): 0 leaks, 81/82 correct answers, 99.4%
   faithfulness; evidence@1 92.7% with the default fusion against 69.5% for textbook RRF
   ([evals/README.md](evals/README.md)).

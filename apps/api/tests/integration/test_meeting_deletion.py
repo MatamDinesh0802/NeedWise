@@ -21,20 +21,20 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select, update
 
+from needwise.core.config import Settings
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.knowledge.models import Collection, Document
+from needwise.modules.knowledge.storage import MemoryObjectStorage, object_key
+from needwise.modules.meetings.models import Meeting
+from needwise.modules.meetings.pipeline import MeetingDeps, process_meeting
+from needwise.modules.retrieval.qdrant import QdrantClient, match
+from needwise.providers.llm import LLMRequest, Role
+from needwise.providers.transcription import DisabledTranscriber
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory
 from tests.integration.test_meetings_api import OUTCOME, VTT, _model, _upload, _wait
-from workmind.core.config import Settings
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.knowledge.models import Collection, Document
-from workmind.modules.knowledge.storage import MemoryObjectStorage, object_key
-from workmind.modules.meetings.models import Meeting
-from workmind.modules.meetings.pipeline import MeetingDeps, process_meeting
-from workmind.modules.retrieval.qdrant import QdrantClient, match
-from workmind.providers.llm import LLMRequest, Role
-from workmind.providers.transcription import DisabledTranscriber
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(

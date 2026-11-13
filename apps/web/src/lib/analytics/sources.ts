@@ -74,7 +74,7 @@ export function sourceFormErrors(form: SourceForm): SourceFormErrors {
     if (!Number.isInteger(port) || port < 1 || port > 65535) errors.port = "A port from 1 to 65535.";
   }
   if (!form.database.trim()) errors.database = form.kind === "mysql" ? "Enter the default database." : "Enter the database name.";
-  if (!form.username.trim()) errors.username = "Enter the user WorkMind connects as (read-only).";
+  if (!form.username.trim()) errors.username = "Enter the user NeedWise connects as (read-only).";
   if (!form.password) errors.password = "Enter the user's password.";
   const schemas = parseSchemas(form.schemas);
   if (schemas.length === 0) errors.schemas = form.kind === "mysql" ? "List at least one database to read tables from." : "List at least one schema.";

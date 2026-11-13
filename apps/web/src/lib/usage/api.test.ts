@@ -85,7 +85,7 @@ describe("usageApi", () => {
 
   it("turns the 402 for an unlicensed chargeback report into an enterprise_feature error", async () => {
     fetchMock.mockImplementation(async () =>
-      json({ type: "about:blank", title: "Enterprise feature", status: 402, code: "enterprise_feature", detail: "Chargeback reports is part of WorkMind Enterprise." }, 402),
+      json({ type: "about:blank", title: "Enterprise feature", status: 402, code: "enterprise_feature", detail: "Chargeback reports is part of NeedWise Enterprise." }, 402),
     );
     const error = await usageApi.chargebackCsv(range).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);

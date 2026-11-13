@@ -6,8 +6,8 @@ import zipfile
 import pytest
 from openpyxl import load_workbook
 
-from workmind.modules.knowledge.parsing import detect_mime, parse
-from workmind.seed.corpus import DEFAULT_OUT, SHEET_NAME_MAX, sheet_name, to_xlsx
+from needwise.modules.knowledge.parsing import detect_mime, parse
+from needwise.seed.corpus import DEFAULT_OUT, SHEET_NAME_MAX, sheet_name, to_xlsx
 
 MATRIX = DEFAULT_OUT / "legal-contracts" / "contract-signature-authority-matrix.xlsx"
 

@@ -41,7 +41,7 @@ embedding server ran on the same machine, outside the VM. Another project's 13 c
 the same VM throughout; one of them used a full CPU core the whole time. The machine was not
 otherwise idle.
 
-**Stack.** The repository's compose stack (project `workmind`), all services, Enterprise dev
+**Stack.** The repository's compose stack (project `needwise`), all services, Enterprise dev
 license, `ASSISTANT_MODE=auto` (the embedding fast path picks an agent when one clearly matches;
 otherwise the planner decides), with `loadtests/compose.stub.yaml` (every model role on the stub,
 rate limits off, in-flight cap 100) and, for measurement only, Postgres started with
@@ -69,7 +69,7 @@ At 10 users Locust gave no user to the agents, login and upload classes (their w
 small for 10 users), so those columns are empty for that step.
 
 **Measurement.** Locust's statistics (its percentiles are rounded: 10 ms steps above 100 ms,
-100 ms steps above 1 s), and the harness's resource monitor (`MONITOR=workmind`): `docker stats`
+100 ms steps above 1 s), and the harness's resource monitor (`MONITOR=needwise`): `docker stats`
 every 5 s, Postgres connections, `pg_stat_statements`, Qdrant's request histogram, Valkey's
 command rate and the API's own time per route from its access log. Profiles: py-spy 0.4.1 attached
 to the API process from a sidecar container, in separate runs that are not in the tables.
@@ -78,7 +78,7 @@ to the API process from a sidecar container, in separate runs that are not in th
 
 Before: commit 0888b5b plus the monitor. After: the tuning below (commits 68e1976 and 1c63c1a).
 Times in milliseconds. CPU in % of one core, the API container's total (all its processes).
-"DB connections" is the peak number of client connections to the `workmind` database, with
+"DB connections" is the peak number of client connections to the `needwise` database, with
 those idle in a transaction in parentheses. The monitor counts every client of that database
 (`pg_stat_activity`), so the Celery worker and beat are included, not only the API's pools.
 
@@ -183,7 +183,7 @@ its histogram sum, so the Qdrant mean column of the reports made before that fix
 
 ## After tuning
 
-**Up to 200 users** latencies are the same as before: at these loads WorkMind did not limit them. Valkey
+**Up to 200 users** latencies are the same as before: at these loads NeedWise did not limit them. Valkey
 commands per second fell by 52 to 60% at every step. The API container's CPU stayed about the
 same while being spread over two processes, and its memory doubled (about 250 MB per process).
 
@@ -258,13 +258,13 @@ once) the tuned stack degrades, without failures:
 ## Recommended sizing (extrapolation)
 
 **These are extrapolations, not measurements.** They assume that at the busiest moment about 20%
-of employees use WorkMind at the same time, at the intensity of the simulated users (an action
+of employees use NeedWise at the same time, at the intensity of the simulated users (an action
 every 3 to 10 s, more than a person keeps up for long). They are based on the measured steps
 above on one laptop, with the demo's small corpus and one tenant, and with a stub instead of a
 model. A real model's latency, throughput and rate limits are not included and usually decide
 the experience.
 
-Measured, all WorkMind containers together (not the embedding server, not Locust): 0.2 cores on
+Measured, all NeedWise containers together (not the embedding server, not Locust): 0.2 cores on
 average at 100 users, 0.4 at 200, 1.0 at 400 (2.2 if every container peaked at once) and 2.5 at
 800; memory 3.7 GiB at 100 users and 4.4 GiB at 800, most of it fixed (Qdrant 1.3 GB at this
 corpus size, Keycloak 0.8 GB, the API about 250 to 400 MB per process, Postgres 0.2 to 0.4 GB,
@@ -297,9 +297,9 @@ the Helm chart under load; runs longer than 3 minutes.
 ```bash
 make loadtest-stub                                             # the stub on 127.0.0.1:8490
 ASSISTANT_MODE=auto docker compose -f compose.yaml -f loadtests/compose.stub.yaml up -d --wait
-(cd loadtests && uv run python -m workmind_load.tokens upload-collection)
+(cd loadtests && uv run python -m needwise_load.tokens upload-collection)
 make loadtest USERS=100 SPAWN_RATE=10 DURATION=3m STUB_URL=http://127.0.0.1:8490 \
-  UPLOAD_COLLECTION=loadtest-uploads MONITOR=workmind LABEL=after-100u
+  UPLOAD_COLLECTION=loadtest-uploads MONITOR=needwise LABEL=after-100u
 ASSISTANT_MODE=auto docker compose up -d --wait                # back to the model in .env
 ```
 

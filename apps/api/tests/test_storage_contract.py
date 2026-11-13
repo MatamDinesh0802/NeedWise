@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from workmind.modules.knowledge.storage import (
+from needwise.modules.knowledge.storage import (
     ForeignObjectKeyError,
     LocalObjectStorage,
     MemoryObjectStorage,

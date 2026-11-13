@@ -11,7 +11,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from workmind.modules.analytics import engine
+from needwise.modules.analytics import engine
 
 
 @pytest.fixture
@@ -211,9 +211,9 @@ def test_errors_are_short_and_name_the_problem(db: Path) -> None:
 def test_fences_are_temporary_tables_the_query_reads(db: Path) -> None:
     result = engine.execute_sync(
         db,
-        "SELECT count(*), max(i) FROM _wm_rows_t AS t",
+        "SELECT count(*), max(i) FROM _nw_rows_t AS t",
         max_rows=1,
-        fences=[("_wm_rows_t", "SELECT * FROM t WHERE i < 5")],
+        fences=[("_nw_rows_t", "SELECT * FROM t WHERE i < 5")],
     )
 
     assert result.rows == [[5, 4]]
@@ -260,9 +260,9 @@ def pool() -> Iterator[engine.QueryPool]:
 async def test_the_pool_runs_queries_like_the_engine(db: Path, pool: engine.QueryPool) -> None:
     result = await pool.execute(
         db,
-        "SELECT i, label FROM _wm_rows_t AS t ORDER BY i",
+        "SELECT i, label FROM _nw_rows_t AS t ORDER BY i",
         max_rows=2,
-        fences=[("_wm_rows_t", "SELECT * FROM t WHERE i >= 3")],
+        fences=[("_nw_rows_t", "SELECT * FROM t WHERE i >= 3")],
     )
 
     assert [(c.name, c.type) for c in result.columns] == [("i", "BIGINT"), ("label", "VARCHAR")]

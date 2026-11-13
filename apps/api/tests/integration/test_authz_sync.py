@@ -11,10 +11,9 @@ import httpx
 import pytest
 from sqlalchemy import select, update
 
-from tests.integration.conftest import SessionFactory
-from workmind.core.tenancy import global_transaction, tenant_transaction
-from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
-from workmind.modules.authz.sync import (
+from needwise.core.tenancy import global_transaction, tenant_transaction
+from needwise.modules.authz.openfga import OpenFgaClient, RelationTuple
+from needwise.modules.authz.sync import (
     enqueue,
     ensure_store,
     org_object,
@@ -22,12 +21,13 @@ from workmind.modules.authz.sync import (
     reconcile,
     sync_tenants,
 )
-from workmind.modules.identity.models import Group, GroupMember, Tenant, User
-from workmind.modules.identity.service import load_identity
-from workmind.modules.knowledge.acl import acl_principals
-from workmind.modules.knowledge.models import Collection, CollectionGrant
-from workmind.seed.apply import seed_database
-from workmind.seed.company import load_company
+from needwise.modules.identity.models import Group, GroupMember, Tenant, User
+from needwise.modules.identity.service import load_identity
+from needwise.modules.knowledge.acl import acl_principals
+from needwise.modules.knowledge.models import Collection, CollectionGrant
+from needwise.seed.apply import seed_database
+from needwise.seed.company import load_company
+from tests.integration.conftest import SessionFactory
 
 OPENFGA_URL = os.environ.get("TEST_OPENFGA_URL")
 pytestmark = pytest.mark.skipif(not OPENFGA_URL, reason="set TEST_OPENFGA_URL to run")
@@ -224,7 +224,7 @@ async def test_both_permission_locks_agree_for_every_person_and_collection(
     assert disagreements == []
 
 
-async def test_wm_authz_sync_rewrites_an_outdated_model_and_repairs_drift(
+async def test_nw_authz_sync_rewrites_an_outdated_model_and_repairs_drift(
     owner_sessions: SessionFactory, fga: OpenFgaClient, acme: SyncedAcme
 ) -> None:
     # As after an upgrade that changed the model, or a restore whose OpenFGA dump is older.

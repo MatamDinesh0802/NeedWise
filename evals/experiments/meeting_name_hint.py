@@ -3,13 +3,13 @@
 import asyncio, json, re, sys
 from datetime import date
 from pathlib import Path
-from workmind.core.config import Settings
-from workmind.core.resources import Resources
-from workmind.core.tenancy import tenant_transaction
-from workmind.evals.datasets import load_meetings, keywords_match
-from workmind.evals.runner import Askers
-from workmind.modules.meetings.extract import extract
-from workmind.modules.meetings.pipeline import load_directory
+from needwise.core.config import Settings
+from needwise.core.resources import Resources
+from needwise.core.tenancy import tenant_transaction
+from needwise.evals.datasets import load_meetings, keywords_match
+from needwise.evals.runner import Askers
+from needwise.modules.meetings.extract import extract
+from needwise.modules.meetings.pipeline import load_directory
 
 ROOT = Path(__file__).resolve().parents[2]  # run from apps/api: uv run python ../../evals/experiments/meeting_name_hint.py
 NAMES = {"Olivia": r"\bOlivia\b", "Wei": r"\bWei\b", "Samuel": r"\bSamuel\b", "Dan": r"\bDan\b", "Hannah": r"\bHannah\b"}

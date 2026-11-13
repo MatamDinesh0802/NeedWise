@@ -3,7 +3,7 @@
 PostgreSQL, Qdrant and OpenFGA.
 
 Community: the synced documents keep their collection's access. Enterprise (permission_sync
-licensed, workmind_ee installed): each file gets its Drive permissions as its own list, mapped
+licensed, needwise_ee installed): each file gets its Drive permissions as its own list, mapped
 fail closed; a person removed in Drive loses access at the next sync, or at once through the
 Drive changes feed; permissions that cannot be read leave the file to nobody.
 
@@ -23,27 +23,27 @@ import pytest
 from redis.asyncio import Redis
 from sqlalchemy import select
 
+from needwise.core.context import RequestContext
+from needwise.core.edition import Edition, License
+from needwise.core.extensions import ExtensionRegistry, enable_extensions
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.authz.openfga import OpenFgaClient, RelationTuple
+from needwise.modules.authz.sync import ensure_store, process_outbox, reconcile
+from needwise.modules.connectors.models import IdentityMapping, Source
+from needwise.modules.connectors.oauth import OAuthApp, OAuthApps
+from needwise.modules.connectors.registry import build_connector
+from needwise.modules.connectors.secrets import SecretBox
+from needwise.modules.connectors.sync import SyncDeps, SyncReport, sync_source
+from needwise.modules.identity.service import load_identity
+from needwise.modules.knowledge import document_acl
+from needwise.modules.knowledge.dispatch import InlineDispatcher
+from needwise.modules.knowledge.models import Collection, Document
+from needwise.modules.knowledge.pipeline import IngestionDeps
+from needwise.modules.knowledge.storage import LocalObjectStorage
+from needwise.modules.retrieval.qdrant import QdrantClient, match
+from needwise.modules.retrieval.service import Retriever
+from needwise.providers.embeddings import HashEmbeddings
 from tests.integration.conftest import VALKEY_URL, Acme, SessionFactory, seed_acme
-from workmind.core.context import RequestContext
-from workmind.core.edition import Edition, License
-from workmind.core.extensions import ExtensionRegistry, enable_extensions
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
-from workmind.modules.authz.sync import ensure_store, process_outbox, reconcile
-from workmind.modules.connectors.models import IdentityMapping, Source
-from workmind.modules.connectors.oauth import OAuthApp, OAuthApps
-from workmind.modules.connectors.registry import build_connector
-from workmind.modules.connectors.secrets import SecretBox
-from workmind.modules.connectors.sync import SyncDeps, SyncReport, sync_source
-from workmind.modules.identity.service import load_identity
-from workmind.modules.knowledge import document_acl
-from workmind.modules.knowledge.dispatch import InlineDispatcher
-from workmind.modules.knowledge.models import Collection, Document
-from workmind.modules.knowledge.pipeline import IngestionDeps
-from workmind.modules.knowledge.storage import LocalObjectStorage
-from workmind.modules.retrieval.qdrant import QdrantClient, match
-from workmind.modules.retrieval.service import Retriever
-from workmind.providers.embeddings import HashEmbeddings
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 OPENFGA_URL = os.environ.get("TEST_OPENFGA_URL")
@@ -108,7 +108,7 @@ def person(email: str) -> dict[str, Any]:
 
 def licensed() -> ExtensionRegistry:
     """Enterprise with permission sync: needs the ee package (uv sync --extra ee)."""
-    pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra ee")
+    pytest.importorskip("needwise_ee", reason="install the ee extra: uv sync --extra ee")
     now = datetime.now(UTC)
     license_ = License(
         "Acme Robotics",
@@ -355,7 +355,7 @@ async def test_an_admin_mapping_opens_a_drive_group_to_its_members_in_the_collec
 
 async def test_the_drive_changes_feed_revokes_without_waiting_for_a_sync(world: World) -> None:
     extensions = licensed()
-    from workmind_ee.permission_sync import drive_changes
+    from needwise_ee.permission_sync import drive_changes
 
     await world.sync(extensions)
     valkey = Redis.from_url(VALKEY_URL or "")  # pyright: ignore[reportUnknownMemberType]

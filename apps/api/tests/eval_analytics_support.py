@@ -9,6 +9,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from needwise.core.context import RequestContext
+from needwise.evals.datasets import AnalyticsItem
+from needwise.modules.analytics.agent import Composed
+from needwise.modules.analytics.compiler import SemanticQuery
+from needwise.modules.analytics.service import (
+    AccessInfo,
+    DatasetInfo,
+    ModelDescription,
+    QueryResult,
+    StepCallback,
+)
+from needwise.providers.llm import LLMRequest
 from tests.analytics_support import (
     FINANCE,
     LEADERSHIP,
@@ -18,18 +30,6 @@ from tests.analytics_support import (
     context,
 )
 from tests.fakes import FakeLLM, ToolTurn
-from workmind.core.context import RequestContext
-from workmind.evals.datasets import AnalyticsItem
-from workmind.modules.analytics.agent import Composed
-from workmind.modules.analytics.compiler import SemanticQuery
-from workmind.modules.analytics.service import (
-    AccessInfo,
-    DatasetInfo,
-    ModelDescription,
-    QueryResult,
-    StepCallback,
-)
-from workmind.providers.llm import LLMRequest
 
 DATASETS = Path(__file__).resolve().parents[3] / "evals" / "datasets"
 NO_ACCESS = frozenset({"bob", "mallory", "erin"})  # engineer, guest, org admin

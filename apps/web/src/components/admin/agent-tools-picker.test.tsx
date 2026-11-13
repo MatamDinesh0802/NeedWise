@@ -37,7 +37,7 @@ describe("AgentToolsPicker", () => {
     expect(html).toContain('aria-describedby="agent-tool-send_email-reason"');
     expect(html).toContain("Not available to agents: send_email has external side effects");
     expect(html).toContain("Reads only");
-    expect(html).toContain("Leaves WorkMind");
+    expect(html).toContain("Leaves NeedWise");
   });
 
   it("flags a chosen tool that is no longer registered", () => {

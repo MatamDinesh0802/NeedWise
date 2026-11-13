@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 import yaml
 
-from workmind.seed.company import CompanySpec, load_company
+from needwise.seed.company import CompanySpec, load_company
 
 ACME = Path(__file__).resolve().parents[3] / "seed" / "acme" / "company.yaml"
 

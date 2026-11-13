@@ -17,18 +17,18 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.config import DEV_SECRETS_ENCRYPTION_KEY, Settings
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.agents.model_choice import CatalogModels
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.model_catalog.catalog import ProviderInfo
+from needwise.modules.model_catalog.models import ModelProvider
+from needwise.modules.model_catalog.resolver import LLMResolver
+from needwise.modules.model_catalog.rotation import rotate_keys
+from needwise.modules.model_catalog.secrets import KeyRing
+from needwise.providers.llm import LLMError, LLMMessage, LLMProvider, LLMRequest
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, SessionFactory, seed_acme
-from workmind.core.config import DEV_SECRETS_ENCRYPTION_KEY, Settings
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.agents.model_choice import CatalogModels
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.model_catalog.catalog import ProviderInfo
-from workmind.modules.model_catalog.models import ModelProvider
-from workmind.modules.model_catalog.resolver import LLMResolver
-from workmind.modules.model_catalog.rotation import rotate_keys
-from workmind.modules.model_catalog.secrets import KeyRing
-from workmind.providers.llm import LLMError, LLMMessage, LLMProvider, LLMRequest
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL to run")
 

@@ -7,8 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parents[1] / "src" / "workmind"
-ENTERPRISE = "workmind_ee"
+SRC = Path(__file__).resolve().parents[1] / "src" / "needwise"
+ENTERPRISE = "needwise_ee"
 
 
 def _imports(tree: ast.AST) -> list[tuple[int, str]]:
@@ -42,32 +42,32 @@ def test_no_core_module_imports_the_enterprise_package() -> None:
 
 def test_the_scan_catches_every_import_form() -> None:
     sample = ast.parse(
-        "import workmind_ee\n"
-        "from workmind_ee.retention import apply\n"
+        "import needwise_ee\n"
+        "from needwise_ee.retention import apply\n"
         "import importlib\n"
-        "importlib.import_module('workmind_ee.budgets')\n"
-        "__import__('workmind_ee')\n"
+        "importlib.import_module('needwise_ee.budgets')\n"
+        "__import__('needwise_ee')\n"
     )
     assert [m for _, m in _imports(sample) if m.startswith(ENTERPRISE)] == [
-        "workmind_ee",
-        "workmind_ee.retention",
-        "workmind_ee.budgets",
-        "workmind_ee",
+        "needwise_ee",
+        "needwise_ee.retention",
+        "needwise_ee.budgets",
+        "needwise_ee",
     ]
 
 
 RUNTIME_CHECK = """
 import importlib, pkgutil, sys
-import workmind
-for module in pkgutil.walk_packages(workmind.__path__, "workmind."):
+import needwise
+for module in pkgutil.walk_packages(needwise.__path__, "needwise."):
     if not module.name.endswith("__main__"):
         importlib.import_module(module.name)
-from workmind.core.config import Settings
-from workmind.main import create_app
+from needwise.core.config import Settings
+from needwise.main import create_app
 create_app(Settings(_env_file=None, app_env="test", authz_outbox_worker=False))
-loaded = sorted(m for m in sys.modules if m.split(".")[0] == "workmind_ee")
+loaded = sorted(m for m in sys.modules if m.split(".")[0] == "needwise_ee")
 assert not loaded, loaded
-print("ok", len([m for m in sys.modules if m.startswith("workmind.")]))
+print("ok", len([m for m in sys.modules if m.startswith("needwise.")]))
 """
 
 
@@ -85,6 +85,6 @@ def test_a_community_process_never_loads_the_enterprise_package(tmp_path: Path) 
         check=False,
     )
     assert result.returncode == 0, result.stderr[-2000:]
-    # The last line: a development license in <repo>/.workmind (`make ee-dev-license`) is
+    # The last line: a development license in <repo>/.needwise (`make ee-dev-license`) is
     # refused with APP_ENV=test, and that warning is printed first.
     assert result.stdout.strip().splitlines()[-1].startswith("ok"), result.stdout[-2000:]

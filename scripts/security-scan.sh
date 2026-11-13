@@ -35,7 +35,7 @@ HELM="alpine/helm:3.19.0@sha256:aef9b56f64e866207d9591d0abd8f6d767b36aadd12edf68
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Trivy's vulnerability database (~130 MB) is kept between runs.
-TRIVY_CACHE="${TRIVY_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/workmind-trivy}"
+TRIVY_CACHE="${TRIVY_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/needwise-trivy}"
 # The gate: what fails a build. Unfixed findings are reported, not gated (nothing to upgrade to).
 GATE=(--severity "CRITICAL,HIGH" --ignore-unfixed --exit-code 1 --ignorefile /src/.trivyignore.yaml)
 DOCKERFILES=(apps/api/Dockerfile apps/web/Dockerfile)
@@ -78,7 +78,7 @@ case "$cmd" in
       --skip-dirs /src/apps/api/.venv --skip-dirs /src/apps/web/node_modules \
       --skip-dirs /src/apps/web/.next --skip-dirs /src/loadtests/.venv \
       --skip-dirs /src/e2e/browser/node_modules --skip-dirs /src/site --skip-dirs /src/.data \
-      --skip-dirs /src/.workmind --skip-dirs /src/backups --skip-dirs /src/.claude /src
+      --skip-dirs /src/.needwise --skip-dirs /src/backups --skip-dirs /src/.claude /src
     ;;
   chart)
     # Trivy's own Helm renderer skips this chart (it fails on the chart's .Files.Get of the
@@ -87,9 +87,9 @@ case "$cmd" in
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
     for values in default external-services production; do
-      args=(template workmind /chart --kube-version 1.33.0 --output-dir "/out/$values")
+      args=(template needwise /chart --kube-version 1.33.0 --output-dir "/out/$values")
       if [ "$values" != default ]; then args+=(-f "/chart/examples/$values.yaml"); fi
-      docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT/deploy/helm/workmind:/chart:ro" \
+      docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT/deploy/helm/needwise:/chart:ro" \
         -v "$tmp:/out" "$HELM" "${args[@]}" >/dev/null
     done
     echo "== Trivy: Helm chart rendered with default, external-services, production values" >&2
@@ -147,7 +147,7 @@ case "$cmd" in
     if [ "$target" = "." ]; then
       echo "== syft: repository -> $out" >&2
       docker run --rm -v "$ROOT:/src:ro" "$SYFT" scan dir:/src -o spdx-json \
-        --source-name workmind --source-version "$(git -C "$ROOT" rev-parse --short HEAD)" \
+        --source-name needwise --source-version "$(git -C "$ROOT" rev-parse --short HEAD)" \
         --exclude './apps/api/.venv' --exclude './apps/web/node_modules' \
         --exclude './apps/web/.next' --exclude './loadtests/.venv' \
         --exclude './e2e/browser/node_modules' --exclude './site' --exclude './.data' \

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validates the WorkMind Helm chart without a cluster:
+# Validates the NeedWise Helm chart without a cluster:
 #   1. the chart's copies of deploy/postgres/init and deploy/keycloak match the originals,
 #   2. helm lint --strict and helm template with the default values, the two examples and
 #      the CI values (ci/: the Gateway API demo and the kind test),
@@ -11,7 +11,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
-CHART=deploy/helm/workmind
+CHART=deploy/helm/needwise
 HELM=${HELM:-helm}
 KUBECONFORM=${KUBECONFORM:-kubeconform}
 PYTHON=${PYTHON:-python3}
@@ -21,7 +21,7 @@ trap 'rm -rf "$OUT"' EXIT
 
 echo "== Shared files"
 diff -u deploy/postgres/init/01-databases.sh "$CHART/files/postgres/01-databases.sh"
-diff -u deploy/keycloak/realm-workmind.json "$CHART/files/keycloak/realm-workmind.json"
+diff -u deploy/keycloak/realm-needwise.json "$CHART/files/keycloak/realm-needwise.json"
 echo "files/ matches deploy/postgres/init and deploy/keycloak"
 
 echo "== Lint and render"
@@ -33,7 +33,7 @@ render() { # name, values files...
   # ${args[@]+...}: an empty array under `set -u` (bash 3.2 on macOS). --kube-version: render
   # for the version we validate against (Helm 4.0.0's default for `template` is 1.20).
   $HELM lint --strict --kube-version "$KUBERNETES_VERSION" "$CHART" ${args[@]+"${args[@]}"}
-  $HELM template workmind "$CHART" --namespace workmind --kube-version "$KUBERNETES_VERSION" \
+  $HELM template needwise "$CHART" --namespace needwise --kube-version "$KUBERNETES_VERSION" \
     ${args[@]+"${args[@]}"} >"$OUT/$name.yaml"
   echo "$name: $(grep -c '^kind:' "$OUT/$name.yaml") resources"
 }
@@ -58,7 +58,7 @@ refuse() { # description, expected message, helm template arguments...
   local description=$1 expected=$2
   shift 2
   local output
-  if output=$($HELM template workmind "$CHART" --kube-version "$KUBERNETES_VERSION" "$@" 2>&1); then
+  if output=$($HELM template needwise "$CHART" --kube-version "$KUBERNETES_VERSION" "$@" 2>&1); then
     echo "FAIL: accepted $description"
     return 1
   fi
@@ -70,7 +70,7 @@ refuse() { # description, expected message, helm template arguments...
   echo "refused: $description"
 }
 refuse "a misspelled key" "additional properties 'replica' not allowed" --set api.replica=2
-refuse "a public URL with a path" "publicUrl" --set config.publicUrl=https://example.com/workmind
+refuse "a public URL with a path" "publicUrl" --set config.publicUrl=https://example.com/needwise
 refuse "an external database without a host" "database.host is required" --set postgresql.enabled=false
 refuse "an external Keycloak without its secret" "credentials.oidcClientSecret is required" \
   --set keycloak.enabled=false --set keycloak.external.url=https://sso.example.com
@@ -83,7 +83,7 @@ refuse "an API without worker processes" "workers" --set api.workers=0
 refuse "an external Valkey with auth and no password" "credentials.valkeyPassword is required" \
   --set valkey.enabled=false --set valkey.external.host=valkey.example
 refuse "your Secret named like the chart's own" "the name of the Secret the chart creates itself" \
-  --set credentials.existingSecret=workmind-credentials
+  --set credentials.existingSecret=needwise-credentials
 refuse "one credential's Secret named like the chart's own" "credentials.licenseKey.existingSecret is" \
-  --set credentials.licenseKey.existingSecret=workmind-credentials
+  --set credentials.licenseKey.existingSecret=needwise-credentials
 echo "All chart checks passed."

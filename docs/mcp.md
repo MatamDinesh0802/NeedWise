@@ -1,6 +1,6 @@
-# WorkMind over MCP
+# NeedWise over MCP
 
-WorkMind is an MCP server at **`/mcp`** (Streamable HTTP). Any MCP client — Claude Code,
+NeedWise is an MCP server at **`/mcp`** (Streamable HTTP). Any MCP client — Claude Code,
 Cursor, Claude Desktop, your own scripts — can ask questions of your company's documents with
 **the same permissions as the web app**: both permission locks, the tenant's model policy and the
 token's scopes apply, and every call is audited: `ask` as `assistant.answered` with `via: mcp`
@@ -9,14 +9,14 @@ token's scopes apply, and every call is audited: `ask` as `assistant.answered` w
 
 ## 1. Create a personal access token
 
-In WorkMind: **Settings → Access tokens → New token**. Pick the scopes:
+In NeedWise: **Settings → Access tokens → New token**. Pick the scopes:
 
 | Scope | Allows |
 |---|---|
 | `knowledge:read` | `search_knowledge`, `list_collections` |
 | `assistant:ask` | `ask` (cited answers; uses the configured model); `describe_data`, `query_data` if you have access to the analytics data |
 
-The token (`wm_pat_...`) is shown once. It acts as you, never with more access, and can be
+The token (`nw_pat_...`) is shown once. It acts as you, never with more access, and can be
 revoked at any time.
 
 ## 2. Connect a client
@@ -24,8 +24,8 @@ revoked at any time.
 **Claude Code**
 
 ```bash
-claude mcp add --transport http workmind http://localhost:8480/mcp \
-  --header "Authorization: Bearer wm_pat_..."
+claude mcp add --transport http needwise http://localhost:8480/mcp \
+  --header "Authorization: Bearer nw_pat_..."
 ```
 
 **Cursor** (`.cursor/mcp.json` or the global `~/.cursor/mcp.json`)
@@ -33,9 +33,9 @@ claude mcp add --transport http workmind http://localhost:8480/mcp \
 ```json
 {
   "mcpServers": {
-    "workmind": {
+    "needwise": {
       "url": "http://localhost:8480/mcp",
-      "headers": { "Authorization": "Bearer wm_pat_..." }
+      "headers": { "Authorization": "Bearer nw_pat_..." }
     }
   }
 }
@@ -47,10 +47,10 @@ claude mcp add --transport http workmind http://localhost:8480/mcp \
 ```json
 {
   "mcpServers": {
-    "workmind": {
+    "needwise": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:8480/mcp", "--header", "Authorization:${WORKMIND_AUTH}"],
-      "env": { "WORKMIND_AUTH": "Bearer wm_pat_..." }
+      "args": ["-y", "mcp-remote", "http://localhost:8480/mcp", "--header", "Authorization:${NEEDWISE_AUTH}"],
+      "env": { "NEEDWISE_AUTH": "Bearer nw_pat_..." }
     }
   }
 }
@@ -63,7 +63,7 @@ import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
-http = httpx2.AsyncClient(headers={"Authorization": "Bearer wm_pat_..."})
+http = httpx2.AsyncClient(headers={"Authorization": "Bearer nw_pat_..."})
 async with Client(streamable_http_client("http://localhost:8480/mcp", http_client=http)) as c:
     print((await c.call_tool("ask", {"question": "How many weeks of parental leave?"})).content)
 ```
@@ -90,9 +90,9 @@ analytics service with the reason.
 - Results are company data. The server's instructions tell clients to treat any instructions
   inside them as text.
 
-## The other direction: WorkMind using MCP tools
+## The other direction: NeedWise using MCP tools
 
-Operators can connect remote MCP servers for WorkMind's research agent (`POST /api/v1/research`):
+Operators can connect remote MCP servers for NeedWise's research agent (`POST /api/v1/research`):
 
 ```bash
 MCP_SERVERS='[{"key": "erp", "url": "https://erp.internal/mcp", "token": "...", "read_only": ["robot_stock"]}]'

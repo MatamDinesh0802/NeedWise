@@ -10,18 +10,18 @@ import httpx
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.context import RequestContext
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.agents.research import research
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.tools.execute import execute_tool
+from needwise.modules.tools.registry import ToolRegistry
+from needwise.modules.work.models import Approval, Notification, Task
+from needwise.modules.work.routing import RouteChoice
+from needwise.modules.work.tools import create_task_tool, send_email_tool
+from needwise.providers.llm import LLMProvider
 from tests.fakes import FakeLLM
 from tests.integration.conftest import Acme, SessionFactory
-from workmind.core.context import RequestContext
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.agents.research import research
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.tools.execute import execute_tool
-from workmind.modules.tools.registry import ToolRegistry
-from workmind.modules.work.models import Approval, Notification, Task
-from workmind.modules.work.routing import RouteChoice
-from workmind.modules.work.tools import create_task_tool, send_email_tool
-from workmind.providers.llm import LLMProvider
 
 RULES = {
     "rules": [

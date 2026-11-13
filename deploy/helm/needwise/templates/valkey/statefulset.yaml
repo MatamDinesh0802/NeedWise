@@ -1,0 +1,126 @@
+{{- if .Values.valkey.enabled }}
+{{- $c := .Values.valkey -}}
+{{- $name := include "needwise.componentName" (list . "valkey") -}}
+{{- $auth := include "needwise.credentialEnv" (list . "valkeyPassword" "VALKEY_PASSWORD") -}}
+{{ include "needwise.service" (list . "valkey" (dict "ports" (list (dict "name" "valkey" "port" 6379)))) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-headless
+  labels:
+    {{- include "needwise.labels" (list . "valkey") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "needwise.selectorLabels" (list . "valkey") | nindent 4 }}
+  ports:
+    - name: valkey
+      port: 6379
+      targetPort: valkey
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "needwise.labels" (list . "valkey") | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ $name }}-headless
+  selector:
+    matchLabels:
+      {{- include "needwise.selectorLabels" (list . "valkey") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "needwise.selectorLabels" (list . "valkey") | nindent 8 }}
+      annotations:
+        checksum/credentials: {{ include "needwise.credentialsChecksum" . }}
+        {{- with $c.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "needwise.podCommon" (list . $c) | nindent 6 }}
+      securityContext:
+        {{- toYaml $c.podSecurityContext | nindent 8 }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: valkey
+          image: {{ include "needwise.image" (list . $c.image "") }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
+          # As in compose: snapshot every 60 s when something changed. These are args, so the
+          # image's tini and entrypoint stay in front. The password goes into a config file on a
+          # memory volume rather than the command line, where the process list would show it.
+          args:
+            {{- if $auth }}
+            - sh
+            - -c
+            - >-
+              umask 077 &&
+              printf 'requirepass "%s"\n' "$VALKEY_PASSWORD" > /run/valkey/auth.conf &&
+              exec valkey-server /run/valkey/auth.conf --save 60 1 --loglevel warning
+            {{- else }}
+            - valkey-server
+            - --save
+            - "60"
+            - "1"
+            - --loglevel
+            - warning
+            {{- end }}
+          {{- if $auth }}
+          env:
+            {{- $auth | nindent 12 }}
+            # valkey-cli (the probes) reads the password from here.
+            - name: VALKEYCLI_AUTH
+              value: $(VALKEY_PASSWORD)
+          {{- end }}
+          ports:
+            - name: valkey
+              containerPort: 6379
+              protocol: TCP
+          # Same check as compose: valkey-cli ping.
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "valkey-cli ping | grep -q PONG"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "valkey-cli ping | grep -q PONG"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          securityContext:
+            {{- include "needwise.infraSecurityContext" true | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: run
+              mountPath: /run/valkey
+      volumes:
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "needwise.selectorLabels" (list . "valkey") | nindent 10 }}
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with (default .Values.global.storageClass $c.persistence.storageClass) }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $c.persistence.size }}
+{{- include "needwise.pdb" (list . "valkey" $c) }}
+{{- end }}

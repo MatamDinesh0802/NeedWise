@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from workmind_load.questions import QuestionBank, local_part, read_dataset
-from workmind_load.settings import (
+from needwise_load.questions import QuestionBank, local_part, read_dataset
+from needwise_load.settings import (
     DATASETS_DIR,
     DEFAULT_MIX,
     DEMO_USERS,

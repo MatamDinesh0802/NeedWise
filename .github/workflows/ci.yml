@@ -61,7 +61,7 @@ jobs:
       - run: uv run pytest
       - name: Models and migrations match (alembic check on the migrated test database)
         env:
-          MIGRATIONS_DATABASE_URL: postgresql+asyncpg://workmind_test_owner:test-only-password@localhost:5432/workmind_test
+          MIGRATIONS_DATABASE_URL: postgresql+asyncpg://needwise_test_owner:test-only-password@localhost:5432/needwise_test
         run: uv run alembic check
 
   web:
@@ -90,7 +90,7 @@ jobs:
     name: Authorization model · matrix tests, compiled JSON up to date
     runs-on: ubuntu-latest
     env:
-      MODEL_DIR: apps/api/src/workmind/modules/authz/openfga
+      MODEL_DIR: apps/api/src/needwise/modules/authz/openfga
       FGA_CLI: openfga/cli:v0.8.2@sha256:31a565d14d1c5ca8170d3a2225eb66517d9f490539967bcb3421613c5e2538a4
     steps:
       - uses: actions/checkout@v7
@@ -169,8 +169,8 @@ jobs:
         # every candidate a search can return.
         run: >-
           docker compose --profile tools run --rm -v "$PWD/evals:/evals:ro"
-          -e WORKMIND_EVALS_DIR=/evals -e RETRIEVAL_MIN_SIMILARITY=0 seed
-          python -m workmind.evals --retrieval-only --out /tmp/eval-results --label ci
+          -e NEEDWISE_EVALS_DIR=/evals -e RETRIEVAL_MIN_SIMILARITY=0 seed
+          python -m needwise.evals --retrieval-only --out /tmp/eval-results --label ci
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true

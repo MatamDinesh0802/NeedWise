@@ -8,11 +8,11 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from needwise.core.context import RequestContext
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.work.approvals import propose
 from tests.fakes import FakeLLM
 from tests.integration.conftest import Acme, SessionFactory
-from workmind.core.context import RequestContext
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.work.approvals import propose
 
 EMAIL = {
     "to": ["leadership@acme.test"],

@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from needwise.modules.analytics.compiler import SemanticQuery
+from needwise.modules.analytics.tools import NoInput, describe_data_tool, query_data_tool
+from needwise.modules.tools.builtin import draft_email_tool
+from needwise.modules.tools.registry import ToolError, ToolRegistry
 from tests.analytics_support import SALES, LocalAnalytics, build_acme, context
-from workmind.modules.analytics.compiler import SemanticQuery
-from workmind.modules.analytics.tools import NoInput, describe_data_tool, query_data_tool
-from workmind.modules.tools.builtin import draft_email_tool
-from workmind.modules.tools.registry import ToolError, ToolRegistry
 
 CTX = dataclasses.replace(context(SALES), scopes=frozenset({"*"}))  # a browser session
 

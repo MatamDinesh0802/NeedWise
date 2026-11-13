@@ -1,4 +1,4 @@
-"""`wm license dev`: a development license the API accepts only with APP_ENV=dev."""
+"""`nw license dev`: a development license the API accepts only with APP_ENV=dev."""
 
 import stat
 from datetime import UTC, datetime
@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from workmind.cli import main as wm
-from workmind.core.config import Settings
-from workmind.core.dev_license import write_dev_license
-from workmind.core.edition import FEATURES, load_edition
+from needwise.cli import main as nw
+from needwise.core.config import Settings
+from needwise.core.dev_license import write_dev_license
+from needwise.core.edition import FEATURES, load_edition
 
 # Outside dev and test, model provider keys need their own encryption key (docs/models.md).
 DEMO_ENCRYPTION_KEY = "b3RoZXIta2V5LWZvci10ZXN0cy0zMi1ieXRlcy0hISE="  # 32 bytes, base64
@@ -25,11 +25,11 @@ def _settings(directory: Path, app_env: str = "dev") -> Settings:
     )
 
 
-def test_wm_license_dev_writes_a_license_the_dev_api_accepts(
+def test_nw_license_dev_writes_a_license_the_dev_api_accepts(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    out = tmp_path / ".workmind"
-    code = wm(
+    out = tmp_path / ".needwise"
+    code = nw(
         ["license", "dev", "--dir", str(out), "--features", "retention_policies", "--days", "7"]
     )
     assert code == 0
@@ -76,10 +76,10 @@ def test_a_dev_license_is_refused_outside_development(tmp_path: Path) -> None:
 
 
 def test_all_features_by_default_and_comma_lists(tmp_path: Path) -> None:
-    assert wm(["license", "dev", "--dir", str(tmp_path / "a")]) == 0
+    assert nw(["license", "dev", "--dir", str(tmp_path / "a")]) == 0
     assert load_edition(_settings(tmp_path / "a")).features == list(FEATURES)
     assert (
-        wm(
+        nw(
             [
                 "license",
                 "dev",
@@ -100,7 +100,7 @@ def test_all_features_by_default_and_comma_lists(tmp_path: Path) -> None:
 @pytest.mark.parametrize("args", [["--features", "everything"], ["--days", "0"], ["--days", "400"]])
 def test_bad_arguments_are_refused(tmp_path: Path, args: list[str]) -> None:
     with pytest.raises(SystemExit) as exit_:
-        wm(["license", "dev", "--dir", str(tmp_path), *args])
+        nw(["license", "dev", "--dir", str(tmp_path), *args])
     assert exit_.value.code == 2
     assert not (tmp_path / "license.key").exists()
 
@@ -111,8 +111,8 @@ def test_the_default_directory_is_the_repository_root(
     (tmp_path / "compose.yaml").write_text("services: {}\n")
     (tmp_path / "apps" / "api").mkdir(parents=True)
     monkeypatch.chdir(tmp_path / "apps" / "api")
-    assert wm(["license", "dev", "--days", "1"]) == 0
-    assert (tmp_path / ".workmind" / "license.key").is_file()
+    assert nw(["license", "dev", "--days", "1"]) == 0
+    assert (tmp_path / ".needwise" / "license.key").is_file()
 
 
 def test_outside_a_repository_a_directory_is_required(
@@ -120,7 +120,7 @@ def test_outside_a_repository_a_directory_is_required(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit):
-        wm(["license", "dev"])
+        nw(["license", "dev"])
 
 
 def test_the_license_expires_after_the_chosen_days(tmp_path: Path) -> None:

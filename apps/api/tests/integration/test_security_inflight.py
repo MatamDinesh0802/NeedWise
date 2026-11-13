@@ -14,12 +14,12 @@ import pytest
 from fastapi.testclient import TestClient
 from redis.asyncio import Redis
 
+from needwise.core.config import Settings
+from needwise.core.context import RequestContext
+from needwise.core.errors import ApiError
+from needwise.main import create_app
+from needwise.modules.conversations.inflight import InFlight
 from tests.integration.conftest import VALKEY_URL, Acme, Database
-from workmind.core.config import Settings
-from workmind.core.context import RequestContext
-from workmind.core.errors import ApiError
-from workmind.main import create_app
-from workmind.modules.conversations.inflight import InFlight
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL")
 

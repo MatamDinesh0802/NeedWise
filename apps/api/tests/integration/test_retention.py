@@ -1,6 +1,6 @@
 """Retention policies (Enterprise, docs/enterprise.md), with and without a license.
 
-Without one, the routes answer 402 from the core's stand-ins. With one, the workmind_ee package
+Without one, the routes answer 402 from the core's stand-ins. With one, the needwise_ee package
 is loaded through its real entry point; preview counts must equal what a run deletes, a run
 touches only its own tenant's expired rows and files, and nothing younger than the policy (at
 least 30 days) goes. Needs the test database and TEST_VALKEY_URL.
@@ -17,19 +17,19 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from needwise.core.config import Settings
+from needwise.core.edition import FEATURES, Edition, License
+from needwise.core.extensions import ExtensionRegistry, enable_extensions
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.analytics.models import AnalyticsRun
+from needwise.modules.conversations.models import Conversation, Message
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.knowledge.models import Collection
+from needwise.modules.knowledge.storage import LocalObjectStorage, object_key
+from needwise.modules.meetings.models import Meeting
+from needwise.modules.work.models import Notification
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
-from workmind.core.config import Settings
-from workmind.core.edition import FEATURES, Edition, License
-from workmind.core.extensions import ExtensionRegistry, enable_extensions
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.analytics.models import AnalyticsRun
-from workmind.modules.conversations.models import Conversation, Message
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.knowledge.models import Collection
-from workmind.modules.knowledge.storage import LocalObjectStorage, object_key
-from workmind.modules.meetings.models import Meeting
-from workmind.modules.work.models import Notification
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL to run")
 
@@ -55,7 +55,7 @@ def _settings(database: Database, storage: Path) -> Settings:
 
 
 def _licensed() -> ExtensionRegistry:
-    pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra ee")
+    pytest.importorskip("needwise_ee", reason="install the ee extra: uv sync --extra ee")
     now = datetime.now(UTC)
     license_ = License(
         "Acme Robotics",
@@ -367,7 +367,7 @@ async def test_a_draft_policy_is_previewed_without_saving_it(
 async def test_the_daily_task_applies_every_tenants_policy(
     licensed: TestClient, acme: Acme, app_sessions: SessionFactory, tmp_path: Path
 ) -> None:
-    from workmind_ee import retention  # the licensed fixture skipped without the package
+    from needwise_ee import retention  # the licensed fixture skipped without the package
 
     await _populate(app_sessions, acme, tmp_path)
     licensed.put(

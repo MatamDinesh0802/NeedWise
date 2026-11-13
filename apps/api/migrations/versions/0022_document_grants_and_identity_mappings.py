@@ -7,7 +7,7 @@ Create Date: 2026-11-13 10:00:00.000000
 ADR 0012, docs/permission-sync.md. `documents.own_acl` marks a document with its own access
 list (`document_grants`): only principals on it who can also view the collection see it.
 `identity_mappings` say who a principal named by a source (a group, a domain, a Slack or GitHub
-account) is in WorkMind. Existing documents keep their collection's access (own_acl false), so
+account) is in NeedWise. Existing documents keep their collection's access (own_acl false), so
 nothing changes until permission sync or an editor sets a list. Both new tables carry
 tenant_id with forced row-level security.
 """

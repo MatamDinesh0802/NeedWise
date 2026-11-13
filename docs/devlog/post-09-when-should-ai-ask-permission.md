@@ -14,8 +14,8 @@
 
 Ask for approval on everything, and people click Approve without reading. Ask for nothing, and an agent emails a customer something a document told it to say.
 
-Here is where I drew the line in WorkMind:
-→ Every tool declares its side effect: read, write (changes something inside WorkMind) or external (leaves the system: an email, another company's API)
+Here is where I drew the line in NeedWise:
+→ Every tool declares its side effect: read, write (changes something inside NeedWise) or external (leaves the system: an email, another company's API)
 → Read runs. Write and external become a stored proposal: the exact email, the exact task, nothing hidden
 → A person approves, edits or rejects it. An edit is validated again, and the decision is recorded
 → Nothing waits forever: reminders, escalation to a backup approver, then managers, then admins, and expiry after 3 days
@@ -40,7 +40,7 @@ Repo and the automation docs in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
-Approvals, approver rules, escalation and request routing: <GITHUB_REPO_URL>/blob/main/docs/automation.md
-The request-routing run (39 requests): <GITHUB_REPO_URL>/blob/main/evals/results/2026-11-13-request-routing.md
-Why approvals are stored proposals, not paused agents (ADR 0009): <GITHUB_REPO_URL>/blob/main/docs/adr/0009-orchestration-without-a-graph-framework.md
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
+Approvals, approver rules, escalation and request routing: https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/automation.md
+The request-routing run (39 requests): https://github.com/MatamDinesh0802/NeedWise/blob/main/evals/results/2026-11-13-request-routing.md
+Why approvals are stored proposals, not paused agents (ADR 0009): https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/adr/0009-orchestration-without-a-graph-framework.md

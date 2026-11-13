@@ -1,9 +1,9 @@
 /**
  * Demo logins from seed/acme/company.yaml. Every one signs in with the demo password
- * (DEMO_PASSWORD, default "workmind-demo") through the real Keycloak form.
+ * (DEMO_PASSWORD, default "needwise-demo") through the real Keycloak form.
  */
 
-export const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? "workmind-demo";
+export const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? "needwise-demo";
 
 export type OrgRole = "owner" | "admin" | "auditor" | "member" | "guest";
 

@@ -1,6 +1,6 @@
 # Configuration reference
 
-<!-- Generated from apps/api/src/workmind/core/config.py by `make docs-gen`. Do not edit:
+<!-- Generated from apps/api/src/needwise/core/config.py by `make docs-gen`. Do not edit:
      tests/test_docs_reference.py fails when this page is out of date. -->
 
 The API, the workers, beat and the seed tool read these settings from environment variables, or
@@ -17,20 +17,20 @@ not shown here; where one exists it is a development value.
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| <a id="product_name"></a>`PRODUCT_NAME` | string | `WorkMind AI` | The product name in the API's title and in logs. |
+| <a id="product_name"></a>`PRODUCT_NAME` | string | `NeedWise` | The product name in the API's title and in logs. |
 | <a id="app_env"></a>`APP_ENV` | one of `dev`, `test`, `demo`, `production` | `dev` | Where this deployment runs. `production` refuses the development values of `OIDC_CLIENT_SECRET`, `OPENFGA_API_KEY` and `SECRETS_KEY`, and turns off the interactive API docs; every value except `dev` and `test` requires `SECRETS_ENCRYPTION_KEY`; development licenses are trusted only in `dev`. |
 | <a id="log_level"></a>`LOG_LEVEL` | string | `INFO` | The lowest level that is logged (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | <a id="log_format"></a>`LOG_FORMAT` | one of `console`, `json` | `console` | `console` for people, `json` for log collectors. Both carry the same fields (timestamp, level, logger, request id). |
-| <a id="public_url"></a>`PUBLIC_URL` | string | `http://localhost:8480` | The URL people type into the browser. Login redirects and cookie security derive from it: with `https://`, the session cookie is `Secure` and named `__Host-wm_session`. |
+| <a id="public_url"></a>`PUBLIC_URL` | string | `http://localhost:8480` | The URL people type into the browser. Login redirects and cookie security derive from it: with `https://`, the session cookie is `Secure` and named `__Host-nw_session`. |
 | <a id="health_check_timeout_s"></a>`HEALTH_CHECK_TIMEOUT_S` | number, > 0 | `2.0` | Time limit of each component check in `/readyz` and `/api/v1/system/status`, in seconds. |
 
 ## Services
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| <a id="database_url"></a>`DATABASE_URL` | string | `postgresql+asyncpg://workmind_app:workmind_app@localhost:5432/workmind` | PostgreSQL as the runtime role: no `BYPASSRLS`, data rights only, so row-level security applies to every query (ADR 0005). |
-| <a id="migrations_database_url"></a>`MIGRATIONS_DATABASE_URL` | string | `postgresql+asyncpg://workmind_owner:workmind_owner@localhost:5432/workmind` | PostgreSQL as the owner role, used only by Alembic migrations (the `migrate` service). |
-| <a id="db_app_role"></a>`DB_APP_ROLE` | string | `workmind_app` | Name of the runtime role; migrations grant and revoke its privileges. |
+| <a id="database_url"></a>`DATABASE_URL` | string | `postgresql+asyncpg://needwise_app:needwise_app@localhost:5432/needwise` | PostgreSQL as the runtime role: no `BYPASSRLS`, data rights only, so row-level security applies to every query (ADR 0005). |
+| <a id="migrations_database_url"></a>`MIGRATIONS_DATABASE_URL` | string | `postgresql+asyncpg://needwise_owner:needwise_owner@localhost:5432/needwise` | PostgreSQL as the owner role, used only by Alembic migrations (the `migrate` service). |
+| <a id="db_app_role"></a>`DB_APP_ROLE` | string | `needwise_app` | Name of the runtime role; migrations grant and revoke its privileges. |
 | <a id="valkey_url"></a>`VALKEY_URL` | string | `redis://localhost:6379/0` | Valkey (or Redis): sessions, caches and the event streams of answers. |
 | <a id="qdrant_url"></a>`QDRANT_URL` | string | `http://localhost:6333` | Qdrant, which holds the search index of document chunks. |
 | <a id="openfga_api_url"></a>`OPENFGA_API_URL` | string | `http://localhost:8401` | OpenFGA, which answers permission checks (the second lock). |
@@ -43,8 +43,8 @@ not shown here; where one exists it is a development value.
 | Variable | Type | Default | Description |
 |---|---|---|---|
 | <a id="keycloak_url"></a>`KEYCLOAK_URL` | string | `http://localhost:8480/auth` | Keycloak's base URL as the API reaches it, for OpenID Connect discovery and tokens. |
-| <a id="keycloak_realm"></a>`KEYCLOAK_REALM` | string | `workmind` | The Keycloak realm that holds the logins. |
-| <a id="oidc_client_id"></a>`OIDC_CLIENT_ID` | string | `workmind-api` | The OpenID Connect client the API signs people in with (ADR 0003). |
+| <a id="keycloak_realm"></a>`KEYCLOAK_REALM` | string | `needwise` | The Keycloak realm that holds the logins. |
+| <a id="oidc_client_id"></a>`OIDC_CLIENT_ID` | string | `needwise-api` | The OpenID Connect client the API signs people in with (ADR 0003). |
 | <a id="oidc_client_secret"></a>`OIDC_CLIENT_SECRET` | *secret* | *development value* | That client's secret, shared with Keycloak. Production refuses the development value. |
 | <a id="session_idle_timeout_s"></a>`SESSION_IDLE_TIMEOUT_S` | integer, > 0 | `1800` | A session ends after this many seconds without a request. |
 | <a id="session_absolute_timeout_s"></a>`SESSION_ABSOLUTE_TIMEOUT_S` | integer, > 0 | `43200` | A session ends this many seconds after sign-in, however active it is. |
@@ -55,7 +55,7 @@ not shown here; where one exists it is a development value.
 |---|---|---|---|
 | <a id="secrets_key"></a>`SECRETS_KEY` | *secret* | *development value* | Encrypts connector credentials at rest (AES-256-GCM): 32 random bytes, base64. Production refuses the development value. |
 | <a id="secrets_encryption_key"></a>`SECRETS_ENCRYPTION_KEY` | *secret* | *unset* | Encrypts organizations' model provider keys at rest (AES-256-GCM): 32 random bytes, base64. Required unless `APP_ENV` is `dev` or `test`. [Rotating it](../models.md#rotating-the-key). |
-| <a id="secrets_encryption_previous_keys"></a>`SECRETS_ENCRYPTION_PREVIOUS_KEYS` | *secret* | *unset* | Older keys, comma-separated, that only decrypt: set during a rotation, then run `wm secrets rotate`. |
+| <a id="secrets_encryption_previous_keys"></a>`SECRETS_ENCRYPTION_PREVIOUS_KEYS` | *secret* | *unset* | Older keys, comma-separated, that only decrypt: set during a rotation, then run `nw secrets rotate`. |
 
 ## Language models
 
@@ -88,7 +88,7 @@ not shown here; where one exists it is a development value.
 | <a id="embedding_provider"></a>`EMBEDDING_PROVIDER` | one of `openai_compatible`, `hash` | `openai_compatible` | `openai_compatible`: any `/v1/embeddings` server. `hash`: deterministic vectors without a model, for tests and CI (search quality is meaningless). |
 | <a id="embedding_base_url"></a>`EMBEDDING_BASE_URL` | string | `http://localhost:8091/v1` | The embedding server: `make embeddings` serves port 8091 on the host; the `embeddings` compose profile serves `http://embeddings:8080/v1`. |
 | <a id="embedding_api_key"></a>`EMBEDDING_API_KEY` | *secret* | *unset* | The embedding server's API key, if it needs one. |
-| <a id="embedding_model"></a>`EMBEDDING_MODEL` | string | `embeddinggemma-300m` | The embedding model. The search index is named after it and its dimensions, so changing either starts a new index: re-index with `wm reindex <tenant>`. |
+| <a id="embedding_model"></a>`EMBEDDING_MODEL` | string | `embeddinggemma-300m` | The embedding model. The search index is named after it and its dimensions, so changing either starts a new index: re-index with `nw reindex <tenant>`. |
 | <a id="embedding_dimensions"></a>`EMBEDDING_DIMENSIONS` | integer, > 0 | `768` | Vector size of the embedding model (768 for EmbeddingGemma-300M). |
 | <a id="embedding_query_template"></a>`EMBEDDING_QUERY_TEMPLATE` | string | <code>task: search result &#124; query: {text}</code> | How a search query is presented to the embedding model. |
 | <a id="embedding_document_template"></a>`EMBEDDING_DOCUMENT_TEMPLATE` | string | <code>title: {title} &#124; text: {text}</code> | How a chunk is presented to the embedding model. |
@@ -122,7 +122,7 @@ not shown here; where one exists it is a development value.
 | <a id="transcription_base_url"></a>`TRANSCRIPTION_BASE_URL` | string | `http://localhost:8000/v1` | The transcription server (`openai_compatible` only). |
 | <a id="transcription_api_key"></a>`TRANSCRIPTION_API_KEY` | *secret* | *unset* | The transcription server's API key, if it needs one. |
 | <a id="diarization_provider"></a>`DIARIZATION_PROVIDER` | one of `sherpa_onnx`, `none` | `sherpa_onnx` | Who spoke when in recordings: `sherpa_onnx` (pyannote segmentation and NeMo TitaNet-S speaker embeddings on the worker's CPU; needs the `diarization` extra, which the image has) or `none`. Without it, or if it fails, a recording is transcribed without speaker labels. |
-| <a id="diarization_model_dir"></a>`DIARIZATION_MODEL_DIR` | string | `""` | Where the diarization models (46 MB) are downloaded on the first recording, or placed by hand for an offline install. Empty: `$HF_HOME/diarization` (`/models/diarization` in the image), else `~/.cache/workmind/diarization`. |
+| <a id="diarization_model_dir"></a>`DIARIZATION_MODEL_DIR` | string | `""` | Where the diarization models (46 MB) are downloaded on the first recording, or placed by hand for an offline install. Empty: `$HF_HOME/diarization` (`/models/diarization` in the image), else `~/.cache/needwise/diarization`. |
 | <a id="diarization_threshold"></a>`DIARIZATION_THRESHOLD` | number, > 0, ≤ 2 | `0.6` | How different two voices must sound to count as two speakers: higher finds fewer speakers. Lower errs towards splitting one voice into two labels, which naming both fixes; higher merges voices, which nothing fixes. Chosen on the demo recording cut to 2, 5, 10 and 23 minutes (docs/meetings.md). |
 | <a id="diarization_window_shift"></a>`DIARIZATION_WINDOW_SHIFT` | number, ≥ 0.05, ≤ 1 | `0.5` | The step of the segmentation model's 10-second window, as a share of it. pyannote uses 0.1: slightly more accurate on the demo recording, and about four times slower. |
 
@@ -162,7 +162,7 @@ not shown here; where one exists it is a development value.
 |---|---|---|---|
 | <a id="smtp_host"></a>`SMTP_HOST` | string | *unset* | Outgoing email (`send_email`, always after a person's approval, and the notification emails people choose in Settings). Unset: email is off. Development uses Mailpit, which delivers nothing: http://localhost:8025. |
 | <a id="smtp_port"></a>`SMTP_PORT` | integer | `587` | The SMTP port. |
-| <a id="smtp_from"></a>`SMTP_FROM` | string | `WorkMind <workmind@localhost>` | The sender of outgoing email. |
+| <a id="smtp_from"></a>`SMTP_FROM` | string | `NeedWise <needwise@localhost>` | The sender of outgoing email. |
 | <a id="smtp_username"></a>`SMTP_USERNAME` | string | *unset* | SMTP login, if the server needs one. |
 | <a id="smtp_password"></a>`SMTP_PASSWORD` | *secret* | *unset* | SMTP password, if the server needs one. |
 | <a id="smtp_starttls"></a>`SMTP_STARTTLS` | boolean | `false` | Upgrade the SMTP connection with STARTTLS. |
@@ -173,7 +173,7 @@ not shown here; where one exists it is a development value.
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| <a id="license_key"></a>`LICENSE_KEY` | *secret* | *unset* | The Enterprise license token. Unset: `LICENSE_FILE`, else `license.key` in `/run/workmind` or `<repo>/.workmind`. Without a valid license: Community. |
+| <a id="license_key"></a>`LICENSE_KEY` | *secret* | *unset* | The Enterprise license token. Unset: `LICENSE_FILE`, else `license.key` in `/run/needwise` or `<repo>/.needwise`. Without a valid license: Community. |
 | <a id="license_file"></a>`LICENSE_FILE` | path | *unset* | A file that holds the license token. |
 | <a id="license_dev_public_key"></a>`LICENSE_DEV_PUBLIC_KEY` | string | *unset* | Public key of the development license signer (raw Ed25519, base64url), trusted only when `APP_ENV=dev`. Unset: `dev-public.key` where the license is looked for. |
 | <a id="license_dev_public_key_file"></a>`LICENSE_DEV_PUBLIC_KEY_FILE` | path | *unset* | A file that holds that key. |

@@ -13,7 +13,7 @@ shaped after their documentation:
 - throttling: 429 with Retry-After (https://learn.microsoft.com/graph/throttling);
 - refresh tokens that rotate on every renewal.
 
-It cannot prove the real service behaves the same: WorkMind has not been run against a live
+It cannot prove the real service behaves the same: NeedWise has not been run against a live
 Microsoft 365 tenant (docs/connectors.md).
 """
 

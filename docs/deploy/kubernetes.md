@@ -1,6 +1,6 @@
 # Kubernetes (Helm)
 
-WorkMind ships a Helm chart at [`deploy/helm/workmind`](../../deploy/helm/workmind). It installs
+NeedWise ships a Helm chart at [`deploy/helm/needwise`](../../deploy/helm/needwise). It installs
 the same processes as `compose.yaml`: the API, the Celery worker, Celery beat and the web app,
 the database migrations as a Helm hook, and optionally Postgres, Valkey, Qdrant, OpenFGA,
 Keycloak and an embedding server. This page covers what you need, how to install and upgrade,
@@ -48,7 +48,7 @@ included.
 | `beat` | Deployment (Recreate), PVC for the schedule | always 1 | `beat` and its `beat_schedule` volume |
 | `web` | Deployment, Service, PodDisruptionBudget, optional HPA | 1 | `web` |
 | `migrate` | Job as a Helm hook | | `migrate` |
-| `authz-sync` | Job as a Helm hook (`migrate.authzSync`) | | `docker compose run --rm migrate wm authz sync`, by hand after an upgrade |
+| `authz-sync` | Job as a Helm hook (`migrate.authzSync`) | | `docker compose run --rm migrate nw authz sync`, by hand after an upgrade |
 | `seed` | Job as a Helm hook, off by default | | `seed` (profile `tools`) |
 | object storage | PersistentVolumeClaim at `/data/objects` | | `./.data/objects` |
 | `postgresql` | StatefulSet, Services, ConfigMap with the init script | 1 | `postgres` |
@@ -64,9 +64,9 @@ Mailpit is not included (it is a development mail catcher). The Ingress or HTTPR
 Caddy. The bundled services use the same images and versions as `compose.yaml`. OpenFGA and
 Keycloak are Deployments, not StatefulSets: their state is in Postgres.
 
-Resource names below start with `<fullname>`: the release name followed by `-workmind`, or the
-release name alone when it already contains "workmind". Installed as `workmind`, the names are
-`workmind-api`, `workmind-credentials`, `workmind-migrate` and so on.
+Resource names below start with `<fullname>`: the release name followed by `-needwise`, or the
+release name alone when it already contains "needwise". Installed as `needwise`, the names are
+`needwise-api`, `needwise-credentials`, `needwise-migrate` and so on.
 
 ## Prerequisites
 
@@ -76,14 +76,14 @@ release name alone when it already contains "workmind". Installed as `workmind`,
   4.0.0's `helm template` assumes Kubernetes 1.20 unless told otherwise, which the chart's
   `kubeVersion` refuses: pass `--kube-version` (e.g. `--kube-version 1.33.0`). `helm install`
   and `helm upgrade` use the cluster's version.
-- **Images.** No WorkMind images are published yet. Build both and push them to a registry
+- **Images.** No NeedWise images are published yet. Build both and push them to a registry
   your cluster can pull from:
 
   ```bash
-  docker build --build-context ee=ee -t registry.example.com/workmind/workmind-api:1.0.0 apps/api
-  docker build -t registry.example.com/workmind/workmind-web:1.0.0 apps/web
-  docker push registry.example.com/workmind/workmind-api:1.0.0
-  docker push registry.example.com/workmind/workmind-web:1.0.0
+  docker build --build-context ee=ee -t registry.example.com/needwise/needwise-api:1.0.0 apps/api
+  docker build -t registry.example.com/needwise/needwise-web:1.0.0 apps/web
+  docker push registry.example.com/needwise/needwise-api:1.0.0
+  docker push registry.example.com/needwise/needwise-web:1.0.0
   ```
 
   The API image contains the Enterprise package, which stays inactive without a license
@@ -108,23 +108,23 @@ release name alone when it already contains "workmind". Installed as `workmind`,
 Everything bundled, with an Ingress:
 
 ```bash
-helm install workmind deploy/helm/workmind --namespace workmind --create-namespace \
-  --set config.publicUrl=https://workmind.example.com \
-  --set images.api.repository=registry.example.com/workmind/workmind-api \
-  --set images.web.repository=registry.example.com/workmind/workmind-web \
+helm install needwise deploy/helm/needwise --namespace needwise --create-namespace \
+  --set config.publicUrl=https://needwise.example.com \
+  --set images.api.repository=registry.example.com/needwise/needwise-api \
+  --set images.web.repository=registry.example.com/needwise/needwise-web \
   --set ingress.className=<your ingress class> \
   --set ingress.tls.enabled=true \
   --set credentials.anthropicApiKey.existingSecret=model-keys \
   --set credentials.anthropicApiKey.key=anthropic \
   --wait --timeout 20m
 
-helm test workmind --namespace workmind
+helm test needwise --namespace needwise
 ```
 
 What happens, in order:
 
 1. Helm creates the Secret with generated credentials, the ConfigMap, the volumes, the bundled
-   services and the WorkMind Deployments. OpenFGA's migrate Job runs next to OpenFGA, which
+   services and the NeedWise Deployments. OpenFGA's migrate Job runs next to OpenFGA, which
    reports "not serving" until its schema exists.
 2. With `--wait`, Helm waits until everything is ready. Keycloak's first start (it builds
    itself for Postgres, then imports the realm) and the embedding server's model download
@@ -132,7 +132,7 @@ What happens, in order:
 3. The `migrate` hook Job runs `alembic upgrade head`. With the bundled Postgres this is a
    post-install hook: a pre-install hook would run before the database exists. Until it
    finishes, the API and the workers log database errors (the API's `/healthz` stays up).
-4. The `authz-sync` hook Job runs `wm authz sync` (below); on a first install there is no
+4. The `authz-sync` hook Job runs `nw authz sync` (below); on a first install there is no
    tenant yet, so it does nothing.
 5. If `seed.enabled`, the seed Job loads the demo company (below).
 
@@ -144,15 +144,15 @@ add their own provider keys in Admin > Models ([models.md](../models.md)).
 
 ### Demo data
 
-`seed.enabled: true` runs `python -m workmind.seed` after install and after every upgrade (it is
+`seed.enabled: true` runs `python -m needwise.seed` after install and after every upgrade (it is
 safe to re-run): the Acme Robotics company, its logins (password `credentials.demoPassword`,
-default `workmind-demo`), 49 documents through the ingestion pipeline, analytics data and the
+default `needwise-demo`), 49 documents through the ingestion pipeline, analytics data and the
 authorization tuples. It refuses `config.appEnv: production`; use `demo`. The repository's
 `seed/` directory (about 9 MB) is not in the API image, so the Job fetches it in an init
 container, from `seed.data.source`:
 
 - `image`: an image that contains it, e.g. built from the repository root with
-  `printf 'FROM busybox:1.37\nCOPY seed /seed\n' | docker build -t <registry>/workmind-seed:1.0.0 -f - .`
+  `printf 'FROM busybox:1.37\nCOPY seed /seed\n' | docker build -t <registry>/needwise-seed:1.0.0 -f - .`
 - `archive`: a `.tar.gz` of the repository at `seed.data.archiveUrl` (its top directory is
   stripped);
 - `existingClaim`: a PersistentVolumeClaim with the directory's contents at its root.
@@ -162,21 +162,21 @@ or more. `seed.args: [--skip-corpus]` skips the documents.
 
 ## Important values
 
-Every key is in [`values.yaml`](../../deploy/helm/workmind/values.yaml), with comments, and
-[`values.schema.json`](../../deploy/helm/workmind/values.schema.json) rejects unknown keys and
+Every key is in [`values.yaml`](../../deploy/helm/needwise/values.yaml), with comments, and
+[`values.schema.json`](../../deploy/helm/needwise/values.schema.json) rejects unknown keys and
 wrong types. The ones you will most likely set:
 
 | Key | Default | What it does |
 |---|---|---|
-| `config.publicUrl` | `http://workmind.localhost` | The URL people use, without a path. Login redirects, Keycloak's hostname, the cookie (`Secure` and `__Host-` with https) and the Ingress host come from it |
+| `config.publicUrl` | `http://needwise.localhost` | The URL people use, without a path. Login redirects, Keycloak's hostname, the cookie (`Secure` and `__Host-` with https) and the Ingress host come from it |
 | `config.appEnv` | `production` | `production` refuses development secrets and hides the API docs. `demo` for a demo with seed data |
 | `config.llm.*` | Anthropic, `claude-sonnet-5-5` | Provider, model, per-role models, an OpenAI-compatible `baseUrl` ([models.md](../models.md)) |
 | `config.embedding.*` | the bundled server | `baseUrl` of any OpenAI-compatible embedding server; `model` and `dimensions` must match it |
-| `config.env` | `{}` | Any other setting of `apps/api/src/workmind/core/config.py`, as environment variables |
-| `images.api`, `images.web` | `workmind-api`, `workmind-web`, tag = appVersion | Where your images are. A `digest` wins over the tag |
+| `config.env` | `{}` | Any other setting of `apps/api/src/needwise/core/config.py`, as environment variables |
+| `images.api`, `images.web` | `needwise-api`, `needwise-web`, tag = appVersion | Where your images are. A `digest` wins over the tag |
 | `credentials.*` | generated or empty | See [Secrets](#secrets) |
 | `postgresql.enabled`, `valkey.enabled`, `qdrant.enabled`, `openfga.enabled`, `keycloak.enabled`, `embeddings.enabled` | `true` | Bundle the service, or use yours ([External services](#external-services)) |
-| `database.*` | `workmind`, `workmind_app`, `workmind_owner` | The WorkMind database: host (external), names, `urlParams` such as `ssl=require` |
+| `database.*` | `needwise`, `needwise_app`, `needwise_owner` | The NeedWise database: host (external), names, `urlParams` such as `ssl=require` |
 | `objectStorage.*` | 20 GiB, ReadWriteOnce, `colocatePods: true` | The shared files volume ([Object storage](#object-storage)) |
 | `api.replicas`, `web.replicas`, `worker.replicas` | 1 | Fixed replica counts; `*.autoscaling.enabled` adds an HPA on CPU (and memory if set) |
 | `worker.queues`, `worker.concurrency` | `[ingest, default]`, 2 | The Celery command line |
@@ -293,7 +293,7 @@ Things to know:
   then update the Secret.
 - **Rotating `SECRETS_ENCRYPTION_KEY`:** put the old key into
   `secretsEncryptionPreviousKeys`, the new one into `secretsEncryptionKey`, upgrade, then run
-  `wm secrets rotate` in an API pod ([models.md](../models.md)).
+  `nw secrets rotate` in an API pod ([models.md](../models.md)).
 - **Enterprise.** `credentials.licenseKey` sets `LICENSE_KEY`. No production signing key is
   published yet, so only development licenses exist, and those are trusted only with
   `config.appEnv: dev` and `config.licenseDevPublicKey` ([enterprise.md](../enterprise.md)).
@@ -301,7 +301,7 @@ Things to know:
 ## External services
 
 Set `<service>.enabled: false` and point the chart at your service.
-[`examples/external-services.yaml`](../../deploy/helm/workmind/examples/external-services.yaml)
+[`examples/external-services.yaml`](../../deploy/helm/needwise/examples/external-services.yaml)
 does it for all of them.
 
 **Postgres.** PostgreSQL 18 or later is required: every migration from `0002` on uses
@@ -309,21 +309,21 @@ does it for all of them.
 uuidv7() does not exist`) and `helm install` with it. Compose and CI use 18.6. Set `database.host`,
 `database.port` and, for TLS, `database.urlParams: ssl=require`. Create the roles and the
 database the way `deploy/postgres/init/01-databases.sh` does, as a user that is a member of
-`workmind_owner` (on a managed service, `GRANT workmind_owner TO <admin user>` first: Postgres
+`needwise_owner` (on a managed service, `GRANT needwise_owner TO <admin user>` first: Postgres
 requires the membership to create a database owned by that role and to set its default
 privileges):
 
 ```sql
-CREATE ROLE workmind_owner LOGIN PASSWORD '...';
-CREATE ROLE workmind_app LOGIN PASSWORD '...' NOBYPASSRLS;
-CREATE DATABASE workmind OWNER workmind_owner;
--- connected to the workmind database:
+CREATE ROLE needwise_owner LOGIN PASSWORD '...';
+CREATE ROLE needwise_app LOGIN PASSWORD '...' NOBYPASSRLS;
+CREATE DATABASE needwise OWNER needwise_owner;
+-- connected to the needwise database:
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
-GRANT USAGE ON SCHEMA public TO workmind_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE workmind_owner IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO workmind_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE workmind_owner IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO workmind_app;
+GRANT USAGE ON SCHEMA public TO needwise_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE needwise_owner IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO needwise_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE needwise_owner IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO needwise_app;
 ```
 
 The runtime role must not have `BYPASSRLS` and must not own the tables: tenant isolation rests
@@ -333,7 +333,7 @@ external Postgres, also create their roles and databases (`keycloak`, `openfga`,
 script); they connect to `database.host` unless `keycloak.database.host` or
 `openfga.database.host` is set.
 
-**Valkey** (or Redis). `valkey.external.host`, `port`, `tls` (`rediss://`). WorkMind uses
+**Valkey** (or Redis). `valkey.external.host`, `port`, `tls` (`rediss://`). NeedWise uses
 database 0 (`VALKEY_URL`: login sessions and short-lived application data such as answer
 event streams) and database 1 (`CELERY_BROKER_URL`: the task queue). With
 `valkey.auth.enabled` (the default) the chart requires `credentials.valkeyPassword`; set
@@ -344,12 +344,12 @@ started with (`QDRANT__SERVICE__API_KEY`); the API, worker and seed send it as `
 index holds every tenant's chunk text, so do not leave the server open on the network.
 
 **OpenFGA.** `openfga.external.url` (the HTTP API) and `credentials.openfgaApiKey`, one of the
-server's pre-shared keys. WorkMind creates one store per tenant and writes the model itself.
+server's pre-shared keys. NeedWise creates one store per tenant and writes the model itself.
 
 **Keycloak.** `keycloak.external.url` is the base URL the API calls, including Keycloak's
 relative path if it has one (the bundled one uses `/auth`). Import
-[`deploy/keycloak/realm-workmind.json`](../../deploy/keycloak/realm-workmind.json) with
-`WORKMIND_OIDC_CLIENT_SECRET` and `WORKMIND_PUBLIC_URL` set (Keycloak replaces those
+[`deploy/keycloak/realm-needwise.json`](../../deploy/keycloak/realm-needwise.json) with
+`NEEDWISE_OIDC_CLIENT_SECRET` and `NEEDWISE_PUBLIC_URL` set (Keycloak replaces those
 placeholders), and change the client's back-channel logout URL from `http://api:8000/...` to
 `http://<fullname>-api.<namespace>.svc:8000/api/auth/backchannel-logout`. Put the same
 client secret into `credentials.oidcClientSecret`. The `/auth` route is not created; the login
@@ -363,7 +363,7 @@ the embedding model means re-indexing ([ARCHITECTURE 8](../ARCHITECTURE.md#8-mul
 ## Upgrades and the migrate hook
 
 ```bash
-helm upgrade workmind deploy/helm/workmind -n workmind -f my-values.yaml --wait --timeout 20m
+helm upgrade needwise deploy/helm/needwise -n needwise -f my-values.yaml --wait --timeout 20m
 ```
 
 - **Migrations run before the new pods.** The `migrate` Job is a `pre-upgrade` hook (and
@@ -373,18 +373,18 @@ helm upgrade workmind deploy/helm/workmind -n workmind -f my-values.yaml --wait 
   migrations only go forward ([ROADMAP §6](../ROADMAP.md#6-release-process)) and breaking
   changes are called out in the release notes.
 - **When it fails**, the upgrade stops and the release is marked failed; the running pods are
-  not touched. Its logs: `kubectl logs -n workmind job/workmind-migrate` (the Job stays until
+  not touched. Its logs: `kubectl logs -n needwise job/needwise-migrate` (the Job stays until
   the next run).
 - **Hook resources.** On a first install with an external database, the release's Secret and
   ServiceAccount do not exist yet when pre-install hooks run, so the Job brings its own hook
   ServiceAccount and, when the chart holds the owner password, a hook Secret with only that
   password. Both are deleted once the hooks succeed.
-- **Authorization stores.** Once the new pods are ready, the `authz-sync` hook Job runs `wm
+- **Authorization stores.** Once the new pods are ready, the `authz-sync` hook Job runs `nw
   authz sync` with the owner role: every active tenant's OpenFGA store gets the current
   authorization model, and its tuples are recomputed from Postgres. The Compose procedure runs
   the same command by hand after every upgrade ([upgrades](../operations/upgrade.md)). It is
-  safe to repeat; `migrate.authzSync: false` turns it off. Its logs: `kubectl logs -n workmind
-  job/workmind-authz-sync`.
+  safe to repeat; `migrate.authzSync: false` turns it off. Its logs: `kubectl logs -n needwise
+  job/needwise-authz-sync`.
 - **`helm rollback` does not downgrade the schema.**
 - **OpenFGA** migrates in a Job named after the release revision, so every install and upgrade
   runs it once; OpenFGA reports "not serving" until it is done.
@@ -406,7 +406,7 @@ helm upgrade workmind deploy/helm/workmind -n workmind -f my-values.yaml --wait 
 ## Uninstall
 
 ```bash
-helm uninstall workmind -n workmind
+helm uninstall needwise -n needwise
 ```
 
 It deletes the Deployments, StatefulSets, Services, ConfigMaps, the Ingress, the
@@ -433,7 +433,7 @@ The scripts in [backup and restore](../operations/backup-restore.md) are for Com
 not been run on Kubernetes; that page explains the consistency rules that apply here too. A
 backup of a Kubernetes install needs all of these, taken together:
 
-- **Postgres:** the `workmind`, `keycloak` and `openfga` databases (`pg_dump`, or your managed
+- **Postgres:** the `needwise`, `keycloak` and `openfga` databases (`pg_dump`, or your managed
   service's snapshots). With the bundled server: `kubectl exec` into
   `<fullname>-postgresql-0` and run `pg_dump`, or snapshot its volume.
 - **The object storage volume** (`<fullname>-objects`): uploaded files, recordings and
@@ -451,13 +451,13 @@ backup of a Kubernetes install needs all of these, taken together:
 - Valkey holds sessions, queued tasks and caches. Losing it signs people out and drops queued
   tasks; it is usually not backed up.
 
-After restoring, OpenFGA must be brought in line with Postgres (`wm authz sync`). The API pods
+After restoring, OpenFGA must be brought in line with Postgres (`nw authz sync`). The API pods
 have no owner-role database URL, so run it through the hook: `helm upgrade` with the same
 values runs the `authz-sync` Job again (or apply that Job's manifest from `helm get manifest`).
 
 ## Security settings
 
-- Every pod: `runAsNonRoot` with a fixed user (WorkMind 10001, web 1001, Postgres 999, Valkey
+- Every pod: `runAsNonRoot` with a fixed user (NeedWise 10001, web 1001, Postgres 999, Valkey
   999, Qdrant 1000, Keycloak 1000, OpenFGA and the embedding server 65532), the
   `RuntimeDefault` seccomp profile, no service account token
   (`automountServiceAccountToken: false`).
@@ -475,8 +475,8 @@ values runs the `authz-sync` Job again (or apply that Job's manifest from `helm 
   memory volume, not from its command line.
 - `networkPolicy.enabled` (on by default since chart 0.1.5) adds ingress NetworkPolicies: the
   web app, the API and Keycloak accept `networkPolicy.publicFrom` (set it to your ingress
-  controller's or gateway's namespace; empty means any source) plus the WorkMind pods that
-  call them; each bundled service accepts only the WorkMind pods that use it; the worker and
+  controller's or gateway's namespace; empty means any source) plus the NeedWise pods that
+  call them; each bundled service accepts only the NeedWise pods that use it; the worker and
   beat accept nothing. Egress is not restricted. They take effect only where the cluster's
   network plugin enforces NetworkPolicies. Before 0.1.5 they were off by default, so any pod
   in the cluster could read and write the bundled Qdrant, which had no API key.
@@ -513,7 +513,7 @@ Qdrant API key, `helm test` and the API end-to-end tests (14 passed, 2 model tes
 passed through the Ingress, and the upgrade to two API replicas and the uninstall went as in
 the earlier runs. The browser suite was not run.
 
-Chart 0.2.0 (WorkMind v1.0.0) differs from 0.1.5 only in `appVersion` (`1.0.0`, the default
+Chart 0.2.0 (NeedWise v1.0.0) differs from 0.1.5 only in `appVersion` (`1.0.0`, the default
 image tag) and its own version. It passed `make helm-check`; it was not installed on kind again.
 
 All: kind v0.33.0, one control-plane node and two workers (containerd 2.3.4, kindnet, the
@@ -521,7 +521,7 @@ local-path storage class), ingress-nginx controller v1.15.1 on the control plane
 on `127.0.0.1:8680`. ingress-nginx was retired in March 2026 and v1.15.1 is its last release;
 other controllers were not tried.
 
-**Values** ([`ci/kind-values.yaml`](../../deploy/helm/workmind/ci/kind-values.yaml)): the API
+**Values** ([`ci/kind-values.yaml`](../../deploy/helm/needwise/ci/kind-values.yaml)): the API
 and web images built from the checkout (the application code did not change between the runs)
 and loaded into the nodes (`kind load docker-image`),
 `config.publicUrl: http://localhost:8680`, `config.appEnv: demo`, Postgres, Valkey, Qdrant,
@@ -529,7 +529,7 @@ OpenFGA and Keycloak (production mode, `start`) bundled, the embedding server of
 `config.embedding.provider: hash`, no model key, no license (Community), the seed Job with
 `seed.data.source: image` (the busybox image above), `ingress.className: nginx` with the body
 size and read timeout annotations, and `networkPolicy.enabled: true` with `publicFrom` set to
-the `ingress-nginx` namespace. The `workmind` namespace enforced the "restricted" Pod Security
+the `ingress-nginx` namespace. The `needwise` namespace enforced the "restricted" Pod Security
 Standard.
 
 **What passed** (in every run unless a run is named):
@@ -538,10 +538,10 @@ Standard.
 |---|---|
 | `helm install --wait` | Every pod admitted and ready, Keycloak included (46 s after the start in run 1, about 80 s in run 2). Then the `migrate` hook: 19 migrations (to `0019`) in about 6 s; in runs 4 and 5 the `authz-sync` hook (no tenant yet: nothing to do); then the `seed` hook: 47 documents (364 chunks), 4 analytics tables (527 rows), 164 authorization tuples, 9 logins, in under 10 s. The install returned after 61 to 103 s, with the images already on the nodes. Run 1: the hook ServiceAccount and Secret were deleted once the hooks had succeeded |
 | `helm test` | `/readyz`: Postgres, Valkey, Qdrant, OpenFGA and Keycloak "ok"; the web app answered 200 |
-| NetworkPolicies (run 1) | Enforced: from a pod in another namespace, and from an unlabelled pod in `workmind`, all seven Services refused connections; a pod labelled as the web component reached the API and nothing else |
+| NetworkPolicies (run 1) | Enforced: from a pod in another namespace, and from an unlabelled pod in `needwise`, all seven Services refused connections; a pod labelled as the web component reached the API and nothing else |
 | API end-to-end tests, through the Ingress and Keycloak | Runs 2 to 5: 14 passed (2 model tests skipped). Run 1: 13 passed, 1 failed: with `RETRIEVAL_MIN_SIMILARITY=0` the guest's one collection always matches, so her question goes to the model, which fails without a key, where the test expects "not found". With the default floor on the same install: 14 passed. The test assumes the real floor; it is not a chart problem |
 | Browser suite (`make e2e-browser`) | 159 of 159 in each run (the 3 `@model` tests left out), in about a minute; run 1 also with two API replicas |
-| `helm upgrade` to `api.replicas=2` | The `migrate` Job ran again before any Deployment changed (pre-upgrade), the `seed` Job after (0 documents changed), OpenFGA's migrate Job once more; in runs 4 and 5 the `authz-sync` Job too, which synced the seeded tenant (0 tuples written, 0 removed). Run 1: the generated credentials were kept (the Secret's data unchanged), and both API pods ran on the node of the object storage volume. A poller called `/api/v1/system/status`, `/` and `/auth/realms/workmind` every 0.25 s through the Ingress during the upgrade: run 1, 705 requests, all answered 200, but 3 status pages reported a dependency down (the second problem below); runs 2 to 5, 237, 228, 282 and 285 requests, all 200 with every dependency "ok" |
+| `helm upgrade` to `api.replicas=2` | The `migrate` Job ran again before any Deployment changed (pre-upgrade), the `seed` Job after (0 documents changed), OpenFGA's migrate Job once more; in runs 4 and 5 the `authz-sync` Job too, which synced the seeded tenant (0 tuples written, 0 removed). Run 1: the generated credentials were kept (the Secret's data unchanged), and both API pods ran on the node of the object storage volume. A poller called `/api/v1/system/status`, `/` and `/auth/realms/needwise` every 0.25 s through the Ingress during the upgrade: run 1, 705 requests, all answered 200, but 3 status pages reported a dependency down (the second problem below); runs 2 to 5, 237, 228, 282 and 285 requests, all 200 with every dependency "ok" |
 | `helm uninstall` | The Secret, the object storage claim, the three StatefulSet claims and the last hook Jobs were left, as listed in [Uninstall](#uninstall) |
 | Install again (run 1) | Adopted the kept Secret and claims; data intact, `helm test` and the API tests as before |
 
@@ -555,10 +555,10 @@ Standard.
   run 1's first upgrade the status page reported a dependency down for about 4 s. The
   checksums now cover the data only.
 - Both examples (`external-services.yaml`, `production.yaml`) named their own Secret
-  `workmind-credentials`, the chart's own Secret's name for a release called `workmind`: the
+  `needwise-credentials`, the chart's own Secret's name for a release called `needwise`: the
   chart then created that Secret itself with a generated value for every key (found while
   checking the previous fix). The chart now refuses that name.
-- Upgrades never ran `wm authz sync`, which the upgrade procedure requires after every
+- Upgrades never ran `nw authz sync`, which the upgrade procedure requires after every
   upgrade, and there was no easy way to run it: only the hook Jobs have the owner role's
   password. Found while comparing the chart's upgrade with the Compose procedure; the
   authorization model has not changed since v0.1.0, so no upgrade has needed it yet. The
@@ -571,12 +571,12 @@ Standard.
 autoscaling, replicas spread over nodes), the bundled embedding server and real embeddings,
 any model call, an Enterprise license, the `archive` and `existingClaim` seed sources, node
 drains and failures (the PodDisruptionBudgets), backups and restores, an upgrade between two
-WorkMind versions (both releases ran the same build, so the upgrade's migrate Job had nothing
+NeedWise versions (both releases ran the same build, so the upgrade's migrate Job had nothing
 new to apply; [operations/upgrade.md](../operations/upgrade.md) covers version upgrades with
 Compose), and load.
 
 **Repeat it:** `make helm-kind-test` (needs Docker, kind, kubectl, Helm, uv, pnpm and python3)
-builds the images, creates the cluster `workmind-test` with
+builds the images, creates the cluster `needwise-test` with
 [`deploy/helm/kind/cluster.yaml`](../../deploy/helm/kind/cluster.yaml), and runs the install,
 the checks, the upgrade and the uninstall above, then deletes the cluster and the images.
 `KIND_NODE_IMAGE`, `HELM`, `KUBECTL`, `HTTP_PORT`, `SKIP_BROWSER=1` and `KEEP=1` change it;

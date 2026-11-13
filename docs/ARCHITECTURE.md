@@ -1,11 +1,11 @@
-# WorkMind AI — System Architecture
+# NeedWise — System Architecture
 
 > **Status:** design v0.2 with as-built notes · Phases 0 to 12 built, the v1.0 release not tagged yet · **Last updated:** 2026-11-13 (final pass before v1.0)
 >
 > **How to read it:** this document began as the design. Where the code differs, an *As built* note says so, and the table [What the design describes that is not built](#what-the-design-describes-that-is-not-built) lists the larger gaps in one place. A design statement without a note and not in that table is built.
 > **Companion doc:** [ROADMAP.md](ROADMAP.md) covers phases, releases, the open-source plan and the LinkedIn plan.
 
-WorkMind AI is an open-source, self-hostable AI workspace for companies. Employees ask questions and get answers grounded in company knowledge, with citations, drawn only from sources they are allowed to see. Specialized agents handle department work. Actions that change anything outside WorkMind need human approval.
+NeedWise is an open-source, self-hostable AI workspace for companies. Employees ask questions and get answers grounded in company knowledge, with citations, drawn only from sources they are allowed to see. Specialized agents handle department work. Actions that change anything outside NeedWise need human approval.
 
 **Positioning:** *The open-source enterprise AI assistant that is permission-safe, cited, measured and self-hosted.*
 
@@ -51,12 +51,12 @@ document; [ROADMAP.md](ROADMAP.md) lists the same gaps per phase.
 | Presidio PII scan (§3, §7.3, §10.1) | A regex scan (IBAN, US SSN, pay figures); no names, addresses, phones or emails |
 | Docling, OCR, bounding boxes, PDF highlight (§10) | Lightweight parsers (ADR 0007); page numbers only, no highlight |
 | Reranker, freshness boost, filters extracted from the question (§11.1) | Not built: hybrid search with RRF and a trust boost |
-| Principal-set cache, scheduled reconcile (§7.5) | Computed on every request; reconcile on seeding, tenant creation and `wm authz sync` |
-| Qdrant alias for embedding model changes (§8) | A collection per model and dimension, no alias; `wm reindex` re-embeds |
+| Principal-set cache, scheduled reconcile (§7.5) | Computed on every request; reconcile on seeding, tenant creation and `nw authz sync` |
+| Qdrant alias for embedding model changes (§8) | A collection per model and dimension, no alias; `nw reindex` re-embeds |
 | S3, Azure Blob, GCS storage (§3, §8) | A local directory only (multi-node Kubernetes needs a ReadWriteMany volume) |
 | Provider circuit breaker and cross-provider fallback chain (§12.5, §21) | SDK retries and Claude's server-side refusal fallback only |
 | LangGraph graph, checkpoints, validator with re-plan (§12.3, §12.4) | Plain asyncio orchestrator (ADR 0009), no validator node |
-| Invitations by email that create the Keycloak user (§6.6) | A WorkMind user with status *invited*; no email, no Keycloak user |
+| Invitations by email that create the Keycloak user (§6.6) | A NeedWise user with status *invited*; no email, no Keycloak user |
 | Keycloak service accounts (client credentials) for integrations (§6.5) | Session cookies and personal access tokens only |
 | Inbound webhooks, a Slack or Teams bot (§6.5) | Not built |
 | Per-tenant session lifetimes and server-side token refresh (§6.3) | Deployment-wide lifetimes; no access or refresh token is kept |
@@ -75,8 +75,8 @@ document; [ROADMAP.md](ROADMAP.md) lists the same gaps per phase.
 | P2 | **Grounded or silent** | Every factual claim cites a source the user can open. If evidence is missing, the assistant says so. |
 | P3 | **Open source by default, swappable by design** | Every layer runs on open-source software. The layers companies actually swap (LLM, embeddings, identity provider, storage…) sit behind adapters. |
 | P4 | **Modular monolith first** | One backend codebase with strict module boundaries, run as a few processes. Split into services only when measurements demand it. |
-| P5 | **Humans approve side effects** | By default, anything that leaves WorkMind (sending email, updating an external system) needs explicit approval. |
-| P6 | **Measure, don't claim** | Retrieval quality, faithfulness, routing, leak rate, latency and cost are measured. *As built:* CI gates only the leak rate (retrieval-only, with hash embeddings); the rest is measured by `wm eval` runs against the stack, with the reports committed in `evals/results/` (§22.4). |
+| P5 | **Humans approve side effects** | By default, anything that leaves NeedWise (sending email, updating an external system) needs explicit approval. |
+| P6 | **Measure, don't claim** | Retrieval quality, faithfulness, routing, leak rate, latency and cost are measured. *As built:* CI gates only the leak rate (retrieval-only, with hash embeddings); the rest is measured by `nw eval` runs against the stack, with the reports committed in `evals/results/` (§22.4). |
 | P7 | **Isolation at every layer** | Tenant boundaries are enforced in the database, vector store, object storage, cache and logs, not only in application code. |
 | P8 | **One-command self-hosting** | `docker compose up` gives a working system with demo data. |
 
@@ -106,7 +106,7 @@ Each row becomes a full Architecture Decision Record (ADR) in `docs/adr/` when i
 | Frontend | Next.js (App Router) + TypeScript + Tailwind + shadcn/ui | Production-grade UI, large ecosystem | SvelteKit |
 | Observability | OpenTelemetry → Langfuse (LLM traces) + Prometheus/Grafana (metrics) | Open standards, self-hostable | LangSmith, Datadog (available as paid adapters) |
 | Reverse proxy | Caddy | Automatic HTTPS, simple config | Traefik, nginx |
-| Open-core boundary | Ed25519-signed license keys checked offline; Enterprise code (`ee/python`) found through the `workmind.ee` entry point only with a valid license, plugged in through an extension registry ([ADR 0011](adr/0011-open-core-boundary-and-license-keys.md), [docs/enterprise.md](enterprise.md)) | The core never imports Enterprise code and runs complete without it; one image for both editions; works air-gapped | JWT licenses, online activation, a separate Enterprise image |
+| Open-core boundary | Ed25519-signed license keys checked offline; Enterprise code (`ee/python`) found through the `needwise.ee` entry point only with a valid license, plugged in through an extension registry ([ADR 0011](adr/0011-open-core-boundary-and-license-keys.md), [docs/enterprise.md](enterprise.md)) | The core never imports Enterprise code and runs complete without it; one image for both editions; works air-gapped | JWT licenses, online activation, a separate Enterprise image |
 
 ---
 
@@ -145,7 +145,7 @@ Every default is open source. Paid alternatives plug in through adapters (see §
 
 > **License note:** every library imported into our code is permissive (MIT, BSD or Apache). AGPL components (SearXNG, Grafana) run as separate services. That keeps our own licensing options open (see ROADMAP §4).
 
-> **As built:** this table is the design. Not built or replaced: the reranker (none), Docling and OCR (lightweight parsers instead, [ADR 0007](adr/0007-model-providers-and-lightweight-parsing.md)), Presidio (a regex scan for IBANs, US SSNs and pay figures suggests the label; no named-entity detection), S3, Azure Blob and GCS storage (only a local directory), BM25 through fastembed (WorkMind computes its own sparse vectors), Langfuse, Prometheus and Grafana (no metrics endpoint; tracing is optional OTLP, §21), SearXNG, Ragas, and LiteLLM (our own adapters, ADR 0007).
+> **As built:** this table is the design. Not built or replaced: the reranker (none), Docling and OCR (lightweight parsers instead, [ADR 0007](adr/0007-model-providers-and-lightweight-parsing.md)), Presidio (a regex scan for IBANs, US SSNs and pay figures suggests the label; no named-entity detection), S3, Azure Blob and GCS storage (only a local directory), BM25 through fastembed (NeedWise computes its own sparse vectors), Langfuse, Prometheus and Grafana (no metrics endpoint; tracing is optional OTLP, §21), SearXNG, Ragas, and LiteLLM (our own adapters, ADR 0007).
 
 ---
 
@@ -220,16 +220,16 @@ flowchart LR
 
 | Process | Image | Role | Scales with |
 |---|---|---|---|
-| `web` | `workmind-web` | Next.js UI (server rendering + static assets) | Requests |
-| `api` | `workmind-api` (slim) | REST + SSE, interactive chat runs, auth BFF, MCP server at `/mcp`. Uvicorn worker processes: `API_WORKERS` (compose) or `api.workers` (Helm), 2 by default; one process uses at most one core ([load benchmarks](benchmarks/load.md)) | Concurrent users |
-| `worker-ingest` *(planned, not built)* | `workmind-worker` (heavy: Docling, torch) | Parsing, OCR, chunking, embedding | `ingest` / `embed` queue depth |
-| `worker` | `workmind-api` | Long agent runs, workflows, connector sync, notifications, evals | Queue depth |
-| `scheduler` | `workmind-api` | Celery beat | Always exactly one instance |
+| `web` | `needwise-web` | Next.js UI (server rendering + static assets) | Requests |
+| `api` | `needwise-api` (slim) | REST + SSE, interactive chat runs, auth BFF, MCP server at `/mcp`. Uvicorn worker processes: `API_WORKERS` (compose) or `api.workers` (Helm), 2 by default; one process uses at most one core ([load benchmarks](benchmarks/load.md)) | Concurrent users |
+| `worker-ingest` *(planned, not built)* | `needwise-worker` (heavy: Docling, torch) | Parsing, OCR, chunking, embedding | `ingest` / `embed` queue depth |
+| `worker` | `needwise-api` | Long agent runs, workflows, connector sync, notifications, evals | Queue depth |
+| `scheduler` | `needwise-api` | Celery beat | Always exactly one instance |
 
 Infrastructure: `postgres` (also stores Keycloak and OpenFGA data in separate databases), `qdrant`, `valkey`, `keycloak`, `openfga`, `caddy`.
 Optional: `tei` (embeddings + reranker), `vllm`, `langfuse` (+ ClickHouse), `prometheus`, `grafana`, `searxng`.
 
-**Celery queues:** `ingest`, `embed`, `sync`, `agents`, `workflows`, `default`, `eval`. Ingestion gets its own worker so a bulk import can never slow down chat. *As built:* two queues, `ingest` (documents and meetings) and `default` (everything else), served by one `worker` service (`--concurrency 2`); there is no `worker-ingest` process or `workmind-worker` image yet, and the other queues do not exist.
+**Celery queues:** `ingest`, `embed`, `sync`, `agents`, `workflows`, `default`, `eval`. Ingestion gets its own worker so a bulk import can never slow down chat. *As built:* two queues, `ingest` (documents and meetings) and `default` (everything else), served by one `worker` service (`--concurrency 2`); there is no `worker-ingest` process or `needwise-worker` image yet, and the other queues do not exist.
 
 **Interactive vs long-running:** chat answers run inside `api` (async) for low latency. Multi-minute reports, scheduled workflows and bulk ingestion run in `worker`. Both publish progress events to a Valkey Stream that the same SSE endpoint reads, so the UI handles them the same way.
 
@@ -271,7 +271,7 @@ Uncommon ports were chosen on purpose: 8080, 8000 and 3000 are often taken by ot
 | Dev | Laptop, Docker Compose | Local (Ollama) | Synthetic "Acme Robotics" corpus |
 | Public demo | One cloud VM, Docker Compose | A low-cost paid API through the adapter (avoids GPU hosting cost) | Acme corpus, reset nightly, demo logins per role |
 | Self-hosted customer | Their servers: Compose, or Kubernetes with the Helm chart ([deploy/kubernetes.md](deploy/kubernetes.md); tested on kind clusters, not yet on a cloud cluster) | Local or bring-your-own API keys | Theirs |
-| WorkMind Cloud (paid, later) | Kubernetes, managed Postgres/Qdrant | Per-tenant policy | Multi-tenant |
+| NeedWise Cloud (paid, later) | Kubernetes, managed Postgres/Qdrant | Per-tenant policy | Multi-tenant |
 
 ---
 
@@ -280,9 +280,9 @@ Uncommon ports were chosen on purpose: 8080, 8000 and 3000 are often taken by ot
 ### 6.1 Who does what
 
 - **Keycloak** answers *who you are*: passwords, MFA, social login, and company SSO (Okta, Entra ID, Google Workspace, SAML, LDAP/AD).
-- **WorkMind** answers *what you can do*: departments, groups, roles and document permissions live in WorkMind (§7).
+- **NeedWise** answers *what you can do*: departments, groups, roles and document permissions live in NeedWise (§7).
 - **FastAPI acts as the Backend-for-Frontend (BFF).** It runs the OIDC Authorization Code flow with PKCE and keeps the tokens server-side. The browser only ever holds an opaque session cookie.
-- **WorkMind never stores passwords.**
+- **NeedWise never stores passwords.**
 
 ### 6.2 Login flow
 
@@ -308,7 +308,7 @@ sequenceDiagram
   A->>A: Verify id_token (signature via JWKS, issuer, audience, expiry, nonce)
   A->>D: Find or create user (just-in-time provisioning), resolve tenant from organization claim
   A->>V: Store session (user, tenant, id_token for logout, expiry)
-  A-->>W: Set-Cookie wm_session (HttpOnly, Secure, SameSite=Lax) and redirect to app
+  A-->>W: Set-Cookie nw_session (HttpOnly, Secure, SameSite=Lax) and redirect to app
   W->>A: Later API calls send the cookie automatically
 ```
 
@@ -319,11 +319,11 @@ sequenceDiagram
 | Session ID | 256-bit random, opaque. The cookie holds only the ID; data lives in Valkey. |
 | Cookie | `HttpOnly`, `Secure`, `SameSite=Lax`, path `/` |
 | Idle timeout / absolute lifetime | 30 minutes sliding / 12 hours (*as built:* deployment-wide settings `SESSION_IDLE_TIMEOUT_S` and `SESSION_ABSOLUTE_TIMEOUT_S`, not per tenant) |
-| Token refresh | *As built:* none. WorkMind never calls Keycloak as the user, so it keeps no access or refresh token; the session holds the user, the tenant and the `id_token` (for RP-initiated logout), stored as plain JSON in Valkey under the session's hash. Keycloak's own session ends at its own lifetime |
+| Token refresh | *As built:* none. NeedWise never calls Keycloak as the user, so it keeps no access or refresh token; the session holds the user, the tenant and the `id_token` (for RP-initiated logout), stored as plain JSON in Valkey under the session's hash. Keycloak's own session ends at its own lifetime |
 | CSRF | `SameSite=Lax`, plus an `Origin` (or `Referer`) check on every state-changing request, plus a required custom header `X-CSRF-Protection: 1` that cross-site forms cannot send |
 | Logout | Delete the session and redirect to Keycloak end-session (RP-initiated logout) |
-| Remote kill | Keycloak back-channel logout endpoint: disabling a user in Keycloak ends their WorkMind sessions immediately. Caddy hides it from the public; Keycloak calls it on the internal network. |
-| Login flow binding | A short-lived `wm_oidc_flow` cookie holds the OAuth `state`. A callback whose state doesn't match the browser's cookie is rejected, so a leaked callback URL is useless elsewhere. |
+| Remote kill | Keycloak back-channel logout endpoint: disabling a user in Keycloak ends their NeedWise sessions immediately. Caddy hides it from the public; Keycloak calls it on the internal network. |
+| Login flow binding | A short-lived `nw_oidc_flow` cookie holds the OAuth `state`. A callback whose state doesn't match the browser's cookie is rejected, so a leaked callback URL is useless elsewhere. |
 | Session storage | Valkey stores each session under the SHA-256 of its ID, so a Valkey dump contains no usable cookies |
 
 ### 6.4 Request context
@@ -346,30 +346,30 @@ The same context flows into agents, tools, retrieval and Celery tasks. This is w
 
 **Login screens:** with Organizations enabled, Keycloak asks for the email first, then routes the user to their company's identity provider if one is linked, or asks for the password. Keycloak marks its login cookies `Secure`. Browsers that treat `http://localhost` as a secure context handle this during local development; anything beyond your own machine must use HTTPS.
 
-**Linking identities:** a Keycloak identity is linked to a pre-created WorkMind user by email **only if the email is verified**. Otherwise, anyone able to set an unverified email in an identity provider could take over the account.
+**Linking identities:** a Keycloak identity is linked to a pre-created NeedWise user by email **only if the email is verified**. Otherwise, anyone able to set an unverified email in an identity provider could take over the account.
 
 ### 6.5 Other ways to authenticate
 
 | Client | Method |
 |---|---|
-| MCP clients, CLI, scripts | **Personal access tokens**: `wm_pat_<tenant-slug>_<256-bit secret>`. Only the SHA-256 is stored, and the plain token is shown once. They expire (1–365 days), act *as the user*, and carry scopes (`profile:read`, `knowledge:read`, `assistant:ask`). No scope grants administration, and a token can never create tokens. Revoking the token or disabling the user stops it immediately. |
+| MCP clients, CLI, scripts | **Personal access tokens**: `nw_pat_<tenant-slug>_<256-bit secret>`. Only the SHA-256 is stored, and the plain token is shown once. They expire (1–365 days), act *as the user*, and carry scopes (`profile:read`, `knowledge:read`, `assistant:ask`). No scope grants administration, and a token can never create tokens. Revoking the token or disabling the user stops it immediately. |
 | Integrations / automation | **Service accounts** via Keycloak client-credentials, with narrow scopes. *Not built:* the API authenticates only a session cookie or a personal access token; internal jobs (connectors, workflows, evals, the seed) use an in-process service context, not an OAuth client |
 | Inbound webhooks (Slack events, etc.) | Signature verification per provider. No session involved. *Not built:* there is no inbound Slack or Teams endpoint (no bot); the request mailbox is a stub endpoint ([automation.md](automation.md)) |
 
 ### 6.6 User provisioning
 
 - **Just-in-time:** a user is created on first login if their organization (or email domain) belongs to a tenant.
-- **Invitations:** an org admin invites by email. WorkMind creates the Keycloak user through the Admin API with a "set password" required action. *As built:* **Admin › People › Add person** creates only the WorkMind user (status *invited*), which links to a Keycloak identity with the same verified email at its first sign-in. No email is sent and no Keycloak user is created: an operator creates it in Keycloak (or the person signs in through a federated identity provider). See [user-guide/administration.md](user-guide/administration.md#adding-people).
+- **Invitations:** an org admin invites by email. NeedWise creates the Keycloak user through the Admin API with a "set password" required action. *As built:* **Admin › People › Add person** creates only the NeedWise user (status *invited*), which links to a Keycloak identity with the same verified email at its first sign-in. No email is sent and no Keycloak user is created: an operator creates it in Keycloak (or the person signs in through a federated identity provider). See [user-guide/administration.md](user-guide/administration.md#adding-people).
 - **SCIM provisioning and IdP group sync:** Enterprise edition, later (see ROADMAP §5).
 
 ### 6.7 Keycloak setup (as code)
 
-- One realm, `workmind`, exported to `deploy/keycloak/realm-workmind.json` so dev setups are reproducible.
-- Confidential client `workmind-api` using the standard flow with PKCE S256.
+- One realm, `needwise`, exported to `deploy/keycloak/realm-needwise.json` so dev setups are reproducible.
+- Confidential client `needwise-api` using the standard flow with PKCE S256.
 - **Keycloak Organizations** enabled: one organization per tenant, with organization-linked identity providers for SSO (users are routed to their company IdP by email domain). A protocol mapper adds the `organization` claim to tokens.
-- The realm file holds configuration only, never passwords. Secrets and URLs are filled in from environment variables at import (`${WORKMIND_OIDC_CLIENT_SECRET}`, `${WORKMIND_PUBLIC_URL}`).
-- `make seed` creates the organization (alias = tenant slug) and the demo logins through the Keycloak Admin REST API. It then creates the matching tenant, departments, groups and people in WorkMind. Re-running it is safe.
-- Departments, groups and roles are **not** modeled in Keycloak. App permissions change often and need a relationship model, so they live in WorkMind (§7).
+- The realm file holds configuration only, never passwords. Secrets and URLs are filled in from environment variables at import (`${NEEDWISE_OIDC_CLIENT_SECRET}`, `${NEEDWISE_PUBLIC_URL}`).
+- `make seed` creates the organization (alias = tenant slug) and the demo logins through the Keycloak Admin REST API. It then creates the matching tenant, departments, groups and people in NeedWise. Re-running it is safe.
+- Departments, groups and roles are **not** modeled in Keycloak. App permissions change often and need a relationship model, so they live in NeedWise (§7).
 
 **Demo users** (seeded with the synthetic "Acme Robotics" company; `.test` is a reserved domain):
 
@@ -410,7 +410,7 @@ All knowledge lives in **collections** (think of shared folders). Permissions ar
 > a document may have its own access list (`documents.own_acl`, `document_grants`), which only
 > narrows: a principal must view the collection **and** be on the list. Lists come from the
 > source (Enterprise permission sync: Drive, Slack, GitHub) or from a collection editor
-> (uploads). Source principals map to WorkMind users, groups and departments fail closed
+> (uploads). Source principals map to NeedWise users, groups and departments fail closed
 > (`identity_mappings`; unmapped entries grant nothing). Both locks and every other path that
 > shows documents enforce it.
 
@@ -487,12 +487,12 @@ Org admins are deliberately **not** made editors or viewers of every collection,
 
 A document without its own access list has the wildcard grantee `user:*`, so its viewers are its collection's. One with a list names exactly its principals: the intersection means a list can only narrow, and an empty list leaves nobody (ADR 0012). Before ADR 0012 the document type had widening `owner`/`editor`/`viewer` relations that the app never wrote.
 
-The model lives in `apps/api/src/workmind/modules/authz/openfga/`. It ships with the package because the API installs it into each tenant's store:
+The model lives in `apps/api/src/needwise/modules/authz/openfga/`. It ships with the package because the API installs it into each tenant's store:
 - `model.fga` is the source.
 - `model.json` is compiled from it by `make authz-model`; CI fails if they drift apart.
 - `model.fga.yaml` is the **authorization matrix**: the Acme personas and the exact allow/deny answers the product promises (for example, the engineer never sees salaries, the admin doesn't automatically see restricted content, the contractor sees exactly one collection). It is run by the official OpenFGA CLI in CI.
 
-Object IDs in OpenFGA are WorkMind UUIDs (`user:<uuid>`, `department:<uuid>`), never slugs, so renaming a department changes nothing in authorization. Principal strings in `RequestContext` use short prefixes (`dept:<uuid>`) that map one-to-one to these objects.
+Object IDs in OpenFGA are NeedWise UUIDs (`user:<uuid>`, `department:<uuid>`), never slugs, so renaming a department changes nothing in authorization. Principal strings in `RequestContext` use short prefixes (`dept:<uuid>`) that map one-to-one to these objects.
 
 ### 7.5 Source of truth and synchronization
 
@@ -500,7 +500,7 @@ Object IDs in OpenFGA are WorkMind UUIDs (`user:<uuid>`, `department:<uuid>`), n
 - Every change writes an **outbox row in the same database transaction**. A worker reads the outbox and writes the matching tuples to OpenFGA. Writes are idempotent and retried, so the two stores cannot silently drift (the *transactional outbox* pattern).
   - Rows are applied in commit order. Processing stops at the first failure, so a later delete never overtakes an earlier write.
   - The worker runs inside the API process (*as built,* also after Celery arrived). `SKIP LOCKED` row locks make several API replicas safe.
-- A **reconcile** job recomputes every identity tuple from Postgres and repairs drift in either direction. *As built:* it runs on seeding, on tenant creation and with `wm authz sync`; there is no scheduled reconcile.
+- A **reconcile** job recomputes every identity tuple from Postgres and repairs drift in either direction. *As built:* it runs on seeding, on tenant creation and with `nw authz sync`; there is no scheduled reconcile.
   - Reconcile and outbox processing share a per-tenant advisory lock. Without it, a reconcile could delete a tuple that a concurrently committed change had just added.
 - An integration test checks, for every Acme user, that the group and department memberships computed in Postgres (lock 1) equal what OpenFGA answers (lock 2).
 - A user's **principal set** (`user:…`, `group:…` including nested groups, `dept:…`, `org:…`) is computed from Postgres. *As built:* on every request, not cached (§11.1, §11.7).
@@ -524,7 +524,7 @@ Tools declare the permission they need (e.g. `tasks:create`, `email:send`, `bi:q
 
 ## 8. Multi-tenancy and data isolation
 
-The same code runs as a **single-tenant self-hosted install** (one org) or with **several tenants in one installation** (the basis for a hosted WorkMind Cloud). How to run several tenants, create and delete them, the abuse limits, the tests, and what a hosted service would still need: [multi-tenancy.md](multi-tenancy.md).
+The same code runs as a **single-tenant self-hosted install** (one org) or with **several tenants in one installation** (the basis for a hosted NeedWise Cloud). How to run several tenants, create and delete them, the abuse limits, the tests, and what a hosted service would still need: [multi-tenancy.md](multi-tenancy.md).
 
 | Layer | Isolation mechanism |
 |---|---|
@@ -562,9 +562,9 @@ Two details matter:
 
 The `tenants` table itself has no RLS: login must resolve a tenant before one is known. The runtime role can only read it. A CI guardrail test fails if any table with a `tenant_id` column lacks forced RLS and a policy. A second suite (`test_cross_tenant.py`) calls every route of the app as one tenant with another tenant's ids and fails when a new route has no probe.
 
-**Embedding model changes:** Qdrant collections are named per embedding model (e.g. `chunks_bge_m3_v1`) behind an alias (`chunks_active`). Switching models means building a new collection in the background, re-embedding, then switching the alias atomically. There is no downtime and rollback is possible. *As built:* the collection is named per model and dimension (`QDRANT_COLLECTION`, `core/config.py`) and there is **no alias**: after changing the model, `wm reindex <tenant>` re-embeds into the new collection while answers come from it as it fills, and going back means changing the setting back ([operations/upgrade.md](operations/upgrade.md)).
+**Embedding model changes:** Qdrant collections are named per embedding model (e.g. `chunks_bge_m3_v1`) behind an alias (`chunks_active`). Switching models means building a new collection in the background, re-embedding, then switching the alias atomically. There is no downtime and rollback is possible. *As built:* the collection is named per model and dimension (`QDRANT_COLLECTION`, `core/config.py`) and there is **no alias**: after changing the model, `nw reindex <tenant>` re-embeds into the new collection while answers come from it as it fills, and going back means changing the setting back ([operations/upgrade.md](operations/upgrade.md)).
 
-**Tenant lifecycle:** `wm tenant create` makes the tenant row, its OpenFGA store and (optionally) its Keycloak organization. `wm tenant delete` suspends the tenant, then deletes its sessions, Qdrant points, files and datasets, OpenFGA tuples and store, Valkey keys, optionally its Keycloak organization and unshared users, and finally the row (every tenant table cascades), then verifies that nothing remains in any layer (`wm tenant verify-empty` runs the check alone). Backups, shipped logs and OpenFGA's record of a deleted store are not reached; see [multi-tenancy.md](multi-tenancy.md).
+**Tenant lifecycle:** `nw tenant create` makes the tenant row, its OpenFGA store and (optionally) its Keycloak organization. `nw tenant delete` suspends the tenant, then deletes its sessions, Qdrant points, files and datasets, OpenFGA tuples and store, Valkey keys, optionally its Keycloak organization and unshared users, and finally the row (every tenant table cascades), then verifies that nothing remains in any layer (`nw tenant verify-empty` runs the check alone). Backups, shipped logs and OpenFGA's record of a deleted store are not reached; see [multi-tenancy.md](multi-tenancy.md).
 
 ---
 
@@ -622,7 +622,7 @@ Conventions:
 > message), `feedback` (columns of `messages`), `ingestion_jobs` (status on documents and
 > versions), `meeting_segments` and `decisions`/`action_items` (JSON on `meetings`),
 > `data_sources` and `semantic_models` (`analytics_sources` and `analytics_models`). The tables
-> that exist are the `__tablename__`s under `apps/api/src/workmind/modules/*/models.py`.
+> that exist are the `__tablename__`s under `apps/api/src/needwise/modules/*/models.py`.
 >
 > **As built (v0.11, [usage.md](usage.md), [governance.md](governance.md)):** `usage_events` has
 > one row per model call: `user_id, department_id, agent_key, feature, model, model_id, provider,
@@ -761,7 +761,7 @@ If the selected model is an external API and the tenant policy is `restricted_da
 - (a) routes the request to the local model, or
 - (b) excludes `restricted` chunks and tells the user that some sources could not be used with the current model.
 
-This is a key enterprise feature that only makes sense because WorkMind is open source and model-agnostic.
+This is a key enterprise feature that only makes sense because NeedWise is open source and model-agnostic.
 
 **As built (Phase 3, generalized in Phase 11):** option (a) when a local model exists, else (b),
 with the person told how many sources were left out. The tenant's data policy (Admin → Models)
@@ -941,8 +941,8 @@ Tenant admins can tighten policies (never loosen `DESTRUCTIVE`).
 
 ### 13.2 MCP (Model Context Protocol)
 
-- **WorkMind as an MCP client.** Admins register remote MCP servers (Streamable HTTP; stdio only on self-hosted installs). Their tools are imported into the registry, default to `EXTERNAL_WRITE` unless marked read-only, and go through the same wrapper. Per-user OAuth is used when the server acts on user data.
-- **WorkMind as an MCP server** (`/mcp`, built with the official MCP Python SDK). It exposes `search_knowledge`, `ask_workmind` and `list_my_tasks` to Claude Desktop, Cursor and other IDEs, authenticated with a personal access token or OAuth. The same permission enforcement applies: *"your company knowledge, inside your IDE."*
+- **NeedWise as an MCP client.** Admins register remote MCP servers (Streamable HTTP; stdio only on self-hosted installs). Their tools are imported into the registry, default to `EXTERNAL_WRITE` unless marked read-only, and go through the same wrapper. Per-user OAuth is used when the server acts on user data.
+- **NeedWise as an MCP server** (`/mcp`, built with the official MCP Python SDK). It exposes `search_knowledge`, `ask_needwise` and `list_my_tasks` to Claude Desktop, Cursor and other IDEs, authenticated with a personal access token or OAuth. The same permission enforcement applies: *"your company knowledge, inside your IDE."*
 
 > **As built ([docs/mcp.md](mcp.md)):** the server's tools are `ask`, `search_knowledge`,
 > `list_collections`, and `describe_data` / `query_data` for people with analytics access;
@@ -952,7 +952,7 @@ Tenant admins can tighten policies (never loosen `DESTRUCTIVE`).
 
 ### 13.3 A2A (Agent-to-Agent)
 
-Not needed for internal orchestration, which is in-process. A2A comes **after v1.0**, to publish selected WorkMind agents (with agent cards) to external agent ecosystems, or to call partner agents. We only build it when there is a real interoperability need.
+Not needed for internal orchestration, which is in-process. A2A comes **after v1.0**, to publish selected NeedWise agents (with agent cards) to external agent ecosystems, or to call partner agents. We only build it when there is a real interoperability need.
 
 ---
 
@@ -1035,7 +1035,7 @@ Clicking a decision or action item jumps to that moment in the recording. Privac
 | Verification | Every number in the narrative must appear in the query results. The validator checks this. |
 | Evaluation | A text-to-SQL gold set scored by execution accuracy (§22) |
 
-> **As built so far (v0.10, [docs/analytics.md](analytics.md)):** the semantic layer, the sqlglot guard, the DuckDB sandbox, the semantic-query compiler and versioned per-tenant datasets (CSV/XLSX), behind one service interface. Row policies are applied as fences: the rows a person may see of each restricted table are copied into a temporary table in a statement of their own, and every reference reads that (a filtered subquery in the same statement let DuckDB run the query's own conditions on hidden rows, found in review); the DuckDB connection is read-only, with external access off and its configuration locked, as the second lock, and queries run in worker processes with memory and time limits that hold, a bounded number at once and one per person. The agent checks access in code before any model call, then runs a tool loop (`query_metrics` for semantic queries, `run_sql` for the rest) whose every query runs through the service as the asker; a structured compose call writes the narrative, picks the chart spec (line, bar, stacked bar or table) and the main query; every number in the narrative is checked against the result cells at the precision shown, with one repair pass. Answers are stored per person (`/api/v1/analytics/*`), SQL can be re-run as the caller, admins manage the model and the tables, and `describe_data` / `query_data` give research mode and MCP clients the same data under the same permissions. The web app has the Insights page and Admin › Analytics. The text-to-SQL evaluation (§22) is built: `wm eval --suites analytics` asks 51 questions as 8 people (36 scored by execution accuracy against gold SQL run as the same person, 5 without access, 10 attacks) with a zero-leak gate on every query result. With Claude Sonnet 5.5 it scores 33/36 on execution accuracy (28/29 with full access, 5/7 under Dan's row policy) with 0 leaks, 7.1 s p50 and $0.026 per answer ([evals/results/2026-11-12-analytics-after-review.md](../evals/results/2026-11-12-analytics-after-review.md)); other models are not measured. PostgreSQL and MySQL sources are built ([docs/analytics-sql-sources.md](analytics-sql-sources.md), table `analytics_sources`, not the `data_sources` sketched in §9): each is a dataset with its own model, access and row policies; the guard works in the source's dialect (unknown functions only from an allow-list) and rewrites model tables to the database's; row policies are CTE fences (`MATERIALIZED` on PostgreSQL); queries run in the same worker processes in a read-only session with a statement timeout, a row cap and a connection budget per tenant; hosts follow the SSRF rules, private networks only by an operator setting. Tested with scripted models only. An answer's progress streams to the Insights page (`POST /analytics/runs`, events as in §18). Decisions and rejected alternatives: [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md).
+> **As built so far (v0.10, [docs/analytics.md](analytics.md)):** the semantic layer, the sqlglot guard, the DuckDB sandbox, the semantic-query compiler and versioned per-tenant datasets (CSV/XLSX), behind one service interface. Row policies are applied as fences: the rows a person may see of each restricted table are copied into a temporary table in a statement of their own, and every reference reads that (a filtered subquery in the same statement let DuckDB run the query's own conditions on hidden rows, found in review); the DuckDB connection is read-only, with external access off and its configuration locked, as the second lock, and queries run in worker processes with memory and time limits that hold, a bounded number at once and one per person. The agent checks access in code before any model call, then runs a tool loop (`query_metrics` for semantic queries, `run_sql` for the rest) whose every query runs through the service as the asker; a structured compose call writes the narrative, picks the chart spec (line, bar, stacked bar or table) and the main query; every number in the narrative is checked against the result cells at the precision shown, with one repair pass. Answers are stored per person (`/api/v1/analytics/*`), SQL can be re-run as the caller, admins manage the model and the tables, and `describe_data` / `query_data` give research mode and MCP clients the same data under the same permissions. The web app has the Insights page and Admin › Analytics. The text-to-SQL evaluation (§22) is built: `nw eval --suites analytics` asks 51 questions as 8 people (36 scored by execution accuracy against gold SQL run as the same person, 5 without access, 10 attacks) with a zero-leak gate on every query result. With Claude Sonnet 5.5 it scores 33/36 on execution accuracy (28/29 with full access, 5/7 under Dan's row policy) with 0 leaks, 7.1 s p50 and $0.026 per answer ([evals/results/2026-11-12-analytics-after-review.md](../evals/results/2026-11-12-analytics-after-review.md)); other models are not measured. PostgreSQL and MySQL sources are built ([docs/analytics-sql-sources.md](analytics-sql-sources.md), table `analytics_sources`, not the `data_sources` sketched in §9): each is a dataset with its own model, access and row policies; the guard works in the source's dialect (unknown functions only from an allow-list) and rewrites model tables to the database's; row policies are CTE fences (`MATERIALIZED` on PostgreSQL); queries run in the same worker processes in a read-only session with a statement timeout, a row cap and a connection budget per tenant; hosts follow the SSRF rules, private networks only by an operator setting. Tested with scripted models only. An answer's progress streams to the Insights page (`POST /analytics/runs`, events as in §18). Decisions and rejected alternatives: [ADR 0010](adr/0010-analytics-semantic-layer-duckdb-sqlglot.md).
 
 ---
 
@@ -1269,11 +1269,11 @@ Judges use a different model family from the generator where possible. Judge pro
 - **Each release:** full suite across providers (local vs. paid models). The comparison table is published in the release notes and on LinkedIn.
 - Results are saved to `evals/results/<date>-<git-sha>.json` plus a Markdown report.
 
-> **As built:** CI runs `wm eval --retrieval-only` on every push and pull request (hash
+> **As built:** CI runs `nw eval --retrieval-only` on every push and pull request (hash
 > embeddings, `RETRIEVAL_MIN_SIMILARITY=0`): every red-team and retrieval check for permission
 > leaks, gated at 0 (exit code 2). There is no model smoke set in CI, no recall or faithfulness
 > threshold, and no nightly or per-release eval workflow. The model-backed suites are run by hand
-> against the stack (`wm eval`), and their Markdown reports are committed as
+> against the stack (`nw eval`), and their Markdown reports are committed as
 > `evals/results/<date>-<label>.md` (the JSON stays local).
 
 ---
@@ -1349,12 +1349,12 @@ Every connector must pass the connector contract tests: pagination, deletions, p
 ## 24. Repository layout and engineering standards
 
 ```text
-workmind/
+needwise/
 ├── compose.yaml                      # the whole local stack: `make up`
 ├── Makefile                          # developer commands: `make` lists them
 ├── apps/
-│   ├── api/                          # FastAPI backend (Python package: workmind)
-│   │   ├── src/workmind/
+│   ├── api/                          # FastAPI backend (Python package: needwise)
+│   │   ├── src/needwise/
 │   │   │   ├── core/                 # config, db, sessions, security, logging, telemetry, context
 │   │   │   ├── api/                  # HTTP routers: probes, /api/v1
 │   │   │   ├── modules/
@@ -1364,7 +1364,7 @@ workmind/
 │   │   │   │   ├── retrieval/        # hybrid search, rerank, citations, verification
 │   │   │   │   ├── agents/           # planner, department agent, orchestrator, agent registry
 │   │   │   │   ├── tools/            # tool registry, execution wrapper, MCP client
-│   │   │   │   ├── mcp_server/       # WorkMind MCP server
+│   │   │   │   ├── mcp_server/       # NeedWise MCP server
 │   │   │   │   ├── workflows/        # workflow engine, tasks, approvals
 │   │   │   │   ├── meetings/
 │   │   │   │   ├── insights/         # BI agent, semantic layer, SQL safety
@@ -1387,7 +1387,7 @@ workmind/
 ├── seed/                             # Acme Robotics synthetic company generator + corpus
 ├── evals/                            # datasets, runners, results, reports
 ├── ee/                               # Enterprise features (separate license, see ROADMAP §4)
-│   └── python/                       # workmind-ee package: setup(registry, edition) (ADR 0011)
+│   └── python/                       # needwise-ee package: setup(registry, edition) (ADR 0011)
 └── docs/                             # architecture, ADRs, guides, devlog
 ```
 
@@ -1482,7 +1482,7 @@ Step by step:
 | # | Decision | Options | Needed by |
 |---|---|---|---|
 | D1 | Core license | ✅ **Decided:** Apache-2.0 core + `ee/` commercial, contributions under DCO ([ADR 0004](adr/0004-apache-2-open-core-and-dco.md)) | Done |
-| D2 | Product name | "WorkMind AI" is the working name. The trademark/domain check is deferred until the product works end to end. The name lives only in config (`PRODUCT_NAME`, `apps/web/src/config/site.ts`), so a rename is cheap. | After the end-to-end build |
+| D2 | Product name | "NeedWise" is the working name. The trademark/domain check is deferred until the product works end to end. The name lives only in config (`PRODUCT_NAME`, `apps/web/src/config/site.ts`), so a rename is cheap. | After the end-to-end build |
 | D3 | Default local model | Qwen3 vs. gpt-oss (and newer), chosen by Phase 3 evals on local hardware | Phase 3 |
 | D4 | Demo hosting and model budget | VM provider, which paid API for the public demo | Phase 4 |
 | D5 | Observability weight | Langfuse (richer, needs ClickHouse) vs. Arize Phoenix (lighter) as the default profile | Phase 3 |

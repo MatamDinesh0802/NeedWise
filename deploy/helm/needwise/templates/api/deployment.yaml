@@ -1,0 +1,107 @@
+{{- $c := .Values.api -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "needwise.componentName" (list . "api") }}
+  labels:
+    {{- include "needwise.labels" (list . "api") | nindent 4 }}
+spec:
+  {{- if not $c.autoscaling.enabled }}
+  replicas: {{ $c.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "needwise.selectorLabels" (list . "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "needwise.selectorLabels" (list . "api") | nindent 8 }}
+        needwise.io/object-storage: "true"
+        {{- with $c.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- include "needwise.checksums" . | nindent 8 }}
+        {{- with $c.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "needwise.podCommon" (list . $c) | nindent 6 }}
+      securityContext:
+        {{- include "needwise.podSecurityContext" (list . $c.podSecurityContext) | nindent 8 }}
+      terminationGracePeriodSeconds: {{ $c.terminationGracePeriodSeconds }}
+      {{- with include "needwise.objectStorageAffinity" (list . $c.affinity) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "needwise.apiImage" . }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          {{- with $c.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "needwise.componentName" (list . "config") }}
+            {{- with $c.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- include "needwise.appEnv" . | nindent 12 }}
+            - name: FORWARDED_ALLOW_IPS
+              value: {{ $c.forwardedAllowIps | quote }}
+            - name: WEB_CONCURRENCY
+              value: {{ $c.workers | quote }}
+            {{- with $c.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with $c.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $c.preStopSleepSeconds }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", {{ $c.preStopSleepSeconds | quote }}]
+          {{- end }}
+          securityContext:
+            {{- include "needwise.securityContext" (list . $c.securityContext) | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: objects
+              mountPath: /data/objects
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: objects
+          persistentVolumeClaim:
+            claimName: {{ include "needwise.objectStorageClaim" . }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ $c.tmpSizeLimit }}

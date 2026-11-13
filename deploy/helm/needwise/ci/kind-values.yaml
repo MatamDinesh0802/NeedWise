@@ -1,0 +1,37 @@
+# deploy/helm/kind-test.sh only: the chart on a kind cluster, as CI runs the compose stack.
+# Images loaded into the nodes, ingress-nginx, hash embeddings (no embedding server), no model
+# key, the demo seed from an image built from seed/, NetworkPolicies on. Not a recommended setup.
+images:
+  api: {repository: needwise-api, tag: kind}
+  web: {repository: needwise-web, tag: kind}
+config:
+  # The script sets the port it publishes (HTTP_PORT). "localhost": the end-to-end tests treat it
+  # as a secure context, as browsers do, for Keycloak's cookies over http.
+  publicUrl: http://localhost:8680
+  appEnv: demo
+  embedding:
+    provider: hash
+    model: hash-ci
+  # RETRIEVAL_MIN_SIMILARITY stays at its default here, as on CI's compose stack (CI turns it
+  # off only for the permission-gate eval). At 0 the guest's one collection always matches, her
+  # chat question goes to the model, and without a key the end-to-end test that expects "not
+  # found" fails.
+embeddings:
+  enabled: false
+seed:
+  enabled: true
+  data:
+    source: image
+    image: {repository: needwise-seed, tag: kind}
+ingress:
+  className: nginx
+  annotations:
+    # Uploads up to 500 MB (meeting recordings) and answers streamed for minutes.
+    nginx.ingress.kubernetes.io/proxy-body-size: 512m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+networkPolicy:
+  enabled: true
+  publicFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx

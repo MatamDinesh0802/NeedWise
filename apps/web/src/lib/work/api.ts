@@ -1,6 +1,6 @@
 /**
  * Typed client for approvals, tasks, notifications and the member agent list. Shapes mirror
- * apps/api/src/workmind/api/v1/work.py and api/v1/agents.py (`members_router`).
+ * apps/api/src/needwise/api/v1/work.py and api/v1/agents.py (`members_router`).
  */
 
 import { apiJson } from "@/lib/api";

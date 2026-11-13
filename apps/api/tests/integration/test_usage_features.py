@@ -15,6 +15,14 @@ from typing import Any
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.agents.department import EvidenceOut, Finding
+from needwise.modules.agents.planning import PlanOut, Subtask
+from needwise.modules.conversations.models import Message
+from needwise.modules.identity.models import Department
+from needwise.modules.meetings.topics import Outline, TopicStart
+from needwise.modules.usage.models import UsageEvent
+from needwise.modules.work.models import Workflow, WorkflowRun
 from tests.fakes import FakeLLM
 from tests.integration.conftest import Acme, SessionFactory
 from tests.integration.test_conversations_api import (  # noqa: F401  (pytest fixtures)
@@ -30,14 +38,6 @@ from tests.integration.test_conversations_api import (  # noqa: F401  (pytest fi
     use_model,
 )
 from tests.integration.test_meetings_api import OUTCOME, VTT
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.agents.department import EvidenceOut, Finding
-from workmind.modules.agents.planning import PlanOut, Subtask
-from workmind.modules.conversations.models import Message
-from workmind.modules.identity.models import Department
-from workmind.modules.meetings.topics import Outline, TopicStart
-from workmind.modules.usage.models import UsageEvent
-from workmind.modules.work.models import Workflow, WorkflowRun
 
 
 async def usage(sessions: SessionFactory, acme: Acme) -> list[UsageEvent]:

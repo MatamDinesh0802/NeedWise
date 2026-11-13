@@ -35,21 +35,21 @@ expires while the process runs switches its features off at that moment.
 
 ### 2. Two kinds of trusted key, one of them only in development
 `PRODUCTION_PUBLIC_KEYS` (in the code, empty until official licenses are issued) and a
-development public key that is trusted only with `APP_ENV=dev`. `wm license dev` creates a
-development key pair in `<repo>/.workmind/` (git- and docker-ignored) and signs a license with
-it; compose mounts that folder read-only at `/run/workmind`, and the settings default to the
+development public key that is trusted only with `APP_ENV=dev`. `nw license dev` creates a
+development key pair in `<repo>/.needwise/` (git- and docker-ignored) and signs a license with
+it; compose mounts that folder read-only at `/run/needwise`, and the settings default to the
 files there. A development license copied to a `demo` or `production` deployment is refused.
 
 ### 3. Discovery through an entry point, only with a license
-Enterprise code is the `workmind-ee` package (`ee/python`), an optional extra of the API
+Enterprise code is the `needwise-ee` package (`ee/python`), an optional extra of the API
 (`uv sync --extra ee`) and installed in the API image. It declares the entry point group
-`workmind.ee`. The core looks the group up only when the license is valid, so without one
-`workmind_ee` is never imported, even when installed. A test checks that no core module imports
+`needwise.ee`. The core looks the group up only when the license is valid, so without one
+`needwise_ee` is never imported, even when installed. A test checks that no core module imports
 it (by parsing the source) and that a process which imports every core module never loads it.
 
 ### 4. A registry where every extension names its feature
 `setup(registry, edition)` registers routers (mounted under `/api/v1` after the core routes,
-behind sign-in and `require_feature`), Celery beat tasks (names prefixed `workmind_ee.`) and
+behind sign-in and `require_feature`), Celery beat tasks (names prefixed `needwise_ee.`) and
 implementations of named hooks (`Hook[P, R]`, called with a typed `registry.call`). Each
 registration names the licensed feature it belongs to, and the core checks that feature on each
 request, task run and hook call. Setup is all or nothing: an exception is logged, everything
@@ -80,7 +80,7 @@ Row-Level Security like every tenant table. Adding or removing a license never r
 
 ## Alternatives considered
 - **JWT (PyJWT with EdDSA):** a header that names the algorithm, more parsing surface, nothing
-  gained for a token only WorkMind issues and reads.
+  gained for a token only NeedWise issues and reads.
 - **RSA or HMAC signatures:** RSA keys and signatures are large; HMAC would put the signing
   secret in every deployment.
 - **Online activation or a license server:** does not work in air-gapped deployments, and adds a

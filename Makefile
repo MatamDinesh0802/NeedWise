@@ -1,4 +1,4 @@
-# WorkMind AI developer commands. Run `make` to list them.
+# NeedWise developer commands. Run `make` to list them.
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
@@ -21,7 +21,7 @@ quickstart: ## First run on any OS: embeddings in Docker, the full stack, the Ac
 		echo "\nSearch works now. For answers, add ANTHROPIC_API_KEY=... (or a local model) to .env, then: make up"
 
 objects-dir: ## Create the bind-mounted directories; on Linux, object storage owned by uid 10001
-	@mkdir -p .data/objects .workmind
+	@mkdir -p .data/objects .needwise
 	@# The containers run as uid 10001. Docker Desktop ignores ownership; a Linux daemon does not.
 	@if [ "$$(uname -s)" = Linux ] && [ "$$(stat -c %u .data/objects)" != 10001 ]; then \
 		docker run --rm -v "$(CURDIR)/.data/objects:/objects" alpine:3.22 chown -R 10001 /objects; \
@@ -31,7 +31,7 @@ up: ## Build and start the full stack, wait until every service is healthy
 	@$(MAKE) --no-print-directory objects-dir
 	$(COMPOSE) up -d --build --wait
 	@echo ""
-	@echo "  WorkMind is running at http://localhost:$(HTTP_PORT)"
+	@echo "  NeedWise is running at http://localhost:$(HTTP_PORT)"
 	@echo "  API docs: http://localhost:$(HTTP_PORT)/api/docs"
 
 down: ## Stop the stack (data is kept)
@@ -55,7 +55,7 @@ infra: ## Start infrastructure only; http://localhost:8480 then serves api-dev a
 		$(COMPOSE) up -d --wait $(INFRA)
 
 api-dev: ## Run the API on the host with auto-reload (after `make infra`)
-	cd apps/api && uv run alembic upgrade head && uv run uvicorn workmind.main:create_app --factory --reload --port 8400
+	cd apps/api && uv run alembic upgrade head && uv run uvicorn needwise.main:create_app --factory --reload --port 8400
 
 web-dev: ## Run the web app on the host with hot reload (after `make infra`)
 	cd apps/web && pnpm dev
@@ -76,7 +76,7 @@ TEST_VALKEY_URL ?= redis://localhost:6379/15
 TEST_OPENFGA_URL ?= http://localhost:8401
 TEST_OPENFGA_API_KEY ?= dev-only-openfga-key
 TEST_QDRANT_URL ?= http://localhost:6333
-FGA_MODEL_DIR := apps/api/src/workmind/modules/authz/openfga
+FGA_MODEL_DIR := apps/api/src/needwise/modules/authz/openfga
 FGA := docker run --rm -v "$(CURDIR)/$(FGA_MODEL_DIR):/model" openfga/cli:v0.8.2@sha256:31a565d14d1c5ca8170d3a2225eb66517d9f490539967bcb3421613c5e2538a4
 
 test: ## Run unit + integration tests (integration needs `make infra` or `make up`)
@@ -118,27 +118,27 @@ embeddings: ## Run the local embedding model on :8091 (needs llama.cpp: brew ins
 	llama-server $(EMBED_SOURCE) --embeddings --host 127.0.0.1 --port 8091 \
 		-c 8192 --parallel 4 -ub 2048 -b 2048
 
-# Enterprise edition, development only (docs/enterprise.md). Writes .workmind/ (git-ignored);
+# Enterprise edition, development only (docs/enterprise.md). Writes .needwise/ (git-ignored);
 # then: docker compose restart api worker beat.  Options: FEATURES="a b" DAYS=30
-ee-dev-license: ## Write a development Enterprise license to .workmind/ (APP_ENV=dev only)
-	cd apps/api && uv run --extra ee wm license dev $(if $(FEATURES),--features $(FEATURES)) $(if $(DAYS),--days $(DAYS))
+ee-dev-license: ## Write a development Enterprise license to .needwise/ (APP_ENV=dev only)
+	cd apps/api && uv run --extra ee nw license dev $(if $(FEATURES),--features $(FEATURES)) $(if $(DAYS),--days $(DAYS))
 
 seed: ## Create the Acme Robotics demo company and its logins (safe to re-run)
 	$(COMPOSE) --profile tools run --rm --build seed
 
 # Supply-chain checks, the same as the Security workflow (docs/security/supply-chain.md). Each
 # scanner runs from a container image pinned by digest. scan-images builds under separate tags
-# (workmind-api:scan, workmind-web:scan), so the images `make up` runs are left alone.
+# (needwise-api:scan, needwise-web:scan), so the images `make up` runs are left alone.
 .PHONY: scan scan-images
 scan: ## Scan lockfiles, repository, Dockerfiles and workflows (Docker only, nothing installed)
 	scripts/security-scan.sh all
 
 scan-images: ## Build the api and web images under :scan tags, scan them, remove them
-	docker build -t workmind-api:scan --build-context ee=ee apps/api
-	docker build -t workmind-web:scan apps/web
-	scripts/security-scan.sh image workmind-api:scan
-	scripts/security-scan.sh image workmind-web:scan
-	docker image rm workmind-api:scan workmind-web:scan
+	docker build -t needwise-api:scan --build-context ee=ee apps/api
+	docker build -t needwise-web:scan apps/web
+	scripts/security-scan.sh image needwise-api:scan
+	scripts/security-scan.sh image needwise-web:scan
+	docker image rm needwise-api:scan needwise-web:scan
 
 # Documentation site (mkdocs.yml, docs/): MkDocs with Material, run by uv from the pinned
 # docs/requirements.txt, so nothing is installed globally.
@@ -155,7 +155,7 @@ docs-serve: ## Serve the documentation with live reload on http://127.0.0.1:8495
 	$(MKDOCS) serve --dev-addr 127.0.0.1:$(DOCS_PORT)
 
 docs-gen: ## Regenerate docs/reference/ (settings, OpenAPI) from the code; a test checks it
-	cd apps/api && uv run python -m workmind.docs_gen
+	cd apps/api && uv run python -m needwise.docs_gen
 
 docs-lock: ## Re-pin docs/requirements.txt (with hashes) from docs/requirements.in
 	uv pip compile docs/requirements.in --python-version $(DOCS_PYTHON) --generate-hashes \
@@ -177,7 +177,7 @@ LABEL ?= run
 STUB_PORT ?= 8490
 
 loadtest: ## Load test (USERS SPAWN_RATE DURATION LABEL MIX NO_MODEL STUB_URL UPLOAD_COLLECTION MONITOR)
-	cd loadtests && uv run python -m workmind_load.run --host $(LOADTEST_HOST) \
+	cd loadtests && uv run python -m needwise_load.run --host $(LOADTEST_HOST) \
 		--users $(USERS) --spawn-rate $(SPAWN_RATE) --duration $(DURATION) --label $(LABEL) \
 		$(if $(MIX),--mix $(MIX)) $(if $(NO_MODEL),--no-model) $(if $(STUB_URL),--stub-url $(STUB_URL)) \
 		$(if $(UPLOAD_COLLECTION),--upload-collection $(UPLOAD_COLLECTION)) $(if $(THINK),--think $(THINK)) \
@@ -189,11 +189,11 @@ loadtest-stub: ## Run the stub model server for load tests (STUB_PORT TTFT_MS TP
 		$(if $(ANSWER_TOKENS),--answer-tokens $(ANSWER_TOKENS))
 
 loadtest-report: ## Rewrite a load-test report from its raw stats (RUN=<date>-<label>)
-	cd loadtests && uv run python -m workmind_load.report results/raw/$(RUN)/locust \
+	cd loadtests && uv run python -m needwise_load.report results/raw/$(RUN)/locust \
 		--meta results/raw/$(RUN)/meta.json --out results/$(RUN).md
 
 loadtest-sweep: ## Revoke leftover load-test tokens, delete leftover [load] conversations
-	cd loadtests && uv run python -m workmind_load.tokens sweep --host $(LOADTEST_HOST) \
+	cd loadtests && uv run python -m needwise_load.tokens sweep --host $(LOADTEST_HOST) \
 		$(if $(UPLOAD_COLLECTION),--upload-collection $(UPLOAD_COLLECTION))
 
 loadtest-check: ## Lint, type-check and test the load-test harness (no stack needed)
@@ -201,13 +201,13 @@ loadtest-check: ## Lint, type-check and test the load-test harness (no stack nee
 		&& uv run pytest -q
 
 # Operations (docs/operations/). Options: OUTPUT=<dir>, BACKUP_FLAGS="--offline" (or --online),
-# RESTORE_FLAGS="--force --public-url https://workmind.example.com", FROM=<tag>.
-backup: ## Back up the databases, Qdrant, objects and license to ./backups/workmind-<time>
+# RESTORE_FLAGS="--force --public-url https://needwise.example.com", FROM=<tag>.
+backup: ## Back up the databases, Qdrant, objects and license to ./backups/needwise-<time>
 	scripts/backup.sh $(if $(OUTPUT),--output "$(OUTPUT)") $(BACKUP_FLAGS)
 
-restore: ## Restore a backup into this stack: make restore BACKUP=backups/workmind-<time>
+restore: ## Restore a backup into this stack: make restore BACKUP=backups/needwise-<time>
 	@test -n "$(BACKUP)" || { echo "usage: make restore BACKUP=<backup directory>"; exit 2; }
 	scripts/restore.sh "$(BACKUP)" $(RESTORE_FLAGS)
 
-upgrade-test: ## Upgrade a throwaway stack from an older release to this code: FROM=v0.1.0
-	scripts/upgrade-test.sh $(or $(FROM),v0.1.0)
+upgrade-test: ## Upgrade a throwaway stack from an older release to this code: FROM=v1.0.0 (default; skips until it is tagged)
+	scripts/upgrade-test.sh $(or $(FROM),v1.0.0)

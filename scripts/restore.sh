@@ -11,14 +11,14 @@
 #      settings use another search index than the backup's, unless --force
 #   3. stops everything except postgres, valkey and qdrant
 #   4. recreates the databases from their dumps (roles from globals.sql; passwords stay the
-#      target's) and compares WorkMind's row counts with the manifest
+#      target's) and compares NeedWise's row counts with the manifest
 #   5. recovers the Qdrant snapshots and compares the point counts
 #   6. restores the object storage (an existing tree is moved aside, not deleted) and checks
 #      every object's SHA-256; restores the license files
 #   7. empties Valkey: its sessions, queued jobs and caches belong to the data being replaced
 #   8. starts the stack; migrations run if the backup is older than the code
-#   9. with --public-url: points Keycloak's WorkMind client at that address
-#  10. `wm authz sync`: brings OpenFGA in line with PostgreSQL
+#   9. with --public-url: points Keycloak's NeedWise client at that address
+#  10. `nw authz sync`: brings OpenFGA in line with PostgreSQL
 #  11. checks /api/v1/system/status and prints what it found
 # --no-start stops after step 7 (start the stack yourself, then run steps 9 and 10).
 #
@@ -54,10 +54,10 @@ BACKUP=$(cd "$BACKUP" && pwd)
 QDRANT_URL=${QDRANT_URL:-http://127.0.0.1:$(env_value QDRANT_PORT 6333)}
 API_URL=${API_URL:-http://127.0.0.1:$(env_value API_PORT 8400)}
 OBJECTS_DIR=${OBJECTS_DIR:-$DEPLOY_DIR/.data/objects}
-LICENSE_DIR=${LICENSE_DIR:-$DEPLOY_DIR/.workmind}
+LICENSE_DIR=${LICENSE_DIR:-$DEPLOY_DIR/.needwise}
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 STARTED=$(date +%s)
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/wm-restore.XXXXXX")
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/nw-restore.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 umask 022
 MISMATCH=""
@@ -81,14 +81,14 @@ fi
 # backup of another one would restore a collection the API never searches, and --prune below
 # deletes the one it does: every search would then find nothing until a full re-index.
 BACKUP_COLLECTION=$(manifest embedding.collection)
-TARGET_COLLECTION=$(compose run --rm --no-deps -T migrate python -c 'from workmind.core.config import Settings; print(Settings().qdrant_collection)' 2>/dev/null | tail -n 1 || true)
+TARGET_COLLECTION=$(compose run --rm --no-deps -T migrate python -c 'from needwise.core.config import Settings; print(Settings().qdrant_collection)' 2>/dev/null | tail -n 1 || true)
 if [[ -n $BACKUP_COLLECTION && -n $TARGET_COLLECTION && $BACKUP_COLLECTION != "$TARGET_COLLECTION" ]]; then
   warn "the backup's search index is $BACKUP_COLLECTION, but this deployment's embedding settings use $TARGET_COLLECTION"
   if [[ -z $FORCE ]]; then
-    printf 'refused: set EMBEDDING_MODEL and EMBEDDING_DIMENSIONS as in the backed-up deployment, or run again with --force and then re-index every tenant (wm reindex <tenant>).\n' >&2
+    printf 'refused: set EMBEDDING_MODEL and EMBEDDING_DIMENSIONS as in the backed-up deployment, or run again with --force and then re-index every tenant (nw reindex <tenant>).\n' >&2
     exit 2
   fi
-  warn "--force: searches find nothing until every tenant is re-indexed (wm reindex <tenant>)"
+  warn "--force: searches find nothing until every tenant is re-indexed (nw reindex <tenant>)"
   MISMATCH="$MISMATCH embedding"
 fi
 
@@ -177,7 +177,7 @@ info "Valkey emptied"
 
 if [[ -z $START ]]; then
   say "Data restored in $(since "$STARTED")s. Start the stack (docker compose up -d --wait), then run"
-  info "scripts/keycloak-public-url.sh <url> (if the address changed) and: docker compose run --rm migrate wm authz sync"
+  info "scripts/keycloak-public-url.sh <url> (if the address changed) and: docker compose run --rm migrate nw authz sync"
   exit 0
 fi
 
@@ -199,8 +199,8 @@ if [[ -n $NEW_URL ]]; then
   "$REPO_ROOT/scripts/keycloak-public-url.sh" "$NEW_URL"
 fi
 say "Authorization: OpenFGA from PostgreSQL"
-compose run --rm --no-deps -T migrate wm authz sync 2>&1 | sed 's/^/    /' >&2 ||
-  warn "wm authz sync failed: run it again (docker compose run --rm migrate wm authz sync)"
+compose run --rm --no-deps -T migrate nw authz sync 2>&1 | sed 's/^/    /' >&2 ||
+  warn "nw authz sync failed: run it again (docker compose run --rm migrate nw authz sync)"
 
 # --- 11. Checks --------------------------------------------------------------------------------
 say "Checks"
@@ -222,7 +222,7 @@ fi
 waiting=$(psql_value -d "$APP_DB" -c "SELECT count(*) FROM documents WHERE status IN ('pending', 'processing')" 2>/dev/null || echo 0)
 if [[ $waiting -gt 0 ]]; then
   warn "$waiting document(s) were queued or being indexed at backup time; their jobs were in Valkey."
-  info "re-index them: docker compose run --rm worker wm reindex <tenant slug> (or per document in the UI)"
+  info "re-index them: docker compose run --rm worker nw reindex <tenant slug> (or per document in the UI)"
 fi
 # Meetings are processed by a Celery job too, and nothing re-queues one: name them.
 stuck=$(psql_value -d "$APP_DB" -c "SELECT count(*) FROM meetings WHERE status IN ('pending', 'transcribing', 'extracting')" 2>/dev/null || echo 0)

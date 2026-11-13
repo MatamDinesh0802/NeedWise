@@ -1,6 +1,6 @@
 /**
  * Identity mappings (docs/permission-sync.md): who a principal named by a source (a Google
- * group, a domain, a Slack or GitHub account) is in WorkMind. People are matched by e-mail on
+ * group, a domain, a Slack or GitHub account) is in NeedWise. People are matched by e-mail on
  * their own; anything else grants nothing until an administrator maps it (fail closed).
  *
  *   GET    /api/v1/admin/identity-mappings          mappings, and what is still unmapped

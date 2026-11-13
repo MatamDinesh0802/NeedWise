@@ -1,6 +1,6 @@
 /**
  * Typed client for conversations and runs. Shapes mirror
- * apps/api/src/workmind/api/v1/conversations.py.
+ * apps/api/src/needwise/api/v1/conversations.py.
  */
 
 import { apiJson } from "@/lib/api";

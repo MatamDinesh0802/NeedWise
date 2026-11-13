@@ -83,7 +83,7 @@ describe("EnterpriseBadge", () => {
   it("labels Enterprise-only UI, naming the feature when given", () => {
     expect(renderToStaticMarkup(<EnterpriseBadge />)).toContain("Enterprise");
     const html = renderToStaticMarkup(<EnterpriseBadge feature="advanced_audit_export" />);
-    expect(html).toContain('aria-label="Advanced audit export is part of WorkMind Enterprise"');
+    expect(html).toContain('aria-label="Advanced audit export is part of NeedWise Enterprise"');
     expect(html).toContain(">Enterprise</span>");
   });
 });

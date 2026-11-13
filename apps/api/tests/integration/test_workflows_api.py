@@ -4,10 +4,10 @@ TEST_VALKEY_URL."""
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.work.models import Workflow, WorkflowRun
 from tests.integration.conftest import Acme, SessionFactory
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.work.models import Workflow, WorkflowRun
 
 DEFINITION = {"steps": [{"id": "gather", "research": "What happened this week?"}]}
 

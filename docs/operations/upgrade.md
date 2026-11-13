@@ -1,17 +1,37 @@
 # Upgrades
 
-How to upgrade a WorkMind deployment run with Docker Compose, what runs during an upgrade,
-every manual step from v0.1.0 to this code, what the tested upgrade measured, and how to roll
-back. Backups are in [backup-restore.md](backup-restore.md).
+How to upgrade a NeedWise deployment run with Docker Compose, what runs during an upgrade,
+why upgrade testing starts at v1.0.0, the record of the last upgrade tested before the
+rename (from v0.1.0), and how to roll back. Backups are in [backup-restore.md](backup-restore.md).
+
+## Upgrade testing starts at v1.0.0
+
+v1.0.0 is the first NeedWise release and the baseline of the upgrade test
+(`scripts/upgrade-test.sh`, `make upgrade-test`, the *Upgrade test* workflow). The only older
+tag, v0.1.0, was made before the rename and never published, and the rename changed names that
+a deployment keeps in its data and configuration: the PostgreSQL database and its two roles,
+the Keycloak realm and client, the Compose project (and so the names of its volumes), the
+`NEEDWISE_*` variables in `.env`, the license directory (`.needwise/`), the session and login
+cookies, the access-token prefix (`nw_pat_`), the labels that bind encrypted model-provider keys
+and Slack credentials, the Celery task names and the CLI (`nw`). So a v0.1.0 deployment does not
+upgrade in place: start NeedWise fresh, or move the data across by hand. The upgrade from v0.1.0
+to the code just before the rename was tested; its record is kept below.
+
+The upgrade test skips, with a message and exit status 0, while the baseline tag is missing
+from the repository or is the commit under test: until v1.0.0 is tagged, and on the
+v1.0.0 commit itself. It refuses a tag from before the rename. Once there are later
+releases, pass the one to upgrade from: `make upgrade-test FROM=v1.1.0`, or the workflow's
+*from* input.
 
 ## Supported paths
 
 - **From any release to a later one, directly.** The database migrations are one linear chain
   (`0001` to `0027` today) and the `migrate` service applies every missing step in order, so
   there is no need to stop at intermediate versions.
-- **Tested for v1.0.0:** on 2026-11-13, `scripts/upgrade-test.sh v0.1.0` upgraded v0.1.0 to the
+- **Tested for v1.0.0, just before the rename:** on 2026-11-13, `scripts/upgrade-test.sh v0.1.0`
+  (the script of that time; today's refuses pre-rename tags) upgraded v0.1.0 to the
   v1.0.0 release code (commit `9b9fe52`; the tag adds documentation to it): alembic `0004` to
-  `0027`, 10 tables before and 45 after with no row lost, `wm authz sync` wrote and removed 0
+  `0027`, 10 tables before and 45 after with no row lost, `nw authz sync` wrote and removed 0
   tuples, and all 17 checks of [the table below](#measured-v010-to-this-code) passed. The new
   version's build took 54 s (with the build cache), `up` to healthy 22 s, the whole test 115 s,
   on the laptop below. Restore and rollback were not repeated for v1.0.0.
@@ -38,28 +58,28 @@ back. Backups are in [backup-restore.md](backup-restore.md).
 ## How an upgrade runs
 
 - **Migrations.** Alembic, in `apps/api/migrations/versions/`, revision ids are plain numbers.
-  The one-shot `migrate` service runs `alembic upgrade head` as `workmind_owner` (the schema
-  owner; the API itself runs as `workmind_app`, which can never bypass Row-Level Security).
+  The one-shot `migrate` service runs `alembic upgrade head` as `needwise_owner` (the schema
+  owner; the API itself runs as `needwise_app`, which can never bypass Row-Level Security).
   `api`, `worker` and `beat` wait for it to finish successfully; if it fails, nothing starts and
   `docker compose logs migrate` says why. Each migration that adds a tenant table also forces
   Row-Level Security on it with its `tenant_isolation` policy.
 - **Authorization model.** Each tenant's OpenFGA store holds a copy of the model. Seeding wrote
-  it, and nothing else did until `wm authz sync`: run it after every upgrade
-  (`docker compose run --rm migrate wm authz sync`). It writes the current model where it
+  it, and nothing else did until `nw authz sync`: run it after every upgrade
+  (`docker compose run --rm migrate nw authz sync`). It writes the current model where it
   differs and recomputes the tuples from PostgreSQL. The model changed once since v0.1.0: the
   document type got its own access lists ([ADR 0012](../adr/0012-document-access-lists.md),
-  migration `0022`). Until `wm authz sync` has written it, OpenFGA refuses the new document
+  migration `0022`). Until `nw authz sync` has written it, OpenFGA refuses the new document
   tuples: the outbox retries them (later changes wait behind them for up to about 20 seconds,
   then go ahead) and the sync writes everything. Retrieval is not affected meanwhile: lock 2
   checks documents only when they have their own list, and none has one before the upgrade.
 - **Keycloak.** Keycloak migrates its own database when its image version changes.
-  `deploy/keycloak/realm-workmind.json` is imported once, when the realm does not exist yet:
+  `deploy/keycloak/realm-needwise.json` is imported once, when the realm does not exist yet:
   later edits to that file are not applied to an existing realm, so a release that changes it
   must say what to change by hand. It has not changed since v0.1.0.
 - **Qdrant.** The collection is named after the embedding model and its size
   (`chunks_<model>_<dimensions>`, e.g. `chunks_embeddinggemma_300m_768`). Changing
-  `EMBEDDING_MODEL` or `EMBEDDING_DIMENSIONS` points WorkMind at a new, empty collection: run
-  `docker compose run --rm worker wm reindex <tenant slug>` for each tenant, then delete the old
+  `EMBEDDING_MODEL` or `EMBEDDING_DIMENSIONS` points NeedWise at a new, empty collection: run
+  `docker compose run --rm worker nw reindex <tenant slug>` for each tenant, then delete the old
   collection. (The `chunks_active` alias in ARCHITECTURE §8 is not built.)
 - **Infrastructure images** (Postgres 18.6, Valkey 9.1.3, Qdrant 1.20.0, OpenFGA 1.22.1,
   Keycloak 26.8.1, Caddy 2.11.7) are the same in v0.1.0 and this code. When a release changes
@@ -68,7 +88,7 @@ back. Backups are in [backup-restore.md](backup-restore.md).
 
 ## Procedure
 
-In the deployment directory (a git checkout; `.env`, `.data/` and `.workmind/` are not tracked
+In the deployment directory (a git checkout; `.env`, `.data/` and `.needwise/` are not tracked
 and stay):
 
 1. Read the release notes of every version you skip.
@@ -80,10 +100,10 @@ and stay):
 5. Make the [manual changes](#from-v010-manual-steps) for your path, in `.env`.
 6. `make up` (= `make objects-dir && docker compose up -d --build --wait`). The
    migrations run before the application starts.
-7. `docker compose run --rm migrate wm authz sync`.
+7. `docker compose run --rm migrate nw authz sync`.
 8. Check: `make status`, sign in, search for something you know is there.
 
-**With released images** (`WORKMIND_API_IMAGE` and `WORKMIND_WEB_IMAGE` set to the published
+**With released images** (`NEEDWISE_API_IMAGE` and `NEEDWISE_WEB_IMAGE` set to the published
 images, digest-pinned as [releasing](releasing.md) recommends), nothing is built: step 2 is
 `docker compose pull` after setting the new version's images in `.env`, and step 6 is
 `make objects-dir && docker compose up -d --no-build --wait`. Do not run `docker compose build`
@@ -96,6 +116,10 @@ to try an upgrade before doing it (it needs the old tag in your git history).
 
 ## From v0.1.0: manual steps
 
+*A record from before the rename: it describes WorkMind's v0.1.0 and the code of 2026-11-12,
+with commands, project and image names given in their current form. NeedWise upgrades start
+at v1.0.0 ([why](#upgrade-testing-starts-at-v100)).*
+
 v0.1.0 was identity, tenancy and permissions only (departments, groups, people, access tokens,
 the audit log). Everything since (knowledge, the assistant, agents, connectors, workflows,
 meetings, BI, governance, usage, editions) arrives with the upgrade. What you change:
@@ -107,13 +131,13 @@ meetings, BI, governance, usage, editions) arrives with the upgrade. What you ch
 | An embedding server: `EMBEDDING_BASE_URL` (+ `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS` if not EmbeddingGemma 768) | Uploads are embedded, searches too. Default: `http://host.docker.internal:8091/v1` (`make embeddings` on a Mac); or `COMPOSE_PROFILES=embeddings` with `EMBEDDING_BASE_URL=http://embeddings:8080/v1` for the CPU container. | Documents and search |
 | A language model: `ANTHROPIC_API_KEY`, or `LLM_PROVIDER=openai_compatible` and `LLM_BASE_URL` ([docs/models.md](../models.md)) | Answers, agents, meeting summaries, BI. Search works without it. | Answers |
 | Outgoing mail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, ... | Compose sends development mail to Mailpit; set a real server in production. | Email |
-| Directories `.data/objects` and `.workmind` | New bind mounts: object storage, and license files (read-only). `make up` creates them (`make objects-dir`). On Linux, `.data/objects` must be writable by uid 10001, the containers' user: `make objects-dir` hands it over when it is not. | Uploads; Enterprise |
+| Directories `.data/objects` and `.needwise` | New bind mounts: object storage, and license files (read-only). `make up` creates them (`make objects-dir`). On Linux, `.data/objects` must be writable by uid 10001, the containers' user: `make objects-dir` hands it over when it is not. | Uploads; Enterprise |
 
 Nothing else needs doing by hand on this path:
 
 - **Keycloak:** same realm file, same Keycloak version; existing logins keep working (the
   upgrade test signed in four people created by v0.1.0's seed).
-- **OpenFGA:** same model; `wm authz sync` wrote 0 tuples and removed 0.
+- **OpenFGA:** same model; `nw authz sync` wrote 0 tuples and removed 0.
 - **Qdrant:** v0.1.0 had no collection; the first upload creates it.
 - **New services** (`worker`, `beat`, `mailpit`, the optional `embeddings`) and **volumes**
   (`beat_schedule`, `whisper-models`, `llama-models`) are created by `docker compose up`.
@@ -125,9 +149,13 @@ Nothing else needs doing by hand on this path:
 
 ## Measured: v0.1.0 to this code
 
+*A record from before the rename: it describes WorkMind's v0.1.0 and the code of 2026-11-12,
+with commands, project and image names given in their current form. NeedWise upgrades start
+at v1.0.0 ([why](#upgrade-testing-starts-at-v100)).*
+
 On 2026-11-12, `scripts/upgrade-test.sh v0.1.0` on one laptop (Apple silicon, Docker Desktop
 with 8 CPUs and 16 GB, shared with other running stacks), with the host's embedding server, as
-compose project `workmind-upgrade` on ports offset by 200 (`http://localhost:8680`). Image builds
+compose project `needwise-upgrade` on ports offset by 200 (`http://localhost:8680`). Image builds
 used Docker's build cache from earlier builds on the same machine; a cold build was not timed.
 
 The old version: v0.1.0 (`0.0.1` in its package metadata), alembic `0004`, seeded with its own
@@ -183,7 +211,7 @@ twice:
   2. Copy `scripts/` somewhere (v0.1.0 has no restore script), then `git checkout v<old>`.
   3. `DEPLOY_DIR=$PWD <copy>/scripts/restore.sh <backup> --force`. It starts only Postgres,
      Valkey and Qdrant before replacing the databases, so the old `migrate` never meets the
-     newer schema. On a version without `wm authz sync` (v0.1.0) that step only warns.
+     newer schema. On a version without `nw authz sync` (v0.1.0) that step only warns.
   4. The volumes only the new version used (`beat_schedule`, `whisper-models`) stay behind;
      `docker volume rm` them when you no longer plan to upgrade.
 
@@ -200,7 +228,7 @@ twice:
 The Helm chart follows the same order
 ([Kubernetes](../deploy/kubernetes.md#upgrades-and-the-migrate-hook)): its `migrate` hook Job
 runs `alembic upgrade head` with the owner role before the new `api`, `worker` and `beat` pods
-start, its `authz-sync` hook Job runs `wm authz sync` once they are ready, and beat is always
+start, its `authz-sync` hook Job runs `nw authz sync` once they are ready, and beat is always
 one replica. Back up first ([backups](../deploy/kubernetes.md#backups)). An upgrade from one
-WorkMind version to another has not been run on Kubernetes: the chart's test on kind upgraded
+NeedWise version to another has not been run on Kubernetes: the chart's test on kind upgraded
 a release to the same build ([tested on a cluster](../deploy/kubernetes.md#tested-on-a-cluster)).

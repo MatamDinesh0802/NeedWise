@@ -6,6 +6,7 @@ from datetime import date
 import pytest
 import yaml
 
+from needwise.modules.analytics import semantic
 from tests.analytics_support import (
     ACME_ANALYTICS,
     FINANCE,
@@ -16,7 +17,6 @@ from tests.analytics_support import (
     context,
     resolved,
 )
-from workmind.modules.analytics import semantic
 
 
 def test_the_acme_model_loads() -> None:

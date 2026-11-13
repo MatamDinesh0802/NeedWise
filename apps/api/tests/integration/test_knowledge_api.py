@@ -17,13 +17,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.config import Settings
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.authz.models import AuthzOutbox
+from needwise.modules.knowledge.models import Collection
+from needwise.modules.retrieval.qdrant import QdrantClient, match
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory
-from workmind.core.config import Settings
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.authz.models import AuthzOutbox
-from workmind.modules.knowledge.models import Collection
-from workmind.modules.retrieval.qdrant import QdrantClient, match
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(

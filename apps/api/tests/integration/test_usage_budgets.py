@@ -18,25 +18,25 @@ from redis.asyncio import Redis
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
+from needwise.core.config import Settings
+from needwise.core.edition import Edition
+from needwise.core.extensions import ExtensionRegistry
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.analytics.models import AnalyticsRun
+from needwise.modules.conversations.models import Conversation, Message
+from needwise.modules.identity.models import Department
+from needwise.modules.knowledge.models import Collection
+from needwise.modules.meetings.models import Meeting
+from needwise.modules.usage.backfill import backfill_tenant
+from needwise.modules.usage.budgets import BudgetExceededError
+from needwise.modules.usage.calls import Attribution, ModelCall
+from needwise.modules.usage.departments import primary_department_query
+from needwise.modules.usage.meter import UsageMeter
+from needwise.modules.usage.models import UsageEvent
+from needwise.modules.work.models import Notification
+from needwise.providers.llm import LLMUsage
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory
-from workmind.core.config import Settings
-from workmind.core.edition import Edition
-from workmind.core.extensions import ExtensionRegistry
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.analytics.models import AnalyticsRun
-from workmind.modules.conversations.models import Conversation, Message
-from workmind.modules.identity.models import Department
-from workmind.modules.knowledge.models import Collection
-from workmind.modules.meetings.models import Meeting
-from workmind.modules.usage.backfill import backfill_tenant
-from workmind.modules.usage.budgets import BudgetExceededError
-from workmind.modules.usage.calls import Attribution, ModelCall
-from workmind.modules.usage.departments import primary_department_query
-from workmind.modules.usage.meter import UsageMeter
-from workmind.modules.usage.models import UsageEvent
-from workmind.modules.work.models import Notification
-from workmind.providers.llm import LLMUsage
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL")
 

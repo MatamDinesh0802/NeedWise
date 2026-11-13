@@ -28,7 +28,7 @@ deployment has a key, never which one (not even its last characters).
 | `openai_compatible` | required: any `/v1/chat/completions` server (OpenAI, gateways, vLLM, Ollama, llama.cpp, LM Studio) | optional (local servers often need none) |
 
 Mark a provider **local** only when its server runs on infrastructure you control. "Local" is
-your statement, not something WorkMind can verify; the data policy relies on it. An Anthropic
+your statement, not something NeedWise can verify; the data policy relies on it. An Anthropic
 provider can never be local.
 
 **The catalog.** Models of your providers, each with a label and its prices in US dollars per
@@ -119,7 +119,7 @@ credentials (docs/connectors.md) and has no key ids.
    `SECRETS_ENCRYPTION_PREVIOUS_KEYS` (comma-separated; listed keys only decrypt).
 2. Restart the API and the workers. New and changed keys are now sealed with the new key; old
    ones still open with the old key.
-3. Run `wm secrets rotate`. It re-encrypts every stored provider key (and every SQL source
+3. Run `nw secrets rotate`. It re-encrypts every stored provider key (and every SQL source
    password, [analytics-sql-sources.md](analytics-sql-sources.md#the-password)) with the active
    key and reports how many it moved, how many were already on it, and how many it could not
    decrypt.
@@ -136,7 +136,7 @@ link-local, multicast and unspecified addresses, whether written as an address o
 through a host name (names are resolved at those two moments).
 
 **Remaining risk.** Private and loopback addresses are allowed on purpose: local model servers
-live there. So an org admin can make WorkMind send requests to other hosts on its network. The
+live there. So an org admin can make NeedWise send requests to other hosts on its network. The
 provider test reports only a status code and the provider's error code (never a response body),
 and answers are only shown to the people asking, but a model call to an internal service still
 happens. Names are not re-resolved on every request, so a name that later resolves elsewhere

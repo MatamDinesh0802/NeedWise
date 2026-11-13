@@ -8,6 +8,10 @@ import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.analytics.agent import Composed
+from needwise.modules.analytics.models import AnalyticsRun
+from needwise.modules.usage.models import UsageEvent
 from tests.integration.conftest import Acme, SessionFactory
 from tests.integration.test_analytics_api import (  # noqa: F401  (pytest fixtures)
     acme,
@@ -16,10 +20,6 @@ from tests.integration.test_analytics_api import (  # noqa: F401  (pytest fixtur
     pytestmark,
     use_model,
 )
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.analytics.agent import Composed
-from workmind.modules.analytics.models import AnalyticsRun
-from workmind.modules.usage.models import UsageEvent
 
 
 async def test_a_bi_answer_records_its_tool_loop_and_its_composition(

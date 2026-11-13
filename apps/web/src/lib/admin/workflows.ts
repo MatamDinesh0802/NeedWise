@@ -1,5 +1,5 @@
 /**
- * Admin → Workflows. Shapes mirror apps/api/src/workmind/api/v1/work.py (admin_router) and
+ * Admin → Workflows. Shapes mirror apps/api/src/needwise/api/v1/work.py (admin_router) and
  * modules/work/workflows.py (Definition, Step). The editor takes the definition as YAML (or JSON,
  * which is YAML too); the API checks it (POST /admin/workflows/validate while typing, and on
  * saving) and reports each problem at its line (modules/work/workflow_source.py).

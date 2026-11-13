@@ -1,7 +1,7 @@
 /**
  * Department agents (/api/v1/admin/agents): types, API, and the form ↔ payload mapping, plus the
  * pure parts of the tools picker, model choice, versions diff and test console.
- * Shapes mirror apps/api/src/workmind/api/v1/agents.py. Pure parts are unit-tested.
+ * Shapes mirror apps/api/src/needwise/api/v1/agents.py. Pure parts are unit-tested.
  */
 
 import { ApiError, apiJson } from "@/lib/api";
@@ -231,7 +231,7 @@ export function sortTools(tools: readonly AgentTool[]): AgentTool[] {
 export const SIDE_EFFECT_LABEL: Record<string, string> = {
   read: "Reads only",
   write: "Changes data",
-  external: "Leaves WorkMind",
+  external: "Leaves NeedWise",
 };
 
 // --- Deleting ------------------------------------------------------------------------------

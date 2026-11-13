@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from workmind_load.run import run_in_group, stop_group
+from needwise_load.run import run_in_group, stop_group
 
 # Starts a grandchild that would sleep for a minute (as a Locust worker waiting for its master's
 # heartbeat), writes its pid, and exits with 3.

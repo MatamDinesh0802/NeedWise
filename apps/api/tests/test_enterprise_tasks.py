@@ -6,13 +6,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from celery import Celery
 
-from workmind.core.config import Settings
-from workmind.core.edition import Edition, License
-from workmind.core.extensions import ExtensionRegistry
-from workmind.workers import enterprise
+from needwise.core.config import Settings
+from needwise.core.edition import Edition, License
+from needwise.core.extensions import ExtensionRegistry
+from needwise.workers import enterprise
 
 NOW = datetime(2026, 11, 12, tzinfo=UTC)
-NAME = "workmind_ee.retention.apply"
+NAME = "needwise_ee.retention.apply"
 
 
 class FakeResources:
@@ -66,4 +66,4 @@ def test_community_registers_no_task() -> None:
         ExtensionRegistry(Edition.community()),
     )
     assert celery.conf.beat_schedule == {}
-    assert not [name for name in celery.tasks if name.startswith("workmind_ee.")]
+    assert not [name for name in celery.tasks if name.startswith("needwise_ee.")]

@@ -1,6 +1,6 @@
 # Backup and restore
 
-How to back up a WorkMind deployment run with Docker Compose, how to restore it (on the same
+How to back up a NeedWise deployment run with Docker Compose, how to restore it (on the same
 host or another one), and what a restore drill on 2026-11-12 measured. The scripts are
 `scripts/backup.sh` and `scripts/restore.sh` (`make backup`, `make restore`). Upgrades are in
 [upgrade.md](upgrade.md).
@@ -11,15 +11,15 @@ the scripts, and anything Kubernetes-specific (see [Kubernetes](#kubernetes)).
 
 ## What a backup holds
 
-`scripts/backup.sh` writes one directory, `backups/workmind-<UTC time>/` (mode 0700, files 0600):
+`scripts/backup.sh` writes one directory, `backups/needwise-<UTC time>/` (mode 0700, files 0600):
 
 | Part | How | File |
 |---|---|---|
-| WorkMind's database (`workmind`) | `pg_dump --format=custom`, from an exported snapshot | `postgres/workmind.dump` |
-| Keycloak's database (the realm, users and their password hashes, WorkMind's OIDC client and its secret) | `pg_dump -Fc` | `postgres/keycloak.dump` |
+| NeedWise's database (`needwise`) | `pg_dump --format=custom`, from an exported snapshot | `postgres/needwise.dump` |
+| Keycloak's database (the realm, users and their password hashes, NeedWise's OIDC client and its secret) | `pg_dump -Fc` | `postgres/keycloak.dump` |
 | OpenFGA's database (authorization stores and tuples) | `pg_dump -Fc` | `postgres/openfga.dump` |
-| Roles (`workmind_owner`, `workmind_app` with `NOBYPASSRLS`, `keycloak`, `openfga`) | `pg_dumpall --globals-only --no-role-passwords`: no password hashes | `postgres/globals.sql` |
-| Qdrant: every WorkMind collection (`chunks_<model>_<dimensions>`) | a snapshot through Qdrant's API, downloaded, then deleted inside Qdrant | `qdrant/<collection>.snapshot` |
+| Roles (`needwise_owner`, `needwise_app` with `NOBYPASSRLS`, `keycloak`, `openfga`) | `pg_dumpall --globals-only --no-role-passwords`: no password hashes | `postgres/globals.sql` |
+| Qdrant: every NeedWise collection (`chunks_<model>_<dimensions>`) | a snapshot through Qdrant's API, downloaded, then deleted inside Qdrant | `qdrant/<collection>.snapshot` |
 | Object storage (uploads, meeting recordings, analytics DuckDB files) | `tar -czf` of exactly the files listed in `objects.sha256` | `objects.tar.gz`, `objects.sha256` |
 | License | `license.key`, and `dev-public.key` for a development license | `license/` |
 | What it all is | see below | `manifest.json`, `SHA256SUMS` |
@@ -27,7 +27,7 @@ the scripts, and anything Kubernetes-specific (see [Kubernetes](#kubernetes)).
 `manifest.json` records: when the backup started and ended and how (mode, services stopped);
 the app version, git commit and API image; the alembic revision; the embedding model, its
 dimensions and the Qdrant collection; each database and its owner; the exact row count of every
-table in WorkMind's schema and the documents per status; each collection's point count and
+table in NeedWise's schema and the documents per status; each collection's point count and
 vector size; the number of objects; the size and SHA-256 of every file. `SHA256SUMS` works with
 `shasum -a 256 -c SHA256SUMS` (or `sha256sum -c`).
 
@@ -37,7 +37,7 @@ vector size; the number of objects; the size and SHA-256 of every file. `SHA256S
   events, conversation locks and caches (usage totals, budget alert flags). After a restore it
   is emptied: everyone signs in again; jobs that were queued but not started are gone. A
   document uploaded just before the backup stays `pending`: the restore counts them, and
-  `wm reindex <tenant>` indexes every document of the tenant again, inline (it does not
+  `nw reindex <tenant>` indexes every document of the tenant again, inline (it does not
   re-queue jobs). A meeting that was `pending`, `transcribing` or `extracting` (uploaded during
   the backup, or cut off when `--pause` stopped the worker) stays in that state: the restore
   lists them, and nothing re-queues a meeting (there is no retry endpoint or command), so delete
@@ -49,7 +49,7 @@ vector size; the number of objects; the size and SHA-256 of every file. `SHA256S
 - **Secrets**: `.env`, `SECRETS_ENCRYPTION_KEY`, `SECRETS_KEY`, `OIDC_CLIENT_SECRET`, the
   database passwords, `OPENFGA_API_KEY`. Keep them in a password manager or secret store, apart
   from the backups (see [Secrets](#secrets-and-the-license)).
-- **`.workmind/dev-signing.key`**, the private key of development licenses.
+- **`.needwise/dev-signing.key`**, the private key of development licenses.
 
 ## Taking a backup
 
@@ -72,9 +72,9 @@ libpq variables `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD` and the tools run in 
 `postgres:18.6` container over TCP instead. `--no-compose` additionally keeps the script away
 from `docker compose` entirely (online backups only).
 
-`PGUSER` must be a **superuser or a role with `BYPASSRLS`**. Every WorkMind table has `FORCE
+`PGUSER` must be a **superuser or a role with `BYPASSRLS`**. Every NeedWise table has `FORCE
 ROW LEVEL SECURITY`, and `pg_dump` reads with row security off, which Postgres allows only to
-such roles: the table owner (`workmind_owner`), and an admin that is a member of it (as
+such roles: the table owner (`needwise_owner`), and an admin that is a member of it (as
 [Kubernetes](../deploy/kubernetes.md) suggests for creating the roles), get `query would be
 affected by row-level security policy` and the dump fails; under RLS the manifest's row counts
 would also read 0. The script checks the role first and refuses with that explanation. A
@@ -86,13 +86,13 @@ role, use its own snapshots for Postgres.
 
 A backup reads three stores that change independently, so the script does three things:
 
-1. **One snapshot for WorkMind's database.** A `psql` session opens a `REPEATABLE READ`
+1. **One snapshot for NeedWise's database.** A `psql` session opens a `REPEATABLE READ`
    transaction and exports its snapshot; `pg_dump --snapshot` dumps exactly that, and the row
    counts in the manifest are counted in the same transaction. The manifest therefore
    describes the dump exactly, even while people work. The Keycloak and OpenFGA databases are
-   dumped one after the other, each consistent in itself. OpenFGA is a projection of WorkMind's
+   dumped one after the other, each consistent in itself. OpenFGA is a projection of NeedWise's
    tables ([ARCHITECTURE §7.5](../ARCHITECTURE.md#75-source-of-truth-and-synchronization)), so
-   the restore recomputes it from PostgreSQL (`wm authz sync`) and any difference between the
+   the restore recomputes it from PostgreSQL (`nw authz sync`) and any difference between the
    two dumps disappears.
 2. **Objects pinned before the database, archived after it.** The API keeps deleting objects
    during a `--pause` or `--online` backup (a deleted document or meeting, the previous version
@@ -108,7 +108,7 @@ A backup reads three stores that change independently, so the script does three 
    when it is neither root nor uid 10001, or the tree spans filesystems) the script says so and
    archives the live tree: an object deleted between the snapshot and the archive is then
    missing from the backup, and the restored row that refers to it has no file (its download
-   fails, `wm reindex` counts it as failed). Use `--offline`, or run the backup as root, when
+   fails, `nw reindex` counts it as failed). Use `--offline`, or run the backup as root, when
    that matters. Either way a file deleted while it is archived is skipped instead of failing
    the backup (before this was fixed, `tar` exited 1 or 2 and the backup died).
 3. **Background writers paused.** By default (`--pause`) the script stops `worker` and `beat`
@@ -127,7 +127,7 @@ stops nothing.
 
 ### Schedule and retention
 
-- **Daily** at a quiet hour, with `--pause`: `0 2 * * * cd /srv/workmind && scripts/backup.sh --keep 7 >>/var/log/workmind-backup.log 2>&1`.
+- **Daily** at a quiet hour, with `--pause`: `0 2 * * * cd /srv/needwise && scripts/backup.sh --keep 7 >>/var/log/needwise-backup.log 2>&1`.
   A failed run removes its unfinished directory (it may already hold full database dumps,
   which `--keep` would never expire: it rotates only complete backups) and exits non-zero:
   alert on that. `--keep` takes a plain number.
@@ -149,8 +149,8 @@ connector credentials (encrypted with `SECRETS_KEY`). Encrypt it before it leave
 example with [age](https://age-encryption.org):
 
 ```bash
-tar -C backups -cf - workmind-20261112T171353Z | age -r age1...recipient > workmind-20261112T171353Z.tar.age
-age -d -i key.txt workmind-20261112T171353Z.tar.age | tar -C /restore -xf -
+tar -C backups -cf - needwise-20261112T171353Z | age -r age1...recipient > needwise-20261112T171353Z.tar.age
+age -d -i key.txt needwise-20261112T171353Z.tar.age | tar -C /restore -xf -
 ```
 
 or send it to object storage with server-side encryption under your KMS key. Keep the
@@ -160,7 +160,7 @@ decryption key apart from the backups and from `.env`.
 
 | Secret | Protects | If it is lost |
 |---|---|---|
-| `SECRETS_ENCRYPTION_KEY` (+ `_PREVIOUS_KEYS`) | tenants' own model provider keys (AES-256-GCM, [docs/models.md](../models.md)) | Restored keys cannot be decrypted: every tenant enters its provider keys again. Rotation needs the old key ([`wm secrets rotate`](../models.md)). |
+| `SECRETS_ENCRYPTION_KEY` (+ `_PREVIOUS_KEYS`) | tenants' own model provider keys (AES-256-GCM, [docs/models.md](../models.md)) | Restored keys cannot be decrypted: every tenant enters its provider keys again. Rotation needs the old key ([`nw secrets rotate`](../models.md)). |
 | `SECRETS_KEY` | connector credentials (Google Drive tokens, ...) | Each source is connected again. |
 | `OIDC_CLIENT_SECRET` | the API's login to Keycloak | Keycloak's database (restored) holds the source's value: set the same value on the target, or change both. |
 | `OPENFGA_API_KEY` | calls from the API to OpenFGA | Not stored in any database: any value, the same in both places. |
@@ -179,8 +179,8 @@ new license.
 ## Restoring
 
 ```bash
-make restore BACKUP=backups/workmind-20261112T171353Z
-scripts/restore.sh backups/workmind-20261112T171353Z --force --public-url https://workmind.example.com
+make restore BACKUP=backups/needwise-20261112T171353Z
+scripts/restore.sh backups/needwise-20261112T171353Z --force --public-url https://needwise.example.com
 ```
 
 Into the compose project of `DEPLOY_DIR`, with the images that project runs. In order:
@@ -193,9 +193,9 @@ Into the compose project of `DEPLOY_DIR`, with the images that project runs. In 
 4. Applies `globals.sql` (roles that already exist report "already exists"; attributes are set
    again; passwords stay the target's), then for each database `DROP DATABASE ... WITH (FORCE)`
    and `pg_restore --create --exit-on-error` (owner, encoding and locale come from the dump).
-   Compares WorkMind's row counts with the manifest, table by table.
+   Compares NeedWise's row counts with the manifest, table by table.
 5. Uploads each Qdrant snapshot (`priority=snapshot`, with its SHA-256 for Qdrant to check),
-   which replaces the collection, and compares the point counts. A WorkMind collection the
+   which replaces the collection, and compares the point counts. A NeedWise collection the
    backup does not have (another embedding model's, say) is deleted: the target becomes the
    backup.
 6. Moves an existing object tree aside (`.data/objects.before-restore-<time>`, not deleted),
@@ -206,7 +206,7 @@ Into the compose project of `DEPLOY_DIR`, with the images that project runs. In 
 8. `docker compose up -d --wait`: the `migrate` service runs `alembic upgrade head` first, so a
    backup **older** than the code is migrated here. Prints the revision before and after.
 9. With `--public-url`: points Keycloak's client at the new address (below).
-10. `docker compose run --rm migrate wm authz sync`: every tenant's OpenFGA store gets the
+10. `docker compose run --rm migrate nw authz sync`: every tenant's OpenFGA store gets the
     current model and the tuples recomputed from PostgreSQL.
 11. Reads `/api/v1/system/status` and names documents that were `pending` or `processing`.
 
@@ -227,7 +227,7 @@ differs from the manifest (printed above it). `--no-start` stops after step 7.
 
 ### On another address
 
-Keycloak keeps the address people sign in through in its database: WorkMind's client has the
+Keycloak keeps the address people sign in through in its database: NeedWise's client has the
 redirect URI `<PUBLIC_URL>/api/auth/callback` and the post-logout redirect `<PUBLIC_URL>/*`,
 written when the realm was first imported. A restore brings back the source's values, so on a
 new address sign-in stops on Keycloak's page "Invalid parameter: redirect_uri". The drill below
@@ -240,8 +240,8 @@ showed exactly that. What an operator changes:
    `restore.sh --public-url`). It logs in to Keycloak's `master` realm with
    `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD` (after a restore: the source's admin
    login) and updates the two values with `kcadm.sh`.
-3. Outside WorkMind: identity providers federated into Keycloak (company SSO) must allow the new
-   broker URL (`<PUBLIC_URL>/auth/realms/workmind/broker/<alias>/endpoint`); the OAuth apps
+3. Outside NeedWise: identity providers federated into Keycloak (company SSO) must allow the new
+   broker URL (`<PUBLIC_URL>/auth/realms/needwise/broker/<alias>/endpoint`); the OAuth apps
    of Drive, Confluence and SharePoint sources need the new redirect URI
    (`<PUBLIC_URL>/api/v1/oauth/google/callback`, `.../oauth/atlassian/callback`,
    `.../oauth/microsoft/callback`); MCP clients and anyone with bookmarks need
@@ -264,11 +264,11 @@ Enterprise development license.
 | Backup | Result |
 |---|---|
 | Time | 10 s (Postgres 7 s, Qdrant 2 s, objects under 1 s) |
-| Size | 25.8 MB: `workmind.dump` 0.5 MB, `keycloak.dump` 0.3 MB, `openfga.dump` 6.8 MB (it also holds stores left by integration tests in that shared OpenFGA), Qdrant snapshot 8.9 MB, objects 9.3 MB compressed |
+| Size | 25.8 MB: `needwise.dump` 0.5 MB, `keycloak.dump` 0.3 MB, `openfga.dump` 6.8 MB (it also holds stores left by integration tests in that shared OpenFGA), Qdrant snapshot 8.9 MB, objects 9.3 MB compressed |
 | Qdrant | the snapshot was deleted from the source's Qdrant afterwards (its snapshot list was empty) |
 
-**Target:** compose project `workmind-ops` from a separate checkout, its own image tags
-(`workmind-api:ops`, `workmind-web:ops`, through an override file), all host ports moved
+**Target:** compose project `needwise-ops` from a separate checkout, its own image tags
+(`needwise-api:ops`, `needwise-web:ops`, through an override file), all host ports moved
 (`HTTP_PORT=8580`, `PUBLIC_URL=http://localhost:8580`, Postgres 5532, Valkey 6479, Qdrant 6433,
 OpenFGA 8501, API 8500, web 3500, Mailpit 8125), the same embedding server.
 
@@ -285,7 +285,7 @@ OpenFGA 8501, API 8500, web 3500, Mailpit 8125), the same embedding server.
 | Alembic | 0019 in the backup and the code: no migration |
 | Qdrant | 408 points; every point's id, payload, dense vector and BM25 vector identical to the source's (all 408 compared) |
 | Objects | 49 of 49 with the same SHA-256; a document downloaded through the API matched the source object byte for byte |
-| `wm authz sync` | 0 tuples written, 0 removed: OpenFGA already agreed with PostgreSQL |
+| `nw authz sync` | 0 tuples written, 0 removed: OpenFGA already agreed with PostgreSQL |
 | System status | ok (Postgres, Valkey, Qdrant, OpenFGA, Keycloak) |
 | Sign-in on the new address, before `keycloak-public-url.sh` | refused by Keycloak: "Invalid parameter: redirect_uri" |
 | Sign-in after it | 5 demo users and the guest signed in |
@@ -311,11 +311,11 @@ with the dump and snapshot sizes, mostly in `pg_restore` and the snapshot upload
 the backup interval: the backup itself took 10 seconds here.
 
 How to run a drill like this: start a second stack from another checkout with
-`COMPOSE_PROJECT_NAME=workmind-drill`, an override file that gives `migrate`, `api`, `worker`,
+`COMPOSE_PROJECT_NAME=needwise-drill`, an override file that gives `migrate`, `api`, `worker`,
 `beat`, `seed` and `web` their own `image:` tags, and every `*_PORT` variable and `PUBLIC_URL`
 changed; restore into it with `scripts/restore.sh <backup> --public-url <its URL>`; compare
 searches with `python3 scripts/lib/stack_checks.py search <url> <out.json>` on both; then
-`docker compose -p workmind-drill down -v`.
+`docker compose -p needwise-drill down -v`.
 
 ## Kubernetes
 
@@ -326,11 +326,11 @@ cluster install needs ([Kubernetes](../deploy/kubernetes.md#backups)). Pointers:
   as CloudNativePG with WAL archiving, give a much better RPO than nightly `pg_dump`. The
   scripts' `PGHOST` mode dumps any Postgres they can reach with a superuser or `BYPASSRLS`
   role (above), which still gives a portable copy.
-  Restore all three databases from the same moment, then run `wm authz sync`.
+  Restore all three databases from the same moment, then run `nw authz sync`.
 - **Qdrant:** the snapshot API is the same in a cluster; Qdrant can also be configured to write
   snapshots to S3-compatible storage (see Qdrant's snapshot documentation). One snapshot per
   collection, per node in a distributed setup.
-- **Objects:** WorkMind stores objects on a filesystem (`OBJECT_STORAGE_PATH`; S3 storage is not
+- **Objects:** NeedWise stores objects on a filesystem (`OBJECT_STORAGE_PATH`; S3 storage is not
   built). Back up its volume with CSI volume snapshots or a file-level tool, taken after the
   database dump for the reason given under [Consistency](#consistency).
 - **Velero** (or similar) copies volumes and resources together, but the copy is only as

@@ -50,7 +50,7 @@ Repo, the evaluation reports and the design decision in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
-The comparison, 15 cross-department questions: <GITHUB_REPO_URL>/blob/main/evals/results/2026-11-04-cross-agents.md (agents) and <GITHUB_REPO_URL>/blob/main/evals/results/2026-11-04-cross-single.md (one search)
-Routing evaluation: <GITHUB_REPO_URL>/blob/main/evals/results/2026-11-04-routing.md
-Why plain asyncio instead of a graph framework (ADR 0009): <GITHUB_REPO_URL>/blob/main/docs/adr/0009-orchestration-without-a-graph-framework.md
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
+The comparison, 15 cross-department questions: https://github.com/MatamDinesh0802/NeedWise/blob/main/evals/results/2026-11-04-cross-agents.md (agents) and https://github.com/MatamDinesh0802/NeedWise/blob/main/evals/results/2026-11-04-cross-single.md (one search)
+Routing evaluation: https://github.com/MatamDinesh0802/NeedWise/blob/main/evals/results/2026-11-04-routing.md
+Why plain asyncio instead of a graph framework (ADR 0009): https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/adr/0009-orchestration-without-a-graph-framework.md

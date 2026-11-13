@@ -1,0 +1,4 @@
+{{- $svc := .Values.web.service -}}
+{{ include "needwise.service" (list . "web" (dict "type" $svc.type "annotations" $svc.annotations "ports" (list (dict "name" "http" "port" $svc.port "appProtocol" "http")))) }}
+{{- include "needwise.hpa" (list . "web" .Values.web) }}
+{{- include "needwise.pdb" (list . "web" .Values.web) }}

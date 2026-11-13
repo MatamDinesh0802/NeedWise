@@ -294,7 +294,7 @@ function UploadPanel({ collections }: { collections: Collection[] }) {
           {CONSENT_NOTICE}
         </p>
         <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
-          WorkMind transcribes it on this server, sends the transcript to the configured language model to extract decisions and
+          NeedWise transcribes it on this server, sends the transcript to the configured language model to extract decisions and
           action items, and adds the transcript to the collection you choose.
         </p>
         <div className="flex items-center gap-2">

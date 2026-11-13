@@ -71,7 +71,7 @@ Every number the model writes is matched against the result cells at the precisi
 repair pass names the unbacked ones; what remains is reported to the person, number by number.
 
 ### 6. Measured as each person, with a zero-leak gate
-`wm eval --suites analytics` asks 51 questions as 8 Acme employees: execution accuracy against
+`nw eval --suites analytics` asks 51 questions as 8 Acme employees: execution accuracy against
 gold SQL run as the same person, refusals for people without access, attacks, and a leak check
 on every query result. Leaks fail the run.
 
@@ -161,5 +161,5 @@ The decisions:
 Consequences: the semantic compiler writes each dialect (MySQL has neither `date_trunc` nor
 `FILTER`); the eval takes items about a source (`dataset`); the allow-list must grow when people
 need a built-in it lacks (a refusal names the function); the source's database role, not
-WorkMind, is the lock that holds if the guard and the session were both wrong. Execution
+NeedWise, is the lock that holds if the guard and the session were both wrong. Execution
 accuracy on a source has not been measured with a real model.

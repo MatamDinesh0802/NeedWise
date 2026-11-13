@@ -27,25 +27,25 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
+from needwise.core.config import Settings
+from needwise.core.context import RequestContext
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.agents.department import EvidenceOut, Finding
+from needwise.modules.agents.planning import PlanOut, Subtask
+from needwise.modules.authz.openfga import OpenFgaClient, RelationTuple
+from needwise.modules.authz.sync import ensure_store, process_outbox, reconcile
+from needwise.modules.governance.audit import Actor
+from needwise.modules.identity.models import Department, Group
+from needwise.modules.identity.service import load_identity
+from needwise.modules.knowledge import document_acl
+from needwise.modules.knowledge.acl import acl_principals, can_view_document
+from needwise.modules.knowledge.models import Collection, CollectionGrant, Document
+from needwise.modules.retrieval.qdrant import QdrantClient, match
+from needwise.modules.retrieval.service import Retriever
+from needwise.providers.embeddings import HashEmbeddings
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
-from workmind.core.config import Settings
-from workmind.core.context import RequestContext
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.agents.department import EvidenceOut, Finding
-from workmind.modules.agents.planning import PlanOut, Subtask
-from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
-from workmind.modules.authz.sync import ensure_store, process_outbox, reconcile
-from workmind.modules.governance.audit import Actor
-from workmind.modules.identity.models import Department, Group
-from workmind.modules.identity.service import load_identity
-from workmind.modules.knowledge import document_acl
-from workmind.modules.knowledge.acl import acl_principals, can_view_document
-from workmind.modules.knowledge.models import Collection, CollectionGrant, Document
-from workmind.modules.retrieval.qdrant import QdrantClient, match
-from workmind.modules.retrieval.service import Retriever
-from workmind.providers.embeddings import HashEmbeddings
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 OPENFGA_URL = os.environ.get("TEST_OPENFGA_URL")
@@ -658,7 +658,7 @@ async def test_a_list_nobody_could_be_mapped_to_hides_it_from_everyone_until_map
     qdrant: QdrantClient,
     model_name: str,
 ) -> None:
-    """As permission sync writes it when the source names only a group WorkMind does not know:
+    """As permission sync writes it when the source names only a group NeedWise does not know:
     nobody sees the document (not its editors, not the people the group would include), and
     admins see the group listed, without the document's title. Mapping the group opens the
     document to its members who can read the collection, at once; removing the mapping closes

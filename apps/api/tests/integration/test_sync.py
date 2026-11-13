@@ -22,31 +22,31 @@ import httpx
 import pytest
 from sqlalchemy import select, update
 
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
+from needwise.modules.connectors.confluence import ConfluenceConnector
+from needwise.modules.connectors.models import Source, SourceRun
+from needwise.modules.connectors.oauth import OAuthApp
+from needwise.modules.connectors.reminders import StaleReminderReport, send_source_reminders
+from needwise.modules.connectors.secrets import SecretBox
+from needwise.modules.connectors.sharepoint import SharePointConnector
+from needwise.modules.connectors.sync import SyncDeps, sync_source
+from needwise.modules.governance.audit import Actor
+from needwise.modules.governance.models import AuditEvent, LegalHold
+from needwise.modules.identity.models import User
+from needwise.modules.knowledge import document_acl
+from needwise.modules.knowledge.dispatch import InlineDispatcher
+from needwise.modules.knowledge.models import Collection, Document, DocumentVersion
+from needwise.modules.knowledge.pipeline import IngestionDeps
+from needwise.modules.knowledge.reindex import reindex_tenant
+from needwise.modules.knowledge.storage import LocalObjectStorage, owned_key
+from needwise.modules.retrieval.qdrant import QdrantClient
+from needwise.modules.work.models import Notification, Task
+from needwise.providers.embeddings import HashEmbeddings
 from tests import fake_confluence
 from tests.fake_confluence import FakeConfluence, Page
 from tests.fake_graph import ROOT_ID, SITE_URL, FakeGraph, Item
 from tests.integration.conftest import SessionFactory, seed_acme
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
-from workmind.modules.connectors.confluence import ConfluenceConnector
-from workmind.modules.connectors.models import Source, SourceRun
-from workmind.modules.connectors.oauth import OAuthApp
-from workmind.modules.connectors.reminders import StaleReminderReport, send_source_reminders
-from workmind.modules.connectors.secrets import SecretBox
-from workmind.modules.connectors.sharepoint import SharePointConnector
-from workmind.modules.connectors.sync import SyncDeps, sync_source
-from workmind.modules.governance.audit import Actor
-from workmind.modules.governance.models import AuditEvent, LegalHold
-from workmind.modules.identity.models import User
-from workmind.modules.knowledge import document_acl
-from workmind.modules.knowledge.dispatch import InlineDispatcher
-from workmind.modules.knowledge.models import Collection, Document, DocumentVersion
-from workmind.modules.knowledge.pipeline import IngestionDeps
-from workmind.modules.knowledge.reindex import reindex_tenant
-from workmind.modules.knowledge.storage import LocalObjectStorage, owned_key
-from workmind.modules.retrieval.qdrant import QdrantClient
-from workmind.modules.work.models import Notification, Task
-from workmind.providers.embeddings import HashEmbeddings
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(not QDRANT_URL, reason="set TEST_QDRANT_URL")
@@ -487,10 +487,10 @@ async def test_run_errors_name_the_item_by_its_id_never_its_title(
     assert "reorg plan" not in (stored.last_error or "")
 
 
-async def test_wm_reindex_rebuilds_every_document_from_its_stored_original(
+async def test_nw_reindex_rebuilds_every_document_from_its_stored_original(
     setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
 ) -> None:
-    """`wm reindex <tenant>` (after changing the embedding model) was untested: every document
+    """`nw reindex <tenant>` (after changing the embedding model) was untested: every document
     is indexed again from storage, the index holds the same chunks, and a failure is counted
     without stopping the rest."""
     deps, connector, source, qdrant, name = setup

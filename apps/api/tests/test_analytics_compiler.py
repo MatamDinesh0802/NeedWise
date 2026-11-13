@@ -11,6 +11,14 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from needwise.modules.analytics import dataset, engine, semantic
+from needwise.modules.analytics.compiler import (
+    CompileError,
+    SemanticQuery,
+    compile_query,
+    duplicate_keys_sql,
+    orphan_keys_sql,
+)
 from tests.analytics_support import (
     ACME_ANALYTICS,
     acme_model,
@@ -18,14 +26,6 @@ from tests.analytics_support import (
     csv_rows,
     dan_filters,
     run,
-)
-from workmind.modules.analytics import dataset, engine, semantic
-from workmind.modules.analytics.compiler import (
-    CompileError,
-    SemanticQuery,
-    compile_query,
-    duplicate_keys_sql,
-    orphan_keys_sql,
 )
 
 MODEL = acme_model()

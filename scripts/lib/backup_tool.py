@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Helper for scripts/backup.sh and scripts/restore.sh: Qdrant snapshots, checksums, the
 manifest and the comparisons. Standard library only (Python 3.9+), so it runs on any host
-with python3 and never depends on the version of WorkMind that is deployed.
+with python3 and never depends on the version of NeedWise that is deployed.
 
     backup_tool.py qdrant-backup  --url URL --out DIR [--include RE] [--exclude RE]
     backup_tool.py qdrant-restore --url URL --backup DIR
@@ -214,7 +214,7 @@ def qdrant_restore(args: argparse.Namespace) -> None:
             f"{'OK' if ok else 'MISMATCH'} ({time.monotonic() - started:.1f}s)"
         )
     if args.prune:
-        # The target becomes the backup: a WorkMind collection the backup does not have (an
+        # The target becomes the backup: a NeedWise collection the backup does not have (an
         # older embedding model's, another deployment's) would only hold stale chunks.
         for name in collections(base, args.include, args.exclude):
             if name not in manifest["qdrant"]["collections"]:
@@ -455,7 +455,7 @@ def _manifest(backup: Path) -> dict[str, Any]:
             "the beat schedule volume and the model caches (speech, embeddings)",
             ".env and every secret (SECRETS_ENCRYPTION_KEY, SECRETS_KEY, OIDC_CLIENT_SECRET, "
             "database passwords): keep them apart from the backups",
-            "the development license signing key (.workmind/dev-signing.key)",
+            "the development license signing key (.needwise/dev-signing.key)",
         ],
     }
 
@@ -485,7 +485,7 @@ def finish(args: argparse.Namespace) -> None:
 def check(args: argparse.Namespace) -> None:
     backup = Path(args.backup)
     if not (backup / MANIFEST).is_file() or not (backup / SUMS).is_file():
-        die(f"{backup} is not a WorkMind backup (no {MANIFEST} or {SUMS})")
+        die(f"{backup} is not a NeedWise backup (no {MANIFEST} or {SUMS})")
     bad = []
     lines = [line for line in (backup / SUMS).read_text().splitlines() if line.strip()]
     for line in lines:

@@ -9,14 +9,14 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy import select, update
 
+from needwise.core.context import RequestContext
+from needwise.core.errors import ApiError
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.identity.models import User
+from needwise.modules.tools.registry import Tool, ToolRegistry, ToolResult
+from needwise.modules.work.approvals import decide, expire_due, pending_for, propose
+from needwise.modules.work.models import Approval, Notification
 from tests.integration.conftest import Acme, SessionFactory
-from workmind.core.context import RequestContext
-from workmind.core.errors import ApiError
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.identity.models import User
-from workmind.modules.tools.registry import Tool, ToolRegistry, ToolResult
-from workmind.modules.work.approvals import decide, expire_due, pending_for, propose
-from workmind.modules.work.models import Approval, Notification
 
 
 class Mail(BaseModel):

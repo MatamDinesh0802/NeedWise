@@ -1,9 +1,9 @@
-"""The load-test model stub (loadtests/stub_llm.py) behind WorkMind's own `openai_compatible`
+"""The load-test model stub (loadtests/stub_llm.py) behind NeedWise's own `openai_compatible`
 adapter, in process and without the stack: cited streamed answers, question rewrites, the agents
 pipeline (plan, findings, composed answer), the research and analytics tool loops, any other
 structured-output schema, the admin provider test, and the stub's timing over a real socket.
 
-Load tests point the stack at this stub so they measure WorkMind's own overhead
+Load tests point the stack at this stub so they measure NeedWise's own overhead
 (docs/load-testing.md). If the adapter changes what it sends or expects, these tests say so.
 """
 
@@ -23,27 +23,26 @@ import pytest
 import uvicorn
 from starlette.applications import Starlette
 
-from tests.analytics_support import SALES, LocalAnalytics, build_acme, context
-from workmind.core.context import RequestContext
-from workmind.evals.runner import Judgement
-from workmind.modules.agents.orchestrator import (
+from needwise.core.context import RequestContext
+from needwise.evals.runner import Judgement
+from needwise.modules.agents.orchestrator import (
     AgentStepEvent,
     OrchestratorDeps,
     PlanEvent,
     orchestrate,
 )
-from workmind.modules.agents.planning import Agent, PlanOut, plan_question
-from workmind.modules.agents.research import RESEARCH_SYSTEM
-from workmind.modules.analytics.agent import answer as analytics_answer
-from workmind.modules.assistant.answer import Answer, AnswerEvent, answer_stream, build_request
-from workmind.modules.conversations.runner import rewrite_question
-from workmind.modules.meetings.extract import Extraction
-from workmind.modules.model_catalog.catalog import ProviderInfo
-from workmind.modules.model_catalog.service import Probe, probe
-from workmind.modules.retrieval.service import Passage, RetrievalResult
-from workmind.modules.tools.builtin import DraftEmail, SearchKnowledge
-from workmind.providers.factory import single_model_roles
-from workmind.providers.llm import (
+from needwise.modules.agents.planning import Agent, PlanOut, plan_question
+from needwise.modules.agents.research import RESEARCH_SYSTEM
+from needwise.modules.analytics.agent import answer as analytics_answer
+from needwise.modules.assistant.answer import Answer, AnswerEvent, answer_stream, build_request
+from needwise.modules.conversations.runner import rewrite_question
+from needwise.modules.meetings.extract import Extraction
+from needwise.modules.model_catalog.catalog import ProviderInfo
+from needwise.modules.model_catalog.service import Probe, probe
+from needwise.modules.retrieval.service import Passage, RetrievalResult
+from needwise.modules.tools.builtin import DraftEmail, SearchKnowledge
+from needwise.providers.factory import single_model_roles
+from needwise.providers.llm import (
     LLMMessage,
     LLMRequest,
     OpenAICompatibleLLM,
@@ -51,9 +50,10 @@ from workmind.providers.llm import (
     ToolCall,
     ToolSpec,
 )
+from tests.analytics_support import SALES, LocalAnalytics, build_acme, context
 
 STUB_FILE = Path(__file__).resolve().parents[3] / "loadtests" / "stub_llm.py"
-ROLES = single_model_roles("workmind-stub")
+ROLES = single_model_roles("needwise-stub")
 CTX = RequestContext(
     request_id="t",
     tenant_id=uuid.uuid4(),
@@ -67,7 +67,7 @@ HOTELS = "The hotel limit in London is EUR 220 per night. Book through the trave
 
 
 def _load_stub() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("workmind_stub_llm", STUB_FILE)
+    spec = importlib.util.spec_from_file_location("needwise_stub_llm", STUB_FILE)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -172,7 +172,7 @@ async def test_the_agents_pipeline_plans_finds_and_composes(
     async def load(*_: Any) -> list[Agent]:
         return agents
 
-    monkeypatch.setattr("workmind.modules.agents.orchestrator.load_agents", load)
+    monkeypatch.setattr("needwise.modules.agents.orchestrator.load_agents", load)
     retriever = Retriever([passage("S1", LEAVE), passage("S2", HOTELS, "Travel Policy")])
     deps = OrchestratorDeps(None, llm, None, retriever, None)  # type: ignore[arg-type]
     question = "How long is parental leave, and what is the hotel limit in London?"
@@ -273,7 +273,7 @@ async def test_the_admin_provider_test_passes() -> None:
         enabled=True,
         system=True,
     )
-    target = Probe(provider=provider, model="workmind-stub", base_url="http://stub/v1")
+    target = Probe(provider=provider, model="needwise-stub", base_url="http://stub/v1")
 
     result = await probe(target, transport=httpx.ASGITransport(app=instant()))
 

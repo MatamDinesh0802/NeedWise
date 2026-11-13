@@ -2,7 +2,7 @@
 
 - **Status:** Draft, not posted
 - **Milestone:** Phase 1 (identity, tenancy, permissions)
-- **Image:** `assets/post-02-permission-grid.png` (1080×1350). Every cell in it is an assertion in `apps/api/src/workmind/modules/authz/openfga/model.fga.yaml`, so the picture can't drift from the code.
+- **Image:** `assets/post-02-permission-grid.png` (1080×1350). Every cell in it is an assertion in `apps/api/src/needwise/modules/authz/openfga/model.fga.yaml`, so the picture can't drift from the code.
 - **Optional second image:** `assets/post-02-audit-chain.png`, the real admin audit log with "Chain intact, 33 events checked".
 - **Post only after** the repo is public.
 
@@ -14,7 +14,7 @@ Most enterprise AI demos skip the hardest problem.
 
 Not "can the AI answer?" but "should it answer *you*?"
 
-This week I built the permission layer of WorkMind AI, an open-source AI workspace for companies. Before a single document is indexed, it now answers one question everywhere: who is allowed to see what.
+This week I built the permission layer of NeedWise, an open-source AI workspace for companies. Before a single document is indexed, it now answers one question everywhere: who is allowed to see what.
 
 What I built, and the rule behind each piece:
 
@@ -47,6 +47,6 @@ Repo link in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
-Permission model + the Acme test matrix: <GITHUB_REPO_URL>/tree/main/apps/api/src/workmind/modules/authz/openfga
-Architecture, section 7 (permissions): <GITHUB_REPO_URL>/blob/main/docs/ARCHITECTURE.md
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
+Permission model + the Acme test matrix: https://github.com/MatamDinesh0802/NeedWise/tree/main/apps/api/src/needwise/modules/authz/openfga
+Architecture, section 7 (permissions): https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/ARCHITECTURE.md

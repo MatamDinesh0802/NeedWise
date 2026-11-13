@@ -1,6 +1,6 @@
 # Approvals and tasks
 
-WorkMind can prepare work, but a person stays in control. Anything that changes something,
+NeedWise can prepare work, but a person stays in control. Anything that changes something,
 such as sending an email, creating a task or making a document official, becomes an
 **approval**: a stored proposal that the right person approves, edits and approves, or rejects.
 Nothing runs before that. This page is the user's view; how approvals are stored and how
@@ -72,7 +72,7 @@ any other change. Mention a colleague in a description with `@` and their addres
 ## Requests
 
 **Requests** (`/requests`) is for when you don't know which team handles something: describe it,
-optionally pick a category, and WorkMind sends it to a department's queue. Your organization's
+optionally pick a category, and NeedWise sends it to a department's queue. Your organization's
 rules decide first; otherwise a model may, if it is confident enough; otherwise it waits in
 triage for a person. You see at once where it went and why, and it stays under **Created by me**.
 A request that reached the wrong queue can be sent on by the people in that queue.

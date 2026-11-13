@@ -46,7 +46,7 @@ Repo, the step-by-step and the routing reports in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
-Create the Legal agent step by step, and what was measured: <GITHUB_REPO_URL>/blob/main/docs/agents.md
-Routing with the agent made in the browser: <GITHUB_REPO_URL>/blob/main/evals/results/2026-11-12-routing-legal-ui.md
-The rejected wording: <GITHUB_REPO_URL>/blob/main/evals/results/2026-11-12-routing-legal-rejected-rule.md
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
+Create the Legal agent step by step, and what was measured: https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/agents.md
+Routing with the agent made in the browser: https://github.com/MatamDinesh0802/NeedWise/blob/main/evals/results/2026-11-12-routing-legal-ui.md
+The rejected wording: https://github.com/MatamDinesh0802/NeedWise/blob/main/evals/results/2026-11-12-routing-legal-rejected-rule.md

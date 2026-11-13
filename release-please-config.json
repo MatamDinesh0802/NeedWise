@@ -21,7 +21,7 @@
   ],
   "packages": {
     ".": {
-      "package-name": "workmind",
+      "package-name": "needwise",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         { "type": "toml", "path": "apps/api/pyproject.toml", "jsonpath": "$.project.version" },
@@ -29,7 +29,7 @@
         {
           "type": "toml",
           "path": "apps/api/uv.lock",
-          "jsonpath": "$.package[?(@.name.value == 'workmind' || @.name.value == 'workmind-ee')].version"
+          "jsonpath": "$.package[?(@.name.value == 'needwise' || @.name.value == 'needwise-ee')].version"
         },
         { "type": "json", "path": "apps/web/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "e2e/browser/package.json", "jsonpath": "$.version" },
@@ -37,9 +37,9 @@
         {
           "type": "toml",
           "path": "loadtests/uv.lock",
-          "jsonpath": "$.package[?(@.name.value == 'workmind-loadtests')].version"
+          "jsonpath": "$.package[?(@.name.value == 'needwise-loadtests')].version"
         },
-        { "type": "generic", "path": "deploy/helm/workmind/Chart.yaml" }
+        { "type": "generic", "path": "deploy/helm/needwise/Chart.yaml" }
       ]
     }
   }

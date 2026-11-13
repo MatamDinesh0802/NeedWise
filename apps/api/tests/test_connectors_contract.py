@@ -1,7 +1,7 @@
 """The connector contract: every connector, against a fake of its service's HTTP API.
 
 1. scan lists items with stable ids and a version that changes exactly when content does;
-2. fetch returns bytes WorkMind can parse;
+2. fetch returns bytes NeedWise can parse;
 3. failures raise ConnectorError (never a raw HTTP error), so a sync can record them;
 4. a scan that saw only part of the source says so (complete=False), so nothing is deleted.
 
@@ -17,18 +17,18 @@ from typing import Any
 import httpx
 import pytest
 
+from needwise.modules.connectors.base import Connector, ConnectorError
+from needwise.modules.connectors.confluence import ConfluenceConnector
+from needwise.modules.connectors.gdrive import GoogleDriveConnector
+from needwise.modules.connectors.github import GitHubConnector
+from needwise.modules.connectors.oauth import OAuthApp
+from needwise.modules.connectors.sharepoint import SharePointConnector
+from needwise.modules.connectors.slack import SlackConnector
+from needwise.modules.connectors.web import WebConnector
+from needwise.modules.knowledge.parsing import detect_mime, parse
 from tests import fake_confluence, fake_graph
 from tests.fake_confluence import Attachment, FakeConfluence, Page
 from tests.fake_graph import FakeGraph, Item
-from workmind.modules.connectors.base import Connector, ConnectorError
-from workmind.modules.connectors.confluence import ConfluenceConnector
-from workmind.modules.connectors.gdrive import GoogleDriveConnector
-from workmind.modules.connectors.github import GitHubConnector
-from workmind.modules.connectors.oauth import OAuthApp
-from workmind.modules.connectors.sharepoint import SharePointConnector
-from workmind.modules.connectors.slack import SlackConnector
-from workmind.modules.connectors.web import WebConnector
-from workmind.modules.knowledge.parsing import detect_mime, parse
 
 # --- fake services --------------------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 /**
- * Retention policies (Enterprise feature "retention_policies", ee/python/src/workmind_ee/retention.py,
+ * Retention policies (Enterprise feature "retention_policies", ee/python/src/needwise_ee/retention.py,
  * docs/enterprise.md). How many days each kind of data is kept; empty keeps it forever. The API
  * enforces the license (402), the 30-day minimum and who may change it; this only explains.
  */
@@ -169,7 +169,7 @@ export function confirmMatches(text: string): boolean {
   return text.trim() === CONFIRM_WORD;
 }
 
-// --- Documents, per collection (ee/python/src/workmind_ee/document_retention.py) ------------------
+// --- Documents, per collection (ee/python/src/needwise_ee/document_retention.py) ------------------
 
 export type DocumentAction = "archive" | "delete";
 

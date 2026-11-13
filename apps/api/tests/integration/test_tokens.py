@@ -6,9 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.identity.models import ApiToken, User
 from tests.integration.conftest import VALKEY_URL, Acme, SessionFactory, seed_acme
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.identity.models import ApiToken, User
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL to run")
 
@@ -34,9 +34,9 @@ async def test_a_token_is_shown_once_and_stored_only_as_a_hash(
     async with tenant_transaction(app_sessions, acme.tenant_id) as session:
         row = (await session.scalars(select(ApiToken).where(ApiToken.name == "laptop MCP"))).one()
 
-    assert token.startswith(f"wm_pat_{acme.slug}_")
+    assert token.startswith(f"nw_pat_{acme.slug}_")
     assert "token" not in listed[0]
-    assert listed[0]["prefix"] == token[: len(f"wm_pat_{acme.slug}_") + 4]
+    assert listed[0]["prefix"] == token[: len(f"nw_pat_{acme.slug}_") + 4]
     assert token.encode() not in row.token_hash
     assert token not in repr(vars(row))
 
@@ -84,13 +84,13 @@ async def test_revoked_expired_and_forged_tokens_are_rejected(
             .where(ApiToken.name == "expired")
             .values(expires_at=datetime.now(UTC) - timedelta(minutes=1))
         )
-    secret = str(good["token"]).removeprefix(f"wm_pat_{acme.slug}_")
+    secret = str(good["token"]).removeprefix(f"nw_pat_{acme.slug}_")
 
     for token in (
         revoked["token"],
         expired["token"],
-        f"wm_pat_{acme.slug}_{secret[:-1]}x",  # one character changed
-        f"wm_pat_nonexistent_{secret}",  # wrong tenant
+        f"nw_pat_{acme.slug}_{secret[:-1]}x",  # one character changed
+        f"nw_pat_nonexistent_{secret}",  # wrong tenant
         "not-a-token",
     ):
         response = api.get("/api/v1/me", headers=bearer(token))

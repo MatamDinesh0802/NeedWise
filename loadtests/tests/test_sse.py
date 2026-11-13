@@ -4,7 +4,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from workmind_load.sse import Event, follow, lines_of, parse
+from needwise_load.sse import Event, follow, lines_of, parse
 
 
 def test_lines_survive_any_chunking_even_inside_a_character() -> None:

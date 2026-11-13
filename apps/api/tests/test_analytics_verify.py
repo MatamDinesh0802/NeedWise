@@ -3,7 +3,7 @@ and when a number counts as backed by a query result."""
 
 import pytest
 
-from workmind.modules.analytics.verify import extract, verify
+from needwise.modules.analytics.verify import extract, verify
 
 
 def found(text: str) -> list[tuple[str, float]]:

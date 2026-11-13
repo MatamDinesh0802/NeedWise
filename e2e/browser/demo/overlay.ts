@@ -10,7 +10,7 @@ import type { Page } from "@playwright/test";
  * this module's scope.
  */
 export function installOverlay(): void {
-  const KEY = "wm-demo-overlay";
+  const KEY = "nw-demo-overlay";
   const Z = "2147483647";
   let host: HTMLDivElement | null = null;
   let shown = "";
@@ -24,7 +24,7 @@ export function installOverlay(): void {
 
   function build(): HTMLDivElement {
     const root = document.createElement("div");
-    root.id = "wm-demo-overlay";
+    root.id = "nw-demo-overlay";
     root.style.cssText = `position:fixed;inset:0;pointer-events:none;z-index:${Z};font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;`;
     // The caption: centred over the header's free space (between the page title and the
     // account controls), two lines at most.
@@ -35,14 +35,14 @@ export function installOverlay(): void {
         "line-height:21px;font-weight:550;letter-spacing:-.005em;box-shadow:0 6px 24px rgba(0,0,0,.25);" +
         "text-align:center;display:none;",
       root,
-    ).id = "wm-demo-caption";
+    ).id = "nw-demo-caption";
     const card = el(
       "div",
       "position:absolute;inset:0;background:linear-gradient(135deg,#0b1220 0%,#16213a 100%);color:#fff;" +
         "display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;padding:48px;",
       root,
     );
-    card.id = "wm-demo-card";
+    card.id = "nw-demo-card";
     const cursor = el(
       "div",
       "position:absolute;left:0;top:0;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;" +
@@ -50,7 +50,7 @@ export function installOverlay(): void {
         "transition:transform .28s cubic-bezier(.2,.7,.3,1);transform:translate(-100px,-100px);",
       root,
     );
-    cursor.id = "wm-demo-cursor";
+    cursor.id = "nw-demo-cursor";
     return root;
   }
 
@@ -70,7 +70,7 @@ export function installOverlay(): void {
     if (state === shown) return;
     shown = state;
     const data = (state ? JSON.parse(state) : {}) as { caption?: string; step?: string; card?: { title: string; lines: string[] } };
-    const caption = host.querySelector<HTMLElement>("#wm-demo-caption")!;
+    const caption = host.querySelector<HTMLElement>("#nw-demo-caption")!;
     if (data.caption) {
       caption.innerHTML = "";
       if (data.step) {
@@ -84,7 +84,7 @@ export function installOverlay(): void {
     } else {
       caption.style.display = "none";
     }
-    const card = host.querySelector<HTMLElement>("#wm-demo-card")!;
+    const card = host.querySelector<HTMLElement>("#nw-demo-card")!;
     card.innerHTML = "";
     if (data.card) {
       const title = document.createElement("div");
@@ -101,11 +101,11 @@ export function installOverlay(): void {
     } else {
       card.style.display = "none";
     }
-    host.querySelector<HTMLElement>("#wm-demo-cursor")!.style.visibility = data.card ? "hidden" : "visible";
+    host.querySelector<HTMLElement>("#nw-demo-cursor")!.style.visibility = data.card ? "hidden" : "visible";
   }
 
   function moveCursor(x: number, y: number): void {
-    const cursor = host?.querySelector<HTMLElement>("#wm-demo-cursor");
+    const cursor = host?.querySelector<HTMLElement>("#nw-demo-cursor");
     if (cursor) cursor.style.transform = `translate(${x}px,${y}px)`;
   }
 
@@ -140,7 +140,7 @@ interface OverlayState {
 
 async function setState(page: Page, state: OverlayState): Promise<void> {
   await page.evaluate((value) => {
-    sessionStorage.setItem("wm-demo-overlay", value);
+    sessionStorage.setItem("nw-demo-overlay", value);
     (window as unknown as { __wmDemoRender?: () => void }).__wmDemoRender?.();
   }, JSON.stringify(state));
 }

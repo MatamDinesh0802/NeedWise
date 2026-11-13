@@ -1,20 +1,20 @@
-# WorkMind AI local stack.
+# NeedWise local stack.
 #   make up        -> build and start everything, wait until healthy
 #   make infra     -> infrastructure only (run api/web on the host)
 # Every default below is for LOCAL DEVELOPMENT ONLY. Override them in .env (see .env.example).
 # Host ports bind to 127.0.0.1, so nothing is reachable from your network.
 # Third-party images are pinned by digest (the tag is for people); Dependabot proposes updates.
-# The WorkMind images are built from this checkout unless WORKMIND_API_IMAGE and
-# WORKMIND_WEB_IMAGE name released ones (docs/operations/releasing.md).
+# The NeedWise images are built from this checkout unless NEEDWISE_API_IMAGE and
+# NEEDWISE_WEB_IMAGE name released ones (docs/operations/releasing.md).
 
-name: workmind
+name: needwise
 
 # Shared by the API, the ingestion worker and the seed tool. Settings you put in .env (LLM models,
 # ANTHROPIC_API_KEY, ...) reach these containers through env_file; container hostnames win.
 x-app-env: &app-env
   APP_ENV: ${APP_ENV:-dev}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
-  DATABASE_URL: postgresql+asyncpg://workmind_app:${WORKMIND_APP_PASSWORD:-workmind_app}@postgres:5432/workmind
+  DATABASE_URL: postgresql+asyncpg://needwise_app:${NEEDWISE_APP_PASSWORD:-needwise_app}@postgres:5432/needwise
   VALKEY_URL: redis://valkey:6379/0
   CELERY_BROKER_URL: redis://valkey:6379/1
   QDRANT_URL: http://qdrant:6333
@@ -31,7 +31,7 @@ x-app-env: &app-env
   # Development mail: everything lands in Mailpit (http://localhost:8025), nothing is delivered.
   SMTP_HOST: ${SMTP_HOST:-mailpit}
   SMTP_PORT: ${SMTP_PORT:-1025}
-  SMTP_FROM: ${SMTP_FROM:-WorkMind <workmind@acme.test>}
+  SMTP_FROM: ${SMTP_FROM:-NeedWise <needwise@acme.test>}
 
 x-app-env-file: &app-env-file
   - path: .env
@@ -50,8 +50,8 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      WORKMIND_OWNER_PASSWORD: ${WORKMIND_OWNER_PASSWORD:-workmind_owner}
-      WORKMIND_APP_PASSWORD: ${WORKMIND_APP_PASSWORD:-workmind_app}
+      NEEDWISE_OWNER_PASSWORD: ${NEEDWISE_OWNER_PASSWORD:-needwise_owner}
+      NEEDWISE_APP_PASSWORD: ${NEEDWISE_APP_PASSWORD:-needwise_app}
       KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
       OPENFGA_DB_PASSWORD: ${OPENFGA_DB_PASSWORD:-openfga}
     volumes:
@@ -117,7 +117,7 @@ services:
       OPENFGA_DATASTORE_URI: postgres://openfga:${OPENFGA_DB_PASSWORD:-openfga}@postgres:5432/openfga?sslmode=disable
       OPENFGA_PLAYGROUND_ENABLED: "false"
       OPENFGA_LOG_FORMAT: json
-      # Every API call needs this key; only the WorkMind API knows it.
+      # Every API call needs this key; only the NeedWise API knows it.
       OPENFGA_AUTHN_METHOD: preshared
       OPENFGA_AUTHN_PRESHARED_KEYS: ${OPENFGA_API_KEY:-dev-only-openfga-key}
     depends_on:
@@ -132,7 +132,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332
-    # Imports deploy/keycloak/realm-workmind.json once, when the realm doesn't exist yet.
+    # Imports deploy/keycloak/realm-needwise.json once, when the realm doesn't exist yet.
     command: ["start-dev", "--import-realm"]
     volumes:
       - ./deploy/keycloak:/opt/keycloak/data/import:ro
@@ -152,8 +152,8 @@ services:
       KC_HEALTH_ENABLED: "true"
       JAVA_OPTS_KC_HEAP: "-Xms256m -Xmx768m"
       # Placeholders used by the realm import file.
-      WORKMIND_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-dev-only-oidc-client-secret}
-      WORKMIND_PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8480}
+      NEEDWISE_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-dev-only-oidc-client-secret}
+      NEEDWISE_PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8480}
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -174,11 +174,11 @@ services:
 
   migrate:
     build: *api-build
-    image: ${WORKMIND_API_IMAGE:-workmind-api:dev}
+    image: ${NEEDWISE_API_IMAGE:-needwise-api:dev}
     command: ["alembic", "upgrade", "head"]
     environment:
-      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://workmind_owner:${WORKMIND_OWNER_PASSWORD:-workmind_owner}@postgres:5432/workmind
-      # For `docker compose run --rm migrate wm authz sync` after an upgrade or a restore
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://needwise_owner:${NEEDWISE_OWNER_PASSWORD:-needwise_owner}@postgres:5432/needwise
+      # For `docker compose run --rm migrate nw authz sync` after an upgrade or a restore
       # (docs/operations/upgrade.md). `alembic upgrade head` itself never calls OpenFGA.
       OPENFGA_API_URL: http://openfga:8080
       OPENFGA_API_KEY: ${OPENFGA_API_KEY:-dev-only-openfga-key}
@@ -188,7 +188,7 @@ services:
 
   api:
     build: *api-build
-    image: ${WORKMIND_API_IMAGE:-workmind-api:dev}
+    image: ${NEEDWISE_API_IMAGE:-needwise-api:dev}
     env_file: *app-env-file
     environment:
       <<: *app-env
@@ -201,7 +201,7 @@ services:
     volumes:
       - ./.data/objects:/data/objects
       # License files from `make ee-dev-license` (docs/enterprise.md). Empty: Community.
-      - ./.workmind:/run/workmind:ro
+      - ./.needwise:/run/needwise:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -223,15 +223,15 @@ services:
   # Ingestion and other background jobs (Celery). Scale with: docker compose up --scale worker=3
   worker:
     build: *api-build
-    image: ${WORKMIND_API_IMAGE:-workmind-api:dev}
-    command: ["celery", "-A", "workmind.workers.celery_app", "worker", "-Q", "ingest,default", "--concurrency", "2", "--loglevel", "INFO"]
+    image: ${NEEDWISE_API_IMAGE:-needwise-api:dev}
+    command: ["celery", "-A", "needwise.workers.celery_app", "worker", "-Q", "ingest,default", "--concurrency", "2", "--loglevel", "INFO"]
     env_file: *app-env-file
     environment:
       <<: *app-env
     volumes:
       - ./.data/objects:/data/objects
       - whisper-models:/models  # the speech-to-text model, downloaded on the first recording
-      - ./.workmind:/run/workmind:ro
+      - ./.needwise:/run/needwise:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -283,13 +283,13 @@ services:
   # start each interval again, and a daily task would only run after a full day without one.
   beat:
     build: *api-build
-    image: ${WORKMIND_API_IMAGE:-workmind-api:dev}
-    command: ["celery", "-A", "workmind.workers.celery_app", "beat", "--loglevel", "INFO", "--schedule", "/var/lib/celerybeat/schedule"]
+    image: ${NEEDWISE_API_IMAGE:-needwise-api:dev}
+    command: ["celery", "-A", "needwise.workers.celery_app", "beat", "--loglevel", "INFO", "--schedule", "/var/lib/celerybeat/schedule"]
     env_file: *app-env-file
     environment:
       <<: *app-env
     volumes:
-      - ./.workmind:/run/workmind:ro
+      - ./.needwise:/run/needwise:ro
       - beat_schedule:/var/lib/celerybeat
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -300,8 +300,8 @@ services:
   seed:
     profiles: [tools]
     build: *api-build
-    image: ${WORKMIND_API_IMAGE:-workmind-api:dev}
-    command: ["python", "-m", "workmind.seed", "/seed/acme/company.yaml"]
+    image: ${NEEDWISE_API_IMAGE:-needwise-api:dev}
+    command: ["python", "-m", "needwise.seed", "/seed/acme/company.yaml"]
     volumes:
       - ./seed:/seed:ro
       - ./.data/objects:/data/objects
@@ -311,17 +311,17 @@ services:
     environment:
       <<: *app-env
       # Seeding creates tenants, which only the owner role may do.
-      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://workmind_owner:${WORKMIND_OWNER_PASSWORD:-workmind_owner}@postgres:5432/workmind
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://needwise_owner:${NEEDWISE_OWNER_PASSWORD:-needwise_owner}@postgres:5432/needwise
       KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-workmind-demo}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-needwise-demo}
     depends_on:
       migrate: { condition: service_completed_successfully }
       keycloak: { condition: service_healthy }
 
   web:
     build: { context: apps/web }
-    image: ${WORKMIND_WEB_IMAGE:-workmind-web:dev}
+    image: ${NEEDWISE_WEB_IMAGE:-needwise-web:dev}
     environment:
       API_INTERNAL_URL: http://api:8000
       NEXT_PUBLIC_DEMO: ${NEXT_PUBLIC_DEMO:-1}   # "View as" demo switcher; read at runtime via /runtime-config

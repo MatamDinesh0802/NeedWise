@@ -8,9 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from tests.analytics_support import DAN_POLICY, SALES, LocalAnalytics, build_acme, context
-from tests.fakes import FakeLLM, ToolTurn
-from workmind.modules.analytics.agent import (
+from needwise.modules.analytics.agent import (
     MAX_QUERIES,
     MAX_STEPS,
     MODEL_DOWN,
@@ -22,7 +20,9 @@ from workmind.modules.analytics.agent import (
     agent_prompt,
     answer,
 )
-from workmind.providers.llm import LLMError
+from needwise.providers.llm import LLMError
+from tests.analytics_support import DAN_POLICY, SALES, LocalAnalytics, build_acme, context
+from tests.fakes import FakeLLM, ToolTurn
 
 CTX = context(SALES)
 TODAY = date(2026, 11, 12)

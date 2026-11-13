@@ -1,6 +1,6 @@
-# WorkMind Enterprise
+# NeedWise Enterprise
 
-WorkMind is open core ([ADR 0004](adr/0004-apache-2-open-core-and-dco.md),
+NeedWise is open core ([ADR 0004](adr/0004-apache-2-open-core-and-dco.md),
 [ROADMAP §4 and §5](ROADMAP.md#4-open-source-and-licensing-plan)). This page explains the two
 editions, how a license turns Enterprise on, how to get a development license, and how
 Enterprise code plugs into the core. The design is recorded in
@@ -30,10 +30,10 @@ only with a valid license key. The Enterprise features the core knows about:
 ### What exists today
 
 Built: license verification, the edition object, `GET /api/v1/edition`, the `require_feature`
-dependency (402), the extension registry, the `workmind-ee` package, development licenses
+dependency (402), the extension registry, the `needwise-ee` package, development licenses
 (`make ee-dev-license`), the web components `EnterpriseGate` and `EnterpriseBadge`, and six
-features, all registered in `workmind_ee.setup`: department budgets and the chargeback report
-(`ee/python/src/workmind_ee/budgets.py` and `chargeback.py`, on the usage hooks), retention
+features, all registered in `needwise_ee.setup`: department budgets and the chargeback report
+(`ee/python/src/needwise_ee/budgets.py` and `chargeback.py`, on the usage hooks), retention
 policies, the SIEM audit export, permission sync and legal holds (`retention.py`,
 `audit_export.py`, `permission_sync.py` and `legal_hold.py`, as routers, the connectors hook
 and scheduled tasks; document retention rules are in `document_retention.py`).
@@ -47,7 +47,7 @@ the built features it lists; nothing else changes.
 
 ## Retention policies
 
-Feature `retention_policies`, code in `ee/python/src/workmind_ee/retention.py`, screen
+Feature `retention_policies`, code in `ee/python/src/needwise_ee/retention.py`, screen
 **Admin > Retention**. Per tenant, an org owner or admin sets how many days to keep:
 
 | Data | Counted from | What is deleted |
@@ -71,7 +71,7 @@ report them as `kept_under_hold` (per kind), the run's audit event lists the sam
 | `POST /api/v1/admin/retention/preview` | Counts exactly what a run would delete now, and the cutoff per kind. Deletes nothing. Without a body it previews the saved policy; with a policy in the body, that draft, without saving it |
 | `POST /api/v1/admin/retention/run` | Runs the saved policy now. The body must be `{"confirm": "delete"}`; the web app asks the admin to type the word. Audited as `admin.retention.run` with the counts |
 
-A scheduled task, `workmind_ee.retention.apply`, registered through the extension registry,
+A scheduled task, `needwise_ee.retention.apply`, registered through the extension registry,
 runs once a day (on the same beat schedule as the review reminders, kept across restarts:
 [governance.md](governance.md#review-cycles)) and applies every active tenant's saved policy
 (audited the same way, with the system as the actor). Each tenant's run happens inside that tenant's transaction, so row-level
@@ -94,7 +94,7 @@ column exist in both editions (migration `0018`).
 
 ### Document retention
 
-Part of the same feature, code in `ee/python/src/workmind_ee/document_retention.py`, in
+Part of the same feature, code in `ee/python/src/needwise_ee/document_retention.py`, in
 **Admin > Retention > Documents, by collection**. Per collection, an org owner or admin sets how
 many days a document may go **without an update** (30 to 36,500) and what happens then:
 
@@ -127,7 +127,7 @@ from when it was added. Edits of labels, owners or escalation stages do not coun
 | `POST /api/v1/admin/retention/documents/preview` | Per collection: the cutoff, exactly how many documents a run would delete or archive now, and how many it would keep and why. Changes nothing. Without a body the saved rules; with rules in the body, that draft |
 | `POST /api/v1/admin/retention/documents/run` | Applies the saved rules now, with `{"confirm": "delete"}` (`409 no_rules` without any). Each document is audited (`knowledge.document.deleted` with `reason: retention`, or `knowledge.document.archived`), and the run as `admin.retention.documents_run` with the counts per collection |
 
-The daily task `workmind_ee.retention.apply` applies the rules too, after the policy, as the
+The daily task `needwise_ee.retention.apply` applies the rules too, after the policy, as the
 system. The preview and the run select with the same query, and the tests check that a run
 deletes and archives exactly what the preview counted. The `document_retention_rules` table and
 the documents' `archived_at` and `restored_at` columns are in the core schema (migration
@@ -140,8 +140,8 @@ notices to owners before their documents are archived or deleted.
 
 ## Legal hold
 
-Feature `legal_hold`, code in `ee/python/src/workmind_ee/legal_hold.py` (placing, listing and
-releasing) and `apps/api/src/workmind/modules/governance/holds.py` (enforcement, in the core),
+Feature `legal_hold`, code in `ee/python/src/needwise_ee/legal_hold.py` (placing, listing and
+releasing) and `apps/api/src/needwise/modules/governance/holds.py` (enforcement, in the core),
 screen **Admin > Legal holds**. An org owner or admin places a hold on one thing, naming the
 **matter** (the case or investigation, up to 200 characters; holds are grouped by it) and saying
 **why** (up to 2,000). What a hold keeps:
@@ -162,7 +162,7 @@ While a hold is active, **nothing it covers is deleted**, whoever or whatever as
 | An admin deletes a source whose synced documents include a held one | `409 legal_hold`, nothing is deleted (disable the source to stop its syncs) |
 | A connector's deletion propagation (the item is gone from the source) | The held document stays, searchable as before; the sync reports it as `kept_under_hold` and **Admin > Sources** shows "1 kept under legal hold". A document the source reported deleted (a delta feed's tombstone, reported only once) is marked `source_deleted_at`, every later sync tries again and keeps counting it, and the first sync after its last hold is released deletes it; if the item comes back in the source first, the mark is cleared. A paused source does not sync, so it deletes nothing until it is resumed |
 | A retention run, by hand or daily | Held conversations, Insights questions and meeting recordings are kept and counted as `kept_under_hold`; the preview counts them the same way |
-| `wm tenant delete` | Refused before anything is suspended or deleted, unless the operator types `--override-legal-holds <tenant>` ([multi-tenancy.md](multi-tenancy.md#deleting-a-tenant-completely)) |
+| `nw tenant delete` | Refused before anything is suspended or deleted, unless the operator types `--override-legal-holds <tenant>` ([multi-tenancy.md](multi-tenancy.md#deleting-a-tenant-completely)) |
 
 **Every attempt is audited** as `legal_hold.deletion_blocked`, with who or what tried (`via`:
 `user`, `connector` or `tenant_deletion`), the holds and their matters: one event per refused
@@ -206,7 +206,7 @@ the data is read where it is); a hold placed through the assistant or MCP.
 
 ## Audit export for a SIEM
 
-Feature `advanced_audit_export`, code in `ee/python/src/workmind_ee/audit_export.py`.
+Feature `advanced_audit_export`, code in `ee/python/src/needwise_ee/audit_export.py`.
 `GET /api/v1/admin/audit-events/export.jsonl` (org owners, admins and auditors) streams the
 tenant's whole hash chain, oldest first, one JSON object per line: the fields the hash covers
 plus `prev_hash` and `hash` in hex. A receiver can verify the chain itself:
@@ -226,12 +226,12 @@ see [governance.md](governance.md#the-audit-explorer).
 
 ## Permission sync
 
-Feature `permission_sync`, code in `ee/python/src/workmind_ee/permission_sync.py`; the full
+Feature `permission_sync`, code in `ee/python/src/needwise_ee/permission_sync.py`; the full
 description is [permission-sync.md](permission-sync.md). During every sync of a Google Drive,
 Slack or GitHub source it reads who may see each item (Drive file permissions, private Slack
 channel members, private repository collaborators and teams), and the core writes that as the
 document's own access list, which only narrows the collection's access. A scheduled task,
-`workmind_ee.permission_sync.drive_changes`, reads every Drive source's changes feed every 60
+`needwise_ee.permission_sync.drive_changes`, reads every Drive source's changes feed every 60
 seconds and applies changed files' permissions at once.
 
 What stays in Community: document access lists themselves, their enforcement in both retrieval
@@ -269,7 +269,7 @@ instead of being half-understood. Dates must carry a time zone.
 The API verifies the signature with the `cryptography` library against the trusted public
 keys (raw Ed25519, 32 bytes, base64url):
 
-- `PRODUCTION_PUBLIC_KEYS` in `apps/api/src/workmind/core/edition.py`: the keys that will sign
+- `PRODUCTION_PUBLIC_KEYS` in `apps/api/src/needwise/core/edition.py`: the keys that will sign
   official licenses. Empty for now.
 - A development public key (`LICENSE_DEV_PUBLIC_KEY` or `LICENSE_DEV_PUBLIC_KEY_FILE`), trusted
   **only when `APP_ENV=dev`**. In `test`, `demo` and `production` a development license is
@@ -281,7 +281,7 @@ tampered with (payload or signature), signed by an unknown key, a development li
 another `DEPLOYMENT_ID`. Each of these logs a `license_rejected` warning with the reason. The
 token itself is never logged or returned by the API.
 
-Enterprise also needs the `workmind-ee` package to be installed (the Docker image has it). With
+Enterprise also needs the `needwise-ee` package to be installed (the Docker image has it). With
 a valid license but no package, or when the package's `setup` raises, the process logs the
 problem and runs as Community.
 
@@ -294,13 +294,13 @@ its features switch off at that moment (routes answer 402, scheduled tasks and h
 | Setting | Meaning | Default |
 |---|---|---|
 | `LICENSE_KEY` | The license token itself | unset |
-| `LICENSE_FILE` | A file that holds the token | `license.key` in the first of `/run/workmind/`, `<repo>/.workmind/` that has one |
+| `LICENSE_FILE` | A file that holds the token | `license.key` in the first of `/run/needwise/`, `<repo>/.needwise/` that has one |
 | `LICENSE_DEV_PUBLIC_KEY` | The development public key | unset |
 | `LICENSE_DEV_PUBLIC_KEY_FILE` | A file that holds it | `dev-public.key`, looked up like `license.key` |
 | `DEPLOYMENT_ID` | This deployment's id, for licenses bound to one | unset |
 
-`LICENSE_KEY` wins over `LICENSE_FILE`. compose mounts `<repo>/.workmind` read-only at
-`/run/workmind` in `api`, `worker` and `beat`, so the defaults pick up a development license
+`LICENSE_KEY` wins over `LICENSE_FILE`. compose mounts `<repo>/.needwise` read-only at
+`/run/needwise` in `api`, `worker` and `beat`, so the defaults pick up a development license
 without any change to `.env`.
 
 ### Which edition is running
@@ -328,22 +328,22 @@ make ee-dev-license FEATURES="retention_policies chargeback_reports" DAYS=7
 docker compose restart api worker beat                # pick it up
 ```
 
-`make ee-dev-license` runs `uv run --extra ee wm license dev` in `apps/api` (options:
+`make ee-dev-license` runs `uv run --extra ee nw license dev` in `apps/api` (options:
 `--features`, `--days` 1 to 366, `--licensee`, `--deployment-id`, `--dir`). The first run
-creates an Ed25519 key pair in `<repo>/.workmind/`; later runs reuse it. Each run writes:
+creates an Ed25519 key pair in `<repo>/.needwise/`; later runs reuse it. Each run writes:
 
 | File | Content | Mode |
 |---|---|---|
-| `.workmind/license.key` | The signed license | 0644 |
-| `.workmind/dev-public.key` | The public key the API trusts with `APP_ENV=dev` | 0644 |
-| `.workmind/dev-signing.key` | The private key | 0600 |
+| `.needwise/license.key` | The signed license | 0644 |
+| `.needwise/dev-public.key` | The public key the API trusts with `APP_ENV=dev` | 0644 |
+| `.needwise/dev-signing.key` | The private key | 0600 |
 
-`.workmind/` is in `.gitignore` and `.dockerignore`. The command never prints the token or the
+`.needwise/` is in `.gitignore` and `.dockerignore`. The command never prints the token or the
 private key. `make up` creates the folder when it is missing, so the bind mount always works.
 
-To go back to Community, delete `.workmind/license.key` and restart the three services. For an
+To go back to Community, delete `.needwise/license.key` and restart the three services. For an
 API run on the host (`make api-dev`), install the package first (`make install` runs
-`uv sync --extra ee`); the settings find `<repo>/.workmind/` on their own.
+`uv sync --extra ee`); the settings find `<repo>/.needwise/` on their own.
 
 The whole folder is mounted, so on Docker Desktop the containers can read the private key too
 (on Linux the 0600 mode keeps the container user out). It signs only development licenses,
@@ -351,22 +351,22 @@ which no environment other than `dev` accepts.
 
 ## Extension points
 
-Enterprise code is the `workmind-ee` package in `ee/python/` (module `workmind_ee`). It imports
+Enterprise code is the `needwise-ee` package in `ee/python/` (module `needwise_ee`). It imports
 from the core; **the core never imports from it**. `tests/test_open_core_boundary.py` checks
-this in two ways: it parses every core module for imports of `workmind_ee`, and it starts a process
-that imports every core module and builds the app, then checks that `workmind_ee` was never
+this in two ways: it parses every core module for imports of `needwise_ee`, and it starts a process
+that imports every core module and builds the app, then checks that `needwise_ee` was never
 loaded.
 
 The package declares an entry point:
 
 ```toml
-[project.entry-points."workmind.ee"]
-workmind_ee = "workmind_ee:setup"
+[project.entry-points."needwise.ee"]
+needwise_ee = "needwise_ee:setup"
 ```
 
 At startup (the API in `create_app`, Celery workers and beat when they import
-`workmind.workers.celery_app`) the core verifies the license. Only with a valid one does it load
-the `workmind.ee` entry points and call `setup(registry, edition)`. Setup is all or nothing: if
+`needwise.workers.celery_app`) the core verifies the license. Only with a valid one does it load
+the `needwise.ee` entry points and call `setup(registry, edition)`. Setup is all or nothing: if
 it raises, the core logs `enterprise_setup_failed`, drops everything registered and runs as
 Community.
 
@@ -376,9 +376,9 @@ on every request, task run and hook call:
 ```python
 from fastapi import APIRouter
 
-from workmind.core.edition import Edition
-from workmind.core.extensions import ExtensionRegistry
-from workmind.core.resources import Resources
+from needwise.core.edition import Edition
+from needwise.core.extensions import ExtensionRegistry
+from needwise.core.resources import Resources
 
 router = APIRouter(prefix="/admin/retention")
 
@@ -395,7 +395,7 @@ def setup(registry: ExtensionRegistry, edition: Edition) -> None:
     registry.add_router(router, feature="retention_policies")
     # Queued by Celery beat every hour; skipped while the feature is not licensed.
     registry.add_scheduled_task(
-        "workmind_ee.retention.apply", apply_policies, every_s=3600, feature="retention_policies"
+        "needwise_ee.retention.apply", apply_policies, every_s=3600, feature="retention_policies"
     )
 ```
 
@@ -403,7 +403,7 @@ def setup(registry: ExtensionRegistry, edition: Edition) -> None:
 Each route needs sign-in first (401) and then the feature (402). Routes still check permissions
 themselves, as every core route does (`require_scope`, organization roles, OpenFGA).
 
-**`require_feature(name)`** (`workmind.api.deps`) can also gate any single route:
+**`require_feature(name)`** (`needwise.api.deps`) can also gate any single route:
 
 ```python
 @router.get("/chargeback", dependencies=[require_feature("chargeback_reports")])
@@ -417,22 +417,22 @@ Without the feature it answers:
   "title": "Enterprise feature",
   "status": 402,
   "code": "enterprise_feature",
-  "detail": "Chargeback reports ('chargeback_reports') is part of WorkMind Enterprise and is not licensed on this deployment. To enable it, install a license that includes it: see docs/enterprise.md."
+  "detail": "Chargeback reports ('chargeback_reports') is part of NeedWise Enterprise and is not licensed on this deployment. To enable it, install a license that includes it: see docs/enterprise.md."
 }
 ```
 
-**Scheduled tasks** have names that start with `workmind_ee.` (so they can never replace a core
+**Scheduled tasks** have names that start with `needwise_ee.` (so they can never replace a core
 task), run at most once every 10 seconds, and receive fresh `Resources` that are closed
 afterwards.
 
 **Hooks** are named extension points the core declares where it wants Enterprise behaviour:
 
 ```python
-from workmind.core.extensions import Hook
+from needwise.core.extensions import Hook
 
-# in a core module (workmind/modules/usage/extensions.py)
+# in a core module (needwise/modules/usage/extensions.py)
 CHARGEBACK_REPORT = Hook[[AsyncSession, ChargebackQuery], Awaitable[str]]("usage.chargeback_report")
-# in setup (workmind_ee/__init__.py)
+# in setup (needwise_ee/__init__.py)
 registry.add_hook(CHARGEBACK_REPORT, chargeback_csv, feature="chargeback_reports")
 # where the core calls it (api/v1/usage.py)
 reports = resources.extensions.call(CHARGEBACK_REPORT, session, query)  # [] in Community

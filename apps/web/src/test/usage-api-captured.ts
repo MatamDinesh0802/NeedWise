@@ -186,5 +186,5 @@ export const capturedChargebackUnlicensed = {
   status: 402,
   code: "enterprise_feature",
   detail:
-    "Chargeback reports ('chargeback_reports') is part of WorkMind Enterprise and is not licensed on this deployment. To enable it, install a license that includes it: see docs/enterprise.md.",
+    "Chargeback reports ('chargeback_reports') is part of NeedWise Enterprise and is not licensed on this deployment. To enable it, install a license that includes it: see docs/enterprise.md.",
 };

@@ -3,12 +3,12 @@ from pathlib import Path
 
 from sqlalchemy import delete, func, select
 
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.identity.models import DepartmentMember, GroupMember, User
+from needwise.modules.work.models import RoutingRule
+from needwise.seed.apply import seed_database
+from needwise.seed.company import CompanySpec, load_company
 from tests.integration.conftest import SessionFactory
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.identity.models import DepartmentMember, GroupMember, User
-from workmind.modules.work.models import RoutingRule
-from workmind.seed.apply import seed_database
-from workmind.seed.company import CompanySpec, load_company
 
 ACME = Path(__file__).resolve().parents[4] / "seed" / "acme" / "company.yaml"
 

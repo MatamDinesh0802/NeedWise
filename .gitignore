@@ -36,6 +36,9 @@ graphify-out/
 /.data/
 
 # Development license and signing key (`make ee-dev-license`)
+/.needwise/
+# The same directory from before the rename (NeedWise was called WorkMind until v1.0.0):
+# an old checkout may still hold the development signing key there.
 /.workmind/
 evals/results/*.tmp
 

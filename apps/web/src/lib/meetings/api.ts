@@ -1,5 +1,5 @@
 /**
- * Typed client for meetings. Shapes mirror apps/api/src/workmind/api/v1/meetings.py and
+ * Typed client for meetings. Shapes mirror apps/api/src/needwise/api/v1/meetings.py and
  * modules/meetings (segments from pipeline.py, decisions and action items from extract.py,
  * topics from topics.py, speaker labels from speakers.py).
  */

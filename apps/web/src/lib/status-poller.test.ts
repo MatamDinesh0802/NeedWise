@@ -5,7 +5,7 @@ import type { StatusFetchState } from "./system-status";
 
 const payload = {
   status: "ok",
-  product: "WorkMind AI",
+  product: "NeedWise",
   version: "0.0.1",
   environment: "test",
   components: [{ name: "postgres", status: "ok", latency_ms: 1.2, detail: null }],

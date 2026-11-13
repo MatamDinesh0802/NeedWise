@@ -1,4 +1,4 @@
-/** "View as" demo accounts (seeded Acme Robotics users; password: workmind-demo). */
+/** "View as" demo accounts (seeded Acme Robotics users; password: needwise-demo). */
 
 export interface DemoAccount {
   email: string;
@@ -28,7 +28,7 @@ export function viewAsLoginUrl(email: string, returnTo = "/chat"): string {
  * prompt=login re-authenticates *that* user and ignores login_hint. So we follow the
  * logout's end-session redirect (which lands on "/") and resume the switch from there.
  */
-export const PENDING_VIEW_AS_KEY = "workmind:view-as";
+export const PENDING_VIEW_AS_KEY = "needwise:view-as";
 const PENDING_MAX_AGE_MS = 2 * 60 * 1000;
 
 export interface KeyValueStorage {

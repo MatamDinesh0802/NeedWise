@@ -1,10 +1,10 @@
-# Case study: WorkMind at Acme Robotics
+# Case study: NeedWise at Acme Robotics
 
 > **Acme Robotics is not a real company.** It is a fictional 180-person warehouse robotics
 > company made up for this project. Its 20 modelled employees, its documents, its invoices and
 > sales pipeline, its meetings and its Slack messages are synthetic, written from a fact plan
 > (`seed/acme/`) so that every test question has a known answer. No real organization has
-> deployed WorkMind, and nothing here describes real users. The "deployment" is the demo tenant
+> deployed NeedWise, and nothing here describes real users. The "deployment" is the demo tenant
 > on one laptop; every result below was measured on it.
 
 This page tells the story of the build as if Acme were the customer: what it needed, what was
@@ -80,10 +80,10 @@ Phases 2 to 11 were finished on `main` without a release of their own, and v1.0.
 | 0 Foundation | One-command stack, CI, the Acme company definition | |
 | 1 Identity and permissions | Keycloak sign-in, tenants with forced RLS, departments and nested groups, OpenFGA with an outbox, access tokens, a hash-chained audit log | A permission grid of 6 people x 7 collections as 42 tests |
 | 2 Ingestion | Upload of PDF, Office, Markdown, HTML, CSV and Slack exports; structure-aware chunking; sensitivity labels; versions; local embeddings | 34 documents became 294 chunks; re-indexing them took 8.6 s. On 2026-11-13, re-indexing the 51 documents of the demo tenant (430 chunks) took 18.9 s and 8.2 s in two runs (ROADMAP Phase 2). The planned 500-document corpus was not built (49 today) |
-| 3 Retrieval and evaluation | Hybrid search, both locks, citations, abstention, sensitivity routing, `wm eval`, the CI permission gate | 81/82 correct, 0 leaks. Deferred: a reranker (no headroom measured), the local-versus-hosted model comparison, 200 QA questions |
+| 3 Retrieval and evaluation | Hybrid search, both locks, citations, abstention, sensitivity routing, `nw eval`, the CI permission gate | 81/82 correct, 0 leaks. Deferred: a reranker (no headroom measured), the local-versus-hosted model comparison, 200 QA questions |
 | 4 Assistant | Streaming chat with citation chips, follow-ups, feedback, usage per message, "view as" | Not done: the demo video and public demo |
 | 5 Agents | Planner, fast path, department agents, the `auto` mode | Agents win 1 of 15 cross-department questions; `single` stays the default |
-| 6 Tools and MCP | Governed tools, the research agent, an MCP client and WorkMind as an MCP server | |
+| 6 Tools and MCP | Governed tools, the research agent, an MCP client and NeedWise as an MCP server | |
 | 7 Connectors | Drive, Slack, GitHub and a web crawler with a sync engine | Not verified against a live Drive or Slack workspace |
 | 8 Workflows and approvals | Approvals with approver rules and chains, reminders and escalation, tasks, queues and request routing with triage, email with approval, notifications by email and Slack, YAML workflows with cron and five event triggers | The weekly ops report flow ran live. Escalation, notifications, routing and the YAML editor were added in the v1.0 pass and checked with tests and a scripted model, not live; the routing eval has no real-model score yet |
 | 9 Meetings | Recordings and transcripts to decisions and action items with timestamps, tasks, indexed transcripts | A 23-minute recording transcribed in 43 to 47 s on the laptop's CPU |
@@ -223,5 +223,5 @@ on kind), live verification of the Drive and Slack
 connectors, an external penetration test, a judge from another model family, measurements with
 local models, and a corpus and question set much larger than Acme's.
 
-WorkMind was built by one maintainer with Claude as a coding assistant: every commit carries a
+NeedWise was built by one maintainer with Claude as a coding assistant: every commit carries a
 Claude co-author line except one merge commit (bb4dc95).

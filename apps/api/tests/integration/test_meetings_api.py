@@ -18,18 +18,18 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.config import Settings
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.meetings.extract import ActionItem, Decision, Extraction
+from needwise.modules.meetings.topics import Outline, TopicStart
+from needwise.modules.retrieval.qdrant import QdrantClient
+from needwise.providers.diarization import DisabledDiarizer, Turn
+from needwise.providers.transcription import DisabledTranscriber, Transcript
+from needwise.providers.transcription import Segment as TranscriptSegment
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory
-from workmind.core.config import Settings
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.meetings.extract import ActionItem, Decision, Extraction
-from workmind.modules.meetings.topics import Outline, TopicStart
-from workmind.modules.retrieval.qdrant import QdrantClient
-from workmind.providers.diarization import DisabledDiarizer, Turn
-from workmind.providers.transcription import DisabledTranscriber, Transcript
-from workmind.providers.transcription import Segment as TranscriptSegment
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(

@@ -9,12 +9,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from needwise.core.config import Settings
+from needwise.main import create_app
+from needwise.seed.analytics_load import seed_analytics
 from tests.analytics_support import ACME_ANALYTICS
 from tests.fakes import FakeLLM, ToolTurn
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
-from workmind.core.config import Settings
-from workmind.main import create_app
-from workmind.seed.analytics_load import seed_analytics
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL")
 MCP_HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}

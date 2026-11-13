@@ -1,22 +1,22 @@
 """The request routing eval set and suite, without a model or a database: the dataset is well
 formed, the seeded rules (seed/acme/company.yaml) route exactly the items marked "rule", and
-the scoring counts what it says. The suite with a real model is run by `wm eval`."""
+the scoring counts what it says. The suite with a real model is run by `nw eval`."""
 
 import uuid
 from collections import Counter
 from pathlib import Path
 
-from tests.fakes import FakeLLM
-from workmind.evals.datasets import load_request_routing
-from workmind.evals.request_routing import (
+from needwise.evals.datasets import load_request_routing
+from needwise.evals.request_routing import (
     evaluate_request_routing,
     request_routing_section,
     summarize_request_routing,
 )
-from workmind.modules.work.policy import RoutingPolicy
-from workmind.modules.work.routing import DepartmentView, RouteChoice, RuleView
-from workmind.providers.llm import LLMRequest
-from workmind.seed.company import load_company
+from needwise.modules.work.policy import RoutingPolicy
+from needwise.modules.work.routing import DepartmentView, RouteChoice, RuleView
+from needwise.providers.llm import LLMRequest
+from needwise.seed.company import load_company
+from tests.fakes import FakeLLM
 
 REPO = Path(__file__).resolve().parents[3]
 DATASETS = REPO / "evals" / "datasets"

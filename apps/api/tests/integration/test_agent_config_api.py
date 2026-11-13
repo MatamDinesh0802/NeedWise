@@ -16,6 +16,17 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from needwise.core.tenancy import tenant_transaction
+from needwise.evals.datasets import load_routing
+from needwise.evals.runner import RoutingRecord, route_items
+from needwise.modules.agents.models import AgentDefinition, AgentDefinitionVersion
+from needwise.modules.agents.planning import FastRouter, PlanOut, load_agents, plan_question
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.identity.models import User
+from needwise.modules.knowledge.models import Collection, CollectionGrant
+from needwise.providers.embeddings import HashEmbeddings
+from needwise.seed.apply import seed_database
+from needwise.seed.company import load_company
 from tests.fakes import FakeLLM
 from tests.integration.conftest import (
     ACME,
@@ -30,17 +41,6 @@ from tests.integration.conftest import (
     SessionFactory,
     seed_acme,
 )
-from workmind.core.tenancy import tenant_transaction
-from workmind.evals.datasets import load_routing
-from workmind.evals.runner import RoutingRecord, route_items
-from workmind.modules.agents.models import AgentDefinition, AgentDefinitionVersion
-from workmind.modules.agents.planning import FastRouter, PlanOut, load_agents, plan_question
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.identity.models import User
-from workmind.modules.knowledge.models import Collection, CollectionGrant
-from workmind.providers.embeddings import HashEmbeddings
-from workmind.seed.apply import seed_database
-from workmind.seed.company import load_company
 
 BASE = "/api/v1/admin/agents"
 DATASETS = Path(__file__).resolve().parents[4] / "evals" / "datasets"

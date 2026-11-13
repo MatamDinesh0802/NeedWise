@@ -11,7 +11,7 @@
 
 ## Post
 
-WorkMind v1.0 is out: an open-source AI assistant for company knowledge that only answers from what each person is allowed to see.
+NeedWise v1.0 is out: an open-source AI assistant for company knowledge that only answers from what each person is allowed to see.
 
 13 phases, built in public. Here's what I'd tell myself at the start.
 
@@ -54,7 +54,7 @@ Repo, release notes and the benchmarks in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
-v1.0.0 release notes: <GITHUB_REPO_URL>/blob/main/docs/releases/v1.0.0.md
-v1.0 benchmarks, with the method and the limitations: <GITHUB_REPO_URL>/blob/main/docs/benchmarks/v1.0.md
-The case study (what went wrong, what it costs): <GITHUB_REPO_URL>/blob/main/docs/case-study.md
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
+v1.0.0 release notes: https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/releases/v1.0.0.md
+v1.0 benchmarks, with the method and the limitations: https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/benchmarks/v1.0.md
+The case study (what went wrong, what it costs): https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/case-study.md

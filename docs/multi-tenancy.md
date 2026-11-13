@@ -1,6 +1,6 @@
 # Multi-tenancy
 
-One WorkMind installation can serve several organizations (tenants) from the same database,
+One NeedWise installation can serve several organizations (tenants) from the same database,
 search index, cache and workers. This page says how each layer keeps tenants apart, how a
 sign-in finds its tenant, how to create and completely delete a tenant, which abuse limits
 apply per person and per tenant, how isolation is tested, and what a hosted multi-tenant
@@ -8,7 +8,7 @@ service would still need.
 
 Code: `core/tenancy.py` (database transactions, Valkey key names), `modules/retrieval/qdrant.py`
 (tenant scope in every search-index call), `modules/knowledge/storage.py` (file keys),
-`modules/identity/lifecycle.py` and `tenant_cli.py` (`wm tenant`), `core/ratelimit.py` (limits).
+`modules/identity/lifecycle.py` and `tenant_cli.py` (`nw tenant`), `core/ratelimit.py` (limits).
 Tests: `apps/api/tests/integration/test_cross_tenant.py`, `test_tenant_lifecycle.py`,
 `test_rate_limits.py`, `test_tenant_isolation.py`.
 
@@ -32,15 +32,15 @@ asking person may read in their own tenant.
 
 ## How a sign-in finds its tenant
 
-WorkMind uses one Keycloak realm. Each tenant is a **Keycloak organization whose alias is the
+NeedWise uses one Keycloak realm. Each tenant is a **Keycloak organization whose alias is the
 tenant's slug**; Keycloak adds the person's organizations to the ID token (`organization`
-claim). At `/api/auth/callback` WorkMind takes the first **active** tenant whose slug is one of
+claim). At `/api/auth/callback` NeedWise takes the first **active** tenant whose slug is one of
 those aliases (`resolve_tenant`), then links the person (by Keycloak subject, or by email if
 Keycloak says the email is verified) or creates them just in time. A person whose organization
 matches no active tenant is refused (`no_organization`). The session stores the tenant, and
 every later request uses it; the browser never chooses a tenant.
 
-Access tokens for MCP clients and scripts are `wm_pat_<slug>_<secret>`: the slug says which
+Access tokens for MCP clients and scripts are `nw_pat_<slug>_<secret>`: the slug says which
 tenant to look in, and only the SHA-256 of the whole token is stored there. Changing the slug
 sends the token to a tenant that has no such hash (401).
 
@@ -52,7 +52,7 @@ between tenants at sign-in is not built.
 1. Create the tenant (as an operator, with the owner database role):
 
    ```bash
-   wm tenant create globex --name "Globex" --owner-email it@globex.example \
+   nw tenant create globex --name "Globex" --owner-email it@globex.example \
      --keycloak --domain globex.example
    ```
 
@@ -66,19 +66,19 @@ between tenants at sign-in is not built.
 2. In Keycloak, add people to the organization or link the company's identity provider to it.
 3. The owner signs in and sets up departments, groups, collections and models in Admin.
 
-`wm tenant list` shows every tenant with its id, status and number of people. The demo seed
-(`wm seed`) creates the Acme tenant the same way, with its demo logins.
+`nw tenant list` shows every tenant with its id, status and number of people. The demo seed
+(`nw seed`) creates the Acme tenant the same way, with its demo logins.
 
 ## Deleting a tenant completely
 
 ```bash
-wm tenant delete globex --confirm globex [--keycloak]
+nw tenant delete globex --confirm globex [--keycloak]
 ```
 
 A tenant with an active legal hold is refused before anything happens (nothing is suspended or
 deleted), and the refusal is recorded in its audit log (`legal_hold.deletion_blocked`). Release
 the holds first, or type the override, which repeats the tenant again:
-`wm tenant delete globex --confirm globex --override-legal-holds globex`. The override is
+`nw tenant delete globex --confirm globex --override-legal-holds globex`. The override is
 recorded in the tenant's audit log (`legal_hold.overridden`), which is deleted with the tenant,
 and in the command's log (`tenant_deleted_under_legal_hold`, with the matters), which is not
 ([enterprise.md](enterprise.md#legal-hold)).
@@ -106,10 +106,10 @@ under its prefix and no session naming it; the OpenFGA store gone (and no other 
 `tenant-<slug>`); with `--keycloak`, no organization with its alias. To check again later:
 
 ```bash
-wm tenant verify-empty <tenant-id> --slug globex --store <openfga-store-id> [--keycloak]
+nw tenant verify-empty <tenant-id> --slug globex --store <openfga-store-id> [--keycloak]
 ```
 
-`test_tenant_lifecycle.py` creates a tenant with `wm tenant create`, signs its owner in, fills
+`test_tenant_lifecycle.py` creates a tenant with `nw tenant create`, signs its owner in, fills
 every layer (a collection and a document: rows, points and a file; a conversation with an
 answer: run events and usage; an analytics table: a DuckDB file), checks that `verify-empty`
 sees all of them, deletes it, and checks that `verify-empty` then finds nothing, that its
@@ -119,7 +119,7 @@ What deletion does **not** reach:
 
 - **Backups** of PostgreSQL, Qdrant, Valkey or the storage directory taken before the deletion.
 - **OpenFGA's own record of the store:** OpenFGA marks a deleted store instead of erasing it.
-  WorkMind deletes every tuple first, so what is left is the store id, its name
+  NeedWise deletes every tuple first, so what is left is the store id, its name
   (`tenant-<slug>`), timestamps and the generic authorization model.
 - **Logs and traces** already shipped elsewhere (they hold ids, not content).
 - **Keycloak** without `--keycloak`, and Keycloak users shared with other organizations.
@@ -127,7 +127,7 @@ What deletion does **not** reach:
   worker takes them, and then do nothing (the tenant is gone).
 - Work already running when the tenant was suspended (a sync or an ingestion in progress) can
   write after the step that cleaned its layer; verification then reports it, and running
-  `wm tenant delete` again with the tenant's id removes it (the row is the last thing deleted).
+  `nw tenant delete` again with the tenant's id removes it (the row is the last thing deleted).
 
 ## Abuse limits
 
@@ -206,7 +206,7 @@ What it found and what changed:
 - A department collection with another tenant's department answered 500 (the composite
   foreign key refused it). Now 422 `unknown_department`.
 - Run events, the conversation lock, usage caches and budget alert flags were stored under
-  keys without the tenant (`wm:run:<id>`, `wm:usage:...`); an OAuth callback looked up any
+  keys without the tenant (`nw:run:<id>`, `nw:usage:...`); an OAuth callback looked up any
   tenant's flow and deleted it before checking the tenant. All now live under `t:<tenant_id>:`.
 - The tenant condition for Qdrant was added by callers; one delete had none. It is now added
   inside `QdrantClient`.
@@ -222,12 +222,12 @@ scripted Keycloak API tests the deletion logic; like Keycloak 26, its `search` p
 organization names and domains, never aliases, so the lookup by alias pages through every
 organization), and load (two tenants, one process).
 
-## What a hosted multi-tenant WorkMind Cloud would still need
+## What a hosted multi-tenant NeedWise Cloud would still need
 
 The isolation above is what a self-hosted installation with several tenants needs. A hosted
 service run for many unrelated customers would also need, at least:
 
-- **Self-service sign-up and billing:** tenants are created by an operator with `wm tenant`.
+- **Self-service sign-up and billing:** tenants are created by an operator with `nw tenant`.
 - **Per-tenant encryption keys** (envelope encryption with a KMS). Today one deployment key
   encrypts every tenant's connector credentials and one encrypts model provider keys.
 - **Fair sharing of workers:** all tenants share the Celery queues and the analytics worker

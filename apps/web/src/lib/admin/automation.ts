@@ -1,7 +1,7 @@
 /**
  * Admin › Automation (docs/automation.md): escalation SLAs, approver rules for the assistant's
  * actions, request routing (rules, the model's threshold, triage) and Slack. Shapes mirror
- * apps/api/src/workmind/api/v1/automation.py. Pure helpers, including the approver rule builder;
+ * apps/api/src/needwise/api/v1/automation.py. Pure helpers, including the approver rule builder;
  * components/admin/automation-section.tsx renders them.
  */
 

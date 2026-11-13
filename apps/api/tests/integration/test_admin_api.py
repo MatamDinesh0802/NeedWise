@@ -11,13 +11,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.context import RequestContext
+from needwise.core.errors import ApiError
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.authz.models import AuthzOutbox
+from needwise.modules.identity import admin
+from needwise.modules.identity.models import Department, Group
 from tests.integration.conftest import VALKEY_URL, Acme, SessionFactory, seed_acme
-from workmind.core.context import RequestContext
-from workmind.core.errors import ApiError
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.authz.models import AuthzOutbox
-from workmind.modules.identity import admin
-from workmind.modules.identity.models import Department, Group
 
 pytestmark = pytest.mark.skipif(not VALKEY_URL, reason="set TEST_VALKEY_URL to run")
 

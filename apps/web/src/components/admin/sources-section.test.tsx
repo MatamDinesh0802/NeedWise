@@ -60,13 +60,13 @@ describe("SourceCard", () => {
         consecutive_failures: 3,
         failure_alerted_at: "2026-11-13T08:00:00Z",
         last_error: "https://intranet.example/handbook/ is unreachable: ConnectError",
-        last_error_plain: "WorkMind couldn't reach the source: it may be down, or blocked from this server.",
+        last_error_plain: "NeedWise couldn't reach the source: it may be down, or blocked from this server.",
         last_run: runFixture({ status: "error", stats: {}, errors: [] }),
       }),
     );
     expect(html).toContain("Failing");
     expect(html).toContain('aria-label="Recent errors"');
-    expect(html).toContain("WorkMind couldn&#x27;t reach the source");
+    expect(html).toContain("NeedWise couldn&#x27;t reach the source");
     expect(html).toContain("Failed 3 times in a row · the people who manage it were notified");
     expect(html).toMatch(/<details[^>]*><summary[^>]*>What the source said<\/summary><p[^>]*>https:\/\/intranet.example\/handbook\/ is unreachable/);
   });
@@ -124,7 +124,7 @@ describe("SourceCard", () => {
     );
     expect(drive).toContain("Permission sync:");
     expect(drive).toContain("each file&#x27;s sharing in Drive");
-    expect(drive).toContain("2 accounts the source named map to nobody in WorkMind yet (Source accounts, below)");
+    expect(drive).toContain("2 accounts the source named map to nobody in NeedWise yet (Source accounts, below)");
     expect(card(sourceFixture())).not.toContain("Permission sync:");
   });
 

@@ -6,20 +6,20 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from workmind.modules.knowledge.acl import acl_principals, collection_tuples, openfga_user
-from workmind.modules.knowledge.chunking import (
+from needwise.modules.knowledge.acl import acl_principals, collection_tuples, openfga_user
+from needwise.modules.knowledge.chunking import (
     MAX_TOKENS,
     chunk_document,
     embedding_text,
     estimate_tokens,
 )
-from workmind.modules.knowledge.governance import escalation_due
-from workmind.modules.knowledge.models import Collection, CollectionGrant, Document
-from workmind.modules.knowledge.parsing import UnsupportedFormatError, detect_mime, parse
-from workmind.modules.knowledge.sensitivity import scan, suggest
-from workmind.modules.retrieval.sparse import encode_document, encode_query, tokenize
-from workmind.providers.embeddings import HashEmbeddings
-from workmind.seed.corpus import missing_values, to_docx, to_pdf, to_pptx, to_xlsx
+from needwise.modules.knowledge.governance import escalation_due
+from needwise.modules.knowledge.models import Collection, CollectionGrant, Document
+from needwise.modules.knowledge.parsing import UnsupportedFormatError, detect_mime, parse
+from needwise.modules.knowledge.sensitivity import scan, suggest
+from needwise.modules.retrieval.sparse import encode_document, encode_query, tokenize
+from needwise.providers.embeddings import HashEmbeddings
+from needwise.seed.corpus import missing_values, to_docx, to_pdf, to_pptx, to_xlsx
 
 MARKDOWN = """# Leave Policy 2026
 

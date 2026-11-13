@@ -8,11 +8,11 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from workmind.modules.connectors.github import GitHubConnector
-from workmind.modules.connectors.health import explain, health, next_sync_at
-from workmind.modules.connectors.models import Source
-from workmind.modules.connectors.slack import SlackConnector
-from workmind.modules.connectors.web import WebConnector
+from needwise.modules.connectors.github import GitHubConnector
+from needwise.modules.connectors.health import explain, health, next_sync_at
+from needwise.modules.connectors.models import Source
+from needwise.modules.connectors.slack import SlackConnector
+from needwise.modules.connectors.web import WebConnector
 
 NOW = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
 

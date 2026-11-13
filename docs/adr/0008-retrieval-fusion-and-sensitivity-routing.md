@@ -7,7 +7,7 @@
 ## Context
 Phase 3 needed concrete choices for hybrid fusion, for what the OpenFGA recheck (lock 2) checks,
 and for what happens to `restricted` documents when the answer model is a hosted API. We decided
-them by measurement where we could: `wm eval` runs every question *as its user* against the
+them by measurement where we could: `nw eval` runs every question *as its user* against the
 real stack.
 
 ## Decisions
@@ -59,6 +59,6 @@ amount. Personal-data collections are labelled through their defaults. Editors c
 by hand (`PATCH /documents/{id}`), and re-indexing keeps it.
 
 ## Consequences
-- Every retrieval change is measured with `wm eval --retrieval-only --ablation` (no LLM cost).
+- Every retrieval change is measured with `nw eval --retrieval-only --ablation` (no LLM cost).
 - CI fails if any red-team attack retrieves a forbidden document or canary in any mode.
 - Answers need one more OpenFGA round-trip per question; it is retried on overload (read-only).

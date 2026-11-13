@@ -1,0 +1,68 @@
+{{- $c := .Values.config -}}
+{{- $env := dict
+  "APP_ENV" $c.appEnv
+  "LOG_LEVEL" $c.logLevel
+  "LOG_FORMAT" $c.logFormat
+  "PUBLIC_URL" (include "needwise.publicUrl" .)
+  "DB_APP_ROLE" .Values.database.appUser
+  "QDRANT_URL" (include "needwise.qdrantUrl" .)
+  "OPENFGA_API_URL" (include "needwise.openfgaUrl" .)
+  "KEYCLOAK_URL" (include "needwise.keycloakUrl" .)
+  "KEYCLOAK_REALM" .Values.keycloak.realm
+  "OIDC_CLIENT_ID" .Values.keycloak.oidcClientId
+  "OBJECT_STORAGE_PATH" "/data/objects"
+  "ASSISTANT_MODE" $c.assistantMode
+  "LLM_PROVIDER" $c.llm.provider
+  "LLM_MODEL" $c.llm.model
+  "LLM_EXTERNAL" (toString $c.llm.external)
+  "LLM_FALLBACKS" (toString $c.llm.fallbacks)
+  "EMBEDDING_PROVIDER" $c.embedding.provider
+  "EMBEDDING_MODEL" $c.embedding.model
+  "EMBEDDING_DIMENSIONS" (toString $c.embedding.dimensions)
+  "TRANSCRIPTION_PROVIDER" $c.transcription.provider
+  "TRANSCRIPTION_MODEL" $c.transcription.model
+  "DIARIZATION_PROVIDER" $c.diarization.provider
+-}}
+{{- $optional := dict
+  "LLM_BASE_URL" $c.llm.baseUrl
+  "LLM_MODEL_ANSWER" $c.llm.roleModels.answer
+  "LLM_MODEL_ROUTER" $c.llm.roleModels.router
+  "LLM_MODEL_JUDGE" $c.llm.roleModels.judge
+  "LLM_MODEL_GENERATOR" $c.llm.roleModels.generator
+  "LLM_MODEL_AGENT" $c.llm.roleModels.agent
+  "LOCAL_LLM_BASE_URL" $c.localLlm.baseUrl
+  "LOCAL_LLM_MODEL" $c.localLlm.model
+  "EMBEDDING_BASE_URL" (include "needwise.embeddingBaseUrl" .)
+  "TRANSCRIPTION_BASE_URL" $c.transcription.baseUrl
+  "GOOGLE_CLIENT_ID" $c.google.clientId
+  "SLACK_CLIENT_ID" $c.slack.clientId
+  "ATLASSIAN_CLIENT_ID" $c.atlassian.clientId
+  "MICROSOFT_CLIENT_ID" $c.microsoft.clientId
+  "MICROSOFT_TENANT_ID" $c.microsoft.tenantId
+  "SEARXNG_URL" $c.searxngUrl
+  "DEPLOYMENT_ID" $c.deploymentId
+  "LICENSE_DEV_PUBLIC_KEY" $c.licenseDevPublicKey
+-}}
+{{- range $key, $value := $optional }}
+{{- if $value }}{{ $_ := set $env $key $value }}{{ end }}
+{{- end }}
+{{- if $c.smtp.host }}
+{{- $_ := set $env "SMTP_HOST" $c.smtp.host }}
+{{- $_ := set $env "SMTP_PORT" (toString $c.smtp.port) }}
+{{- $_ := set $env "SMTP_STARTTLS" (toString $c.smtp.starttls) }}
+{{- with $c.smtp.from }}{{ $_ := set $env "SMTP_FROM" . }}{{ end }}
+{{- with $c.smtp.username }}{{ $_ := set $env "SMTP_USERNAME" . }}{{ end }}
+{{- end }}
+{{- range $key, $value := $c.env }}
+{{- $_ := set $env $key (toString $value) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "needwise.componentName" (list . "config") }}
+  labels:
+    {{- include "needwise.labels" (list . "config") | nindent 4 }}
+data:
+  {{- range $key, $value := $env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

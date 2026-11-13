@@ -1,6 +1,6 @@
 # Security Policy
 
-WorkMind AI handles sensitive company knowledge, so security reports get priority.
+NeedWise handles sensitive company knowledge, so security reports get priority.
 
 ## Reporting a vulnerability
 

@@ -1,12 +1,12 @@
-"""The generated reference pages in docs/reference/ match the code (workmind.docs_gen)."""
+"""The generated reference pages in docs/reference/ match the code (needwise.docs_gen)."""
 
 import json
 from pathlib import Path
 
 import pytest
 
-from workmind import docs_gen
-from workmind.core.config import Settings
+from needwise import docs_gen
+from needwise.core.config import Settings
 
 STALE = "{path} is out of date: run `make docs-gen` and commit the result."
 
@@ -44,7 +44,7 @@ def test_the_schema_does_not_depend_on_the_environment(monkeypatch: pytest.Monke
     monkeypatch.setenv("PRODUCT_NAME", "Renamed")
     monkeypatch.setenv("APP_ENV", "production")
     schema = docs_gen.openapi_schema()
-    assert schema["info"]["title"] == "WorkMind AI API"
+    assert schema["info"]["title"] == "NeedWise API"
     assert "/api/v1/conversations" in schema["paths"]
     # Community: Enterprise-only routes (retention, the SIEM export) are not part of it.
     assert not any(path.startswith("/api/v1/admin/retention") for path in schema["paths"])

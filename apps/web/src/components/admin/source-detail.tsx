@@ -223,7 +223,7 @@ export function StaleDocumentsPanel() {
   );
 }
 
-/** Stale documents with links: the document in WorkMind, and the original in the source. */
+/** Stale documents with links: the document in NeedWise, and the original in the source. */
 export function StaleList({ items, showSource, empty }: { items: readonly StaleSyncedDocument[]; showSource: boolean; empty: string }) {
   if (items.length === 0) return <p className="text-sm text-muted-foreground">{empty}</p>;
   return (

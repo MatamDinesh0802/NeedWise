@@ -7,7 +7,7 @@
 
 This model covers what is built in this repository: the API (FastAPI), the workers (Celery),
 the web app (Next.js), the MCP server and client, and the Compose deployment behind Caddy. It
-does not cover the Helm chart, WorkMind Cloud, or Keycloak, PostgreSQL, Qdrant, Valkey and
+does not cover the Helm chart, NeedWise Cloud, or Keycloak, PostgreSQL, Qdrant, Valkey and
 OpenFGA themselves (their hardening is the operator's).
 
 The method: reading the code of every surface below, then trying to break it with tests in
@@ -45,7 +45,7 @@ model are not an obey rate ([owasp-llm-top10.md](owasp-llm-top10.md)).
 | Org admin (Erin) | Users, groups, departments, collection sharing, sources (connectors), agents, models and providers, workflows, budgets, the analytics model | Configuration. **Not** content: an admin is not a viewer of restricted collections by default |
 | **Malicious insider admin** | Can grant themselves (or anyone) a restricted collection; write agent instructions that steer answers; point a model provider or web source at internal hosts; save a workflow that runs as them on every new document; set budgets to nothing | Nothing beyond configuration. Every such change is audited in the hash-chained log; nothing prevents it |
 | Org owner (Priya) | Admin rights plus ownership | As admin |
-| **Malicious document author** | Anyone who can put text where WorkMind reads it: an uploader with edit rights to a collection; a Google Drive or GitHub author; any member of a synced Slack channel (Slack Connect guests included); a website a web source crawls; a meeting participant whose words end up in a transcript; a customer whose support ticket is exported; a third-party MCP server | Nothing. Their text is data that a model reads |
+| **Malicious document author** | Anyone who can put text where NeedWise reads it: an uploader with edit rights to a collection; a Google Drive or GitHub author; any member of a synced Slack channel (Slack Connect guests included); a website a web source crawls; a meeting participant whose words end up in a transcript; a customer whose support ticket is exported; a third-party MCP server | Nothing. Their text is data that a model reads |
 | External attacker (no account) | Reach Caddy (`/`, `/api`, `/mcp`, `/auth`), Keycloak's login | Nothing |
 | Model provider (Anthropic, an OpenAI-compatible endpoint) | Sees every prompt sent to it, including passages | Per the tenant's data policy: restricted passages go only to local models by default |
 | Operator (whoever runs the deployment) | Everything: database, keys, images | Fully trusted; out of scope |
@@ -209,7 +209,7 @@ E: elevation of privilege. "Residual" lists what is not prevented.
 | | Threat | Control | Residual |
 |---|---|---|---|
 | T | Make your own document official | Official status needs an approval by someone else who can read the collection, for that version; new content ends it | none known |
-| R | Tamper with the audit log | Insert-only for the app role, hash chain verifiable from Admin › Audit | The database owner role (operator) can rewrite it; a verifiable JSONL export for a SIEM is Enterprise (`ee/python/src/workmind_ee/audit_export.py`) |
+| R | Tamper with the audit log | Insert-only for the app role, hash chain verifiable from Admin › Audit | The database owner role (operator) can rewrite it; a verifiable JSONL export for a SIEM is Enterprise (`ee/python/src/needwise_ee/audit_export.py`) |
 | D | Run up costs | Tenant, department (Enterprise) and per-person budgets in USD, checked before every model call | Unpriced models are not counted |
 | E | Malicious admin removes budgets | Audited | By design |
 
@@ -217,7 +217,7 @@ E: elevation of privilege. "Residual" lists what is not prevented.
 
 | | Threat | Control | Residual |
 |---|---|---|---|
-| I | SSRF through a provider base URL | Outbound URL policy at save and test (metadata, link-local, reserved refused); no redirects; test results never echo bodies | Private and loopback hosts allowed (local models live there); an admin can make WorkMind send requests to them |
+| I | SSRF through a provider base URL | Outbound URL policy at save and test (metadata, link-local, reserved refused); no redirects; test results never echo bodies | Private and loopback hosts allowed (local models live there); an admin can make NeedWise send requests to them |
 | I | Provider keys leak in errors | Keys scrubbed from errors; sealed with key ids and associated data (tenant, provider, kind, URL) | One deployment key ring, no KMS |
 | I | Restricted data to a hosted model | The tenant's data policy; restricted passages local-only by default | The demo tenant (`seed/acme`) allows restricted data on purpose |
 

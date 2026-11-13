@@ -4,16 +4,16 @@ the deterministic one made from the transcript's words when the model's cannot b
 from pathlib import Path
 from typing import Any
 
-from tests.fakes import FakeLLM
-from workmind.modules.meetings import transcripts
-from workmind.modules.meetings.topics import (
+from needwise.modules.meetings import transcripts
+from needwise.modules.meetings.topics import (
     Outline,
     TopicStart,
     checked_outline,
     outline,
     word_outline,
 )
-from workmind.providers.llm import LLMError
+from needwise.providers.llm import LLMError
+from tests.fakes import FakeLLM
 
 SEED = Path(__file__).resolve().parents[3] / "seed" / "acme" / "meetings"
 

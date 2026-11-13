@@ -23,5 +23,5 @@ hosting, enterprise features and support.
 - Maximum adoption; anyone, including competitors, may host the core.
 - The commercial moat is the hosted service, enterprise features and expertise, not the license.
 - Low friction for contributors.
-- Not legal advice: if WorkMind becomes a company, have a lawyer review `ee/LICENSE` and this
+- Not legal advice: if NeedWise becomes a company, have a lawyer review `ee/LICENSE` and this
   policy.

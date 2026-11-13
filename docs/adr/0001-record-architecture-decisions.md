@@ -4,7 +4,7 @@
 - Date: 2026-11-02
 
 ## Context
-WorkMind is built in public and will have outside contributors. Design decisions need to be
+NeedWise is built in public and will have outside contributors. Design decisions need to be
 discoverable and their reasons preserved, so they are not re-litigated or silently reversed.
 
 ## Decision

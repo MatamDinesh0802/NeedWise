@@ -17,7 +17,7 @@ import httpx
 import pytest
 
 BASE_URL = os.environ.get("E2E_BASE_URL")
-DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "workmind-demo")
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "needwise-demo")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -82,7 +82,7 @@ def _login_form_action(page: httpx.Response) -> str | None:
 def sign_in(
     client: httpx.Client, email: str, password: str = DEMO_PASSWORD, return_to: str = "/"
 ) -> httpx.Response:
-    """Walk the real flow: WorkMind -> Keycloak -> callback. With Organizations enabled,
+    """Walk the real flow: NeedWise -> Keycloak -> callback. With Organizations enabled,
     Keycloak asks for the email first (to route to a company identity provider), then for
     the password. Returns the callback response, or Keycloak's page if sign-in failed."""
     start = client.get("/api/auth/login", params={"return_to": return_to})

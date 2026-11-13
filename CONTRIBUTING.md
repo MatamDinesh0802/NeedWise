@@ -1,4 +1,4 @@
-# Contributing to WorkMind AI
+# Contributing to NeedWise
 
 Thanks for helping. This guide covers setup, conventions and what a pull request needs.
 

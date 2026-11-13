@@ -15,7 +15,7 @@ Connecting an AI assistant to Google Drive takes an afternoon.
 
 Keeping it from showing people files they were removed from yesterday takes the rest of the project.
 
-What I built for WorkMind:
+What I built for NeedWise:
 • Six connectors: Google Drive, Slack, GitHub, Confluence, SharePoint/OneDrive and a web crawler, on one sync engine. A file is only deleted after a complete scan says it's gone, or the source reports the deletion itself
 • Every document can carry its own access list. It can only narrow what its collection allows, never widen it, and both permission checks enforce it
 • Identity mapping that fails closed. An e-mail address matches a person. A Google group, a whole domain or a Slack account grants nothing until an admin maps it. Unmapped means no access, not "probably fine"
@@ -39,8 +39,8 @@ Repo, the permission design and the attack reports in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
-Document access lists and permission sync: <GITHUB_REPO_URL>/blob/main/docs/permission-sync.md
-Why lists only narrow (ADR 0012): <GITHUB_REPO_URL>/blob/main/docs/adr/0012-document-access-lists.md
-The 9 attacks, answered by a model: <GITHUB_REPO_URL>/blob/main/evals/results/2026-11-13-redteam-document-lists.md
-Connectors and what is not verified live: <GITHUB_REPO_URL>/blob/main/docs/connectors.md
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
+Document access lists and permission sync: https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/permission-sync.md
+Why lists only narrow (ADR 0012): https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/adr/0012-document-access-lists.md
+The 9 attacks, answered by a model: https://github.com/MatamDinesh0802/NeedWise/blob/main/evals/results/2026-11-13-redteam-document-lists.md
+Connectors and what is not verified live: https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/connectors.md

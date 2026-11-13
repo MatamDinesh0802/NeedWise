@@ -12,20 +12,20 @@ from typing import cast
 import pytest
 from sqlalchemy import func, select
 
+from needwise.core.resources import Resources
+from needwise.core.tenancy import tenant_transaction
+from needwise.evals.analytics import Table, match, text
+from needwise.evals.datasets import load_analytics
+from needwise.evals.runner import Askers, EvalRun, Evaluator
+from needwise.modules.analytics.models import AnalyticsRun
+from needwise.modules.analytics.service import Analytics, AnalyticsError
+from needwise.modules.governance.models import AuditEvent
+from needwise.seed.analytics_load import seed_analytics
+from needwise.seed.apply import seed_database
+from needwise.seed.company import load_company
 from tests.analytics_support import ACME_ANALYTICS
 from tests.eval_analytics_support import DATASETS, gold_oracle
 from tests.integration.conftest import SessionFactory
-from workmind.core.resources import Resources
-from workmind.core.tenancy import tenant_transaction
-from workmind.evals.analytics import Table, match, text
-from workmind.evals.datasets import load_analytics
-from workmind.evals.runner import Askers, EvalRun, Evaluator
-from workmind.modules.analytics.models import AnalyticsRun
-from workmind.modules.analytics.service import Analytics, AnalyticsError
-from workmind.modules.governance.models import AuditEvent
-from workmind.seed.analytics_load import seed_analytics
-from workmind.seed.apply import seed_database
-from workmind.seed.company import load_company
 
 ITEMS = load_analytics(DATASETS)
 

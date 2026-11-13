@@ -7,17 +7,16 @@ from typing import Any
 
 from sqlalchemy import select
 
-from tests.integration.conftest import Acme, SessionFactory
-from workmind.core.context import RequestContext
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.tools.registry import ToolRegistry
-from workmind.modules.work.approvals import decide
-from workmind.modules.work.models import Approval, AutomationSettings, Workflow, WorkflowRun
-from workmind.modules.work.tools import send_email_tool
-from workmind.modules.work.workflows import WorkflowDeps, render, resume_after, start_run
-from workmind.providers.email import SentEmail
-from workmind.providers.llm import (
+from needwise.core.context import RequestContext
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.tools.registry import ToolRegistry
+from needwise.modules.work.approvals import decide
+from needwise.modules.work.models import Approval, AutomationSettings, Workflow, WorkflowRun
+from needwise.modules.work.tools import send_email_tool
+from needwise.modules.work.workflows import WorkflowDeps, render, resume_after, start_run
+from needwise.providers.email import SentEmail
+from needwise.providers.llm import (
     LLMRequest,
     LLMUsage,
     Role,
@@ -25,6 +24,7 @@ from workmind.providers.llm import (
     ToolLoopResult,
     ToolSpec,
 )
+from tests.integration.conftest import Acme, SessionFactory
 
 REPORT = {
     "trigger": {"schedule": "0 8 * * MON"},

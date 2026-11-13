@@ -1,0 +1,409 @@
+# Authorization matrix for the fictional Acme Robotics company (seed/acme/company.yaml).
+# Run with `make authz-model`. Every row is a decision the product promises to make.
+name: NeedWise authorization model
+model_file: ./model.fga
+
+tuples:
+  # Organization roles
+  - { user: user:priya, relation: owner, object: organization:acme }
+  - { user: user:erin, relation: admin, object: organization:acme }
+  - { user: user:amara, relation: auditor, object: organization:acme }
+  - { user: user:alice, relation: member, object: organization:acme }
+  - { user: user:bob, relation: member, object: organization:acme }
+  - { user: user:carol, relation: member, object: organization:acme }
+  - { user: user:nina, relation: member, object: organization:acme }
+  - { user: user:wei, relation: member, object: organization:acme }
+  - { user: user:dan, relation: member, object: organization:acme }
+  # mallory (external contractor) is a guest: no organization membership at all
+
+  # Departments
+  - { user: organization:acme, relation: organization, object: department:hr }
+  - { user: organization:acme, relation: organization, object: department:engineering }
+  - { user: organization:acme, relation: organization, object: department:finance }
+  - { user: user:alice, relation: manager, object: department:hr }
+  - { user: user:bob, relation: member, object: department:engineering }
+  - { user: user:wei, relation: member, object: department:engineering }
+  - { user: user:carol, relation: member, object: department:finance }
+
+  # Groups, including a nested one: people-ops is part of hr-records
+  - { user: user:alice, relation: member, object: group:hr-records }
+  - { user: group:people-ops#member, relation: member, object: group:hr-records }
+  - { user: user:nina, relation: member, object: group:people-ops }
+  - { user: user:priya, relation: member, object: group:leadership }
+  - { user: user:hannah, relation: member, object: group:finance-leads }
+
+  # Collections and who may view them
+  - { user: organization:acme#member, relation: viewer, object: collection:company-handbook }
+  - { user: department:hr#member, relation: viewer, object: collection:hr-guidance }
+  - { user: department:hr#manager, relation: editor, object: collection:hr-guidance }
+  - { user: group:hr-records#member, relation: viewer, object: collection:hr-employee-records }
+  - { user: department:engineering#member, relation: viewer, object: collection:engineering-docs }
+  - { user: department:finance#member, relation: viewer, object: collection:finance-reports }
+  - { user: group:leadership#member, relation: viewer, object: collection:finance-reports }
+  - { user: group:finance-leads#member, relation: viewer, object: collection:finance-payroll }
+  - { user: group:hr-records#member, relation: viewer, object: collection:finance-payroll }
+  - { user: group:leadership#member, relation: viewer, object: collection:leadership-strategy }
+  - { user: user:mallory, relation: viewer, object: collection:contractor-onboarding }
+  - { user: department:engineering#member, relation: viewer, object: collection:contractor-onboarding }
+
+  - { user: user:alice, relation: owner, object: collection:alice-personal }
+
+  # Documents. Without its own access list a document has the wildcard grantee (user:*), so it
+  # is visible exactly to its collection's viewers.
+  - { user: collection:hr-employee-records, relation: collection, object: document:salary-bands }
+  - { user: user:*, relation: grantee, object: document:salary-bands }
+  - { user: collection:company-handbook, relation: collection, object: document:leave-policy-2026 }
+  - { user: user:*, relation: grantee, object: document:leave-policy-2026 }
+  - { user: collection:alice-personal, relation: collection, object: document:alice-private-notes }
+  - { user: user:*, relation: grantee, object: document:alice-private-notes }
+
+  # Documents with their own access list (permission sync from the source, or set by an editor:
+  # docs/permission-sync.md). The list only narrows the collection; it never widens it.
+  # A Drive file in Engineering Docs shared with Wei, with leadership and with the contractor:
+  - { user: collection:engineering-docs, relation: collection, object: document:embargoed-advisory }
+  - { user: user:wei, relation: grantee, object: document:embargoed-advisory }
+  - { user: group:leadership#member, relation: grantee, object: document:embargoed-advisory }
+  - { user: user:mallory, relation: grantee, object: document:embargoed-advisory }
+  # A handbook page for leadership and the HR managers only:
+  - { user: collection:company-handbook, relation: collection, object: document:reorg-plan }
+  - { user: group:leadership#member, relation: grantee, object: document:reorg-plan }
+  - { user: department:hr#manager, relation: grantee, object: document:reorg-plan }
+  # A grant on a document in a collection Bob cannot read gives him nothing:
+  - { user: collection:hr-employee-records, relation: collection, object: document:salary-bands-excerpt }
+  - { user: user:bob, relation: grantee, object: document:salary-bands-excerpt }
+  # Every principal the source named was unmapped: the list is empty, so nobody sees it.
+  - { user: collection:company-handbook, relation: collection, object: document:unmapped-only }
+
+tests:
+  - name: HR manager sees HR content, payroll and company docs, nothing from leadership or engineering
+    check:
+      - user: user:alice
+        object: collection:hr-employee-records
+        assertions: { viewer: true, editor: false }
+      - user: user:alice
+        object: collection:hr-guidance
+        assertions: { viewer: true, editor: true }
+      - user: user:alice
+        object: collection:finance-payroll
+        assertions: { viewer: true }
+      - user: user:alice
+        object: collection:company-handbook
+        assertions: { viewer: true, editor: false }
+      - user: user:alice
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:alice
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+
+  - name: Engineer never sees salaries, payroll or leadership strategy
+    check:
+      - user: user:bob
+        object: collection:engineering-docs
+        assertions: { viewer: true }
+      - user: user:bob
+        object: collection:contractor-onboarding
+        assertions: { viewer: true }
+      - user: user:bob
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:bob
+        object: document:salary-bands
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+
+  - name: Finance analyst sees reports but not payroll
+    check:
+      - user: user:carol
+        object: collection:finance-reports
+        assertions: { viewer: true }
+      - user: user:carol
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+
+  - name: Admins and owners manage the organization but do not automatically read restricted content
+    check:
+      - user: user:erin
+        object: organization:acme
+        assertions: { can_manage: true, member: true }
+      - user: user:erin
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:erin
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:erin
+        object: document:alice-private-notes
+        assertions: { viewer: false }
+      - user: user:erin
+        object: document:reorg-plan
+        assertions: { viewer: false }
+      - user: user:priya
+        object: organization:acme
+        assertions: { can_manage: true }
+      - user: user:priya
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:priya
+        object: collection:leadership-strategy
+        assertions: { viewer: true }
+
+  - name: Auditors see audit logs but no knowledge content
+    check:
+      - user: user:amara
+        object: organization:acme
+        assertions: { can_view_audit: true, can_manage: false, member: false }
+      - user: user:amara
+        object: collection:company-handbook
+        assertions: { viewer: false }
+
+  - name: The external contractor sees exactly one collection
+    check:
+      - user: user:mallory
+        object: collection:contractor-onboarding
+        assertions: { viewer: true }
+      - user: user:mallory
+        object: collection:company-handbook
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: document:leave-policy-2026
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: organization:acme
+        assertions: { member: false }
+    list_objects:
+      - user: user:mallory
+        type: collection
+        assertions:
+          viewer:
+            - collection:contractor-onboarding
+
+  - name: Nested groups grant access transitively
+    check:
+      - user: user:nina
+        object: collection:hr-employee-records
+        assertions: { viewer: true }
+      - user: user:nina
+        object: document:salary-bands
+        assertions: { viewer: true }
+
+  - name: Documents inherit from collections, and personal documents stay personal
+    check:
+      - user: user:alice
+        object: document:salary-bands
+        assertions: { viewer: true, editor: false }
+      - user: user:bob
+        object: document:leave-policy-2026
+        assertions: { viewer: true }
+      - user: user:alice
+        object: document:alice-private-notes
+        assertions: { viewer: true, editor: true }
+      - user: user:bob
+        object: document:alice-private-notes
+        assertions: { viewer: false }
+
+  - name: A document's own access list narrows its collection and never widens it
+    check:
+      # In the collection and on the list
+      - user: user:wei
+        object: document:embargoed-advisory
+        assertions: { viewer: true, editor: false }
+      # In the collection, not on the list: the engineer next to Wei
+      - user: user:bob
+        object: document:embargoed-advisory
+        assertions: { viewer: false, editor: false }
+      # On the list (leadership), not in the collection
+      - user: user:priya
+        object: document:embargoed-advisory
+        assertions: { viewer: false }
+      # On the list by name, and a viewer of another collection only (the contractor)
+      - user: user:mallory
+        object: document:embargoed-advisory
+        assertions: { viewer: false }
+      # Admins are on no list unless the source names them
+      - user: user:erin
+        object: document:embargoed-advisory
+        assertions: { viewer: false }
+      # Enterprise collection, list of leadership and HR managers
+      - user: user:priya
+        object: document:reorg-plan
+        assertions: { viewer: true }
+      - user: user:alice
+        object: document:reorg-plan
+        assertions: { viewer: true }
+      - user: user:nina
+        object: document:reorg-plan
+        assertions: { viewer: false }
+      - user: user:bob
+        object: document:reorg-plan
+        assertions: { viewer: false }
+      - user: user:dan
+        object: document:reorg-plan
+        assertions: { viewer: false }
+      # A grant never opens a collection
+      - user: user:bob
+        object: document:salary-bands-excerpt
+        assertions: { viewer: false }
+      - user: user:alice
+        object: document:salary-bands-excerpt
+        assertions: { viewer: false }
+      # Nobody on the list: nobody sees it, not even the handbook's editors
+      - user: user:alice
+        object: document:unmapped-only
+        assertions: { viewer: false, editor: false }
+      - user: user:bob
+        object: document:unmapped-only
+        assertions: { viewer: false }
+    list_objects:
+      - user: user:bob
+        type: document
+        assertions:
+          viewer:
+            - document:leave-policy-2026
+      - user: user:wei
+        type: document
+        assertions:
+          viewer:
+            - document:embargoed-advisory
+            - document:leave-policy-2026
+      - user: user:priya
+        type: document
+        assertions:
+          viewer:
+            - document:leave-policy-2026
+            - document:reorg-plan
+
+  # The full grid published in LinkedIn post #2: 6 people x 7 collections, every cell tested.
+  - name: Full who-can-see-what grid for the demo personas
+    check:
+      - user: user:alice
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:alice
+        object: collection:hr-employee-records
+        assertions: { viewer: true }
+      - user: user:alice
+        object: collection:finance-payroll
+        assertions: { viewer: true }
+      - user: user:alice
+        object: collection:finance-reports
+        assertions: { viewer: false }
+      - user: user:alice
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+      - user: user:alice
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:alice
+        object: collection:contractor-onboarding
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:bob
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:finance-reports
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:engineering-docs
+        assertions: { viewer: true }
+      - user: user:bob
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:bob
+        object: collection:contractor-onboarding
+        assertions: { viewer: true }
+      - user: user:carol
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:carol
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:carol
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:carol
+        object: collection:finance-reports
+        assertions: { viewer: true }
+      - user: user:carol
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+      - user: user:carol
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:carol
+        object: collection:contractor-onboarding
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:erin
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:finance-reports
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:erin
+        object: collection:contractor-onboarding
+        assertions: { viewer: false }
+      - user: user:priya
+        object: collection:company-handbook
+        assertions: { viewer: true }
+      - user: user:priya
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:priya
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:priya
+        object: collection:finance-reports
+        assertions: { viewer: true }
+      - user: user:priya
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+      - user: user:priya
+        object: collection:leadership-strategy
+        assertions: { viewer: true }
+      - user: user:priya
+        object: collection:contractor-onboarding
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:company-handbook
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:hr-employee-records
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:finance-payroll
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:finance-reports
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:engineering-docs
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:leadership-strategy
+        assertions: { viewer: false }
+      - user: user:mallory
+        object: collection:contractor-onboarding
+        assertions: { viewer: true }

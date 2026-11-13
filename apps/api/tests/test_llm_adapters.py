@@ -9,7 +9,7 @@ import httpx
 import pytest
 from pydantic import BaseModel, Field
 
-from workmind.providers.llm import (
+from needwise.providers.llm import (
     AnthropicLLM,
     LLMMessage,
     LLMNotConfiguredError,
@@ -267,7 +267,7 @@ def _keywords(node: Any) -> set[str]:
 def test_a_strict_schema_leaves_out_constraints_the_provider_refuses() -> None:
     # Claude answered 400 "For number type, properties maximum, minimum are not supported" to
     # the router's schema, so every request no rule matched went to triage.
-    from workmind.modules.work.routing import RouteChoice
+    from needwise.modules.work.routing import RouteChoice
 
     for model in (_Bounded, RouteChoice):
         schema = _strict_schema(model)

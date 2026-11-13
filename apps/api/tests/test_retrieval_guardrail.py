@@ -10,13 +10,13 @@ import ast
 import uuid
 from pathlib import Path
 
-from workmind.core.context import RequestContext
-from workmind.modules.retrieval.service import Retriever
+from needwise.core.context import RequestContext
+from needwise.modules.retrieval.service import Retriever
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCES = [ROOT / "apps" / "api" / "src", ROOT / "ee" / "python" / "src"]
-RETRIEVER = Path("apps/api/src/workmind/modules/retrieval/service.py")
-CLIENT = Path("apps/api/src/workmind/modules/retrieval/qdrant.py")
+RETRIEVER = Path("apps/api/src/needwise/modules/retrieval/service.py")
+CLIENT = Path("apps/api/src/needwise/modules/retrieval/qdrant.py")
 
 
 def _calls(attribute: str) -> list[Path]:

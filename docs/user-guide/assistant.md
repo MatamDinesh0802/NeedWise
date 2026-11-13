@@ -26,7 +26,7 @@ the **Sources** panel at that passage. For each source the panel shows:
 - a warning when an official document is **past its review date**: its owner has not confirmed
   that it is still correct ([Knowledge governance](../governance.md));
 - **Open document**, and for a PDF, **Open PDF at page N**, which opens the PDF at that page.
-  The passage is not highlighted in the PDF: WorkMind records the page, not the passage's
+  The passage is not highlighted in the PDF: NeedWise records the page, not the passage's
   position on it.
 
 Under **Also searched**, the panel lists the passages the search found that the answer did not
@@ -53,7 +53,7 @@ no longer have access to it", does not show the passage and offers no link to it
   back and why ([Models and keys](../models.md#the-data-policy-what-may-leave)).
 
 **Checked, and not checked.** Every marker in an answer must point to a source the model was
-given; one that doesn't is shown greyed out, as "not among the retrieved sources". WorkMind
+given; one that doesn't is shown greyed out, as "not among the retrieved sources". NeedWise
 does not yet check,
 sentence by sentence, that the cited passage supports the claim. How often answers stay faithful
 to their sources is measured in the evaluation instead: 99.4% with Claude Sonnet 5.5 on the demo

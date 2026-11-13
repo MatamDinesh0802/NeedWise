@@ -1,4 +1,4 @@
-/** Sources as GET /api/v1/admin/sources returns them (apps/api/src/workmind/api/v1/sources.py). */
+/** Sources as GET /api/v1/admin/sources returns them (apps/api/src/needwise/api/v1/sources.py). */
 
 import type { Source, SourceRun, StaleSyncedDocument } from "@/lib/admin/sources";
 

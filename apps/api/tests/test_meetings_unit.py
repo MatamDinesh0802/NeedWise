@@ -5,13 +5,13 @@ from typing import Any
 
 import pytest
 
+from needwise.api.v1.meetings import UnsatisfiableRangeError, byte_range
+from needwise.modules.meetings import transcripts
+from needwise.modules.meetings.extract import ActionItem, Decision, Extraction, clock, extract
+from needwise.modules.meetings.models import Meeting, held_on
+from needwise.modules.meetings.pipeline import document_title, transcript_markdown
+from needwise.providers.transcription import hint
 from tests.fakes import FakeLLM
-from workmind.api.v1.meetings import UnsatisfiableRangeError, byte_range
-from workmind.modules.meetings import transcripts
-from workmind.modules.meetings.extract import ActionItem, Decision, Extraction, clock, extract
-from workmind.modules.meetings.models import Meeting, held_on
-from workmind.modules.meetings.pipeline import document_title, transcript_markdown
-from workmind.providers.transcription import hint
 
 VTT = b"""WEBVTT
 

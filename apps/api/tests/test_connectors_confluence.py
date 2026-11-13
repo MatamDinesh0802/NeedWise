@@ -11,6 +11,12 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from needwise.modules.connectors.base import ConnectorError, RemoteItem
+from needwise.modules.connectors.confluence import ConfluenceConnector
+from needwise.modules.connectors.confluence_storage import storage_to_markdown
+from needwise.modules.connectors.oauth import OAuthApp
+from needwise.modules.connectors.registry import validate_config
+from needwise.modules.knowledge.parsing import detect_mime, parse
 from tests.fake_confluence import (
     API_TOKEN,
     CLOUD_ID,
@@ -20,12 +26,6 @@ from tests.fake_confluence import (
     FakeConfluence,
     Page,
 )
-from workmind.modules.connectors.base import ConnectorError, RemoteItem
-from workmind.modules.connectors.confluence import ConfluenceConnector
-from workmind.modules.connectors.confluence_storage import storage_to_markdown
-from workmind.modules.connectors.oauth import OAuthApp
-from workmind.modules.connectors.registry import validate_config
-from workmind.modules.knowledge.parsing import detect_mime, parse
 
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TOKEN = {"email": EMAIL, "api_token": API_TOKEN}
@@ -110,7 +110,7 @@ async def test_pages_are_listed_page_by_page_with_their_place_and_links() -> Non
         "page:1003",
         "page:1004",
         "page:1005",
-        "attachment:att5001",  # the .png is not something WorkMind can read
+        "attachment:att5001",  # the .png is not something NeedWise can read
     }
     leave = items["page:1003"]
     assert leave.title == "Leave policy"

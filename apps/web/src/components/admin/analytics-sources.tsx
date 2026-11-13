@@ -56,7 +56,7 @@ export function SqlSourcesPanel() {
         ) : null}
       </div>
       <p className="max-w-3xl text-sm text-muted-foreground">
-        A PostgreSQL or MySQL database is queried live, read-only, as its own dataset with its own data model and access. Give WorkMind a
+        A PostgreSQL or MySQL database is queried live, read-only, as its own dataset with its own data model and access. Give NeedWise a
         database user that may only read (<code>SELECT</code>) the tables people may ask about.
       </p>
 

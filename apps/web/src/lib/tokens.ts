@@ -19,7 +19,7 @@ export interface AccessToken {
 }
 
 export interface CreatedAccessToken extends AccessToken {
-  /** The plain token (`wm_pat_…`). Returned by the API exactly once. */
+  /** The plain token (`nw_pat_…`). Returned by the API exactly once. */
   token: string;
 }
 

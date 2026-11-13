@@ -473,7 +473,7 @@ export function SourceCard({
           <p className="mt-1 text-muted-foreground">
             <ShieldCheck className="mr-1 inline size-3 align-[-2px]" aria-hidden="true" />
             <span className="text-foreground">Permission sync:</span> each document is also limited to {PERMISSION_SYNC_SOURCES[source.kind] ?? "who can see it in the source"}.
-            {unmapped > 0 ? ` ${unmapped} ${unmapped === 1 ? "account the source named maps" : "accounts the source named map"} to nobody in WorkMind yet${scope === "all" ? " (Source accounts, below)" : ""}.` : ""}
+            {unmapped > 0 ? ` ${unmapped} ${unmapped === 1 ? "account the source named maps" : "accounts the source named map"} to nobody in NeedWise yet${scope === "all" ? " (Source accounts, below)" : ""}.` : ""}
           </p>
         ) : null}
       </div>

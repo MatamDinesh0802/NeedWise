@@ -11,7 +11,7 @@ from typing import Any
 import openpyxl
 import pytest
 
-from workmind.modules.analytics import dataset, engine
+from needwise.modules.analytics import dataset, engine
 
 TENANT = uuid.UUID(int=42)
 CUSTOMERS = b"customer_id,name,since\nC1,Alpha,2026-01-01\nC2,Beta,2026-02-01\n"

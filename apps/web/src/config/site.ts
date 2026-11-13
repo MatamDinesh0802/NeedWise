@@ -21,10 +21,10 @@ import { ADMIN_VIEW_ROLES, type OrgRole } from "@/lib/session";
  * The product name may change — nothing else in the app should hardcode it.
  */
 export const siteConfig = {
-  name: "WorkMind AI",
-  shortName: "WorkMind",
-  tagline: "Permission-aware AI workspace for your organization",
-  shortTagline: "Enterprise AI workspace",
+  name: "NeedWise",
+  shortName: "NeedWise",
+  tagline: "Permission-Aware AI",
+  shortTagline: "Permission-Aware AI",
   description:
     "Open-source, self-hostable AI workspace: cited answers from company knowledge, specialized agents, and human-approved workflows.",
   stage: "pre-alpha",

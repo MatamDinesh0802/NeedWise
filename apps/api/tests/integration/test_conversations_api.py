@@ -19,15 +19,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from starlette.types import Message
 
+from needwise.core.config import Settings
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.authz.openfga import OpenFgaClient
+from needwise.modules.authz.sync import ensure_store, reconcile
+from needwise.modules.knowledge.models import Collection
+from needwise.modules.retrieval.qdrant import QdrantClient
 from tests.fakes import FakeLLM
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
-from workmind.core.config import Settings
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.authz.openfga import OpenFgaClient
-from workmind.modules.authz.sync import ensure_store, reconcile
-from workmind.modules.knowledge.models import Collection
-from workmind.modules.retrieval.qdrant import QdrantClient
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 OPENFGA_URL = os.environ.get("TEST_OPENFGA_URL")
@@ -293,8 +293,8 @@ async def test_a_guest_gets_an_honest_answer_without_any_model_call(
 async def test_in_agents_mode_the_plan_and_each_agent_are_streamed(
     api: TestClient, acme: Acme
 ) -> None:
-    from workmind.modules.agents.department import EvidenceOut, Finding
-    from workmind.modules.agents.planning import PlanOut, Subtask
+    from needwise.modules.agents.department import EvidenceOut, Finding
+    from needwise.modules.agents.planning import PlanOut, Subtask
 
     llm = use_model(
         api,
@@ -338,7 +338,7 @@ class BrokenAnswerLLM(FakeLLM):
     """Plans, then the model server goes away: the agent and the answer both fail."""
 
     async def stream(self, role: Any, request: Any) -> AsyncIterator[Any]:
-        from workmind.providers.llm import LLMError
+        from needwise.providers.llm import LLMError
 
         self.requests.append((role, request))
         raise LLMError("model server unreachable at http://10.1.2.3:9000/v1/chat/completions")
@@ -348,8 +348,8 @@ class BrokenAnswerLLM(FakeLLM):
 async def test_a_failed_agent_shows_a_plain_label_and_the_failed_answer_counts_the_plan(
     api: TestClient, acme: Acme
 ) -> None:
-    from workmind.modules.agents.planning import PlanOut, Subtask
-    from workmind.providers.llm import LLMError
+    from needwise.modules.agents.planning import PlanOut, Subtask
+    from needwise.providers.llm import LLMError
 
     leak = "model server unreachable at http://10.1.2.3:9000/v1/chat/completions: ConnectError"
     use_model(
@@ -382,7 +382,7 @@ class UnconfiguredLLM(FakeLLM):
     """A fresh install: no model key anywhere."""
 
     async def stream(self, role: Any, request: Any) -> AsyncIterator[Any]:
-        from workmind.providers.llm import LLMNotConfiguredError
+        from needwise.providers.llm import LLMNotConfiguredError
 
         raise LLMNotConfiguredError("no Anthropic API key is configured (ANTHROPIC_API_KEY)")
         yield  # pragma: no cover
@@ -517,7 +517,7 @@ async def test_each_event_still_refreshes_the_streams_expiry(api: TestClient, ac
     """emit writes the event and the expiry in one round trip (a pipeline): both happen."""
     from redis.asyncio import Redis
 
-    from workmind.modules.conversations.events import TTL_SECONDS
+    from needwise.modules.conversations.events import TTL_SECONDS
 
     use_model(api, FakeLLM())
     conversation = start(api, acme, "alice")

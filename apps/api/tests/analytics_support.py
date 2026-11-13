@@ -9,10 +9,10 @@ from typing import Any, Literal
 
 from sqlglot import exp
 
-from workmind.core.context import RequestContext
-from workmind.modules.analytics import dataset, engine, guard, semantic, service
-from workmind.modules.analytics.compiler import CompileError, SemanticQuery, compile_query
-from workmind.modules.analytics.service import (
+from needwise.core.context import RequestContext
+from needwise.modules.analytics import dataset, engine, guard, semantic, service
+from needwise.modules.analytics.compiler import CompileError, SemanticQuery, compile_query
+from needwise.modules.analytics.service import (
     AccessInfo,
     AnalyticsError,
     DatasetInfo,

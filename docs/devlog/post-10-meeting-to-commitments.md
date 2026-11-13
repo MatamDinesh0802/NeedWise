@@ -15,7 +15,7 @@ Most meeting notes fail at the same point: who said they'd do what, by when.
 
 So I tested exactly that. A 23-minute weekly operations meeting, five people, a fact plan listing what it must contain: 4 decisions, 5 action items with deadlines, plus distractors (small talk, and an idea everyone turned down).
 
-What I built in WorkMind:
+What I built in NeedWise:
 • Upload a recording or a transcript. Speech-to-text runs locally (faster-whisper), so the audio never leaves your server
 • A model extracts decisions and action items. Every item links to the moment it was said, and timestamps are checked against the transcript: an item pointing at a moment that doesn't exist keeps its text but gets no timestamp, rather than a made-up one
 • One click turns an action item into a tracked task. "My commitments" lists what you promised, across meetings
@@ -39,7 +39,7 @@ Repo and the meeting evaluation in the first comment.
 
 ## First comment
 
-Repo (Apache-2.0): <GITHUB_REPO_URL>
-How it works and every measurement: <GITHUB_REPO_URL>/blob/main/docs/meetings.md
-The v1.0 meetings run: <GITHUB_REPO_URL>/blob/main/evals/results/2026-11-12-v1.0-meetings.md
-The name-hint experiment: <GITHUB_REPO_URL>/blob/main/evals/experiments/meeting_name_hint.py
+Repo (Apache-2.0): https://github.com/MatamDinesh0802/NeedWise
+How it works and every measurement: https://github.com/MatamDinesh0802/NeedWise/blob/main/docs/meetings.md
+The v1.0 meetings run: https://github.com/MatamDinesh0802/NeedWise/blob/main/evals/results/2026-11-12-v1.0-meetings.md
+The name-hint experiment: https://github.com/MatamDinesh0802/NeedWise/blob/main/evals/experiments/meeting_name_hint.py

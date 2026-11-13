@@ -1,6 +1,6 @@
 /**
  * Research runs ("Research & act"): the tool calls, in words. Pure, so labels are tested.
- * Tool names come from apps/api/src/workmind/modules/tools/builtin.py and modules/work/tools.py;
+ * Tool names come from apps/api/src/needwise/modules/tools/builtin.py and modules/work/tools.py;
  * remote (MCP) tools keep their own name.
  */
 

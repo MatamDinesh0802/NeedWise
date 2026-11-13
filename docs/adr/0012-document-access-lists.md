@@ -51,7 +51,7 @@ collection`): a document grant could only widen access. The app never wrote such
   changes still need no re-index.
 - A document with a list costs one more OpenFGA check per answer and one PostgreSQL query per
   search; documents without one cost the extra filter clause only.
-- After an upgrade, `wm authz sync` (or the next seeding) writes the wildcard grantee of every
+- After an upgrade, `nw authz sync` (or the next seeding) writes the wildcard grantee of every
   existing document. Until then nothing changes: lock 2 checks documents only when they have a
   list, and points without `own_acl` count as having none.
 - Without a license, lists written earlier go stale (they narrow, but removals in the source no

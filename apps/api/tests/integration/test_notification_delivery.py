@@ -11,10 +11,9 @@ from typing import Any
 import httpx
 from sqlalchemy import select, update
 
-from tests.integration.conftest import Acme, SessionFactory
-from workmind.core.tenancy import tenant_transaction
-from workmind.modules.model_catalog.secrets import KeyRing
-from workmind.modules.work.delivery import (
+from needwise.core.tenancy import tenant_transaction
+from needwise.modules.model_catalog.secrets import KeyRing
+from needwise.modules.work.delivery import (
     MAX_ATTEMPTS,
     DeliveryDeps,
     deliver_due,
@@ -22,15 +21,16 @@ from workmind.modules.work.delivery import (
     rotate_slack_secrets,
     seal_slack,
 )
-from workmind.modules.work.models import (
+from needwise.modules.work.models import (
     AutomationSettings,
     Notification,
     NotificationDelivery,
     WorkPreference,
 )
-from workmind.modules.work.notifications import notify
-from workmind.modules.work.slack import SlackClient
-from workmind.providers.email import EmailError, SentEmail
+from needwise.modules.work.notifications import notify
+from needwise.modules.work.slack import SlackClient
+from needwise.providers.email import EmailError, SentEmail
+from tests.integration.conftest import Acme, SessionFactory
 
 KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="  # 32 bytes, tests only
 OTHER_KEY = "ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA="
@@ -79,7 +79,7 @@ def deps(sessions: SessionFactory, mailer: Any, stub: SlackStub) -> DeliveryDeps
         mailer=mailer,
         slack=SlackClient(http, "https://slack.stub/api"),
         keyring=KeyRing(KEY),
-        public_url="https://workmind.acme.test",
+        public_url="https://needwise.acme.test",
     )
 
 
@@ -157,8 +157,8 @@ async def test_email_and_slack_copies_follow_each_persons_choice(
     ((to, subject, body),) = mailer.sent
     assert to == ["olivia.grant@acme.test"]
     assert subject == "Approval needed: Send the weekly report"
-    assert f"Open in WorkMind: https://workmind.acme.test/approvals/{approval}" in body
-    assert "https://workmind.acme.test/settings#notifications" in body
+    assert f"Open in NeedWise: https://needwise.acme.test/approvals/{approval}" in body
+    assert "https://needwise.acme.test/settings#notifications" in body
     (message,) = slack.messages
     assert message["channel"] == "U-OLIVIA"
     assert message["text"].startswith("Approval needed: Send the weekly report")
@@ -239,7 +239,7 @@ async def test_a_channel_gets_one_post_per_thing_for_the_chosen_categories(
     await deliver_due(deps(app_sessions, Mailer(), slack), acme.tenant_id, datetime.now(UTC))
 
     assert [p["text"] for p in slack.posts] == [
-        "Escalated: Q4\n\nOpen in WorkMind: https://workmind.acme.test/approvals/9"
+        "Escalated: Q4\n\nOpen in NeedWise: https://needwise.acme.test/approvals/9"
     ]
 
 
@@ -295,13 +295,13 @@ async def test_slack_gets_titles_escaped_so_they_cannot_ping_or_disguise_links(
 ) -> None:
     await connect_slack(app_sessions, acme, channel=["assignments"])
     await prefer(app_sessions, acme, "olivia.grant", channels={"assignments": {"slack": True}})
-    crafted = "<!channel> Payroll & bonus <https://evil.example|Open in WorkMind>"
+    crafted = "<!channel> Payroll & bonus <https://evil.example|Open in NeedWise>"
     await tell(app_sessions, acme, "olivia.grant", "task.assigned", crafted, "/tasks/1")
 
     slack = SlackStub()
     await deliver_due(deps(app_sessions, Mailer(), slack), acme.tenant_id, datetime.now(UTC))
 
-    expected = "&lt;!channel&gt; Payroll &amp; bonus &lt;https://evil.example|Open in WorkMind&gt;"
+    expected = "&lt;!channel&gt; Payroll &amp; bonus &lt;https://evil.example|Open in NeedWise&gt;"
     assert [p["text"].split("\n", 1)[0] for p in slack.posts] == [expected]
     assert [m["text"].split("\n", 1)[0] for m in slack.messages] == [expected]
 
@@ -338,7 +338,7 @@ async def test_a_digest_once_a_day_at_the_persons_hour_with_what_they_have_not_r
     assert await queue_digests(app_sessions, acme.tenant_id, now + timedelta(minutes=30)) == 0
 
     (digest,) = [r for r in await outbox(app_sessions, acme) if r.kind == "digest"]
-    assert digest.subject == "WorkMind: 2 updates"
+    assert digest.subject == "NeedWise: 2 updates"
     assert "- Approve A" in digest.body
     assert "- Review B" in digest.body
     assert "Budget C" not in digest.body
@@ -346,7 +346,7 @@ async def test_a_digest_once_a_day_at_the_persons_hour_with_what_they_have_not_r
     mailer = Mailer()
     await deliver_due(deps(app_sessions, mailer, SlackStub()), acme.tenant_id, now)
     assert [m[0] for m in mailer.sent] == [["hannah.schmidt@acme.test"]]
-    assert "https://workmind.acme.test/a/1" in mailer.sent[0][2]
+    assert "https://needwise.acme.test/a/1" in mailer.sent[0][2]
 
 
 async def test_slack_secrets_rotate_to_the_new_key(

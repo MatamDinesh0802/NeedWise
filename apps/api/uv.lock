@@ -1407,6 +1407,121 @@ wheels = [
 ]
 
 [[package]]
+name = "needwise"
+version = "1.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "alembic" },
+    { name = "anthropic" },
+    { name = "asyncpg" },
+    { name = "celery" },
+    { name = "cryptography" },
+    { name = "duckdb" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "mcp" },
+    { name = "openpyxl" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-instrumentation-fastapi" },
+    { name = "opentelemetry-sdk" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "pypdf" },
+    { name = "python-docx" },
+    { name = "python-pptx" },
+    { name = "pyyaml" },
+    { name = "redis" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "sqlglot" },
+    { name = "structlog" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+diarization = [
+    { name = "av" },
+    { name = "numpy" },
+    { name = "sherpa-onnx" },
+]
+ee = [
+    { name = "needwise-ee" },
+]
+meetings = [
+    { name = "av" },
+    { name = "faster-whisper" },
+]
+mysql = [
+    { name = "pymysql" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "reportlab" },
+    { name = "ruff" },
+    { name = "types-pymysql" },
+    { name = "types-pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.20.1" },
+    { name = "anthropic", specifier = ">=2.4.0" },
+    { name = "asyncpg", specifier = ">=0.32.0" },
+    { name = "av", marker = "extra == 'diarization'", specifier = ">=17.1,<19" },
+    { name = "av", marker = "extra == 'meetings'", specifier = ">=17.1,<19" },
+    { name = "celery", specifier = ">=5.6.3" },
+    { name = "cryptography", specifier = ">=46.0.0" },
+    { name = "duckdb", specifier = ">=2.0.0" },
+    { name = "fastapi", specifier = ">=0.162.0" },
+    { name = "faster-whisper", marker = "extra == 'meetings'", specifier = ">=1.2.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "mcp", specifier = ">=2.3.0" },
+    { name = "needwise-ee", marker = "extra == 'ee'", editable = "../../ee/python" },
+    { name = "numpy", marker = "extra == 'diarization'", specifier = ">=2.0" },
+    { name = "openpyxl", specifier = ">=3.1.5" },
+    { name = "opentelemetry-api", specifier = ">=1.45.2" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.45.2" },
+    { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.66b2" },
+    { name = "opentelemetry-sdk", specifier = ">=1.45.2" },
+    { name = "pydantic", specifier = ">=2.14.2" },
+    { name = "pydantic-settings", specifier = ">=2.16.2" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
+    { name = "pymysql", marker = "extra == 'mysql'", specifier = ">=1.1.1" },
+    { name = "pypdf", specifier = ">=6.21.4" },
+    { name = "python-docx", specifier = ">=1.2.0" },
+    { name = "python-pptx", specifier = ">=1.0.2" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "redis", specifier = ">=8.1.0" },
+    { name = "sherpa-onnx", marker = "extra == 'diarization'", specifier = ">=2.0.1" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.6" },
+    { name = "sqlglot", specifier = ">=30.29.0" },
+    { name = "structlog", specifier = ">=26.1.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
+]
+provides-extras = ["meetings", "diarization", "ee", "mysql"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyright", specifier = ">=1.1.414" },
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "pytest-asyncio", specifier = ">=1.4.1.post1" },
+    { name = "reportlab", specifier = ">=5.1.0" },
+    { name = "ruff", specifier = ">=0.17.3" },
+    { name = "types-pymysql", specifier = ">=1.2.4.20261111" },
+    { name = "types-pyyaml", specifier = ">=6.0.12.20261103" },
+]
+
+[[package]]
+name = "needwise-ee"
+version = "1.0.0"
+source = { editable = "../../ee/python" }
+
+[[package]]
 name = "nodeenv"
 version = "1.12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2966,121 +3081,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b2/49/eed86bfb8863093a82cbaa52c9159be1ce2374d5ace6fe1f8e8031567e7d/websockets-17.4-pp312-pypy312_pp80-win_amd64.whl", hash = "sha256:829bcaa90be8737c132d9515d6a466e8528e3b3d050d3f3466f36ea94d3beb48", size = 306838, upload-time = "2026-10-30T15:10:32.954Z" },
     { url = "https://files.pythonhosted.org/packages/eb/27/9db924cb0dbf22eade78d98fbae77790f9bf6bc729e6ab29aef9d68e4156/websockets-17.4-py3-none-any.whl", hash = "sha256:c6bd2c9781915592b209160d0f017d4c7c82ad53075e6b0c24d2a89299e7f9e9", size = 212900, upload-time = "2026-10-30T15:10:34.482Z" },
 ]
-
-[[package]]
-name = "workmind"
-version = "1.0.0"
-source = { editable = "." }
-dependencies = [
-    { name = "alembic" },
-    { name = "anthropic" },
-    { name = "asyncpg" },
-    { name = "celery" },
-    { name = "cryptography" },
-    { name = "duckdb" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "mcp" },
-    { name = "openpyxl" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-instrumentation-fastapi" },
-    { name = "opentelemetry-sdk" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "pypdf" },
-    { name = "python-docx" },
-    { name = "python-pptx" },
-    { name = "pyyaml" },
-    { name = "redis" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-    { name = "sqlglot" },
-    { name = "structlog" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-diarization = [
-    { name = "av" },
-    { name = "numpy" },
-    { name = "sherpa-onnx" },
-]
-ee = [
-    { name = "workmind-ee" },
-]
-meetings = [
-    { name = "av" },
-    { name = "faster-whisper" },
-]
-mysql = [
-    { name = "pymysql" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "reportlab" },
-    { name = "ruff" },
-    { name = "types-pymysql" },
-    { name = "types-pyyaml" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.20.1" },
-    { name = "anthropic", specifier = ">=2.4.0" },
-    { name = "asyncpg", specifier = ">=0.32.0" },
-    { name = "av", marker = "extra == 'diarization'", specifier = ">=17.1,<19" },
-    { name = "av", marker = "extra == 'meetings'", specifier = ">=17.1,<19" },
-    { name = "celery", specifier = ">=5.6.3" },
-    { name = "cryptography", specifier = ">=46.0.0" },
-    { name = "duckdb", specifier = ">=2.0.0" },
-    { name = "fastapi", specifier = ">=0.162.0" },
-    { name = "faster-whisper", marker = "extra == 'meetings'", specifier = ">=1.2.1" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mcp", specifier = ">=2.3.0" },
-    { name = "numpy", marker = "extra == 'diarization'", specifier = ">=2.0" },
-    { name = "openpyxl", specifier = ">=3.1.5" },
-    { name = "opentelemetry-api", specifier = ">=1.45.2" },
-    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.45.2" },
-    { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.66b2" },
-    { name = "opentelemetry-sdk", specifier = ">=1.45.2" },
-    { name = "pydantic", specifier = ">=2.14.2" },
-    { name = "pydantic-settings", specifier = ">=2.16.2" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
-    { name = "pymysql", marker = "extra == 'mysql'", specifier = ">=1.1.1" },
-    { name = "pypdf", specifier = ">=6.21.4" },
-    { name = "python-docx", specifier = ">=1.2.0" },
-    { name = "python-pptx", specifier = ">=1.0.2" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "redis", specifier = ">=8.1.0" },
-    { name = "sherpa-onnx", marker = "extra == 'diarization'", specifier = ">=2.0.1" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.6" },
-    { name = "sqlglot", specifier = ">=30.29.0" },
-    { name = "structlog", specifier = ">=26.1.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
-    { name = "workmind-ee", marker = "extra == 'ee'", editable = "../../ee/python" },
-]
-provides-extras = ["meetings", "diarization", "ee", "mysql"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pyright", specifier = ">=1.1.414" },
-    { name = "pytest", specifier = ">=9.2.0" },
-    { name = "pytest-asyncio", specifier = ">=1.4.1.post1" },
-    { name = "reportlab", specifier = ">=5.1.0" },
-    { name = "ruff", specifier = ">=0.17.3" },
-    { name = "types-pymysql", specifier = ">=1.2.4.20261111" },
-    { name = "types-pyyaml", specifier = ">=6.0.12.20261103" },
-]
-
-[[package]]
-name = "workmind-ee"
-version = "1.0.0"
-source = { editable = "../../ee/python" }
 
 [[package]]
 name = "wrapt"

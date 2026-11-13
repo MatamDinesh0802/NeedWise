@@ -1,4 +1,4 @@
-# Releasing WorkMind
+# Releasing NeedWise
 
 How a version gets from `main` to a GitHub Release with images on GHCR, what a release
 contains, and how v1.0.0 was cut and is published. The policy is [ROADMAP §6](../ROADMAP.md#6-release-process);
@@ -13,7 +13,7 @@ the checks the images pass are in [docs/security/supply-chain.md](../security/su
 > workflow's version check, run locally, passes for 1.0.0 and names every file for another
 > version; and the `permission-gate` job's commands, run locally against images built from this
 > branch (their own compose project and tags, started with `--no-build` through
-> `WORKMIND_API_IMAGE` and `WORKMIND_WEB_IMAGE`), gave a healthy stack, the seeded Acme corpus
+> `NEEDWISE_API_IMAGE` and `NEEDWISE_WEB_IMAGE`), gave a healthy stack, the seeded Acme corpus
 > and 0 leaks in 48 retrieval checks. Building for arm64 under QEMU, pushing to GHCR, the
 > attestations and the release upload are untested.
 
@@ -27,7 +27,7 @@ version for the whole repository, kept in:
   `__version__` from this metadata,
 - `apps/web/package.json` and `e2e/browser/package.json`,
 - `loadtests/pyproject.toml` and its entry in `loadtests/uv.lock`,
-- `appVersion` in `deploy/helm/workmind/Chart.yaml` (the image tag the chart deploys by default;
+- `appVersion` in `deploy/helm/needwise/Chart.yaml` (the image tag the chart deploys by default;
   the chart's own `version` is bumped by hand whenever the chart changes),
 - `.release-please-manifest.json` (the last released version).
 
@@ -56,7 +56,7 @@ packages or the chart's `appVersion` do not carry. The API reports its version i
    |---|---|---|
    | `prepare` | Checks the tag is `vX.Y.Z` or `vX.Y.Z-pre` and that the tagged source carries that version | read |
    | `images` (api, web in parallel) | Builds linux/amd64 and linux/arm64 (arm64 under QEMU), with BuildKit SBOM and provenance (`mode=max`) attestations; pushes **by digest only**; adds GitHub-signed build provenance when the repository is public; scans both platforms with Trivy (fixable CRITICAL/HIGH or a secret fails); extracts the SBOMs | packages, attestations, id-token |
-   | `permission-gate` | Runs the compose stack **from those digests** (`WORKMIND_API_IMAGE`, `WORKMIND_WEB_IMAGE`), seeds Acme Robotics and runs the retrieval permission gate: every red-team attack, every retrieval mode, with hash embeddings and no model calls. A leak fails the release | packages: read |
+   | `permission-gate` | Runs the compose stack **from those digests** (`NEEDWISE_API_IMAGE`, `NEEDWISE_WEB_IMAGE`), seeds Acme Robotics and runs the retrieval permission gate: every red-team attack, every retrieval mode, with hash embeddings and no model calls. A leak fails the release | packages: read |
    | `publish-images` | Only now tags the same image indexes `X.Y.Z` and `X.Y` (no `X.Y` for a pre-release, never `latest`) | packages |
    | `github-release` | Attaches the SBOMs, the permission-gate report and the eval reports; adds the image digests and verification commands to the release notes | contents |
 
@@ -70,11 +70,11 @@ packages or the chart's `appVersion` do not carry. The API reports its version i
 
 | Asset | Where | What it is |
 |---|---|---|
-| `ghcr.io/<owner>/workmind-api:X.Y.Z` | GHCR | API, workers, beat, migrations, seeding; includes the Enterprise package, inactive without a license. linux/amd64 and linux/arm64 |
-| `ghcr.io/<owner>/workmind-web:X.Y.Z` | GHCR | The Next.js app. linux/amd64 and linux/arm64 |
+| `ghcr.io/matamdinesh0802/needwise-api:X.Y.Z` | GHCR | API, workers, beat, migrations, seeding; includes the Enterprise package, inactive without a license. linux/amd64 and linux/arm64 |
+| `ghcr.io/matamdinesh0802/needwise-web:X.Y.Z` | GHCR | The Next.js app. linux/amd64 and linux/arm64 |
 | SBOM and provenance attestations | inside each image index | BuildKit's SPDX SBOM and SLSA provenance per platform: `docker buildx imagetools inspect <image> --format '{{ json .SBOM }}'` (or `.Provenance`) |
-| GitHub build provenance | GitHub attestations, public repository only | Sigstore-signed: `gh attestation verify oci://ghcr.io/<owner>/workmind-api:X.Y.Z --owner <owner>` |
-| `workmind-{api,web}-X.Y.Z-linux-{amd64,arm64}.spdx.json` | release assets | The same SBOMs as files |
+| GitHub build provenance | GitHub attestations, public repository only | Sigstore-signed: `gh attestation verify oci://ghcr.io/matamdinesh0802/needwise-api:X.Y.Z --owner MatamDinesh0802` |
+| `needwise-{api,web}-X.Y.Z-linux-{amd64,arm64}.spdx.json` | release assets | The same SBOMs as files |
 | `permission-gate-vX.Y.Z.md` | release asset | The permission gate run by `release.yml` on the released images. Leaks must be 0; recall numbers in it come from hash embeddings and say nothing about answer quality |
 | `eval-reports-vX.Y.Z.tar.gz` | release asset | `evals/README.md` and the committed reports in `evals/results/` as of the tag: the quality, latency and cost runs made with real models (CI has no model keys, so it cannot make them) |
 | Changelog and upgrade notes | release notes, `CHANGELOG.md` | Written by release-please, edited in the release PR |
@@ -83,8 +83,8 @@ packages or the chart's `appVersion` do not carry. The API reports its version i
 
 ```bash
 # .env (see .env.example)
-WORKMIND_API_IMAGE=ghcr.io/<owner>/workmind-api:1.0.0
-WORKMIND_WEB_IMAGE=ghcr.io/<owner>/workmind-web:1.0.0
+NEEDWISE_API_IMAGE=ghcr.io/matamdinesh0802/needwise-api:1.0.0
+NEEDWISE_WEB_IMAGE=ghcr.io/matamdinesh0802/needwise-web:1.0.0
 ```
 
 ```bash
@@ -93,7 +93,7 @@ docker compose pull && docker compose up -d --no-build --wait
 
 `make up` builds from the checkout and would overwrite those tags with a local build, so use the
 commands above. In production, pin the digest from the release notes as well
-(`…/workmind-api:1.0.0@sha256:…`). The `migrate` service runs `alembic upgrade head` before the
+(`…/needwise-api:1.0.0@sha256:…`). The `migrate` service runs `alembic upgrade head` before the
 API starts: migrations only go forward, and the release notes call out breaking ones. Take a
 backup before upgrading.
 
@@ -147,7 +147,7 @@ Set once, when the GitHub repository exists:
 
 - Settings > Actions > General > Workflow permissions: allow GitHub Actions to create and approve
   pull requests (release-please opens its PR with the workflow token).
-- Packages `workmind-api` and `workmind-web` (created by the first release): make them public and
+- Packages `needwise-api` and `needwise-web` (created by the first release): make them public and
   link them to the repository, so anyone can pull them.
 - A ruleset that protects `v*` tags, and branch protection on `main` that requires the CI,
   Security and CodeQL checks.

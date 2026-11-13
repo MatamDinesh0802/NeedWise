@@ -17,21 +17,21 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from needwise.core.config import Settings
+from needwise.core.edition import FEATURES, Edition, License
+from needwise.core.extensions import ExtensionRegistry, enable_extensions
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.analytics.models import AnalyticsRun
+from needwise.modules.conversations.models import Conversation
+from needwise.modules.governance import holds
+from needwise.modules.governance.audit import Actor
+from needwise.modules.governance.models import AuditEvent, LegalHold
+from needwise.modules.knowledge import document_acl
+from needwise.modules.knowledge.models import Collection, Document, DocumentVersion
+from needwise.modules.meetings.models import Meeting
+from needwise.modules.work.models import Notification
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory
-from workmind.core.config import Settings
-from workmind.core.edition import FEATURES, Edition, License
-from workmind.core.extensions import ExtensionRegistry, enable_extensions
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.analytics.models import AnalyticsRun
-from workmind.modules.conversations.models import Conversation
-from workmind.modules.governance import holds
-from workmind.modules.governance.audit import Actor
-from workmind.modules.governance.models import AuditEvent, LegalHold
-from workmind.modules.knowledge import document_acl
-from workmind.modules.knowledge.models import Collection, Document, DocumentVersion
-from workmind.modules.meetings.models import Meeting
-from workmind.modules.work.models import Notification
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 pytestmark = pytest.mark.skipif(
@@ -63,7 +63,7 @@ def _settings(database: Database, storage: Path) -> Settings:
 
 
 def _licensed() -> ExtensionRegistry:
-    pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra ee")
+    pytest.importorskip("needwise_ee", reason="install the ee extra: uv sync --extra ee")
     now = datetime.now(UTC)
     license_ = License(
         "Acme Robotics",

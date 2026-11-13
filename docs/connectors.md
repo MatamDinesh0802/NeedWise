@@ -1,4 +1,4 @@
-# Connectors: keeping WorkMind in sync with your tools
+# Connectors: keeping NeedWise in sync with your tools
 
 A **source** pulls documents from somewhere else into **one collection**. Everything synced from
 that source gets the collection's access rules: "this Drive folder → Finance" is one line of
@@ -14,7 +14,7 @@ one item's bytes). The sync engine does the rest the same way for all of them:
 
 - **new or changed** items become a new document version and are indexed;
 - **unchanged** items (same version marker) are skipped without being downloaded;
-- **deleted** items are removed from WorkMind and from search. This happens after a *complete*
+- **deleted** items are removed from NeedWise and from search. This happens after a *complete*
   scan (a scan cut short by a limit, an incremental API or an outage never deletes), or when the
   source itself reports the deletion (a SharePoint delta tombstone);
 - **missing upstream**: when a scan that set out to list everything was cut short (the crawler
@@ -53,7 +53,7 @@ no per-file date in the tree it reads, so it uses the sync's time.
 | `confluence` | `site_url`, `spaces` (keys), `include_attachments` | **Connect Confluence** (OAuth 2.0 3LO), or `email` + `api_token` | yes: every scan lists every current page |
 | `sharepoint` | `site_url`, `library`, `folder` (all optional) | **Connect SharePoint** (Microsoft identity platform, PKCE) | yes: delta tombstones, and full listings when needed |
 
-Google Docs, Sheets and Slides are exported as DOCX, XLSX and PPTX. Files WorkMind can't parse
+Google Docs, Sheets and Slides are exported as DOCX, XLSX and PPTX. Files NeedWise can't parse
 (images, archives) are skipped.
 
 ## Who manages sources
@@ -184,7 +184,7 @@ curl -X POST http://localhost:8480/api/v1/admin/sources -H 'X-CSRF-Protection: 1
 2. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and add the redirect URI
    `<PUBLIC_URL>/api/v1/oauth/google/callback`.
 3. Create a `gdrive` source with the folder id, then choose **Connect Google Drive**.
-   WorkMind stores the refresh token encrypted and renews access tokens itself.
+   NeedWise stores the refresh token encrypted and renews access tokens itself.
 
 **Slack**
 1. Create a Slack app with the bot scopes `channels:history`, `channels:read`,
@@ -192,7 +192,7 @@ curl -X POST http://localhost:8480/api/v1/admin/sources -H 'X-CSRF-Protection: 1
    the redirect URL `<PUBLIC_URL>/api/v1/oauth/slack/callback`.
 2. Set `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET` (Helm: `config.slack.clientId` and
    `credentials.slackClientSecret`).
-3. Create a `slack` source with the channel ids, then choose **Connect Slack**. WorkMind stores
+3. Create a `slack` source with the channel ids, then choose **Connect Slack**. NeedWise stores
    the bot token Slack grants, encrypted, like a pasted one. Invite the app to each channel.
 
 Without `SLACK_CLIENT_ID`, paste a bot token instead (in the form, or later under
@@ -202,7 +202,7 @@ person and tenant that started them, and come back to the page they started from
 ## Confluence Cloud
 
 The pages of one or more spaces of a Confluence Cloud site (`https://<name>.atlassian.net`),
-through the REST API v2, and the files attached to them that WorkMind can parse (PDF, Word,
+through the REST API v2, and the files attached to them that NeedWise can parse (PDF, Word,
 Excel, PowerPoint, Markdown, text, HTML, CSV).
 
 - **One collection per source.** All configured spaces land in the source's collection; for
@@ -211,7 +211,7 @@ Excel, PowerPoint, Markdown, text, HTML, CSV).
 - **What a scan does.** It lists every current page of the spaces with its version number, but
   no bodies, and the attachments of each page (one extra request per page; turn
   `include_attachments` off to skip them). Only pages and attachments whose version changed are
-  downloaded. Deleted, archived and draft pages are not listed, so they leave WorkMind; a page
+  downloaded. Deleted, archived and draft pages are not listed, so they leave NeedWise; a page
   moved to a space outside the source leaves too.
 - **What a page becomes.** A Markdown document: the title, then the body converted from the
   storage format (headings one level below the title, paragraphs, lists, tables as rows, code
@@ -221,7 +221,7 @@ Excel, PowerPoint, Markdown, text, HTML, CSV).
   `ancestors`, `path`). Folders, whiteboards and databases are not read: a page under a folder
   has the space as its first ancestor.
 - **Links back** open the page (or the attachment's preview) on the site.
-- **A space key WorkMind cannot see is a sync error**, never an empty listing that would delete
+- **A space key NeedWise cannot see is a sync error**, never an empty listing that would delete
   everything synced from it.
 
 ### Option A: an API token
@@ -229,7 +229,7 @@ Excel, PowerPoint, Markdown, text, HTML, CSV).
 The simplest setup for one site: a service account's email and an API token.
 
 1. Sign in to <https://id.atlassian.com/manage-profile/security/api-tokens> as the account
-   WorkMind should read with, and create an API token. That account needs view access to the
+   NeedWise should read with, and create an API token. That account needs view access to the
    spaces (and to restricted pages, if those should be synced).
 2. Create the source with the credentials:
 
@@ -240,25 +240,25 @@ curl -X POST http://localhost:8480/api/v1/admin/sources -H 'X-CSRF-Protection: 1
        "credentials": {"email": "wiki-sync@acme.example", "api_token": "ATATT..."}}'
 ```
 
-WorkMind calls `https://acme.atlassian.net/wiki/...` with Basic authentication.
+NeedWise calls `https://acme.atlassian.net/wiki/...` with Basic authentication.
 
 ### Option B: OAuth 2.0 (3LO)
 
 1. In the Atlassian developer console (<https://developer.atlassian.com/console/myapps/>),
    create an **OAuth 2.0 integration**.
 2. **Permissions → Confluence API**, add these granular scopes (and nothing else):
-   `read:space:confluence`, `read:page:confluence`, `read:attachment:confluence`. WorkMind also
+   `read:space:confluence`, `read:page:confluence`, `read:attachment:confluence`. NeedWise also
    asks for `offline_access`, which gives a refresh token.
 3. **Authorization → OAuth 2.0 (3LO)**, callback URL: `<PUBLIC_URL>/api/v1/oauth/atlassian/callback`.
 4. Set `ATLASSIAN_CLIENT_ID` and `ATLASSIAN_CLIENT_SECRET` (the app's client id and secret).
 5. Create a `confluence` source without credentials (**New source** › Confluence, leaving the
    email and API token empty: the form then says **Create and connect**), or choose **Connect
    Confluence** on its card; both go through `/api/v1/admin/sources/<key>/oauth/atlassian/start`.
-   Grant access **to the same site** as the source's `site_url`: WorkMind looks the site up
+   Grant access **to the same site** as the source's `site_url`: NeedWise looks the site up
    among the sites the person granted (`accessible-resources`) and stores its cloud id with the
    tokens. A grant for another site is refused (`?oauth=failed`).
 
-WorkMind then calls `https://api.atlassian.com/ex/confluence/<cloud id>/wiki/...`, renews the
+NeedWise then calls `https://api.atlassian.com/ex/confluence/<cloud id>/wiki/...`, renews the
 access token with the refresh token, and stores the new refresh token each time (Atlassian
 rotates them). The connected person's own Confluence permissions decide what is read.
 
@@ -280,8 +280,8 @@ The files of one document library, or of one folder in it, through Microsoft Gra
 - **Incremental sync with delta queries.** The first sync enumerates the drive
   (`/drives/{id}/root/delta`, following `@odata.nextLink`) and stores the `@odata.deltaLink` in
   the source's cursor. Later syncs ask only for changes since then. A deleted file arrives as a
-  tombstone and is removed from WorkMind; a file moved out of the selected folder, or renamed to
-  a type WorkMind cannot read, is removed too.
+  tombstone and is removed from NeedWise; a file moved out of the selected folder, or renamed to
+  a type NeedWise cannot read, is removed too.
 - **Why the connector keeps the folder tree.** Graph supports delta only on a drive's root in
   SharePoint and OneDrive for Business, and its delta items carry no paths. The connector keeps
   the drive's folder ids, parents and names in the cursor to know what is inside the selected
@@ -307,7 +307,7 @@ The files of one document library, or of one folder in it, through Microsoft Gra
 2. **Authentication → Add a platform → Web**, redirect URI:
    `<PUBLIC_URL>/api/v1/oauth/microsoft/callback`.
 3. **Certificates & secrets → New client secret**.
-4. **API permissions → Microsoft Graph → Delegated**: WorkMind asks, per source, only for the one
+4. **API permissions → Microsoft Graph → Delegated**: NeedWise asks, per source, only for the one
    permission it needs, plus `offline_access` (a refresh token):
    - `Sites.Read.All` for a SharePoint site's library (`site_url` set);
    - `Files.Read.All` for a drive given by id;
@@ -319,7 +319,7 @@ The files of one document library, or of one folder in it, through Microsoft Gra
    accepts any work or school account).
 6. Create a `sharepoint` source (**New source** › SharePoint / OneDrive: **Create and connect**),
    or choose **Connect SharePoint** on its card, and sign in with Microsoft (both go through
-   `/api/v1/admin/sources/<key>/oauth/microsoft/start`). The flow is the authorization code grant with PKCE; WorkMind
+   `/api/v1/admin/sources/<key>/oauth/microsoft/start`). The flow is the authorization code grant with PKCE; NeedWise
    stores the refresh token encrypted and the new one Microsoft returns at each renewal.
 
 The connected account's own SharePoint permissions decide what is read: sign in with an account
@@ -335,7 +335,7 @@ A synced document is **stale** when it is
   (`stale_after_days`: 180 days by default; none for Slack, whose months are an archive; set it
   per source, or to never).
 
-The Celery beat task `workmind.send_source_reminders` runs once a day ("once a day" counts from
+The Celery beat task `needwise.send_source_reminders` runs once a day ("once a day" counts from
 when beat started, like the review reminders). For every document that became stale, its owner
 (the governance owner, docs/governance.md) gets, **once per staleness episode**:
 
@@ -389,7 +389,7 @@ All under `/api/v1/admin/sources`, for org admins and collection owners as descr
 | `GET /admin/sources/stale-documents?source=&days=` | Stale synced documents (titles and links withheld where the caller cannot open the collection) |
 | `DELETE /admin/sources/{key}` | Disconnect: the source, its runs and its documents |
 | `POST /admin/sources/{key}/oauth/{google,slack,atlassian,microsoft}/start` | Start Connect: answers `{url}`, the provider's consent screen, where the browser goes next (`?back=knowledge` returns to Knowledge Hub › Sources) |
-| `GET /admin/sources/stale?days=` | Org admins only: every document (uploads too) past `valid_until` or not updated in WorkMind |
+| `GET /admin/sources/stale?days=` | Org admins only: every document (uploads too) past `valid_until` or not updated in NeedWise |
 
 ## What has and has not been tested
 
@@ -401,7 +401,7 @@ All under `/api/v1/admin/sources`, for org admins and collection owners as descr
   `tests/fake_confluence.py` and `tests/fake_graph.py`, exercised by
   `tests/test_connectors_confluence.py`, `tests/test_connectors_sharepoint.py` and, through the
   sync engine with PostgreSQL and Qdrant, `tests/integration/test_sync.py`). A fake shows that
-  WorkMind handles the documented behaviour; it cannot show that the service behaves as
+  NeedWise handles the documented behaviour; it cannot show that the service behaves as
   documented. Points worth checking first on a live tenant: the attachment download through
   OAuth (the v1 download endpoint with the granular scope `read:attachment:confluence`), and
   whether SharePoint reports the files of a deleted folder one by one (the connector does not
@@ -413,7 +413,7 @@ All under `/api/v1/admin/sources`, for org admins and collection owners as descr
 
 - Access: in Community a synced document has its collection's access, whatever the item's
   sharing in the source. Choose the collection for the narrowest audience of what the source
-  holds, or use permission sync (Enterprise), which fails closed: a source principal WorkMind
+  holds, or use permission sync (Enterprise), which fails closed: a source principal NeedWise
   cannot map grants nothing, and an item whose permissions cannot be read is for nobody.
 - Credentials are encrypted with AES-256-GCM (`SECRETS_KEY`) and bound to their source: a
   ciphertext copied onto another source does not decrypt. The API never returns them; the page
@@ -470,7 +470,7 @@ All under `/api/v1/admin/sources`, for org admins and collection owners as descr
   tested against scripted providers and fakes of their documented APIs, not against a real Slack
   workspace, Google account, Confluence site or Microsoft 365 tenant. Permission sync has not met
   a live API either.
-- **A Slack or Teams bot** (asking WorkMind inside chat, the Phase 7 stretch goal): there is no
+- **A Slack or Teams bot** (asking NeedWise inside chat, the Phase 7 stretch goal): there is no
   inbound Slack or Teams endpoint. Slack is used to sync channels and to send notifications.
 - A collection owner's web source cannot reach private or loopback addresses, and there is no
   setting to allow a network for them (only an org admin's configuration reaches the intranet).

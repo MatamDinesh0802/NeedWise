@@ -1,6 +1,6 @@
 import pytest
 
-from workmind.core.config import DEV_SECRETS_ENCRYPTION_KEY, Settings
+from needwise.core.config import DEV_SECRETS_ENCRYPTION_KEY, Settings
 
 REAL_KEY = "c2VjcmV0LWtleS1mb3ItdGVzdHMtMzItYnl0ZXMtISE="  # 32 bytes, base64
 OTHER_KEY = "b3RoZXIta2V5LWZvci10ZXN0cy0zMi1ieXRlcy0hISE="  # 32 bytes, base64
@@ -88,7 +88,7 @@ async def test_the_database_pool_follows_its_settings(monkeypatch: pytest.Monkey
     docs/benchmarks/load.md). Nothing connects: the engine opens connections lazily."""
     from sqlalchemy.pool import QueuePool
 
-    from workmind.core.resources import Resources
+    from needwise.core.resources import Resources
 
     monkeypatch.setenv("DB_POOL_SIZE", "3")
     monkeypatch.setenv("DB_MAX_OVERFLOW", "4")
@@ -111,7 +111,7 @@ async def test_the_analytics_workers_are_split_across_the_api_processes(
     # Regression: each uvicorn process had a pool of ANALYTICS_WORKERS, so two processes (the
     # default) doubled the container's query workers and their memory (the Helm limit is sized
     # for one pool).
-    from workmind.core.resources import Resources
+    from needwise.core.resources import Resources
 
     monkeypatch.setenv("WEB_CONCURRENCY", "2")
     monkeypatch.setenv("ANALYTICS_WORKERS", "3")
@@ -133,7 +133,7 @@ async def test_every_qdrant_call_carries_the_api_key(monkeypatch: pytest.MonkeyP
     # text); the API must send it, and nothing when it is unset (compose).
     import httpx
 
-    from workmind.core.resources import Resources
+    from needwise.core.resources import Resources
 
     seen: list[str | None] = []
 

@@ -1,0 +1,157 @@
+{{- /*
+The Acme Robotics demo (python -m needwise.seed): logins in Keycloak, the tenant, people and
+collections, the documents through the ingestion pipeline, analytics data, authorization tuples.
+A post-install/post-upgrade hook, after the migrate hook (weight). Development and demos only.
+*/ -}}
+{{- if .Values.seed.enabled }}
+{{- $c := .Values.seed -}}
+{{- $src := $c.data.source -}}
+{{- $waits := list (printf "tcp://%s:%s" (include "needwise.postgresHost" .) (include "needwise.postgresPort" .)) -}}
+{{- $waits = append $waits (printf "%s/realms/%s" (include "needwise.keycloakUrl" .) .Values.keycloak.realm) -}}
+{{- $waits = append $waits (printf "%s/healthz" (include "needwise.openfgaUrl" .)) -}}
+{{- $waits = append $waits (printf "%s/readyz" (include "needwise.qdrantUrl" .)) -}}
+{{- if and .Values.embeddings.enabled (not .Values.config.embedding.baseUrl) -}}
+{{- $waits = append $waits (printf "http://%s:8080/health" (include "needwise.componentName" (list . "embeddings"))) -}}
+{{- end -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "needwise.componentName" (list . "seed") }}
+  labels:
+    {{- include "needwise.labels" (list . "seed") | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ $c.backoffLimit }}
+  activeDeadlineSeconds: {{ $c.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "needwise.selectorLabels" (list . "seed") | nindent 8 }}
+        needwise.io/object-storage: "true"
+      {{- with $c.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      {{- include "needwise.podCommon" (list . $c) | nindent 6 }}
+      securityContext:
+        {{- include "needwise.podSecurityContext" (list . (dict)) | nindent 8 }}
+      {{- with include "needwise.objectStorageAffinity" (list . $c.affinity) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        {{- if eq $src "image" }}
+        - name: seed-data
+          image: {{ include "needwise.image" (list . $c.data.image .Chart.AppVersion) }}
+          imagePullPolicy: {{ $c.data.image.pullPolicy }}
+          # The volume is mounted elsewhere than /seed here: mounted at /seed, it would hide the
+          # image's own /seed (the default data.image.path) and leave nothing to copy.
+          command: ["sh", "-c", "cp -R \"$SEED_PATH\"/. /seed-copy/"]
+          env:
+            - name: SEED_PATH
+              value: {{ $c.data.image.path | quote }}
+          securityContext:
+            {{- include "needwise.securityContext" (list . (dict)) | nindent 12 }}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          volumeMounts:
+            - name: seed
+              mountPath: /seed-copy
+        {{- else if eq $src "archive" }}
+        - name: seed-data
+          image: {{ include "needwise.apiImage" . }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          # Downloads a .tar.gz of the repository and extracts its seed/ directory (top directory
+          # stripped, unsafe paths refused by tarfile's "data" filter).
+          command:
+            - python
+            - -c
+            - |
+              import io, sys, tarfile, urllib.request
+              url, dest = sys.argv[1], sys.argv[2]
+              with urllib.request.urlopen(url, timeout=300) as response:
+                  data = response.read()
+              members = []
+              with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tar:
+                  for member in tar.getmembers():
+                      parts = member.name.split("/", 1)
+                      if len(parts) == 2 and parts[1].startswith("seed/") and parts[1] != "seed/":
+                          member.name = parts[1][len("seed/"):]
+                          members.append(member)
+                  if not members:
+                      sys.exit(f"no seed/ directory in {url}")
+                  tar.extractall(dest, members=members, filter="data")
+              print(f"extracted {len(members)} entries from {url}")
+          args: [{{ $c.data.archiveUrl | quote }}, /seed]
+          securityContext:
+            {{- include "needwise.securityContext" (list . (dict)) | nindent 12 }}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts:
+            - name: seed
+              mountPath: /seed
+        {{- end }}
+        {{- include "needwise.waitContainer" (concat (list . $c.waitTimeoutSeconds) $waits) | nindent 8 }}
+      containers:
+        - name: seed
+          image: {{ include "needwise.apiImage" . }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          command:
+            - python
+            - -m
+            - needwise.seed
+            - {{ printf "/seed/%s" $c.companyFile | quote }}
+            {{- range $c.args }}
+            - {{ . | quote }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "needwise.componentName" (list . "config") }}
+          env:
+            {{- include "needwise.appEnv" . | nindent 12 }}
+            # Seeding creates tenants, which only the owner role may do.
+            {{- include "needwise.credentialEnv" (list . "databaseOwnerPassword" "NW_DATABASE_OWNER_PASSWORD") | nindent 12 }}
+            - name: MIGRATIONS_DATABASE_URL
+              value: {{ include "needwise.databaseUrl" (list . .Values.database.ownerUser "NW_DATABASE_OWNER_PASSWORD") | quote }}
+            - name: KEYCLOAK_ADMIN_USER
+              value: {{ .Values.keycloak.adminUser | quote }}
+            {{- include "needwise.credentialEnv" (list . "keycloakAdminPassword" "KEYCLOAK_ADMIN_PASSWORD") | nindent 12 }}
+            {{- with include "needwise.credentialEnv" (list . "demoPassword" "DEMO_PASSWORD") }}
+            {{- . | nindent 12 }}
+            {{- end }}
+          securityContext:
+            {{- include "needwise.securityContext" (list . (dict)) | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: seed
+              mountPath: /seed
+              readOnly: true
+            - name: objects
+              mountPath: /data/objects
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: seed
+          {{- if eq $src "existingClaim" }}
+          persistentVolumeClaim:
+            claimName: {{ $c.data.existingClaim }}
+            readOnly: true
+          {{- else }}
+          emptyDir:
+            sizeLimit: 256Mi
+          {{- end }}
+        - name: objects
+          persistentVolumeClaim:
+            claimName: {{ include "needwise.objectStorageClaim" . }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+{{- end }}

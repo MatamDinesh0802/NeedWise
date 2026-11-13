@@ -1,6 +1,6 @@
 # Supply-chain security
 
-What WorkMind checks about the code and images it depends on and ships, where each check runs,
+What NeedWise checks about the code and images it depends on and ships, where each check runs,
 what fails a build, what the first scan found on 2026-11-12, and what is not covered. The threat
 is the "Supply chain" row of [ARCHITECTURE §20](../ARCHITECTURE.md#20-security-and-threat-model):
 a malicious or vulnerable dependency, base image or build tool.
@@ -11,12 +11,12 @@ commands, and nothing gets installed:
 
 ```bash
 make scan          # lockfiles, repository, Helm chart, Dockerfiles, workflows (needs only Docker)
-make scan-images   # builds workmind-api:scan and workmind-web:scan, scans them, removes them
-scripts/security-scan.sh image workmind-api:dev report.json   # any local image, full JSON report
-scripts/security-scan.sh sbom workmind-web:dev web.spdx.json  # SPDX SBOM of a local image
+make scan-images   # builds needwise-api:scan and needwise-web:scan, scans them, removes them
+scripts/security-scan.sh image needwise-api:dev report.json   # any local image, full JSON report
+scripts/security-scan.sh sbom needwise-web:dev web.spdx.json  # SPDX SBOM of a local image
 ```
 
-Trivy keeps its vulnerability database (about 1.6 GB unpacked) in `~/.cache/workmind-trivy`; set
+Trivy keeps its vulnerability database (about 1.6 GB unpacked) in `~/.cache/needwise-trivy`; set
 `TRIVY_CACHE_DIR` to put it elsewhere.
 
 ## What runs where
@@ -25,7 +25,7 @@ Trivy keeps its vulnerability database (about 1.6 GB unpacked) in `~/.cache/work
 |---|---|---|---|
 | Known vulnerabilities in `apps/api/uv.lock` and `apps/web/pnpm-lock.yaml`, dev dependencies included; also `loadtests/uv.lock`, `e2e/browser/pnpm-lock.yaml` and `docs/requirements.txt` | osv-scanner 2.7.0 | Security workflow, `make scan` | any known vulnerability that [`osv-scanner.toml`](../../osv-scanner.toml) does not except |
 | The repository: vulnerabilities in the lockfiles (dev included), misconfigurations (Dockerfiles), secrets | Trivy 0.76.2 | Security workflow, `make scan` | a fixable CRITICAL or HIGH vulnerability, a CRITICAL or HIGH misconfiguration, a CRITICAL or HIGH secret |
-| The Helm chart in `deploy/helm/workmind`, rendered by Helm 3.19.0 with its default, external-services and production values. Trivy's own Helm renderer skips this chart (it fails on the chart's `.Files.Get` of the Keycloak realm), so `fs` alone would not check it | Trivy 0.76.2, alpine/helm 3.19.0 | Security workflow, `make scan` | a CRITICAL or HIGH misconfiguration |
+| The Helm chart in `deploy/helm/needwise`, rendered by Helm 3.19.0 with its default, external-services and production values. Trivy's own Helm renderer skips this chart (it fails on the chart's `.Files.Get` of the Keycloak realm), so `fs` alone would not check it | Trivy 0.76.2, alpine/helm 3.19.0 | Security workflow, `make scan` | a CRITICAL or HIGH misconfiguration |
 | The api and web images, built from the commit (linux/amd64) | Trivy 0.76.2 | Security workflow, `make scan-images` | a fixable CRITICAL or HIGH vulnerability, a CRITICAL or HIGH secret |
 | The release images, both platforms, as pushed | Trivy 0.76.2 | [`release.yml`](../../.github/workflows/release.yml) | the same; a failed scan leaves the images untagged |
 | SBOMs (SPDX 2.3 JSON) | syft 1.57.0; BuildKit for releases | Security workflow artifacts (source tree and each image, kept 90 days); release assets and image attestations | never (inventory) |

@@ -17,15 +17,15 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from needwise.core.config import Settings
+from needwise.core.tenancy import tenant_transaction
+from needwise.main import create_app
+from needwise.modules.authz.openfga import OpenFgaClient, RelationTuple
+from needwise.modules.authz.sync import ensure_store, reconcile
+from needwise.modules.knowledge.models import Collection
+from needwise.modules.retrieval.qdrant import QdrantClient
+from needwise.providers.llm import Done, LLMRequest, LLMUsage, Role, StreamEvent, TextDelta
 from tests.integration.conftest import VALKEY_URL, Acme, Database, SessionFactory, seed_acme
-from workmind.core.config import Settings
-from workmind.core.tenancy import tenant_transaction
-from workmind.main import create_app
-from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
-from workmind.modules.authz.sync import ensure_store, reconcile
-from workmind.modules.knowledge.models import Collection
-from workmind.modules.retrieval.qdrant import QdrantClient
-from workmind.providers.llm import Done, LLMRequest, LLMUsage, Role, StreamEvent, TextDelta
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
 OPENFGA_URL = os.environ.get("TEST_OPENFGA_URL")

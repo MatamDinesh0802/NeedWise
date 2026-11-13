@@ -1,9 +1,9 @@
 import httpx
 import pytest
 
+from needwise.api.auth import safe_return_to
+from needwise.modules.identity.oidc import OidcClient
 from tests.conftest import ALL_HEALTHY, ClientFactory
-from workmind.api.auth import safe_return_to
-from workmind.modules.identity.oidc import OidcClient
 
 
 @pytest.mark.parametrize(
@@ -81,7 +81,7 @@ def test_login_redirects_with_a_friendly_error_when_keycloak_is_down(
     client.app.state.resources.oidc = OidcClient(  # pyright: ignore[reportAttributeAccessIssue, reportFunctionMemberAccess]
         httpx.AsyncClient(transport=httpx.MockTransport(unreachable)),
         discovery_url="http://keycloak/.well-known/openid-configuration",
-        client_id="workmind-api",
+        client_id="needwise-api",
         client_secret="secret",
         redirect_uri="http://localhost:8480/api/auth/callback",
     )

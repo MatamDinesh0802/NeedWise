@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from needwise.modules.analytics import engine, guard
 from tests.analytics_support import (
     DAN,
     DIEGO,
@@ -19,7 +20,6 @@ from tests.analytics_support import (
     dan_filters,
     run,
 )
-from workmind.modules.analytics import engine, guard
 
 TABLES = tuple(acme_model().tables)
 
@@ -229,8 +229,8 @@ CTE_TRICKS = [
     "WITH RECURSIVE secret AS (SELECT 1 AS x INTERSECT SELECT * FROM secret) SELECT * FROM secret",
     "WITH RECURSIVE secret AS (SELECT 1 AS x EXCEPT SELECT * FROM secret) SELECT * FROM secret",
     # The guard's own names are reserved.
-    "WITH _wm_rows_customers AS (SELECT * FROM products) SELECT * FROM _wm_rows_customers",
-    "SELECT * FROM _wm_rows_customers",
+    "WITH _nw_rows_customers AS (SELECT * FROM products) SELECT * FROM _nw_rows_customers",
+    "SELECT * FROM _nw_rows_customers",
 ]
 
 TABLE_SYNTAX = [
@@ -327,23 +327,23 @@ def test_filtered_tables_are_read_through_fences_keeping_aliases() -> None:
     )
 
     assert checked.sql == (
-        "SELECT c.name, i.amount_eur FROM _wm_rows_customers AS c JOIN _wm_rows_invoice_lines "
+        "SELECT c.name, i.amount_eur FROM _nw_rows_customers AS c JOIN _nw_rows_invoice_lines "
         "AS i USING (customer_id) LIMIT 101"
     )
     assert [(f.name, f.table, f.sql) for f in checked.fences] == [
         (
-            "_wm_rows_customers",
+            "_nw_rows_customers",
             "customers",
             "SELECT * FROM customers WHERE (customers.account_owner = 'dan@acme.test')",
         ),
         (
-            "_wm_rows_invoice_lines",
+            "_nw_rows_invoice_lines",
             "invoice_lines",
             "SELECT * FROM invoice_lines WHERE (invoice_lines.customer_id IN (SELECT customer_id "
             "FROM customers WHERE account_owner = 'dan@acme.test'))",
         ),
     ]
-    assert checked.statements.startswith("CREATE TEMP TABLE _wm_rows_customers AS SELECT")
+    assert checked.statements.startswith("CREATE TEMP TABLE _nw_rows_customers AS SELECT")
     assert checked.statements.endswith(checked.sql)
     assert checked.tables == ("customers", "invoice_lines")
     assert checked.filtered == ("customers", "invoice_lines")
@@ -372,8 +372,8 @@ def test_the_policy_reads_the_real_tables_and_the_query_only_the_fence() -> None
 
     (fence,) = checked.fences
     assert "FROM customers WHERE account_owner" in fence.sql
-    assert "_wm_rows" not in fence.sql
-    assert checked.sql == "SELECT COUNT(*) FROM _wm_rows_invoice_lines AS invoice_lines LIMIT 101"
+    assert "_nw_rows" not in fence.sql
+    assert checked.sql == "SELECT COUNT(*) FROM _nw_rows_invoice_lines AS invoice_lines LIMIT 101"
 
 
 def test_tables_without_a_policy_get_no_fence() -> None:
@@ -394,13 +394,13 @@ def test_tables_without_a_policy_get_no_fence() -> None:
 def test_quoted_mixed_case_and_main_qualified_names_are_filtered(sql: str, alias: str) -> None:
     checked = check(sql)
 
-    assert checked.sql == " ".join(["SELECT * FROM _wm_rows_customers AS", alias, "LIMIT 101"])
+    assert checked.sql == " ".join(["SELECT * FROM _nw_rows_customers AS", alias, "LIMIT 101"])
     assert [f.table for f in checked.fences] == ["customers"]
 
 
 def test_user_values_in_policies_are_escaped_literals() -> None:
+    from needwise.modules.analytics.semantic import row_filters
     from tests.analytics_support import SALES, context, resolved
-    from workmind.modules.analytics.semantic import row_filters
 
     filters = row_filters(resolved(), context(SALES), "o'brien@acme.test' OR '1'='1")
     checked = guard.check("SELECT * FROM customers", tables=TABLES, row_filters=filters)
@@ -428,11 +428,11 @@ def test_comments_never_reach_the_executed_sql() -> None:
         ),
         (
             "SELECT * FROM products LIMIT 50 PERCENT",
-            "SELECT * FROM (SELECT * FROM products LIMIT 50 PERCENT) AS _wm_result LIMIT 11",
+            "SELECT * FROM (SELECT * FROM products LIMIT 50 PERCENT) AS _nw_result LIMIT 11",
         ),
         (
             "SELECT * FROM products LIMIT (SELECT 1000)",
-            "SELECT * FROM (SELECT * FROM products LIMIT (SELECT 1000)) AS _wm_result LIMIT 11",
+            "SELECT * FROM (SELECT * FROM products LIMIT (SELECT 1000)) AS _nw_result LIMIT 11",
         ),
     ],
 )

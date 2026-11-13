@@ -6,13 +6,13 @@ from pathlib import Path
 
 import requests
 
-from workmind_load.browser import browser_like, login_form_action, same_origin
-from workmind_load.tokens import IssuedToken, TokenFile
+from needwise_load.browser import browser_like, login_form_action, same_origin
+from needwise_load.tokens import IssuedToken, TokenFile
 
 KEYCLOAK_PAGE = """
 <html><body>
 <form id="kc-form-login" onsubmit="login.disabled = true; return true;"
-      action="http://localhost:8480/auth/realms/workmind/login-actions/authenticate?session_code=a&amp;execution=b&amp;client_id=workmind-api"
+      action="http://localhost:8480/auth/realms/needwise/login-actions/authenticate?session_code=a&amp;execution=b&amp;client_id=needwise-api"
       method="post">
   <input id="username" name="username" type="text">
 </form>
@@ -22,8 +22,8 @@ KEYCLOAK_PAGE = """
 
 def test_the_login_form_action_is_found_and_unescaped() -> None:
     assert login_form_action(KEYCLOAK_PAGE) == (
-        "http://localhost:8480/auth/realms/workmind/login-actions/authenticate"
-        "?session_code=a&execution=b&client_id=workmind-api"
+        "http://localhost:8480/auth/realms/needwise/login-actions/authenticate"
+        "?session_code=a&execution=b&client_id=needwise-api"
     )
     assert login_form_action("<html>no form</html>") is None
 
@@ -41,7 +41,7 @@ def test_secure_keycloak_cookies_go_back_to_http_localhost_like_a_browser() -> N
     plain, browser = requests.Session(), browser_like(requests.Session())
     for session in (plain, browser):
         session.cookies.set_cookie(secure_cookie("AUTH_SESSION_ID"))
-    request = requests.Request("POST", "http://localhost:8480/auth/realms/workmind/login")
+    request = requests.Request("POST", "http://localhost:8480/auth/realms/needwise/login")
 
     assert "Cookie" not in plain.prepare_request(request).headers  # what requests does alone
     assert browser.prepare_request(request).headers["Cookie"] == "AUTH_SESSION_ID=v"
@@ -50,10 +50,10 @@ def test_secure_keycloak_cookies_go_back_to_http_localhost_like_a_browser() -> N
 def test_secure_cookies_still_need_https_elsewhere() -> None:
     session = browser_like(requests.Session())
     cookie = secure_cookie("AUTH_SESSION_ID")
-    cookie.domain = "workmind.example"
+    cookie.domain = "needwise.example"
     session.cookies.set_cookie(cookie)
 
-    prepared = session.prepare_request(requests.Request("GET", "http://workmind.example/auth/x"))
+    prepared = session.prepare_request(requests.Request("GET", "http://needwise.example/auth/x"))
 
     assert "Cookie" not in prepared.headers
 

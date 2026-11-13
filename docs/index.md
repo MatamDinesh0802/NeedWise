@@ -1,10 +1,12 @@
-# WorkMind AI
+# NeedWise
 
-WorkMind is an open-source AI workspace for companies that you run on your own servers.
+NeedWise is an open-source AI workspace for companies that you run on your own servers.
 Employees ask questions in plain language and get answers from company documents, with a
 citation for every claim, drawn only from sources they are allowed to read. Department agents,
 meeting notes, questions about company data and approved actions build on the same
 permission checks.
+
+> NeedWise was called WorkMind until v1.0.0; older reports and commits use that name and the `wm` command.
 
 ![Alice gets a cited answer about the L3 salary band; Bob, without access, is told the sources available to him don't contain it](media/demo.gif)
 
@@ -15,14 +17,14 @@ adding an agent.
 !!! warning "Status: v1.0.0, tagged on 2026-11-13, not published yet"
     All 13 phases of the [roadmap](ROADMAP.md) are built ([release notes](releases/v1.0.0.md)).
     There is no public repository yet, so no published images: build them from the tag.
-    WorkMind has been run only on the fictional demo company: try it there, or on test data,
+    NeedWise has been run only on the fictional demo company: try it there, or on test data,
     before anything real.
 
 ## Who it is for
 
 - **Teams and companies** that want an assistant over their own documents, where an engineer
   cannot read salaries through the assistant just because the assistant can.
-- **IT and platform teams** who must keep data on their own infrastructure: WorkMind runs with
+- **IT and platform teams** who must keep data on their own infrastructure: NeedWise runs with
   Docker Compose, and every model can be local.
 - **Developers** who want a permission-aware knowledge source inside Claude Code, Cursor or
   Claude Desktop, over MCP.
@@ -37,21 +39,21 @@ adding an agent.
 | **Agents as configuration** | Department agents an administrator adds in the browser, with a test console and versions. [Agents](agents.md) |
 | **Insights** | Questions about company tables answered with a chart, the SQL and checked numbers, under row-level policies. [Insights](analytics.md) |
 | **Meetings** | A recording or transcript becomes decisions and action items that link to the moment they were said. [Meetings](meetings.md) |
-| **Approvals** | Anything that changes something outside WorkMind waits for a person to approve it. [Approvals and tasks](user-guide/approvals-and-tasks.md) |
+| **Approvals** | Anything that changes something outside NeedWise waits for a person to approve it. [Approvals and tasks](user-guide/approvals-and-tasks.md) |
 | **Your models** | Claude by default, or any OpenAI-compatible server, per organization and per role; restricted documents can be kept on a local model. [Models](models.md), [Local models](getting-started/local-models.md) |
-| **Measured** | `wm eval` asks the same questions as different employees and must find zero permission leaks; v1.0.0 release check: 0 leaks in 68 attacks on four surfaces, 81/82 answers correct, $0.007 per answer. [v1.0 benchmarks](benchmarks/v1.0.md), [Evaluation](evals/README.md) |
+| **Measured** | `nw eval` asks the same questions as different employees and must find zero permission leaks; v1.0.0 release check: 0 leaks in 68 attacks on four surfaces, 81/82 answers correct, $0.007 per answer. [v1.0 benchmarks](benchmarks/v1.0.md), [Evaluation](evals/README.md) |
 
 ## Quickstart
 
 Requirements: Docker with the Compose plugin, `git` and `make`.
 
 ```bash
-git clone <repo-url> workmind && cd workmind
+git clone https://github.com/MatamDinesh0802/NeedWise needwise && cd needwise
 cp .env.example .env    # then add a model, e.g. ANTHROPIC_API_KEY=sk-ant-...
 make quickstart
 ```
 
-Then open http://localhost:8480 and sign in as `alice@acme.test` (password `workmind-demo`).
+Then open http://localhost:8480 and sign in as `alice@acme.test` (password `needwise-demo`).
 Measured from fresh clones on a busy laptop, with the service images already downloaded: every
 service was healthy after 1 to 2 minutes, the demo company was seeded after about 3 minutes, and
 the first cited answer came under 4 minutes after the clone. Search works without a model;

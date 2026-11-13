@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from workmind_load.report import (
+from needwise_load.report import (
     ALL_HTTP,
     load_rows,
     percentile,

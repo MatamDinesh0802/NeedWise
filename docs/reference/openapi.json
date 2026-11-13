@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "WorkMind AI API",
+    "title": "NeedWise API",
     "version": "1.0.0"
   },
   "paths": {
@@ -3447,7 +3447,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__agents__VersionOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__agents__VersionOut"
                 }
               }
             }
@@ -3558,7 +3558,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__agents__TestOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__agents__TestOut"
                 }
               }
             }
@@ -3643,7 +3643,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/workmind__api__v1__sources__SourceOut"
+                    "$ref": "#/components/schemas/needwise__api__v1__sources__SourceOut"
                   },
                   "type": "array",
                   "title": "Response List Sources Api V1 Admin Sources Get"
@@ -3675,7 +3675,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__sources__SourceOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__sources__SourceOut"
                 }
               }
             }
@@ -3776,7 +3776,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__sources__SourceOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__sources__SourceOut"
                 }
               }
             }
@@ -3853,7 +3853,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__sources__SourceOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__sources__SourceOut"
                 }
               }
             }
@@ -3896,7 +3896,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__sources__SourceOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__sources__SourceOut"
                 }
               }
             }
@@ -4042,7 +4042,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/workmind__api__v1__sources__RunOut"
+                    "$ref": "#/components/schemas/needwise__api__v1__sources__RunOut"
                   },
                   "title": "Response Source Runs Api V1 Admin Sources  Key  Runs Get"
                 }
@@ -4157,7 +4157,7 @@
           "admin"
         ],
         "summary": "Stale Documents",
-        "description": "Every document (uploads too) past its `valid_until`, or not updated in WorkMind for\n`days`: candidates for review. Org admins only; titles only, never content, and only of\ndocuments they can read themselves. Synced documents that are stale in their source:\n`GET /admin/sources/stale-documents`.",
+        "description": "Every document (uploads too) past its `valid_until`, or not updated in NeedWise for\n`days`: candidates for review. Org admins only; titles only, never content, and only of\ndocuments they can read themselves. Synced documents that are stale in their source:\n`GET /admin/sources/stale-documents`.",
         "operationId": "stale_documents_api_v1_admin_sources_stale_get",
         "parameters": [
           {
@@ -5287,7 +5287,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/workmind__api__v1__work__SourceIn"
+                "$ref": "#/components/schemas/needwise__api__v1__work__SourceIn"
               }
             }
           },
@@ -5428,7 +5428,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__work__RunOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__work__RunOut"
                 }
               }
             }
@@ -5472,7 +5472,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/workmind__api__v1__work__RunOut"
+                    "$ref": "#/components/schemas/needwise__api__v1__work__RunOut"
                   },
                   "title": "Response List Runs Api V1 Admin Workflows  Key  Runs Get"
                 }
@@ -5688,7 +5688,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__automation__RoutingOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__automation__RoutingOut"
                 }
               }
             }
@@ -6237,7 +6237,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/workmind__api__v1__analytics__ModelOut"
+                      "$ref": "#/components/schemas/needwise__api__v1__analytics__ModelOut"
                     },
                     {
                       "$ref": "#/components/schemas/ModelUnavailable"
@@ -6531,7 +6531,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/workmind__api__v1__analytics__ModelIn"
+                "$ref": "#/components/schemas/needwise__api__v1__analytics__ModelIn"
               }
             }
           },
@@ -6663,7 +6663,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/workmind__modules__analytics__service__SourceOut"
+                    "$ref": "#/components/schemas/needwise__modules__analytics__service__SourceOut"
                   },
                   "type": "array",
                   "title": "Response List Sources Api V1 Admin Analytics Sources Get"
@@ -6678,13 +6678,13 @@
           "admin"
         ],
         "summary": "Create Source",
-        "description": "Connect a database: where it is, the user and password (stored encrypted), the TLS mode,\nand the schemas its tables may come from. 422 invalid_source for a host WorkMind may not\nconnect to; 409 conflict for a key in use.",
+        "description": "Connect a database: where it is, the user and password (stored encrypted), the TLS mode,\nand the schemas its tables may come from. 422 invalid_source for a host NeedWise may not\nconnect to; 409 conflict for a key in use.",
         "operationId": "create_source_api_v1_admin_analytics_sources_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/workmind__modules__analytics__sources__SourceIn"
+                "$ref": "#/components/schemas/needwise__modules__analytics__sources__SourceIn"
               }
             }
           },
@@ -6696,7 +6696,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__modules__analytics__service__SourceOut"
+                  "$ref": "#/components/schemas/needwise__modules__analytics__service__SourceOut"
                 }
               }
             }
@@ -6749,7 +6749,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__modules__analytics__service__SourceOut"
+                  "$ref": "#/components/schemas/needwise__modules__analytics__service__SourceOut"
                 }
               }
             }
@@ -6910,7 +6910,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/workmind__api__v1__analytics__ModelIn"
+                "$ref": "#/components/schemas/needwise__api__v1__analytics__ModelIn"
               }
             }
           }
@@ -6921,7 +6921,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__modules__analytics__service__SourceOut"
+                  "$ref": "#/components/schemas/needwise__modules__analytics__service__SourceOut"
                 }
               }
             }
@@ -7128,7 +7128,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__model_catalog__TestOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__model_catalog__TestOut"
                 }
               }
             }
@@ -7157,7 +7157,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/workmind__api__v1__model_catalog__ModelIn"
+                "$ref": "#/components/schemas/needwise__api__v1__model_catalog__ModelIn"
               }
             }
           },
@@ -7169,7 +7169,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__model_catalog__ModelOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__model_catalog__ModelOut"
                 }
               }
             }
@@ -7221,7 +7221,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/workmind__api__v1__model_catalog__ModelOut"
+                  "$ref": "#/components/schemas/needwise__api__v1__model_catalog__ModelOut"
                 }
               }
             }
@@ -9302,7 +9302,7 @@
           },
           "models": {
             "items": {
-              "$ref": "#/components/schemas/workmind__api__v1__model_catalog__ModelOut"
+              "$ref": "#/components/schemas/needwise__api__v1__model_catalog__ModelOut"
             },
             "type": "array",
             "title": "Models"
@@ -11068,7 +11068,7 @@
           },
           "versions": {
             "items": {
-              "$ref": "#/components/schemas/workmind__api__v1__knowledge__VersionOut"
+              "$ref": "#/components/schemas/needwise__api__v1__knowledge__VersionOut"
             },
             "type": "array",
             "title": "Versions"
@@ -12110,7 +12110,7 @@
             "type": "string",
             "pattern": "^(user|group|dept|dept-manager|org):[0-9a-f-]{36}$",
             "title": "Principal",
-            "description": "who that is in WorkMind"
+            "description": "who that is in NeedWise"
           }
         },
         "type": "object",
@@ -13840,7 +13840,7 @@
             "$ref": "#/components/schemas/TaskOut"
           },
           "routing": {
-            "$ref": "#/components/schemas/workmind__api__v1__automation__RoutingOut"
+            "$ref": "#/components/schemas/needwise__api__v1__automation__RoutingOut"
           }
         },
         "type": "object",
@@ -16475,7 +16475,7 @@
           },
           "items": {
             "items": {
-              "$ref": "#/components/schemas/workmind__api__v1__agents__VersionOut"
+              "$ref": "#/components/schemas/needwise__api__v1__agents__VersionOut"
             },
             "type": "array",
             "title": "Items"
@@ -16586,7 +16586,7 @@
         ],
         "title": "WorkflowOut"
       },
-      "workmind__api__v1__agents__RoutingOut": {
+      "needwise__api__v1__agents__RoutingOut": {
         "properties": {
           "mode": {
             "type": "string",
@@ -16634,10 +16634,10 @@
         ],
         "title": "RoutingOut"
       },
-      "workmind__api__v1__agents__TestOut": {
+      "needwise__api__v1__agents__TestOut": {
         "properties": {
           "routing": {
-            "$ref": "#/components/schemas/workmind__api__v1__agents__RoutingOut"
+            "$ref": "#/components/schemas/needwise__api__v1__agents__RoutingOut"
           },
           "answer": {
             "anyOf": [
@@ -16657,7 +16657,7 @@
         ],
         "title": "TestOut"
       },
-      "workmind__api__v1__agents__VersionOut": {
+      "needwise__api__v1__agents__VersionOut": {
         "properties": {
           "version": {
             "type": "integer",
@@ -16703,7 +16703,7 @@
         ],
         "title": "VersionOut"
       },
-      "workmind__api__v1__analytics__ModelIn": {
+      "needwise__api__v1__analytics__ModelIn": {
         "properties": {
           "yaml": {
             "type": "string",
@@ -16718,7 +16718,7 @@
         ],
         "title": "ModelIn"
       },
-      "workmind__api__v1__analytics__ModelOut": {
+      "needwise__api__v1__analytics__ModelOut": {
         "properties": {
           "available": {
             "type": "boolean",
@@ -16808,7 +16808,7 @@
         "title": "ModelOut",
         "description": "The first dataset (the uploaded files when the caller may query them) at the top level,\nas before database sources existed; every dataset the caller may query in `datasets`."
       },
-      "workmind__api__v1__automation__RoutingOut": {
+      "needwise__api__v1__automation__RoutingOut": {
         "properties": {
           "method": {
             "type": "string",
@@ -16870,7 +16870,7 @@
         ],
         "title": "RoutingOut"
       },
-      "workmind__api__v1__knowledge__VersionOut": {
+      "needwise__api__v1__knowledge__VersionOut": {
         "properties": {
           "id": {
             "type": "string",
@@ -16935,7 +16935,7 @@
         ],
         "title": "VersionOut"
       },
-      "workmind__api__v1__model_catalog__ModelIn": {
+      "needwise__api__v1__model_catalog__ModelIn": {
         "properties": {
           "provider_id": {
             "type": "string",
@@ -17002,7 +17002,7 @@
         ],
         "title": "ModelIn"
       },
-      "workmind__api__v1__model_catalog__ModelOut": {
+      "needwise__api__v1__model_catalog__ModelOut": {
         "properties": {
           "id": {
             "type": "string",
@@ -17064,7 +17064,7 @@
         ],
         "title": "ModelOut"
       },
-      "workmind__api__v1__model_catalog__TestOut": {
+      "needwise__api__v1__model_catalog__TestOut": {
         "properties": {
           "ok": {
             "type": "boolean",
@@ -17113,7 +17113,7 @@
         ],
         "title": "TestOut"
       },
-      "workmind__api__v1__sources__RunOut": {
+      "needwise__api__v1__sources__RunOut": {
         "properties": {
           "id": {
             "type": "string",
@@ -17202,7 +17202,7 @@
         ],
         "title": "RunOut"
       },
-      "workmind__api__v1__sources__SourceOut": {
+      "needwise__api__v1__sources__SourceOut": {
         "properties": {
           "id": {
             "type": "string",
@@ -17405,7 +17405,7 @@
           "last_run": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/workmind__api__v1__sources__RunOut"
+                "$ref": "#/components/schemas/needwise__api__v1__sources__RunOut"
               },
               {
                 "type": "null"
@@ -17479,7 +17479,7 @@
         ],
         "title": "SourceOut"
       },
-      "workmind__api__v1__work__RunOut": {
+      "needwise__api__v1__work__RunOut": {
         "properties": {
           "id": {
             "type": "string",
@@ -17552,7 +17552,7 @@
         ],
         "title": "RunOut"
       },
-      "workmind__api__v1__work__SourceIn": {
+      "needwise__api__v1__work__SourceIn": {
         "properties": {
           "source": {
             "type": "string",
@@ -17566,7 +17566,7 @@
         ],
         "title": "SourceIn"
       },
-      "workmind__modules__analytics__service__SourceOut": {
+      "needwise__modules__analytics__service__SourceOut": {
         "properties": {
           "key": {
             "type": "string",
@@ -17715,7 +17715,7 @@
         "title": "SourceOut",
         "description": "A database source as admins see it: never the password."
       },
-      "workmind__modules__analytics__sources__SourceIn": {
+      "needwise__modules__analytics__sources__SourceIn": {
         "properties": {
           "key": {
             "type": "string",

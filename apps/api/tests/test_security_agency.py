@@ -10,11 +10,11 @@ import uuid
 
 import pytest
 
+from needwise.core.context import RequestContext
+from needwise.modules.agents.research import MAX_TOOL_CALLS, research
+from needwise.modules.tools.registry import Tool, ToolError, ToolRegistry, ToolResult
+from needwise.modules.work.tools import create_task_tool, send_email_tool
 from tests.fakes import FakeLLM
-from workmind.core.context import RequestContext
-from workmind.modules.agents.research import MAX_TOOL_CALLS, research
-from workmind.modules.tools.registry import Tool, ToolError, ToolRegistry, ToolResult
-from workmind.modules.work.tools import create_task_tool, send_email_tool
 
 
 def person(role: str) -> RequestContext:

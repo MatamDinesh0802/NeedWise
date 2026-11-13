@@ -6,11 +6,11 @@
 # Material 9 are pinned on purpose: MkDocs 2.0 does not run Material, and Material is maintained
 # until 2027-05-05 (the build prints a notice); its successor is Zensical.
 
-site_name: WorkMind AI
+site_name: NeedWise — Permission-Aware AI
 site_description: >-
-  The open-source enterprise AI assistant that is permission-safe, cited, measured and
-  self-hosted.
-site_author: WorkMind AI contributors
+  NeedWise — Permission-Aware AI. The open-source enterprise AI assistant that is
+  permission-safe, cited, measured and self-hosted.
+site_author: NeedWise contributors
 copyright: Apache License 2.0, except ee/ (commercial license). All demo data is fictional.
 # Both are set by the docs workflow (GitHub Pages URL, repository URL); unset in local builds.
 site_url: !ENV [DOCS_SITE_URL]

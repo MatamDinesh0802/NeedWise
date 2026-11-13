@@ -1,6 +1,6 @@
 /**
  * Typed client for /api/v1/admin. Shapes mirror the Pydantic models in
- * apps/api/src/workmind/api/v1/admin.py. All calls go through the shared wrapper
+ * apps/api/src/needwise/api/v1/admin.py. All calls go through the shared wrapper
  * (CSRF header, problem+json errors).
  */
 

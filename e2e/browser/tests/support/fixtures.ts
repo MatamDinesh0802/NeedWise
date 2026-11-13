@@ -121,7 +121,7 @@ export const test = base.extend<Fixtures>({
 
 export { expect };
 
-/** Headers the API wants on a cookie-authenticated change (apps/api/src/workmind/api/deps.py). */
+/** Headers the API wants on a cookie-authenticated change (apps/api/src/needwise/api/deps.py). */
 export function sameOrigin(baseURL: string): Record<string, string> {
   return { Origin: new URL(baseURL).origin, "X-CSRF-Protection": "1" };
 }

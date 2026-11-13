@@ -13,7 +13,7 @@ requests you can send. It is off when `APP_ENV=production`.
 | | How | Can |
 |---|---|---|
 | **Browser session** | Sign in at `/api/auth/login` (Keycloak, OpenID Connect). The API keeps the session and sets an `httpOnly` cookie; the browser never holds a token ([ADR 0003](../adr/0003-bff-authentication-with-keycloak.md)). | Everything the person may do in the app |
-| **Personal access token** | `Authorization: Bearer wm_pat_...`, created in **Settings › Access tokens**, with scopes `knowledge:read` and `assistant:ask` | Search, list collections, ask: as the person, never with more access. Administration, uploads and approving official status need a browser session. |
+| **Personal access token** | `Authorization: Bearer nw_pat_...`, created in **Settings › Access tokens**, with scopes `knowledge:read` and `assistant:ask` | Search, list collections, ask: as the person, never with more access. Administration, uploads and approving official status need a browser session. |
 
 A request with a session cookie that changes something (`POST`, `PUT`, `PATCH`, `DELETE`) must
 come from the app's own origin and carry the header `X-CSRF-Protection: 1`; otherwise it is

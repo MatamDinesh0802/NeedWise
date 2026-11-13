@@ -2,17 +2,21 @@
 # Upgrade test (docs/operations/upgrade.md): an older release, seeded and used, upgraded in place
 # to this code the way an operator would, then checked.
 #
-#   scripts/upgrade-test.sh <from tag> [<to ref>]      e.g.  scripts/upgrade-test.sh v0.1.0
-#   make upgrade-test FROM=v0.1.0
+#   scripts/upgrade-test.sh [<from tag> [<to ref>]]    default: v1.0.0 to HEAD
+#   make upgrade-test [FROM=<tag>]                     default: v1.0.0
+#
+# The baseline is v1.0.0, the first NeedWise release: older tags predate the rename and
+# cannot be upgraded in place (docs/operations/upgrade.md). While the baseline tag is missing,
+# or is the commit under test, the test skips with a message and exit status 0.
 #
 #  1. `git archive <from tag>` into a work directory (not a git checkout), started as compose
-#     project "workmind-upgrade" with its own image tags (an override file) and its own ports
+#     project "needwise-upgrade" with its own image tags (an override file) and its own ports
 #     (the defaults + UPGRADE_PORT_OFFSET, 200: http://localhost:8680), then seeded
 #  2. data created through the old API (scripts/lib/stack_checks.py upgrade-before)
 #  3. a backup with scripts/backup.sh, as the upgrade guide asks
 #  4. the upgrade, in place: `docker compose down` (volumes stay), the old release's files
-#     replaced by <to ref>'s (default HEAD; .data/ stays), `mkdir -p .data/objects .workmind`,
-#     `docker compose up -d --build --wait` (migrations run first), `wm authz sync`
+#     replaced by <to ref>'s (default HEAD; .data/ stays), `mkdir -p .data/objects .needwise`,
+#     `docker compose up -d --build --wait` (migrations run first), `nw authz sync`
 #  5. checks (stack_checks.py upgrade-after): alembic at head, sign-ins, the old data and token,
 #     the audit chain, edition, usage, upload -> ingestion -> search, the permission gate
 #  6. teardown: `down -v`, the work directory and the images it built (KEEP=1 keeps them)
@@ -24,12 +28,24 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 
-FROM=${1:-}
+FROM=${1:-v1.0.0}
 TO=${2:-HEAD}
-[[ -n $FROM ]] || die "usage: $0 <from tag> [<to ref>]   e.g. $0 v0.1.0"
-git -C "$REPO_ROOT" rev-parse -q --verify "$FROM^{commit}" >/dev/null || die "unknown tag or commit: $FROM"
 TO_COMMIT=$(git -C "$REPO_ROOT" rev-parse "$TO^{commit}")
-WORK=${UPGRADE_WORK_DIR:-${TMPDIR:-/tmp}/wm-upgrade-$FROM}
+
+# Nothing to upgrade from yet: say so and succeed, so a missing baseline never fails a build.
+skip() {
+  say "Upgrade test skipped: $*"
+  if [[ -n ${GITHUB_ACTIONS:-} ]]; then echo "::notice title=Upgrade test skipped::$*"; fi
+  if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then echo "Upgrade test skipped: $*" >>"$GITHUB_STEP_SUMMARY"; fi
+  exit 0
+}
+FROM_COMMIT=$(git -C "$REPO_ROOT" rev-parse -q --verify "$FROM^{commit}") ||
+  skip "the baseline $FROM is not in this repository (not tagged yet, or the tags were not fetched: git fetch --tags). Upgrade testing starts at v1.0.0, the first NeedWise release."
+[[ $FROM_COMMIT != "$TO_COMMIT" ]] ||
+  skip "the baseline $FROM is the commit under test ($TO): there is nothing to upgrade from."
+git -C "$REPO_ROOT" cat-file -e "$FROM_COMMIT:apps/api/src/needwise" 2>/dev/null ||
+  die "$FROM predates the rename to NeedWise and cannot be upgraded in place (docs/operations/upgrade.md); upgrade testing starts at v1.0.0"
+WORK=${UPGRADE_WORK_DIR:-${TMPDIR:-/tmp}/nw-upgrade-$FROM}
 WORK=${WORK%/}
 EMBEDDINGS=${EMBEDDINGS:-host}
 OFFSET=${UPGRADE_PORT_OFFSET:-200}
@@ -37,7 +53,7 @@ STATE="$WORK/.upgrade-test"
 STARTED=$(date +%s)
 [[ ! -e $WORK ]] || die "$WORK exists: remove it or set UPGRADE_WORK_DIR"
 
-export COMPOSE_PROJECT_NAME=${UPGRADE_PROJECT:-workmind-upgrade}
+export COMPOSE_PROJECT_NAME=${UPGRADE_PROJECT:-needwise-upgrade}
 export COMPOSE_FILE="compose.yaml:.upgrade-test/images.override.yaml"
 export HTTP_PORT=$((8480 + OFFSET)) API_PORT=$((8400 + OFFSET)) WEB_PORT=$((3400 + OFFSET))
 export POSTGRES_PORT=$((5432 + OFFSET)) VALKEY_PORT=$((6379 + OFFSET)) QDRANT_PORT=$((6333 + OFFSET))
@@ -67,13 +83,13 @@ cleanup() {
     compose down -v --remove-orphans >/dev/null 2>&1 || true
     # Files the containers wrote may belong to their user (Linux): delete them from a container.
     rm -rf "$WORK" 2>/dev/null ||
-      docker run --rm -v "$WORK:/work" alpine:3.22 rm -rf /work/.data /work/.workmind && rm -rf "$WORK"
+      docker run --rm -v "$WORK:/work" alpine:3.22 rm -rf /work/.data /work/.needwise && rm -rf "$WORK"
   fi
   for image in ${IMAGES[@]+"${IMAGES[@]}"}; do docker image rm "$image" >/dev/null 2>&1 || true; done
 }
 trap cleanup EXIT
 
-# An override that gives the app services their own image tags (never workmind-*:dev).
+# An override that gives the app services their own image tags (never needwise-*:dev).
 write_override() {
   mkdir -p "$STATE"
   COMPOSE_FILE=compose.yaml compose --profile '*' config --format json |
@@ -83,13 +99,13 @@ tag = sys.argv[1]
 print("services:")
 for name, service in sorted(json.load(sys.stdin)["services"].items()):
     repository = service.get("image", "").split(":")[0]
-    if repository in ("workmind-api", "workmind-web"):
+    if repository in ("needwise-api", "needwise-web"):
         print(f"  {name}:\n    image: {repository}:{tag}")
 ' "$1" >"$STATE/images.override.yaml"
-  IMAGES+=("workmind-api:$1" "workmind-web:$1")
+  IMAGES+=("needwise-api:$1" "needwise-web:$1")
 }
 
-psql_app() { compose exec -T postgres psql -U postgres -d workmind -X -A -t -q -c "$1"; }
+psql_app() { compose exec -T postgres psql -U postgres -d needwise -X -A -t -q -c "$1"; }
 
 # Runs a command with its output in $STATE/<name>.log; on failure, shows the end of the log.
 quiet() {
@@ -139,11 +155,11 @@ say "Upgrade to $TO ($(git -C "$REPO_ROOT" describe --tags --always "$TO_COMMIT"
 step=$(date +%s)
 compose down >/dev/null 2>&1 # volumes stay
 # Replace the release's files, as `git checkout <new tag>` would in a deployment directory.
-# Untracked files stay: .data/, .workmind/, .env, and this test's own state.
+# Untracked files stay: .data/, .needwise/, .env, and this test's own state.
 git -C "$REPO_ROOT" ls-tree -r --name-only "$FROM" | (cd "$WORK" && while IFS= read -r file; do rm -f "./$file"; done)
 find "$WORK" -mindepth 1 -type d -empty -not -path "$STATE*" -delete
 git -C "$REPO_ROOT" archive "$TO_COMMIT" | tar -x -C "$WORK"
-mkdir -p "$WORK/.data/objects" "$WORK/.workmind" # new bind mounts (make up does this)
+mkdir -p "$WORK/.data/objects" "$WORK/.needwise" # new bind mounts (make up does this)
 own_objects "$WORK/.data/objects"
 write_override upgrade
 quiet build-new compose build
@@ -155,7 +171,7 @@ NEW_REVISION=$(psql_app "SELECT version_num FROM alembic_version")
 CODE_HEAD=$(compose run --rm --no-deps -T migrate alembic heads 2>/dev/null | awk '/\(head\)/ { print $1 }' | tail -n 1)
 info "migrated alembic $OLD_REVISION -> $NEW_REVISION (code head $CODE_HEAD); build ${T_BUILD}s, up ${T_UP}s"
 [[ $NEW_REVISION == "$CODE_HEAD" ]] || die "the database is at $NEW_REVISION, not at the code's head $CODE_HEAD"
-compose run --rm --no-deps -T migrate wm authz sync 2>&1 | grep -v "Container" | sed 's/^/    /' >&2
+compose run --rm --no-deps -T migrate nw authz sync 2>&1 | grep -v "Container" | sed 's/^/    /' >&2
 
 # --- 5. Checks ---------------------------------------------------------------------------------
 say "Checks after the upgrade"

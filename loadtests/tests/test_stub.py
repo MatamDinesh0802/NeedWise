@@ -1,5 +1,5 @@
 """The stub model server's own behaviour. apps/api/tests/test_stub_llm.py proves that
-WorkMind's openai_compatible adapter works against it; these cover the stub's edges."""
+NeedWise's openai_compatible adapter works against it; these cover the stub's edges."""
 
 import json
 from typing import Any

@@ -69,7 +69,7 @@ def test_an_object_deleted_after_the_snapshot_is_still_archived_from_the_pins(
     objects, out = tmp_path / "objects", tmp_path / "out"
     out.mkdir()
     _tree(objects, {"tenants/t1/objects/ab/doc1": "one", "analytics/t1/v1.duckdb": "v1"})
-    pin = objects / ".backup-pin-workmind-x"
+    pin = objects / ".backup-pin-needwise-x"
 
     _run(tool, "pin_tree", dir=str(objects), pin=str(pin))  # before the database snapshot
     # During the dump: a document deleted, a dataset replaced, an upload half-written.

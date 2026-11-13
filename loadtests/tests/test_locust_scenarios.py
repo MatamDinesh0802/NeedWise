@@ -1,4 +1,4 @@
-"""The Locust scenarios end to end against a fake WorkMind API (no stack): a few seconds of
+"""The Locust scenarios end to end against a fake NeedWise API (no stack): a few seconds of
 headless Locust in a subprocess, then its JSON statistics are checked.
 
 The fake answers just enough of each endpoint for the users to do their work, streams a run's
@@ -23,13 +23,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from workmind_load.tokens import IssuedToken, TokenFile
+from needwise_load.tokens import IssuedToken, TokenFile
 
 LOADTESTS = Path(__file__).resolve().parents[1]
 LOGINS = ["alice@acme.test", "bob@acme.test", "carol@acme.test", "hannah.schmidt@acme.test"]
 
 
-class FakeWorkMind:
+class FakeNeedWise:
     def __init__(self) -> None:
         self.seen: list[tuple[str, str, str]] = []  # method, path, authorization
 
@@ -100,17 +100,17 @@ class FakeWorkMind:
 
 
 @pytest.fixture
-def fake() -> Iterator[tuple[FakeWorkMind, str]]:
-    workmind = FakeWorkMind()
+def fake() -> Iterator[tuple[FakeNeedWise, str]]:
+    needwise = FakeNeedWise()
     server = uvicorn.Server(
-        uvicorn.Config(workmind.app(), host="127.0.0.1", port=0, log_level="warning")
+        uvicorn.Config(needwise.app(), host="127.0.0.1", port=0, log_level="warning")
     )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     while not server.started:
         thread.join(0.05)
     port = server.servers[0].sockets[0].getsockname()[1]
-    yield workmind, f"http://127.0.0.1:{port}"
+    yield needwise, f"http://127.0.0.1:{port}"
     server.should_exit = True
     thread.join(10)
 
@@ -128,7 +128,7 @@ def run_locust(host: str, tmp_path: Path, *options: str) -> dict[str, dict[str, 
         sys.executable, "-m", "locust", "-f", str(LOADTESTS / "locustfile.py"), "--headless",
         "--host", host, "-u", "5", "-r", "5", "-t", "4s", "--json-file", str(out),
         "--only-summary", "--stop-timeout", "5", "--exit-code-on-error", "0",
-        "--wm-tokens", str(tokens), "--wm-think", "0.05,0.1", "--wm-mix", MIX, *options,
+        "--nw-tokens", str(tokens), "--nw-think", "0.05,0.1", "--nw-mix", MIX, *options,
     ]  # fmt: skip
     finished = subprocess.run(  # noqa: S603  (fixed arguments)
         command, cwd=LOADTESTS, capture_output=True, text=True, timeout=60, check=False
@@ -138,9 +138,9 @@ def run_locust(host: str, tmp_path: Path, *options: str) -> dict[str, dict[str, 
 
 
 def test_the_token_users_run_their_scenarios(
-    fake: tuple[FakeWorkMind, str], tmp_path: Path
+    fake: tuple[FakeNeedWise, str], tmp_path: Path
 ) -> None:
-    workmind, host = fake
+    needwise, host = fake
 
     stats = run_locust(host, tmp_path)
 
@@ -158,18 +158,18 @@ def test_the_token_users_run_their_scenarios(
     assert stats["chat: time to first token"]["method"] == "SSE"
     assert stats["chat: time to first token"]["min_response_time"] >= 20  # the first token waits
     assert {"agents: answer complete", "research: answer complete"} & set(stats)
-    created = sum(1 for m, p, _ in workmind.seen if m == "POST" and p == "/api/v1/conversations")
-    deleted = sum(1 for m, p, _ in workmind.seen if m == "DELETE")
+    created = sum(1 for m, p, _ in needwise.seen if m == "POST" and p == "/api/v1/conversations")
+    deleted = sum(1 for m, p, _ in needwise.seen if m == "DELETE")
     assert created == deleted > 0  # each user deletes its conversations when it stops
-    assert {a for _, _, a in workmind.seen} <= {f"Bearer token-{i}" for i in range(len(LOGINS))}
+    assert {a for _, _, a in needwise.seen} <= {f"Bearer token-{i}" for i in range(len(LOGINS))}
 
 
-def test_without_a_model_nothing_asks(fake: tuple[FakeWorkMind, str], tmp_path: Path) -> None:
-    workmind, host = fake
+def test_without_a_model_nothing_asks(fake: tuple[FakeNeedWise, str], tmp_path: Path) -> None:
+    needwise, host = fake
 
-    stats = run_locust(host, tmp_path, "--wm-no-model")
+    stats = run_locust(host, tmp_path, "--nw-no-model")
 
-    asked = {p for m, p, _ in workmind.seen if m == "POST" and p.endswith(("/messages", "/ask"))}
+    asked = {p for m, p, _ in needwise.seen if m == "POST" and p.endswith(("/messages", "/ask"))}
     assert asked == set()
     assert not [n for n in stats if n.endswith(("send question", "time to first token"))]
     assert stats["insights: re-run query"]["num_requests"] > 0  # the analyst still works
@@ -177,14 +177,14 @@ def test_without_a_model_nothing_asks(fake: tuple[FakeWorkMind, str], tmp_path: 
 
 
 def test_readers_leave_the_upload_collection_alone(
-    fake: tuple[FakeWorkMind, str], tmp_path: Path
+    fake: tuple[FakeNeedWise, str], tmp_path: Path
 ) -> None:
     """Its documents are deleted mid-run: opening one later would be a correct 404."""
-    workmind, host = fake
+    needwise, host = fake
 
-    stats = run_locust(host, tmp_path, "--wm-no-model", "--wm-upload-collection", "uploads")
+    stats = run_locust(host, tmp_path, "--nw-no-model", "--nw-upload-collection", "uploads")
 
     assert stats["documents: list"]["num_requests"] > 0
-    paths = {p for _, p, _ in workmind.seen}
+    paths = {p for _, p, _ in needwise.seen}
     assert "/api/v1/collections/k1/documents" in paths
     assert "/api/v1/collections/k2/documents" not in paths

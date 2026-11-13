@@ -11,12 +11,12 @@ import {
   type CreatedAccessToken,
 } from "./tokens";
 
-const PLAIN = "wm_pat_s3cr3t-value-that-must-never-leak";
+const PLAIN = "nw_pat_s3cr3t-value-that-must-never-leak";
 
 const created: CreatedAccessToken = {
   id: "t1",
   name: "Laptop CLI",
-  prefix: "wm_pat_s3cr",
+  prefix: "nw_pat_s3cr",
   scopes: ["profile:read"],
   created_at: "2026-11-04T06:00:00Z",
   expires_at: "2027-02-02T06:00:00Z",

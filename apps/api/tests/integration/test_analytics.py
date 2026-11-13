@@ -10,21 +10,21 @@ import pytest
 from pydantic import JsonValue
 from sqlalchemy import select, text
 
+from needwise.core.context import RequestContext
+from needwise.core.tenancy import global_transaction, tenant_transaction
+from needwise.modules.analytics import dataset
+from needwise.modules.analytics.compiler import SemanticQuery
+from needwise.modules.analytics.guard import check
+from needwise.modules.analytics.models import AnalyticsModel
+from needwise.modules.analytics.service import Analytics, AnalyticsError, load_model
+from needwise.modules.governance.models import AuditEvent
+from needwise.modules.identity.models import User
+from needwise.modules.identity.service import load_identity
+from needwise.seed.analytics_load import seed_analytics
+from needwise.seed.apply import seed_database
+from needwise.seed.company import load_company
 from tests.analytics_support import ACME_ANALYTICS, csv_rows
 from tests.integration.conftest import SeededTenant, SessionFactory, seed_tenant
-from workmind.core.context import RequestContext
-from workmind.core.tenancy import global_transaction, tenant_transaction
-from workmind.modules.analytics import dataset
-from workmind.modules.analytics.compiler import SemanticQuery
-from workmind.modules.analytics.guard import check
-from workmind.modules.analytics.models import AnalyticsModel
-from workmind.modules.analytics.service import Analytics, AnalyticsError, load_model
-from workmind.modules.governance.models import AuditEvent
-from workmind.modules.identity.models import User
-from workmind.modules.identity.service import load_identity
-from workmind.seed.analytics_load import seed_analytics
-from workmind.seed.apply import seed_database
-from workmind.seed.company import load_company
 
 ACME = ACME_ANALYTICS.parent / "company.yaml"
 DAN_CUSTOMERS = {

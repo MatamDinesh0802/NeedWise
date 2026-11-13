@@ -9,33 +9,31 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from tests.fakes import FakeLLM
-from tests.test_agents_unit import CTX, ScopedRetriever, StubEmbeddings, agent, passage
-from workmind.evals.datasets import RoutingItem, load_routing
-from workmind.evals.report import routing_section
-from workmind.evals.runner import RoutingRecord, route_items, routing_by_agent
-from workmind.modules.agents import department
-from workmind.modules.agents.console import run_console
-from workmind.modules.agents.definitions import (
+from needwise.evals.datasets import RoutingItem, load_routing
+from needwise.evals.report import routing_section
+from needwise.evals.runner import RoutingRecord, route_items, routing_by_agent
+from needwise.modules.agents import department
+from needwise.modules.agents.console import run_console
+from needwise.modules.agents.definitions import (
     apply_fields,
     changed_fields,
     snapshot,
     tool_problem,
 )
-from workmind.modules.agents.department import (
+from needwise.modules.agents.department import (
     AgentTools,
     EvidenceOut,
     Finding,
     ToolOutput,
     run_agent,
 )
-from workmind.modules.agents.model_choice import CatalogModels, is_model_id
-from workmind.modules.agents.models import AgentDefinition
-from workmind.modules.agents.orchestrator import AgentResult, OrchestratorDeps, aggregate
-from workmind.modules.agents.planning import Agent, FastRouter, PlanOut, Subtask
-from workmind.modules.tools.registry import Tool, ToolError, ToolRegistry, ToolResult
-from workmind.providers.embeddings import HashEmbeddings
-from workmind.providers.llm import (
+from needwise.modules.agents.model_choice import CatalogModels, is_model_id
+from needwise.modules.agents.models import AgentDefinition
+from needwise.modules.agents.orchestrator import AgentResult, OrchestratorDeps, aggregate
+from needwise.modules.agents.planning import Agent, FastRouter, PlanOut, Subtask
+from needwise.modules.tools.registry import Tool, ToolError, ToolRegistry, ToolResult
+from needwise.providers.embeddings import HashEmbeddings
+from needwise.providers.llm import (
     AnthropicLLM,
     LLMError,
     LLMRequest,
@@ -43,6 +41,8 @@ from workmind.providers.llm import (
     PinnedModel,
     RoleConfig,
 )
+from tests.fakes import FakeLLM
+from tests.test_agents_unit import CTX, ScopedRetriever, StubEmbeddings, agent, passage
 
 DATASETS = Path(__file__).resolve().parents[3] / "evals" / "datasets"
 # A browser session carries every scope; tools check the scope they need.
@@ -249,8 +249,8 @@ async def test_a_system_model_pins_the_deployment_provider_and_others_fail_close
 
 
 async def test_with_a_tenant_resolution_an_agent_runs_on_its_catalog_model_or_fails() -> None:
-    from workmind.modules.model_catalog.catalog import ROLES
-    from workmind.modules.model_catalog.resolver import Target, TenantLLM
+    from needwise.modules.model_catalog.catalog import ROLES
+    from needwise.modules.model_catalog.resolver import Target, TenantLLM
 
     default, chosen = FakeLLM("default"), FakeLLM("chosen")
     usable = f"{uuid.uuid4()}:llama3.3"
@@ -294,7 +294,7 @@ def test_providers_send_the_request_model_instead_of_the_roles() -> None:
 
 
 async def test_a_department_agent_with_a_model_runs_on_it() -> None:
-    from workmind.modules.agents.orchestrator import run_agent_bounded
+    from needwise.modules.agents.orchestrator import run_agent_bounded
 
     llm = FakeLLM(structured=[EvidenceOut(findings=[], gaps=[], follow_up_query="")])
     deps = OrchestratorDeps(None, llm, None, ScopedRetriever({"g": [passage("a")]}), None)  # type: ignore[arg-type]
@@ -400,7 +400,7 @@ async def test_the_console_routes_with_the_draft_in_place_and_answers_with_it(
     async def enabled(*_: Any) -> list[Agent]:
         return saved
 
-    monkeypatch.setattr("workmind.modules.agents.console.load_agents", enabled)
+    monkeypatch.setattr("needwise.modules.agents.console.load_agents", enabled)
     draft = Agent("legal", "Legal (draft)", "Contracts and NDAs", "", ("legal-docs",), (), 1)
     llm = FakeLLM(
         "The CFO signs above 250,000 euros [S1].",
@@ -439,7 +439,7 @@ async def test_the_console_answers_with_the_draft_even_when_routing_misses_it(
     async def enabled(*_: Any) -> list[Agent]:
         return [agent("hr"), agent("finance")]
 
-    monkeypatch.setattr("workmind.modules.agents.console.load_agents", enabled)
+    monkeypatch.setattr("needwise.modules.agents.console.load_agents", enabled)
     draft = agent("legal", ("legal-docs",))
     llm = FakeLLM(
         structured=[
@@ -526,7 +526,7 @@ def test_a_report_marks_uncommitted_changes_in_its_commit(
 ) -> None:
     import subprocess
 
-    from workmind.evals import __main__ as evals
+    from needwise.evals import __main__ as evals
 
     def git(*args: str) -> None:
         subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)  # noqa: S603, S607

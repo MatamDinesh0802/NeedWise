@@ -1,4 +1,0 @@
-{{- $svc := .Values.web.service -}}
-{{ include "workmind.service" (list . "web" (dict "type" $svc.type "annotations" $svc.annotations "ports" (list (dict "name" "http" "port" $svc.port "appProtocol" "http")))) }}
-{{- include "workmind.hpa" (list . "web" .Values.web) }}
-{{- include "workmind.pdb" (list . "web" .Values.web) }}

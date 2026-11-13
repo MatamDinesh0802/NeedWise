@@ -58,7 +58,7 @@ export function AccessTokensCard() {
           <RefreshingHint active={state.status !== "loading" && state.refreshing} />
         </CardTitle>
         <CardDescription>
-          Personal access tokens let tools such as scripts, the CLI or MCP clients call WorkMind as you, limited to the
+          Personal access tokens let tools such as scripts, the CLI or MCP clients call NeedWise as you, limited to the
           scopes you choose. Treat them like passwords.
         </CardDescription>
         <CardAction>
@@ -74,7 +74,7 @@ export function AccessTokensCard() {
         ) : state.status === "error" ? (
           <ErrorAlert error={state.error} onRetry={() => void refetch()} />
         ) : state.data.items.length === 0 ? (
-          <EmptyState icon={KeyRound} title="No access tokens" description="Create one when a tool needs to call WorkMind on your behalf." />
+          <EmptyState icon={KeyRound} title="No access tokens" description="Create one when a tool needs to call NeedWise on your behalf." />
         ) : (
           <TokenTable tokens={state.data.items} onRevoke={setRevokeTarget} />
         )}

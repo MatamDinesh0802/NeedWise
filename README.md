@@ -1,6 +1,8 @@
-# WorkMind AI
+# NeedWise — Permission-Aware AI
 
 **The open-source enterprise AI assistant that is permission-safe, cited, measured and self-hosted.**
+
+> NeedWise was called WorkMind until v1.0.0; older reports and commits use that name and the `wm` command.
 
 Employees ask questions in plain language and get answers grounded in company knowledge, with
 citations, drawn only from sources they are allowed to see. Specialized agents (HR, Finance,
@@ -30,12 +32,12 @@ ports on `127.0.0.1` must be free: 8480, 8400, 3400, 8401, 5432, 6379, 6333 and 
 ([to move one](docs/getting-started/configuration.md#ports-passwords-and-compose)).
 
 ```bash
-git clone <repo-url> workmind && cd workmind   # the release: git checkout v1.0.0
+git clone https://github.com/MatamDinesh0802/NeedWise needwise && cd needwise   # the release: git checkout v1.0.0
 cp .env.example .env    # then add a model to .env (below), e.g. ANTHROPIC_API_KEY=sk-ant-...
 make quickstart         # builds and starts the stack, waits until it is healthy, seeds the demo company
 ```
 
-Open **http://localhost:8480**, sign in as `alice@acme.test` with the password `workmind-demo`,
+Open **http://localhost:8480**, sign in as `alice@acme.test` with the password `needwise-demo`,
 and ask *"What is the salary band for an L3 engineer?"* The answer cites Salary Bands 2026:
 click the citation to open it.
 
@@ -84,7 +86,7 @@ deletes it, and `make` lists every command.
 
 ## Demo logins and what to try first
 
-Every demo login uses the password `workmind-demo` (development only). **View as…** in the user
+Every demo login uses the password `needwise-demo` (development only). **View as…** in the user
 menu switches between them.
 
 | Sign in as | Who | Try |
@@ -162,11 +164,11 @@ costs.
 - **Permission-safe by construction.** Search filters every chunk by its access list (lock 1),
   then re-checks each source with OpenFGA (lock 2). The answer model only ever sees what the
   asking person may read. A red-team suite with canary tokens must show **zero leaks** in CI.
-- **Measured.** `wm eval` asks every question as a specific employee, on every surface: 0 leaks
+- **Measured.** `nw eval` asks every question as a specific employee, on every surface: 0 leaks
   in 68 attacks, 81/82 correct, 99.4% faithfulness, 0.9 s to the first token, $0.007 per answer
   with Claude Sonnet 5.5 in the v1.0.0 release check ([benchmarks](#benchmarks-v10),
   [evaluation](evals/README.md)).
-- **Inside your IDE or desktop assistant, permissions intact.** WorkMind is an MCP server:
+- **Inside your IDE or desktop assistant, permissions intact.** NeedWise is an MCP server:
   connect Claude Code, Cursor or Claude Desktop with a personal access token ([docs/mcp.md](docs/mcp.md)).
 - **Department agents when a question spans teams**, measured against a single search, which
   stays the default because it wins on everything else ([ADR 0009](docs/adr/0009-orchestration-without-a-graph-framework.md)).
@@ -253,10 +255,10 @@ back-channel logout cannot reach a host process, so remote logout is only tested
 ## Running it in production
 
 v1.0.0 is tagged but not published: there are no released images yet, so build them from the
-tag (`make up` does; for Kubernetes, the [chart's README](deploy/helm/workmind/README.md)). What
+tag (`make up` does; for Kubernetes, the [chart's README](deploy/helm/needwise/README.md)). What
 exists for running it, and what has been checked:
 
-- **Kubernetes.** A Helm chart in [`deploy/helm/workmind`](deploy/helm/workmind), with optional
+- **Kubernetes.** A Helm chart in [`deploy/helm/needwise`](deploy/helm/needwise), with optional
   bundled Postgres, Valkey, Qdrant, OpenFGA, Keycloak and embedding server. It passes
   `helm lint`, renders for Kubernetes 1.33 and validates with kubeconform, and every pod meets
   the chart's security rules (`make helm-check`). It was installed, tested, upgraded and
@@ -270,7 +272,7 @@ exists for running it, and what has been checked:
 - **Upgrades.** Tested from v0.1.0 to the v1.0.0 release code: 17 of 17 checks after the
   upgrade (migrations `0004` to `0027`), and, on 2026-11-12, a rollback by restoring the
   pre-upgrade backup ([upgrades](docs/operations/upgrade.md)).
-- **Several companies on one deployment.** Isolation per layer, `wm tenant create|delete`, rate
+- **Several companies on one deployment.** Isolation per layer, `nw tenant create|delete`, rate
   limits, and a test that sends every route another tenant's ids
   ([docs/multi-tenancy.md](docs/multi-tenancy.md)).
 - **Security.** A [threat model](docs/security/threat-model.md), a review against the
@@ -321,7 +323,7 @@ scripts/      Backup, restore, upgrade test, supply-chain scans
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Commits need a DCO sign-off
 (`git commit -s`); `ee/` accepts no external contributions. Every change must keep the
-permission gate at 0 leaks (`uv run wm eval --retrieval-only` in `apps/api`).
+permission gate at 0 leaks (`uv run nw eval --retrieval-only` in `apps/api`).
 
 ## Security
 

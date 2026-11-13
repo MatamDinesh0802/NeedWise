@@ -9,6 +9,10 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from needwise.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
+from needwise.modules.connectors.oauth import OAuthApp, microsoft_scopes
+from needwise.modules.connectors.registry import validate_config
+from needwise.modules.connectors.sharepoint import SharePointConnector
 from tests.fake_graph import (
     DRIVE_ID,
     GRAPH,
@@ -18,10 +22,6 @@ from tests.fake_graph import (
     FakeGraph,
     Item,
 )
-from workmind.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
-from workmind.modules.connectors.oauth import OAuthApp, microsoft_scopes
-from workmind.modules.connectors.registry import validate_config
-from workmind.modules.connectors.sharepoint import SharePointConnector
 
 APP = OAuthApp("client-id", "client-secret", "contoso.onmicrosoft.com")
 

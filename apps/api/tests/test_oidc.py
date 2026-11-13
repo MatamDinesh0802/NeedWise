@@ -11,15 +11,15 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
-from workmind.modules.identity.oidc import (
+from needwise.modules.identity.oidc import (
     BACKCHANNEL_LOGOUT_EVENT,
     OidcClient,
     OidcError,
     pkce_challenge,
 )
 
-ISSUER = "https://login.example.test/realms/workmind"
-CLIENT_ID = "workmind-api"
+ISSUER = "https://login.example.test/realms/needwise"
+CLIENT_ID = "needwise-api"
 
 
 def _key() -> rsa.RSAPrivateKey:
@@ -56,7 +56,7 @@ async def oidc() -> OidcClient:
     http = httpx.AsyncClient(transport=httpx.MockTransport(_provider))
     return OidcClient(
         http,
-        discovery_url="http://keycloak/realms/workmind/.well-known/openid-configuration",
+        discovery_url="http://keycloak/realms/needwise/.well-known/openid-configuration",
         client_id=CLIENT_ID,
         client_secret="secret",
         redirect_uri="http://localhost:8480/api/auth/callback",

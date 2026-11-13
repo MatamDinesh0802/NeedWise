@@ -1,7 +1,7 @@
 /**
  * Admin > Models (/api/v1/admin/models): providers with write-only keys, the model catalog
  * with prices, which model serves each role, and the data policy for external models.
- * Shapes mirror apps/api/src/workmind/api/v1/model_catalog.py. Pure parts are unit-tested.
+ * Shapes mirror apps/api/src/needwise/api/v1/model_catalog.py. Pure parts are unit-tested.
  */
 
 import { apiJson } from "@/lib/api";
@@ -125,7 +125,7 @@ export const ROLES: readonly { role: ModelRole; label: string; description: stri
   { role: "router", label: "Routing and rewriting", description: "Rewrites follow-up questions and plans which agents to ask." },
   { role: "agent", label: "Agents", description: "Department, research and analytics agents that use tools." },
   { role: "generator", label: "Extraction", description: "Meeting notes and other structured extraction." },
-  { role: "judge", label: "Evaluation judge", description: "Grades answers in evaluations (wm eval)." },
+  { role: "judge", label: "Evaluation judge", description: "Grades answers in evaluations (nw eval)." },
 ];
 
 export const SENSITIVITY_LABELS: Record<Sensitivity, string> = {

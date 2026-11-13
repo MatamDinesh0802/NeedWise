@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from workmind_load.monitor import (
+from needwise_load.monitor import (
     Monitor,
     mebibytes,
     nearest_rank,
@@ -18,7 +18,7 @@ from workmind_load.monitor import (
     summarize_access,
     summarize_samples,
 )
-from workmind_load.report import render, resource_use
+from needwise_load.report import render, resource_use
 
 QDRANT_BEFORE = """# HELP rest_responses_total total number of responses
 rest_responses_duration_seconds_count{method="POST",endpoint="/collections/{collection_name}/points/query",status="200"} 100
@@ -49,13 +49,13 @@ def test_sizes_in_mebibytes() -> None:
 
 def test_docker_stats_keep_only_the_projects_containers() -> None:
     lines = [
-        {"Name": "workmind-api-1", "CPUPerc": "143.20%", "MemUsage": "512MiB / 15.6GiB"},
-        {"Name": "workmind-worker-1", "CPUPerc": "0.00%", "MemUsage": "1GiB / 15.6GiB"},
+        {"Name": "needwise-api-1", "CPUPerc": "143.20%", "MemUsage": "512MiB / 15.6GiB"},
+        {"Name": "needwise-worker-1", "CPUPerc": "0.00%", "MemUsage": "1GiB / 15.6GiB"},
         {"Name": "otherproject-db", "CPUPerc": "99%", "MemUsage": "1GiB / 15.6GiB"},
     ]
     output = "\n".join(json.dumps(line) for line in lines) + "\n"
 
-    found = parse_docker_stats(output, "workmind")
+    found = parse_docker_stats(output, "needwise")
 
     assert found == {
         "api": {"cpu": 143.2, "mem_mib": 512.0},
@@ -72,18 +72,18 @@ def test_access_log_routes_without_ids() -> None:
                 "path": f"/api/v1/runs/{run}/events",
                 "status": 200,
                 "duration_ms": 3000.5,
-                "logger": "workmind.access",
+                "logger": "needwise.access",
             }
         ),
         json.dumps({"event": "HTTP Request: GET http://qdrant:6333", "logger": "httpx"}),
-        'not json, "workmind.access"',
+        'not json, "needwise.access"',
         json.dumps(
             {
                 "method": "POST",
                 "path": "/api/v1/search",
                 "status": 500,
                 "duration_ms": 12,
-                "logger": "workmind.access",
+                "logger": "needwise.access",
             }
         ),
     ]
@@ -134,12 +134,12 @@ def test_samples_summarized_per_container_and_database() -> None:
     samples: list[dict[str, Any]] = [
         {
             "containers": {"api": {"cpu": 100.0, "mem_mib": 300.0}},
-            "connections": {"workmind/active": 3, "workmind/idle": 5, "openfga/idle": 10},
+            "connections": {"needwise/active": 3, "needwise/idle": 5, "openfga/idle": 10},
             "lock_waits": 0,
         },
         {
             "containers": {"api": {"cpu": 200.0, "mem_mib": 250.0}},
-            "connections": {"workmind/active": 7, "workmind/idle": 2, "openfga/idle": 10},
+            "connections": {"needwise/active": 7, "needwise/idle": 2, "openfga/idle": 10},
             "lock_waits": 2,
         },
     ]
@@ -151,8 +151,8 @@ def test_samples_summarized_per_container_and_database() -> None:
         "cpu_peak": 200.0,
         "mem_peak_mib": 300.0,
     }
-    assert summary["connections_peak"]["workmind/active"] == 7
-    assert summary["connections_peak"]["workmind/all"] == 9  # 3+5 then 7+2
+    assert summary["connections_peak"]["needwise/active"] == 7
+    assert summary["connections_peak"]["needwise/all"] == 9  # 3+5 then 7+2
     assert summary["lock_waits_peak"] == 2
 
 
@@ -167,7 +167,7 @@ class FakeDocker:
         self.calls.append(command)
         text = " ".join(command)
         if command[:2] == ["docker", "stats"]:
-            return json.dumps({"Name": "wm-api-1", "CPUPerc": "50%", "MemUsage": "100MiB / 1GiB"})
+            return json.dumps({"Name": "nw-api-1", "CPUPerc": "50%", "MemUsage": "100MiB / 1GiB"})
         if "valkey-cli" in command:
             return "# Stats\r\ntotal_commands_processed:1000\r\n"
         if command[:2] == ["docker", "logs"]:
@@ -177,7 +177,7 @@ class FakeDocker:
                     "path": "/api/v1/me",
                     "status": 200,
                     "duration_ms": 4,
-                    "logger": "workmind.access",
+                    "logger": "needwise.access",
                 }
             )
         if "pg_extension" in text:
@@ -185,17 +185,17 @@ class FakeDocker:
         if "pg_stat_statements_reset" in text:
             return "\n"
         if "FROM pg_stat_statements" in text:
-            return "workmind\t42\t120.5\t2.869\t30.0\t42\tSELECT 1\n"
+            return "needwise\t42\t120.5\t2.869\t30.0\t42\tSELECT 1\n"
         if "wait_event_type" in text:
             return "0\n"
         if "pg_stat_activity" in text:
-            return "workmind\tactive\t2\nworkmind\tidle\t4\n"
+            return "needwise\tactive\t2\nneedwise\tidle\t4\n"
         raise AssertionError(f"unexpected command {command}")
 
 
 def test_the_monitor_collects_a_run_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
     docker = FakeDocker()
-    monitor = Monitor("wm", interval_s=0.01, run=docker)
+    monitor = Monitor("nw", interval_s=0.01, run=docker)
     monkeypatch.setattr(Monitor, "qdrant", lambda self: {})
 
     monitor.start()
@@ -203,13 +203,13 @@ def test_the_monitor_collects_a_run_end_to_end(monkeypatch: pytest.MonkeyPatch) 
         time.sleep(0.005)
     summary = monitor.stop()
 
-    assert docker.calls[1][:3] == ["docker", "exec", "wm-postgres-1"]  # psql in the container
+    assert docker.calls[1][:3] == ["docker", "exec", "nw-postgres-1"]  # psql in the container
     assert any("pg_stat_statements_reset" in " ".join(c) for c in docker.calls)
     assert summary["containers"]["api"]["cpu_peak"] == 50
-    assert summary["connections_peak"]["workmind/all"] == 6
+    assert summary["connections_peak"]["needwise/all"] == 6
     assert summary["statements"] == [
         {
-            "database": "workmind",
+            "database": "needwise",
             "calls": 42,
             "total_ms": 120.5,
             "mean_ms": 2.869,
@@ -223,7 +223,7 @@ def test_the_monitor_collects_a_run_end_to_end(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_without_pg_stat_statements_the_monitor_says_so() -> None:
-    monitor = Monitor("wm", interval_s=0.01, run=FakeDocker(statements=False))
+    monitor = Monitor("nw", interval_s=0.01, run=FakeDocker(statements=False))
     monitor.qdrant = lambda: {}  # type: ignore[method-assign]
 
     monitor.start()
@@ -235,11 +235,11 @@ def test_without_pg_stat_statements_the_monitor_says_so() -> None:
 
 def test_the_report_shows_resource_use() -> None:
     resources = {
-        "project": "workmind",
+        "project": "needwise",
         "interval_s": 5,
         "samples": 12,
         "containers": {"api": {"cpu_mean": 95.4, "cpu_peak": 101.0, "mem_peak_mib": 512.0}},
-        "connections_peak": {"workmind/all": 9},
+        "connections_peak": {"needwise/all": 9},
         "lock_waits_peak": 0,
         "valkey_commands_per_s": 812.3,
         "api": [
@@ -256,7 +256,7 @@ def test_the_report_shows_resource_use() -> None:
         ],
         "statements": [
             {
-                "database": "workmind",
+                "database": "needwise",
                 "calls": 5,
                 "total_ms": 10.0,
                 "mean_ms": 2.0,
@@ -282,7 +282,7 @@ def test_the_report_shows_resource_use() -> None:
     whole = render([], [], {"resources": resources}, "locust.json")
 
     assert "| api | 95 | 101 | 512 |" in text
-    assert "workmind/all 9" in text
+    assert "needwise/all 9" in text
     assert "812 commands/s" in text
     assert "| POST /api/v1/search | 10 | 0 | 40 | 90 | 95 | 99 | 0.5 |" in text
     assert "`SELECT a \\| b`" in text

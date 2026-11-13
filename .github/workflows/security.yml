@@ -36,7 +36,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           mkdir -p "$RUNNER_TEMP/sbom"
-          scripts/security-scan.sh sbom . "$RUNNER_TEMP/sbom/workmind-source.spdx.json"
+          scripts/security-scan.sh sbom . "$RUNNER_TEMP/sbom/needwise-source.spdx.json"
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
@@ -95,7 +95,7 @@ jobs:
             context: apps/web
             build-contexts: ""
     env:
-      IMAGE: workmind-${{ matrix.image }}:scan
+      IMAGE: needwise-${{ matrix.image }}:scan
     steps:
       - uses: actions/checkout@v7
         with:
@@ -116,13 +116,13 @@ jobs:
       - name: SBOM (SPDX JSON)
         run: |
           mkdir -p "$RUNNER_TEMP/out"
-          scripts/security-scan.sh sbom "$IMAGE" "$RUNNER_TEMP/out/workmind-${MATRIX_IMAGE}.spdx.json"
+          scripts/security-scan.sh sbom "$IMAGE" "$RUNNER_TEMP/out/needwise-${MATRIX_IMAGE}.spdx.json"
         env:
           MATRIX_IMAGE: ${{ matrix.image }}
       - name: Fixable CRITICAL/HIGH vulnerabilities and secrets fail (full report kept as JSON)
         run: >-
           scripts/security-scan.sh image "$IMAGE"
-          "$RUNNER_TEMP/out/trivy-workmind-${MATRIX_IMAGE}.json"
+          "$RUNNER_TEMP/out/trivy-needwise-${MATRIX_IMAGE}.json"
         env:
           MATRIX_IMAGE: ${{ matrix.image }}
       - uses: actions/upload-artifact@v7

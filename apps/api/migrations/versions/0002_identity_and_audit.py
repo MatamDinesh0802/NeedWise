@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from workmind.core.config import get_settings
+from needwise.core.config import get_settings
 
 revision: str = "0002"
 down_revision: str | None = "0001"

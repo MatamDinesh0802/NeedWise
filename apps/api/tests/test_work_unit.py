@@ -9,10 +9,10 @@ from urllib.parse import urlsplit
 import pytest
 from pydantic import ValidationError
 
-import workmind
-from workmind.modules.knowledge.models import Collection
-from workmind.modules.work.events import DocumentReady, listens_to
-from workmind.modules.work.links import (
+import needwise
+from needwise.modules.knowledge.models import Collection
+from needwise.modules.work.events import DocumentReady, listens_to
+from needwise.modules.work.links import (
     approval_link,
     document_link,
     governance_link,
@@ -23,7 +23,7 @@ from workmind.modules.work.links import (
     usage_link,
     workflow_link,
 )
-from workmind.modules.work.workflows import Definition, render
+from needwise.modules.work.workflows import Definition, render
 
 WEB_APP = Path(__file__).resolve().parents[2] / "web" / "src" / "app"
 ID = uuid.UUID("0190f5a4-0000-7000-8000-000000000001")
@@ -137,7 +137,7 @@ def test_notifications_take_their_links_from_the_links_module() -> None:
     passthrough = {"link", "n.link"}  # notify() itself, and the notifications API
     offenders = [
         f"{file.name}: link={value}"
-        for file in Path(workmind.__file__).parent.rglob("*.py")
+        for file in Path(needwise.__file__).parent.rglob("*.py")
         for value in re.findall(r"\blink=([^,\n]+)", file.read_text())
         if value not in passthrough and not value.startswith(helpers)
     ]

@@ -1,0 +1,69 @@
+{{- if .Values.ingress.enabled }}
+{{- $c := .Values.ingress -}}
+{{- $host := default (include "needwise.publicHost" .) $c.host -}}
+{{- $api := include "needwise.componentName" (list . "api") -}}
+{{- $web := include "needwise.componentName" (list . "web") -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "needwise.fullname" . }}
+  labels:
+    {{- include "needwise.labels" (list . "ingress") | nindent 4 }}
+  {{- with $c.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $c.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $c.tls.enabled }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ default (include "needwise.componentName" (list . "tls")) $c.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        # The routes of deploy/caddy/Caddyfile. An exact path wins over a prefix.
+        paths:
+          # Keycloak calls back-channel logout on the cluster network; never from outside. The
+          # web app has no such page and answers 404 (Caddy responds 404 itself).
+          - path: /api/auth/backchannel-logout
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $web }}
+                port:
+                  name: http
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $api }}
+                port:
+                  name: http
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $api }}
+                port:
+                  name: http
+          {{- if .Values.keycloak.enabled }}
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "needwise.componentName" (list . "keycloak") }}
+                port:
+                  name: http
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $web }}
+                port:
+                  name: http
+{{- end }}

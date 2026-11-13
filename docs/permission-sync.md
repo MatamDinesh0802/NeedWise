@@ -15,7 +15,7 @@ anyone. The design is recorded in [ADR 0012](adr/0012-document-access-lists.md).
 | Drive revocations applied without waiting for the next sync | No | Yes (the changes feed, every minute) |
 
 Security basics stay in Community: the mechanism, its enforcement and the tests are in the
-core. What Enterprise adds is reading ACLs from the source systems (`ee/python/src/workmind_ee/permission_sync.py`).
+core. What Enterprise adds is reading ACLs from the source systems (`ee/python/src/needwise_ee/permission_sync.py`).
 
 ## How it is enforced
 
@@ -64,11 +64,11 @@ conversations, as for collections).
 ## Identity mapping: fail closed
 
 A source names people and groups its own way. Permission sync keeps every entry the source
-lists, as `<kind>:<value>` in lower case, and maps it to someone in WorkMind:
+lists, as `<kind>:<value>` in lower case, and maps it to someone in NeedWise:
 
 | Source principal | Mapped without an admin |
 |---|---|
-| `email:<address>` (Drive people, Slack members whose e-mail Slack gives) | The WorkMind user with that e-mail |
+| `email:<address>` (Drive people, Slack members whose e-mail Slack gives) | The NeedWise user with that e-mail |
 | `anyone` (Drive "anyone with the link") | The organization (members, not guests), still within the collection |
 | `group:<address or id>` (a Google group), `domain:<domain>` (Drive "anyone at acme.test") | No |
 | `slack-user:<id>` (a member whose e-mail is hidden) | No |
@@ -86,7 +86,7 @@ organization), or through the API:
 ```bash
 # Unmapped source principals: how many documents name each, from which sources (no titles)
 curl -H 'Cookie: ...' http://localhost:8480/api/v1/admin/identity-mappings
-# Map a Google group to a WorkMind group: applied at once to every document that names it
+# Map a Google group to a NeedWise group: applied at once to every document that names it
 curl -X PUT -H 'Cookie: ...' -H 'X-CSRF-Protection: 1' -H 'Content-Type: application/json' \
   http://localhost:8480/api/v1/admin/identity-mappings \
   -d '{"external": "group:eng-leads@acme.test", "principal": "group:<uuid>"}'
@@ -94,7 +94,7 @@ curl -X PUT -H 'Cookie: ...' -H 'X-CSRF-Protection: 1' -H 'Content-Type: applica
 curl -X DELETE ... http://localhost:8480/api/v1/admin/identity-mappings/<mapping id>
 ```
 
-A mapping names a WorkMind principal (`user:`, `group:`, `dept:`, `dept-manager:` or `org:`
+A mapping names a NeedWise principal (`user:`, `group:`, `dept:`, `dept-manager:` or `org:`
 with an id of this tenant). An explicit mapping wins over the e-mail match (for aliases). Saving
 or deleting one changes the lists of every document that names that source principal in the
 same transaction, queues the OpenFGA changes and refreshes the chunks.
@@ -145,12 +145,12 @@ the source shows the error ("permissions not read, nobody sees it"). The sync's 
 
 ### How fast a change upstream takes effect
 
-| Change in the source | When WorkMind applies it |
+| Change in the source | When NeedWise applies it |
 |---|---|
-| Someone removed from a Drive file, a file unshared, trashed or deleted | Within a minute: the task `workmind_ee.permission_sync.drive_changes` reads each Drive source's changes feed every 60 s and applies the current permissions of every changed file at once (a removed or trashed file: nobody, until the next sync deletes it). The first run only records where the feed starts. If Valkey loses the feed position, the next run starts again from now and the regular sync covers the gap |
+| Someone removed from a Drive file, a file unshared, trashed or deleted | Within a minute: the task `needwise_ee.permission_sync.drive_changes` reads each Drive source's changes feed every 60 s and applies the current permissions of every changed file at once (a removed or trashed file: nobody, until the next sync deletes it). The first run only records where the feed starts. If Valkey loses the feed position, the next run starts again from now and the regular sync covers the gap |
 | Any other Drive change; Slack membership; GitHub collaborators, teams, visibility | At the next sync of the source (`interval_minutes`, at least 5, default 60), or at once with **Sync now** |
 | An admin maps or unmaps a source principal | At once |
-| Someone joins or leaves a WorkMind group or department | At once: lists store groups and departments, not expanded members |
+| Someone joins or leaves a NeedWise group or department | At once: lists store groups and departments, not expanded members |
 
 Lock 1 changes when the chunks are refreshed, right after the commit; lock 2 when the OpenFGA
 outbox applies the change (the worker polls every 2 s). Until both have, the other one still
@@ -171,7 +171,7 @@ and re-create it, or license the feature again.
 
 ## Tests
 
-- `apps/api/src/workmind/modules/authz/openfga/model.fga.yaml`: the authorization matrix (in
+- `apps/api/src/needwise/modules/authz/openfga/model.fga.yaml`: the authorization matrix (in
   the collection but not on the list, on the list but not in the collection, admins, a guest
   named on a list, a grant in a collection the person cannot read, an empty list).
 - `tests/integration/test_document_acl.py` (Community): a canary in a limited document never

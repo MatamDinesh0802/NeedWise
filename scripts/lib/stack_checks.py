@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Checks through a running WorkMind's public URL, with real Keycloak sign-ins of the demo users
-(password DEMO_PASSWORD, default workmind-demo). Standard library only (Python 3.9+), so the
+"""Checks through a running NeedWise's public URL, with real Keycloak sign-ins of the demo users
+(password DEMO_PASSWORD, default needwise-demo). Standard library only (Python 3.9+), so the
 same file drives an old release and the current one.
 
     stack_checks.py login  BASE EMAIL              exit 0 when the sign-in works
@@ -28,7 +28,7 @@ from http.cookiejar import Cookie, CookieJar, DefaultCookiePolicy
 from pathlib import Path
 from typing import Any
 
-PASSWORD = os.environ.get("DEMO_PASSWORD", "workmind-demo")
+PASSWORD = os.environ.get("DEMO_PASSWORD", "needwise-demo")
 SEARCHES = [
     ("alice@acme.test", "How many weeks of parental leave do employees get?"),
     ("bob@acme.test", "How many days per week can I work from home?"),
@@ -96,7 +96,7 @@ class Client:
 
     @property
     def signed_in(self) -> bool:
-        return any(c.name in ("wm_session", "__Host-wm_session") for c in self.jar)
+        return any(c.name in ("nw_session", "__Host-nw_session") for c in self.jar)
 
     def call(
         self,

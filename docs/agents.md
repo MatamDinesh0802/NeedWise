@@ -7,7 +7,7 @@ and saves it. It answers on the next question, in every process, with no deploy.
 a numbered version that can be compared and restored.
 Design: [ARCHITECTURE section 12](ARCHITECTURE.md#12-agent-orchestration).
 
-Built (in `apps/api/src/workmind/modules/agents/`, `api/v1/agents.py`, migration `0013`, and
+Built (in `apps/api/src/needwise/modules/agents/`, `api/v1/agents.py`, migration `0013`, and
 `apps/web/src/components/admin/agent-*.tsx`): everything on this page. The tests use a
 scripted model (`tests/fakes.py`). **Measured** on 2026-11-12 with Claude Sonnet 5.5 planning:
 with the Legal agent created as described [below](#create-the-legal-agent-step-by-step), first
@@ -172,7 +172,7 @@ working with Legal). Every member can read it; guests can't. The agent itself is
 seeded**: this is the Phase 11 check that a new agent needs no code.
 
 1. Start the stack and seed it (`make up && make seed`), sign in at <http://localhost:8480> as
-   `erin@acme.test` (organization administrator, password `workmind-demo`), and open
+   `erin@acme.test` (organization administrator, password `needwise-demo`), and open
    **Admin › Agents › New agent**.
 2. Fill in:
 
@@ -203,10 +203,10 @@ seeded**: this is the Phase 11 check that a new agent needs no code.
 5. Check routing with the evaluation, from `apps/api`:
 
    ```bash
-   uv run wm eval --skip-retrieval --suites routing --concurrency 3 --label 2026-11-12-routing-legal
+   uv run nw eval --skip-retrieval --suites routing --concurrency 3 --label 2026-11-12-routing-legal
    ```
 
-   (`uv run wm eval --suites routing` also runs the retrieval checks first.) Before the agent
+   (`uv run nw eval --suites routing` also runs the retrieval checks first.) Before the agent
    exists, the 15 questions that expect it are reported as *skipped (agent missing: legal)* and
    not counted. Afterwards they run, and the report (`evals/results/<label>.md`) has a per-agent
    table: questions that expect the agent, exact plans, how often it was picked, and how often it
