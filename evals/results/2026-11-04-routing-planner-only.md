@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-04 routing (planner only)
 
 - date: `2026-11-04 09:11 UTC`
-- commit: `57c9802`
+- commit: `5e7e943`
 - tenant: `Acme Robotics (restricted_data: allow)`
 - indexed chunks: `294`
 - embedding model: `embeddinggemma-300m (768 dims)`

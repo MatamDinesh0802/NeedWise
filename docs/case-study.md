@@ -93,7 +93,7 @@ Phases 2 to 11 were finished on `main` without a release of their own, and v1.0.
 
 ## Results
 
-From the [v1.0 benchmarks](benchmarks/v1.0.md) (commit `1b62d52`, 2026-11-12, Claude Sonnet 5.5,
+From the [v1.0 benchmarks](benchmarks/v1.0.md) (commit `3fd65d4`, 2026-11-12, Claude Sonnet 5.5,
 one run each):
 
 | | Result |
@@ -109,7 +109,7 @@ one run each):
 | Chat time to first token, p50 / p95 | 0.8 s / 1.5 s (`single`), 2.6 s / 6.0 s (`auto`) |
 | Under load, stub model | Up to 400 simulated users at unloaded chat latency after tuning; degrades without errors at 800 |
 
-The v1.0.0 release check on 2026-11-13 (`144afd2`) repeated the permission gate and the core
+The v1.0.0 release check on 2026-11-13 (`484cf55`) repeated the permission gate and the core
 suites with all 68 attacks: 0 leaks, 0 violations, 81/82, faithfulness 99.4%; the model
 provider's credit ran out before the other suites
 ([release check](benchmarks/v1.0.md#v100-release-check-2026-11-13)).
@@ -224,4 +224,4 @@ connectors, an external penetration test, a judge from another model family, mea
 local models, and a corpus and question set much larger than Acme's.
 
 NeedWise was built by one maintainer with Claude as a coding assistant: every commit carries a
-Claude co-author line except one merge commit (bb4dc95).
+Claude co-author line except one merge commit (284511e).

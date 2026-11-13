@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-12-meetings-regression
 
 - date: `2026-11-12 08:54 UTC`
-- commit: `b02a318`
+- commit: `6b021fa`
 - tenant: `Acme Robotics (restricted_data: allow)`
 - indexed chunks: `351`
 - embedding model: `embeddinggemma-300m (768 dims)`

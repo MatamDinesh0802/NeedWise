@@ -3,7 +3,7 @@
 > A planner wording that was tried and not kept: "direct" narrowed to questions that need no company documents, plus a sentence telling the planner to route names it does not recognise to the most likely agent. It fixed ro-s18 but added an agent to ro-s16 and ro-s17. The kept wording is the first sentence alone ([docs/agents.md](../../docs/agents.md#how-routing-works)).
 
 - date: `2026-11-12 14:31 UTC`
-- commit: `d855f5c`
+- commit: `79e69d3`
 - tenant: `Acme Robotics (external models receive up to: restricted)`
 - indexed chunks: `408`
 - embedding model: `embeddinggemma-300m (768 dims)`

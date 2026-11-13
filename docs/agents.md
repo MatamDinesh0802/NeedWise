@@ -258,7 +258,7 @@ version 1, so it is at version 3 with the same content). The editor suggested th
 `legal-agent`; it was changed to `legal` by hand (the suggestion is fixed now). The routing
 evaluation against that agent
 ([`2026-11-12-routing-legal-ui`](../evals/results/2026-11-12-routing-legal-ui.md), commit
-`d43225e`, Sonnet 5.5 planner, 3 at a time) gave the same result as the API-made agent: 53/56
+`ba3db9a`, Sonnet 5.5 planner, 3 at a time) gave the same result as the API-made agent: 53/56
 exact plans, Legal picked for 15/15 legal questions with 14 exact plans, never picked when not
 expected, 3/3 near misses kept away from Legal. The three wrong plans are the same three: the
 invention and patent-bonus question (Legal and HR), the engineering budget (Engineering and

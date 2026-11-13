@@ -1,11 +1,11 @@
 # WorkMind evaluation: 2026-11-12-analytics
 
 > First real run, kept for comparison. It found that the agent reported the charted query as
-> the main query even when the model named another (an-13, an-14, an-34); fixed in `b02a318`.
+> the main query even when the model named another (an-13, an-14, an-34); fixed in `6b021fa`.
 > The run after the fix is `2026-11-12-analytics.md`.
 
 - date: `2026-11-12 08:48 UTC`
-- commit: `bc69fd4`
+- commit: `26c27a4`
 - tenant: `Acme Robotics (restricted_data: allow)`
 - indexed chunks: `351`
 - embedding model: `embeddinggemma-300m (768 dims)`

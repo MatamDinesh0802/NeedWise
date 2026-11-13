@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-12-analytics-after-review
 
 - date: `2026-11-12 10:23 UTC`
-- commit: `e5f83ab`
+- commit: `fcada93`
 - tenant: `Acme Robotics (restricted_data: allow)`
 - indexed chunks: `403`
 - embedding model: `embeddinggemma-300m (768 dims)`

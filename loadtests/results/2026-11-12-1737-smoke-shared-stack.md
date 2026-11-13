@@ -4,7 +4,7 @@
 |---|---|
 | Date (UTC) | 2026-11-12 17:37 |
 | Target | http://localhost:8480 (WorkMind 0.0.1, dev) |
-| Harness checkout | commit 4b55ca3 (the target may run other code) |
+| Harness checkout | commit f7a0164 (the target may run other code) |
 | Users, spawn rate, duration | 5 users, 1.0/s, 60s |
 | Mix (class weights) | reader=1, poller=1, analyst=1, admin=1, login=1 |
 | Model | none: tasks that call the model were off (--wm-no-model) |

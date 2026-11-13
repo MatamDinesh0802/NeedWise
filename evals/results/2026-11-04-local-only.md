@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-04, tenant policy restricted_data=local_only
 
 - date: `2026-11-04 08:31 UTC`
-- commit: `518a21f`
+- commit: `3129e35`
 - tenant: `Acme Robotics (restricted_data: local_only)`
 - indexed chunks: `294`
 - embedding model: `embeddinggemma-300m (768 dims)`

@@ -572,7 +572,7 @@ clean); every query is still audited.
 With a real model: Claude Sonnet 5.5 for both the tool loop and compose, on the seeded Acme
 tenant, 51 questions, 3 at a time, questions asked as on 2026-11-12. The latest run is after
 the review fixes (row-policy fences, the recursive-CTE rule, the query workers, LEFT JOINs,
-the verification and scoring fixes; commit `e5f83ab`). Report:
+the verification and scoring fixes; commit `fcada93`). Report:
 [`evals/results/2026-11-12-analytics-after-review.md`](../evals/results/2026-11-12-analytics-after-review.md).
 
 | | Value |
@@ -613,23 +613,23 @@ number was within 1% of the cell it matched (an-08's "€47k" is €46,529, corr
 13 numbers in multi-query answers were not checked this way. The run before had the same two
 (its "one is a coincidence" missed an-17).
 
-The run before these fixes (commit `70094cd`,
+The run before these fixes (commit `c9f40c8`,
 [`2026-11-12-analytics.md`](../evals/results/2026-11-12-analytics.md)) scored the same 33/36
 with the same three misses, 0 leaks, 159/159 numbers backed, 4 repair passes, p50 6.9 s /
 p95 10.2 s, $1.20; its "gold result in any query" of 34/36 counted an-32 by the scoring bug
 above.
 
-The first run (commit `bc69fd4`,
+The first run (commit `26c27a4`,
 [`2026-11-12-analytics-first-run.md`](../evals/results/2026-11-12-analytics-first-run.md))
 scored 32/36 (27/29 and 5/7), with 0 leaks, 162/162 numbers backed, 7 repair passes, p50
 7.3 s / p95 10.5 s, $1.21. Three of its four misses (an-13, an-14, an-34: a share, a growth
 rate and a win rate) were a bug, not the model. Re-asked with the compose output logged, the
 model named the query holding the answer as the main query and charted the breakdown it came
-from; the agent replaced that choice with the charted query. That is fixed (`b02a318`). Between
+from; the agent replaced that choice with the charted query. That is fixed (`6b021fa`). Between
 the two runs, two items that had passed (an-15, an-32) failed: one run per change is not
 enough to tell small differences apart. Before either run, a one-question smoke test found
 that no answer with a chart could be composed: the strict JSON schema sent to the model left
-out every field called `title`, including the chart's (`9a01bfd`).
+out every field called `title`, including the chart's (`65f92f0`).
 
 Also with the real model, through the stack: the definition-of-done question ("Monthly revenue
 trend this year and the top 3 drivers") asked on the Insights page as Hannah returned a line

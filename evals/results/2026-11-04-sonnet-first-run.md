@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-04, Sonnet 5.5 first run (before the trust-commentary prompt fix)
 
 - date: `2026-11-04 12:00 UTC`
-- commit: `3742a55`
+- commit: `def3f00`
 - tenant: `Acme Robotics (restricted_data: allow)`
 - indexed chunks: `294`
 - embedding model: `embeddinggemma-300m (768 dims)`

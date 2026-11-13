@@ -35,11 +35,11 @@ Summary:
 - **The final review** (2026-11-13): 2 high security findings and a set of medium and low ones
   fixed, each with a regression test (below).
 - **Measured for the release** ([benchmarks](docs/benchmarks/v1.0.md)): on the release candidate
-  `144afd2` with Claude Sonnet 5.5, 0 leaks in 183 retrieval checks and 68 red-team answers, 0
+  `484cf55` with Claude Sonnet 5.5, 0 leaks in 183 retrieval checks and 68 red-team answers, 0
   violations, 81/82 answers with every required fact, faithfulness 99.4%, abstention 6/6,
   0.9 s to the first token (p50) and $0.0071 per answer. The model provider's credit ran out
   during the next run, so the other suites were not repeated: their latest numbers are the full
-  v1.0 benchmark of 2026-11-12 (`1b62d52`): cross-department 14/15 with one search and 15/15
+  v1.0 benchmark of 2026-11-12 (`3fd65d4`): cross-department 14/15 with one search and 15/15
   with agents, routing 53/56, text-to-SQL 33/36 with 0 leaks in 51 answers.
 - **Versions:** 1.0.0 in the API, the Enterprise package (which now reads it from its metadata),
   the web app, the browser suite and the load tests; Helm chart 0.2.0 with `appVersion` 1.0.0;

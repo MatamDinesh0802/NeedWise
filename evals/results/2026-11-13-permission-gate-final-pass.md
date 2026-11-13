@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-13-permission-gate-final-pass
 
 - date: `2026-11-13 06:17 UTC`
-- commit: `8dc326c`
+- commit: `3c95399`
 - tenant: `Acme Robotics (external models receive up to: restricted)`
 - indexed chunks: `430`
 - embedding model: `embeddinggemma-300m (768 dims)`

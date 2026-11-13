@@ -228,7 +228,7 @@ departments (the costly error) and triage counts; with `--retrieval-only` it che
 alone. The unit tests check the rules part on every run. A failed router call is counted as a
 model error in the report, never as a cautious triage.
 
-Measured on 2026-11-13 (commit `07fe2ba`, the Acme seed's rules, router model
+Measured on 2026-11-13 (commit `ffcf90a`, the Acme seed's rules, router model
 `claude-sonnet-5-5` at the default threshold 0.7, one run;
 [`2026-11-13-request-routing`](../evals/results/2026-11-13-request-routing.md)):
 36/39 to the correct queue (rule items 23/23, model items 8/11, person-only items 5/5), **1 to a

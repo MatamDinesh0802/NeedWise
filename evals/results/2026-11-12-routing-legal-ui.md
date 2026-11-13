@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-12-routing-legal-ui
 
 - date: `2026-11-12 16:05 UTC`
-- commit: `d43225e`
+- commit: `ba3db9a`
 - tenant: `Acme Robotics (external models receive up to: restricted)`
 - indexed chunks: `408`
 - embedding model: `embeddinggemma-300m (768 dims)`

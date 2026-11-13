@@ -4,7 +4,7 @@
 |---|---|
 | Date (UTC) | 2026-11-12 17:30 |
 | Target | http://localhost:18480 (WorkMind 0.0.1, dev) |
-| Harness checkout | commit 7e274f5 (the target may run other code) |
+| Harness checkout | commit 8b83268 (the target may run other code) |
 | Users, spawn rate, duration | 15 users, 3.0/s, 2m |
 | Mix (class weights) | reader=3, poller=2, chat=3, agents=2, analyst=2, admin=1, login=1, upload=1 |
 | Model | stub at http://127.0.0.1:8491 (latency 20 ms, first token after 600 ms, 60 words/s, 120-word answers) |

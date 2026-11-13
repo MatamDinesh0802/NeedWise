@@ -4,7 +4,7 @@
 - **Milestone:** Phase 5 (department agents)
 - **Image:** `assets/post-06-multi-agent-measured.png` (1080×1350). Numbers come from `evals/results/2026-11-04-cross-single.md`, `2026-11-04-cross-agents.md` and `2026-11-04-routing.md`; the missed question is `xd-14` in `2026-11-04-cross-single.json`. Small multiples with a zero baseline each, because facts, seconds and dollars don't share a scale.
 - **Post only after** the repo is public.
-- **Before posting:** run the red-team suite with `ASSISTANT_MODE=agents` (and `auto`). The agent runs above didn't include it ("0 retrieval checks, 0 red-team answers"), so this draft claims the access *design* for agents, not a measured leak rate. Once it passes, add "0 leaks with agents too" to the post. Re-run the cross-department and routing suites too: they ran at commit `57c9802`, before the research agent and governed tools (`4f728f1`) landed, so the agent roster has changed since.
+- **Before posting:** run the red-team suite with `ASSISTANT_MODE=agents` (and `auto`). The agent runs above didn't include it ("0 retrieval checks, 0 red-team answers"), so this draft claims the access *design* for agents, not a measured leak rate. Once it passes, add "0 leaks with agents too" to the post. Re-run the cross-department and routing suites too: they ran at commit `5e7e943`, before the research agent and governed tools (`1d4a3b6`) landed, so the agent roster has changed since.
 
 ---
 

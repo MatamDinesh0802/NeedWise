@@ -76,7 +76,7 @@ to the API process from a sidecar container, in separate runs that are not in th
 
 ## Results per step
 
-Before: commit 0888b5b plus the monitor. After: the tuning below (commits 68e1976 and 1c63c1a).
+Before: commit 7ed7f8e plus the monitor. After: the tuning below (commits 01049b0 and 0e6be11).
 Times in milliseconds. CPU in % of one core, the API container's total (all its processes).
 "DB connections" is the peak number of client connections to the `needwise` database, with
 those idle in a transaction in parentheses. The monitor counts every client of that database

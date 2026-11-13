@@ -103,7 +103,7 @@ v1.0.0 was cut by hand on 2026-11-13, without release-please, because there is n
 repository to run it in. Before it, the only tag was `v0.1.0` (Phase 1); Phases 2 to 11 were
 finished on `main` without tags.
 
-1. **The release-candidate evaluation** ran on `144afd2` with Claude Sonnet 5.5 and its reports
+1. **The release-candidate evaluation** ran on `484cf55` with Claude Sonnet 5.5 and its reports
    are in `evals/results/` (`2026-11-13-v1.0.0-*`). The model provider's credit ran out during
    the third run, so only the permission gate, the core suites and the request-routing rules
    completed; the other suites' latest numbers are the full v1.0 benchmark of 2026-11-12

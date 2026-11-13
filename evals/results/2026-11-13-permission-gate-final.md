@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-13-permission-gate-final
 
 - date: `2026-11-13 02:34 UTC`
-- commit: `d837ebb-dirty (diff 91381219)`
+- commit: `aa55910-dirty (diff 91381219)`
 - tenant: `Acme Robotics (external models receive up to: restricted)`
 - indexed chunks: `430`
 - embedding model: `embeddinggemma-300m (768 dims)`

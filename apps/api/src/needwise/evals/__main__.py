@@ -155,7 +155,7 @@ def _git(*args: str) -> str:
 def _commit() -> str:
     """The commit the run used. Uncommitted changes to tracked files are marked, with a hash
     of the diff, so a report never names a commit that does not reproduce it:
-    `d855f5c-dirty (diff 3f2a9c1e)`."""
+    `79e69d3-dirty (diff 3f2a9c1e)`."""
     try:
         head = _git("rev-parse", "--short", "HEAD").strip()
         diff = _git("diff", "HEAD", "--no-ext-diff", "--binary")

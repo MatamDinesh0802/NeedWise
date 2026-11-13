@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-13-request-routing
 
 - date: `2026-11-13 05:14 UTC`
-- commit: `07fe2ba`
+- commit: `ffcf90a`
 - tenant: `Acme Robotics (external models receive up to: restricted)`
 - indexed chunks: `430`
 - embedding model: `embeddinggemma-300m (768 dims)`

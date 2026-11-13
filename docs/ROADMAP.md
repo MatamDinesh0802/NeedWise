@@ -141,7 +141,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **DoD:** the full Acme corpus ingests with zero unhandled failures. Re-uploading an unchanged file is skipped. Throughput (docs/min) is measured and recorded.
 
-> **Throughput, measured 2026-11-13** (commit `8dc326c`): `nw reindex acme` inside the API
+> **Throughput, measured 2026-11-13** (commit `3c95399`): `nw reindex acme` inside the API
 > container re-indexed the demo tenant's 51 documents (the 49 seeded and 2 meeting transcripts;
 > 430 chunks) from their stored originals, one document at a time: parse, chunk, label, embed,
 > index. Two runs, 0 failed: 18.9 s (about 160 documents or 1,370 chunks a minute; the first run,
@@ -636,7 +636,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   including the 3 that call the model; the API end-to-end tests pass too (16, model tests
   included).
 - [x] **Benchmarks for v1.0** ([v1.0 benchmarks](benchmarks/v1.0.md)): every suite at commit
-  `1b62d52` with Claude Sonnet 5.5, one run each. 0 leaks in 312 retrieval checks, 118 red-team
+  `3fd65d4` with Claude Sonnet 5.5, one run each. 0 leaks in 312 retrieval checks, 118 red-team
   answers (59 attacks in `single` and `auto` mode) and 51 analytics answers; 0 violations;
   81/82 correct, faithfulness 99.5%; cross-department 14/15 with one search, 15/15 with agents;
   routing 53/56; text-to-SQL 33/36; chat time to first token p50 0.8 s (`single`), 2.6 s
@@ -679,21 +679,21 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   posts, auditing and validation; each fix has a regression test ([changelog](../CHANGELOG.md)). The
   claims that described designed but unbuilt pieces were corrected
   ([ARCHITECTURE](ARCHITECTURE.md#what-the-design-describes-that-is-not-built) and each phase
-  above). Checked at `8dc326c` on the stack rebuilt with migration `0027` and the Enterprise dev
+  above). Checked at `3c95399` on the stack rebuilt with migration `0027` and the Enterprise dev
   license: backend 1,968 passed and 26 skipped (unit, integration, `ee/`), web 1,197, API
   end-to-end 16 (the 2 model tests included), browser 184, the retrieval-only permission gate 0
   leaks in 183 checks ([report](../evals/results/2026-11-13-permission-gate-final-pass.md)), the 9
   document-list attacks answered with Claude Sonnet 5.5 with 0 leaks and 0 violations
   ([report](../evals/results/2026-11-13-redteam-document-lists.md)), and request routing with the
   real router model 36/39 ([report](../evals/results/2026-11-13-request-routing.md)).
-- [x] **Release check for v1.0.0 (2026-11-13).** On the release candidate `144afd2` with Claude
+- [x] **Release check for v1.0.0 (2026-11-13).** On the release candidate `484cf55` with Claude
   Sonnet 5.5 ([v1.0 benchmarks](benchmarks/v1.0.md#v100-release-check-2026-11-13)): the
   permission gate 0 leaks in 183 checks; the core suites 0 leaks in 183 retrieval checks and 68
   red-team answers, 0 violations, 81/82 answers with every fact, faithfulness 99.4%, abstention
   6/6, 0.9 s to the first token (p50), $0.0071 per answer. The model provider's credit ran out
   during the cross-department run (12 of 15 answered, all 12 right), so routing, analytics,
   meetings, request routing with the model and the `auto` core suites were not repeated: their
-  latest numbers are the full benchmark's (`1b62d52`). No leak and no regression in what ran.
+  latest numbers are the full benchmark's (`3fd65d4`). No leak and no regression in what ran.
   The upgrade from v0.1.0 passed 17 of 17 checks on the release code (alembic `0004` to `0027`,
   [upgrades](operations/upgrade.md#supported-paths)). On the release code: backend 1,967 passed and 28 skipped (MySQL without a test server,
   diarization without its extra), web 1,197, browser 184 on the rebuilt, re-seeded stack, API

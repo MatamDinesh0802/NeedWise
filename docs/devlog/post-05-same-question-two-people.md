@@ -5,7 +5,7 @@
 - **Image:** `assets/post-05-same-question.png` (1080×1350). The two screenshots are the real app on the synthetic Acme Robotics company (`assets/post-05-alice-chat.png`, `assets/post-05-mallory-chat.png`). Numbers come from `evals/results/2026-11-04-qa-auto.md` (answers) and `2026-11-04-baseline.md` (red team).
 - **Best with video:** a 60–90 s screen recording of "view as" Alice → Mallory. LinkedIn favours native video; the image works as the fallback or second slide.
 - **Post only after** the repo is public.
-- **Before posting:** re-run the red-team suite on the current commit. The "0 leaks across 16 attacks" result is from commit `518a21f`, before the chat and agents landed.
+- **Before posting:** re-run the red-team suite on the current commit. The "0 leaks across 16 attacks" result is from commit `3129e35`, before the chat and agents landed.
 
 ---
 

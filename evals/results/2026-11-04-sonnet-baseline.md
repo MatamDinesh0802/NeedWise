@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-04-sonnet-baseline
 
 - date: `2026-11-04 12:04 UTC`
-- commit: `3742a55`
+- commit: `def3f00`
 - tenant: `Acme Robotics (restricted_data: allow)`
 - indexed chunks: `294`
 - embedding model: `embeddinggemma-300m (768 dims)`

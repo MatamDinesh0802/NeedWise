@@ -1,7 +1,7 @@
 # WorkMind evaluation: 2026-11-12-redteam-v1
 
 - date: `2026-11-12 18:40 UTC`
-- commit: `c5beef3`
+- commit: `ad5179f`
 - tenant: `Acme Robotics (external models receive up to: restricted)`
 - indexed chunks: `421`
 - embedding model: `embeddinggemma-300m (768 dims)`
