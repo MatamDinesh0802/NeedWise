@@ -23,10 +23,11 @@ from workmind.core.config import Settings
 from workmind.core.context import RequestContext
 from workmind.core.tenancy import tenant_transaction
 from workmind.main import create_app
+from workmind.modules.governance.audit import Actor
 from workmind.modules.governance.models import AuditEvent
 from workmind.modules.identity.models import User
 from workmind.modules.identity.service import load_identity
-from workmind.modules.knowledge import governance
+from workmind.modules.knowledge import document_acl, governance
 from workmind.modules.knowledge.models import Collection, CollectionGrant, Document, DocumentVersion
 from workmind.modules.retrieval.qdrant import QdrantClient
 from workmind.modules.retrieval.service import Retriever
@@ -1241,6 +1242,47 @@ async def test_admins_who_cannot_open_the_collection_hear_which_collection_only(
     assert event.details["collection_owner_skipped"] == (
         "the collection's owner owns the document and was reminded"
     )
+
+
+async def test_escalations_name_a_restricted_document_only_to_people_on_its_list(
+    acme: Acme, app_sessions: SessionFactory
+) -> None:
+    # Alice (the handbook's owner), Erin and Priya can open the collection but are not on this
+    # document's list: they were told "Overdue review: Secret reorg plan" and Alice also
+    # "No longer official: Secret reorg plan", by email or Slack too if they chose that.
+    await set_escalation(app_sessions, acme, "company-handbook", 7, demote=3)
+    document_id = await overdue_official(
+        app_sessions, acme, "company-handbook", "Secret reorg plan", owner="tom.becker", days=8
+    )
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        document = await session.get(Document, document_id)
+        assert document is not None
+        await document_acl.set_acl(
+            session,
+            acme.tenant_id,
+            document,
+            [document_acl.AclEntry(f"user:{acme.users['tom.becker']}")],
+            origin="manual",
+            actor=Actor.system(),
+        )
+    now = datetime.now(UTC)
+    escalate = governance.escalate_overdue_reviews
+    first = await escalate(app_sessions, acme.tenant_id, now=now)
+    await escalate(app_sessions, acme.tenant_id, now=now + timedelta(days=7))
+    demoted = await escalate(app_sessions, acme.tenant_id, now=now + timedelta(days=10))
+
+    assert first.to_collection_owner == [document_id]  # Alice still answers for the collection
+    assert demoted.demoted == [document_id]
+    for person in ("alice", "erin", "priya.raman"):
+        told = await notifications(app_sessions, acme, person, "document.review_escalated")
+        assert [(n.title, n.link) for n in told] == [
+            ("Overdue review in “Company Handbook”", "/admin/governance")
+        ], person
+        assert all("reorg" not in n.body for n in told)
+    (alice_demoted,) = await notifications(app_sessions, acme, "alice", "document.demoted")
+    assert alice_demoted.title == "A document in “Company Handbook” is no longer official"
+    (tom_demoted,) = await notifications(app_sessions, acme, "tom.becker", "document.demoted")
+    assert tom_demoted.title == "No longer official: Secret reorg plan"  # he is on the list
 
 
 async def test_an_overdue_document_is_demoted_only_when_the_collection_says_so(

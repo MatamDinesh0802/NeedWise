@@ -458,15 +458,18 @@ async def escalate_overdue_reviews(
                     and await can_view_as(session, owner.id, collection)
                 ):
                     told = [owner.id]
-                    await notify(
-                        session,
-                        tenant_id,
-                        owner.id,
-                        kind="document.review_escalated",
-                        title=f"Overdue review: {document.title[:150]}",
-                        body=_escalation_body(document, overdue_days, "the collection's owner"),
-                        link=document_link(document.id),
-                    )
+                    if await can_view_as(session, owner.id, collection, document=document):
+                        await notify(
+                            session,
+                            tenant_id,
+                            owner.id,
+                            kind="document.review_escalated",
+                            title=f"Overdue review: {document.title[:150]}",
+                            body=_escalation_body(document, overdue_days, "the collection's owner"),
+                            link=document_link(document.id),
+                        )
+                    else:  # the document's own list leaves them out: which collection, not which
+                        await _tell_withheld(session, owner.id, collection, overdue_days)
                     report.to_collection_owner.append(document.id)
                 else:
                     stage = "admins"  # nobody else answers for the collection
@@ -530,7 +533,7 @@ async def _tell_admins(
     for admin in admins:
         if admin.id == document.owner_id or admin.id in told_before:
             continue
-        if await can_view_as(session, admin.id, collection, grants):
+        if await can_view_as(session, admin.id, collection, grants, document=document):
             await notify(
                 session,
                 document.tenant_id,
@@ -540,22 +543,30 @@ async def _tell_admins(
                 body=_escalation_body(document, overdue_days, "an administrator"),
                 link=document_link(document.id),
             )
-        else:
-            await notify(
-                session,
-                document.tenant_id,
-                admin.id,
-                kind="document.review_escalated",
-                title=f"Overdue review in “{collection.name[:150]}”",
-                body=(
-                    f"An official document in a collection you can't open is {overdue_days} "
-                    "days past its review date, and its owner was reminded. Make sure someone "
-                    "who can open it reviews it, or give the collection an owner."
-                ),
-                link=governance_link(),
-            )
+        else:  # the collection is closed to them, or the document's own list leaves them out
+            await _tell_withheld(session, admin.id, collection, overdue_days)
         told.append(admin.id)
     return told
+
+
+async def _tell_withheld(
+    session: AsyncSession, user_id: uuid.UUID, collection: Collection, overdue_days: int
+) -> None:
+    """An overdue review told to someone who cannot read the document: which collection, not
+    which document (its collection is closed to them, or its own list leaves them out)."""
+    await notify(
+        session,
+        collection.tenant_id,
+        user_id,
+        kind="document.review_escalated",
+        title=f"Overdue review in “{collection.name[:150]}”",
+        body=(
+            f"An official document you can't open in this collection is {overdue_days} days past "
+            "its review date, and its owner was reminded. Make sure someone who can open it "
+            "reviews it, or give the collection an owner."
+        ),
+        link=governance_link(),
+    )
 
 
 async def _demote_overdue(
@@ -587,14 +598,19 @@ async def _demote_overdue(
     for person in (document.owner_id, collection.owner_id):
         if person is None or person in told or await _active(session, person) is None:
             continue
+        if await can_view_as(session, person, collection, document=document):
+            title, link = f"No longer official: {document.title[:150]}", document_link(document.id)
+        else:  # an owner the document's own list (or the collection) leaves out
+            title = f"A document in “{collection.name[:150]}” is no longer official"
+            link = governance_link()
         await notify(
             session,
             document.tenant_id,
             person,
             kind="document.demoted",
-            title=f"No longer official: {document.title[:150]}",
+            title=title,
             body=note,
-            link=document_link(document.id),
+            link=link,
         )
         told.append(person)
     return told

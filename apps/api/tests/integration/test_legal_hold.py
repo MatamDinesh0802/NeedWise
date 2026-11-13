@@ -26,7 +26,9 @@ from workmind.main import create_app
 from workmind.modules.analytics.models import AnalyticsRun
 from workmind.modules.conversations.models import Conversation
 from workmind.modules.governance import holds
+from workmind.modules.governance.audit import Actor
 from workmind.modules.governance.models import AuditEvent, LegalHold
+from workmind.modules.knowledge import document_acl
 from workmind.modules.knowledge.models import Collection, Document, DocumentVersion
 from workmind.modules.meetings.models import Meeting
 from workmind.modules.work.models import Notification
@@ -470,6 +472,40 @@ async def test_what_a_hold_names_is_described_without_content_the_reader_cannot_
     assert labels[str(open_doc)] == "Travel policy (Company Handbook)"
     assert labels[str(run_id)].startswith("An Insights question by Carol Lindqvist, ")
     assert "J. Doe" not in listed.text
+
+
+async def test_a_held_documents_title_stays_hidden_from_admins_its_own_list_leaves_out(
+    licensed: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    # Erin can open Company Handbook but is not on this document's list: the 201 response and
+    # the list used to name it ("<title> (Company Handbook)"), a title oracle by document id.
+    restricted = await _document(app_sessions, acme, "company-handbook", "Project Falcon merger")
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        document = await session.get(Document, restricted)
+        assert document is not None
+        await document_acl.set_acl(
+            session,
+            acme.tenant_id,
+            document,
+            [document_acl.AclEntry(f"user:{acme.users['hannah.schmidt']}")],
+            origin="manual",
+            actor=Actor.system(),
+        )
+    placed = licensed.post(
+        "/api/v1/admin/legal-holds",
+        json={
+            "matter": "Falcon",
+            "reason": "Preserve",
+            "target_type": "document",
+            "target_id": str(restricted),
+        },
+        headers=acme.as_("erin", write=True),
+    )
+    listed = licensed.get("/api/v1/admin/legal-holds", headers=acme.as_("erin"))
+
+    assert placed.status_code == 201, placed.text
+    assert placed.json()["target"]["label"] == "A document in “Company Handbook” you can't open"
+    assert "Falcon merger" not in placed.text + listed.text
 
 
 # --- Retention (licensed) ------------------------------------------------------------------------

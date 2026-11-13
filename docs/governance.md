@@ -122,13 +122,17 @@ and `review_auto_demote_days` from 1 to 3650, default empty (never demoted autom
   owner (who was already reminded), the first stage goes to the admins directly; the event
   says why (`collection_owner_skipped`).
 - The admins' stage leaves out the document's owner and a collection owner told before. An
-  admin who cannot open the collection is told which collection, not which document: "Overdue
-  review in “HR Guidance (internal)”", linking to **Admin > Governance**, which also withholds
-  the title (separation of duties, ARCHITECTURE 7.1).
+  admin who cannot open the collection, or whom the document's own access list leaves out, is
+  told which collection, not which document: "Overdue review in “HR Guidance (internal)”",
+  linking to **Admin > Governance**, which also withholds the title (separation of duties,
+  ARCHITECTURE 7.1). A collection owner the document's own list leaves out is told the same
+  way at the first stage.
 - **Demotion** sets the trust to `reference` at once in PostgreSQL and in the search index, is
   audited as `knowledge.document.demoted` with `reason: review_overdue` (actor: system; "No
   longer official" in the overview shows "Automatic: review overdue"), and tells the document's
-  owner and the collection's owner. Making it official again needs a review and a new approval.
+  owner and the collection's owner; one who cannot read the document is told "A document in
+  “<collection>” is no longer official", without its title. Making it official again needs a
+  review and a new approval.
 - **A review ends the escalation**: marking the document reviewed, an approval of official
   status, a demotion by an editor, new content, or a change of the collection's review interval
   clears the stage, so the next cycle starts afresh. Changing the escalation periods applies
@@ -180,8 +184,9 @@ Someone who cannot open the collection, or whom the document's own access list l
 ([permission-sync.md](permission-sync.md); a request made before these checks, or an approver
 who lost access since) sees the approval without the document's title, the requester's note or
 a link: "A document in <collection> you can't open". They cannot decide it, nobody who cannot
-read the document is chosen as its approver or made its owner, and review reminders and
-demotion notices go only to an owner who can read it.
+read the document is chosen as its approver or made its owner, review reminders go only to an
+owner who can read it, and escalations and demotion notices name it only to people who can (the
+others hear which collection).
 
 **New content ends official status.** A new version of an official document (an upload with
 the same file name, or a connector sync of an item that changed) drops it to the collection's

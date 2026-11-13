@@ -53,7 +53,7 @@ caller's principals:
 | Search, chat, `/ask`, agents, research, MCP `ask` and `search_knowledge` | Never retrieved, never sent to a model, never cited |
 | Governance overview, stale documents (admins) | Listed without its title or note |
 | Official-status requests | You cannot request, decide or be chosen as an approver; requests are shown without title |
-| Document owner | Cannot be made its owner; review reminders and demotion notices are not sent to an owner the list leaves out |
+| Document owner | Cannot be made its owner; review reminders are not sent to an owner the list leaves out, and escalations and demotion notices name the document only to people on it (the others are told which collection) |
 | `document.ready` workflows | No run for a workflow whose owner the list leaves out |
 
 What is **not** filtered: the audit log (admins and auditors see events about every document,

@@ -37,7 +37,7 @@ from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.governance.holds import HoldTarget
 from workmind.modules.governance.models import LegalHold
 from workmind.modules.identity.models import User
-from workmind.modules.knowledge.governance import unreadable_collections
+from workmind.modules.knowledge.governance import unreadable_collections, unreadable_documents
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.meetings.models import Meeting
 from workmind.modules.work.links import legal_holds_link
@@ -146,10 +146,19 @@ async def _target(
 ) -> TargetOut:
     kind: HoldTarget = target_type  # type: ignore[assignment]  (checked by the database)
 
-    async def in_collection(collection_id: uuid.UUID, title: str, noun: str) -> str:
+    async def in_collection(
+        collection_id: uuid.UUID, title: str, noun: str, document_id: uuid.UUID | None = None
+    ) -> str:
         collection = await session.get(Collection, collection_id)
         name = collection.name if collection else "a collection"
-        if await unreadable_collections(session, ctx, {collection_id}):
+        # A document is unreadable when its collection is closed to the caller or its own
+        # access list leaves them out (ADR 0012): its title is withheld from them either way.
+        closed = (
+            await unreadable_documents(session, ctx, {document_id})
+            if document_id is not None
+            else await unreadable_collections(session, ctx, {collection_id})
+        )
+        if closed:
             return f"A {noun} in “{name}” you can't open"
         return f"{title} ({name})"
 
@@ -157,7 +166,9 @@ async def _target(
     if kind == "document":
         document = await session.get(Document, target_id)
         if document is not None:
-            label = await in_collection(document.collection_id, document.title, "document")
+            label = await in_collection(
+                document.collection_id, document.title, "document", document.id
+            )
     elif kind == "collection":
         collection = await session.get(Collection, target_id)
         label = f"Collection “{collection.name}”" if collection else None
