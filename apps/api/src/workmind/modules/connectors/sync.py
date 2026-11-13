@@ -5,7 +5,10 @@
          -> items the source reported deleted (delta tombstones) are deleted everywhere
          -> if the scan was complete: items that disappeared are deleted everywhere
             if it was cut short: they are kept and flagged "missing upstream"
-            either way, documents under a legal hold stay (and the attempt is audited)
+            either way, documents under a legal hold stay (and the attempt is audited); a
+            held document the source deleted is marked (`source_deleted_at`) and every later
+            sync tries again, so it goes with the first sync after its last hold is released
+            (a delta feed reports a deletion only once)
          -> health recorded on the source and as a run (the run history); a source that keeps
             failing alerts the people who manage it (reminders.py)
 
@@ -205,6 +208,10 @@ async def sync_source(
             await _delete(deps, source, set(scan.deleted) - present, report)
         if scan.complete:
             await _delete(deps, source, None, report, keep=present)
+        else:  # deleted upstream earlier and kept by a hold: gone once no hold covers them
+            pending = await _deleted_upstream(deps, source) - present - set(scan.deleted)
+            if pending:
+                await _delete(deps, source, pending, report)
         await _mark_seen(deps, source, present, flag_missing=scan.truncated, report=report)
         if acls is not None:
             report.acl_unmapped = await unmapped_entries(deps.sessions, source)
@@ -423,10 +430,13 @@ async def _delete(
         gone: list[Document] = []
         kept: dict[str, list[str]] = {}
         matters: set[str] = set()
+        now = datetime.now(UTC)
         for document in missing:
             if blocking := await holds.covering(session, "document", document):
                 kept[str(document.id)] = [str(h.id) for h in blocking]
                 matters.update(h.matter for h in blocking)
+                if document.source_deleted_at is None:  # deleted upstream: retried every sync
+                    document.source_deleted_at = now
             else:
                 gone.append(document)
         orphaned: list[str] = []
@@ -457,6 +467,20 @@ async def _delete(
     report.kept_under_hold += len(kept)
 
 
+async def _deleted_upstream(deps: SyncDeps, source: Source) -> set[str]:
+    """External ids of this source's documents the source deleted while a hold kept them."""
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        return {
+            external_id
+            for external_id in await session.scalars(
+                select(Document.external_id).where(
+                    Document.source_id == source.id, Document.source_deleted_at.is_not(None)
+                )
+            )
+            if external_id is not None
+        }
+
+
 async def _mark_seen(
     deps: SyncDeps, source: Source, present: set[str], *, flag_missing: bool, report: SyncReport
 ) -> None:
@@ -471,6 +495,8 @@ async def _mark_seen(
             if document.external_id in present:
                 if document.source_missing_since is not None:
                     document.source_missing_since = None
+                if document.source_deleted_at is not None:  # back in the source
+                    document.source_deleted_at = None
                 if document.source_changed_at is None:  # synced before this was recorded
                     document.source_changed_at = now
             elif flag_missing and document.source_missing_since is None:

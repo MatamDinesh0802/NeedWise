@@ -392,6 +392,77 @@ async def test_a_held_document_the_source_reports_deleted_stays(
     assert set(await documents(deps, source)) == {"leave"}
 
 
+async def test_a_document_deleted_upstream_goes_once_its_hold_is_released(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """A delta feed reports a deletion once: the document a hold kept used to stay searchable
+    for good after the release, with nothing showing it was gone upstream."""
+    deps, connector, source, _, _ = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")
+    await run(deps, source)
+    held = (await documents(deps, source))["leave"]
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        hold = LegalHold(
+            tenant_id=source.tenant_id,
+            matter="Smith v. Acme",
+            reason="Preserve the leave policy as it was",
+            target_type="document",
+            target_id=held.id,
+        )
+        session.add(hold)
+    connector.complete = False  # incremental: the tombstone comes once
+    connector.items.pop("leave")
+    connector.deleted = ["leave"]
+    tombstoned = await run(deps, source)
+    connector.deleted = []
+    while_held = await run(deps, source)
+    kept = (await documents(deps, source))["leave"]
+
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        await session.execute(
+            update(LegalHold)
+            .where(LegalHold.id == hold.id)
+            .values(released_at=datetime.now(UTC), release_reason="Matter closed")
+        )
+    after_release = await run(deps, source)
+    again = await run(deps, source)
+
+    assert (tombstoned.deleted, tombstoned.kept_under_hold) == (0, 1)
+    assert kept.source_deleted_at is not None
+    assert (while_held.deleted, while_held.kept_under_hold) == (0, 1)  # still shown as kept
+    assert (after_release.deleted, after_release.kept_under_hold) == (1, 0)
+    assert (again.deleted, again.kept_under_hold) == (0, 0)
+    assert set(await documents(deps, source)) == {"travel"}
+
+
+async def test_a_held_item_that_comes_back_upstream_is_no_longer_marked_deleted(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    await run(deps, source)
+    held = (await documents(deps, source))["leave"]
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        session.add(
+            LegalHold(
+                tenant_id=source.tenant_id,
+                matter="Smith v. Acme",
+                reason="Preserve",
+                target_type="document",
+                target_id=held.id,
+            )
+        )
+    connector.complete = False
+    saved = connector.items.pop("leave")
+    connector.deleted = ["leave"]
+    await run(deps, source)
+    connector.deleted = []
+    connector.items["leave"] = saved  # restored in the source
+    await run(deps, source)
+    assert (await documents(deps, source))["leave"].source_deleted_at is None
+
+
 async def test_only_one_sync_runs_at_a_time(
     setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
 ) -> None:

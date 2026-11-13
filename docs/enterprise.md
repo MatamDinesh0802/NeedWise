@@ -160,7 +160,7 @@ While a hold is active, **nothing it covers is deleted**, whoever or whatever as
 |---|---|
 | A person deletes a document, a conversation or a meeting | `409 legal_hold` ("This document is under a legal hold"; the matter is not named), nothing changes |
 | An admin deletes a source whose synced documents include a held one | `409 legal_hold`, nothing is deleted (disable the source to stop its syncs) |
-| A connector's deletion propagation (the item is gone from the source) | The held document stays, searchable as before; the sync reports it as `kept_under_hold` and **Admin > Sources** shows "1 kept under legal hold" |
+| A connector's deletion propagation (the item is gone from the source) | The held document stays, searchable as before; the sync reports it as `kept_under_hold` and **Admin > Sources** shows "1 kept under legal hold". A document the source reported deleted (a delta feed's tombstone, reported only once) is marked `source_deleted_at`, every later sync tries again and keeps counting it, and the first sync after its last hold is released deletes it; if the item comes back in the source first, the mark is cleared. A paused source does not sync, so it deletes nothing until it is resumed |
 | A retention run, by hand or daily | Held conversations, Insights questions and meeting recordings are kept and counted as `kept_under_hold`; the preview counts them the same way |
 | `wm tenant delete` | Refused before anything is suspended or deleted, unless the operator types `--override-legal-holds <tenant>` ([multi-tenancy.md](multi-tenancy.md#deleting-a-tenant-completely)) |
 
