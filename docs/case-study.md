@@ -78,7 +78,7 @@ on `main` without a release ([CHANGELOG](../CHANGELOG.md)).
 |---|---|---|
 | 0 Foundation | One-command stack, CI, the Acme company definition | |
 | 1 Identity and permissions | Keycloak sign-in, tenants with forced RLS, departments and nested groups, OpenFGA with an outbox, access tokens, a hash-chained audit log | A permission grid of 6 people x 7 collections as 42 tests |
-| 2 Ingestion | Upload of PDF, Office, Markdown, HTML, CSV and Slack exports; structure-aware chunking; sensitivity labels; versions; local embeddings | 34 documents became 294 chunks; re-indexing them took 8.6 s. The planned 500-document corpus was not built (49 today) |
+| 2 Ingestion | Upload of PDF, Office, Markdown, HTML, CSV and Slack exports; structure-aware chunking; sensitivity labels; versions; local embeddings | 34 documents became 294 chunks; re-indexing them took 8.6 s. On 2026-11-13, re-indexing the 51 documents of the demo tenant (430 chunks) took 18.9 s and 8.2 s in two runs (ROADMAP Phase 2). The planned 500-document corpus was not built (49 today) |
 | 3 Retrieval and evaluation | Hybrid search, both locks, citations, abstention, sensitivity routing, `wm eval`, the CI permission gate | 81/82 correct, 0 leaks. Deferred: a reranker (no headroom measured), the local-versus-hosted model comparison, 200 QA questions |
 | 4 Assistant | Streaming chat with citation chips, follow-ups, feedback, usage per message, "view as" | Not done: the demo video and public demo |
 | 5 Agents | Planner, fast path, department agents, the `auto` mode | Agents win 1 of 15 cross-department questions; `single` stays the default |

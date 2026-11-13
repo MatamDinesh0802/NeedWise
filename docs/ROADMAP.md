@@ -137,6 +137,16 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **DoD:** the full Acme corpus ingests with zero unhandled failures. Re-uploading an unchanged file is skipped. Throughput (docs/min) is measured and recorded.
 
+> **Throughput, measured 2026-11-13** (commit `8dc326c`): `wm reindex acme` inside the API
+> container re-indexed the demo tenant's 51 documents (the 49 seeded and 2 meeting transcripts;
+> 430 chunks) from their stored originals, one document at a time: parse, chunk, label, embed,
+> index. Two runs, 0 failed: 18.9 s (about 160 documents or 1,370 chunks a minute; the first run,
+> container exec and imports included) and 8.2 s (about 370 a minute). Hardware: an Apple M5
+> laptop (10 cores), EmbeddingGemma-300M on llama.cpp on the host. Not measured: uploads through
+> the API, the Celery worker path, more than one worker, a larger corpus, CPU-only embeddings in
+> Docker (the quickstart's seed step, 47 documents in 69 to 76 s, includes them with the
+> analytics data and logins).
+>
 > **Not built:** the S3 storage adapter (only a local directory; the local and in-memory stores
 > share a contract suite, `tests/test_storage_contract.py`); Docling, OCR and the HybridChunker
 > (lightweight parsers instead, [ADR 0007](adr/0007-model-providers-and-lightweight-parsing.md));
@@ -656,6 +666,20 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   refusing the first one or two sign-ins after Postgres is recreated (it recovers within seconds;
   not investigated); the load test was not run again after the analytics workers were split across
   the API processes (2 per container by default instead of 3 per process).
+- [x] **Final review fixes (2026-11-13).** A last review found 2 high security issues (a
+  collection owner's web source fetching internal services; repointing a source someone else had
+  credentialed), approver chains a single person could complete, a router model that always
+  failed with Claude, and medium and low issues around documents' own lists, legal holds, Slack
+  posts, auditing and validation; each fix has a regression test ([changelog](../CHANGELOG.md)). The
+  claims that described designed but unbuilt pieces were corrected
+  ([ARCHITECTURE](ARCHITECTURE.md#what-the-design-describes-that-is-not-built) and each phase
+  above). Checked at `8dc326c` on the stack rebuilt with migration `0027` and the Enterprise dev
+  license: backend 1,968 passed and 26 skipped (unit, integration, `ee/`), web 1,197, API
+  end-to-end 16 (the 2 model tests included), browser 184, the retrieval-only permission gate 0
+  leaks in 183 checks ([report](../evals/results/2026-11-13-permission-gate-final-pass.md)), the 9
+  document-list attacks answered with Claude Sonnet 5.5 with 0 leaks and 0 violations
+  ([report](../evals/results/2026-11-13-redteam-document-lists.md)), and request routing with the
+  real router model 36/39 ([report](../evals/results/2026-11-13-request-routing.md)).
 
 **Scope:**
 - Security review against the OWASP Top 10 for LLM Applications. Threat model review. Red-team expansion.
