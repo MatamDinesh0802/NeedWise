@@ -553,3 +553,51 @@ async def test_workflows_are_saved_as_yaml_and_errors_point_at_lines(
         url, json={"key": "weekly-report", "name": "W", "source": impossible}, headers=admin
     )
     assert (unmet.status_code, unmet.json()["code"]) == (422, "invalid_approver")
+
+
+async def test_the_editor_flags_unknown_tools_and_approvers_before_saving(
+    api: TestClient, acme: Acme
+) -> None:
+    # "tool: send_emial" validated and saved, and failed only at run time (after the research
+    # step's model calls); an approver nobody could be showed no problem until Save.
+    admin = acme.as_("erin", write=True)
+    typo = SOURCE.replace("tool: send_email", "tool: send_emial")
+    nobody = SOURCE.replace("priya.raman@acme.test", "nobody@nowhere.test")
+
+    def validate(source: str) -> Any:
+        return api.post("/api/v1/admin/workflows/validate", json={"source": source}, headers=admin)
+
+    unknown = validate(typo).json()
+    unmet = validate(nobody).json()
+    saved = api.put(
+        "/api/v1/admin/workflows/typo",
+        json={"key": "typo", "name": "Typo", "source": typo},
+        headers=admin,
+    )
+
+    assert unknown["valid"] is False
+    (problem,) = unknown["errors"]
+    assert (problem["line"], problem["path"]) == (8, "steps[1].tool")
+    assert problem["message"].startswith("No tool named “send_emial”")
+    assert unmet["valid"] is False
+    assert (unmet["errors"][0]["line"], unmet["errors"][0]["path"]) == (14, "steps[1].approver")
+    assert "nobody@nowhere.test" in unmet["errors"][0]["message"]
+    assert (saved.status_code, saved.json()["code"]) == (422, "unknown_tool")
+
+
+async def test_a_definition_in_json_may_use_tabs_and_exponents(api: TestClient, acme: Acme) -> None:
+    # PyYAML reads YAML 1.1: tab-indented JSON failed, and 1e5 became the string "1e5".
+    source = '{\n\t"steps": [\n\t\t{"id": "gather", "research": "What happened?"}\n\t]\n}'
+    checked = api.post(
+        "/api/v1/admin/workflows/validate",
+        json={"source": source},
+        headers=acme.as_("erin", write=True),
+    ).json()
+    assert (checked["valid"], checked["errors"]) == (True, [])
+    broken = api.post(
+        "/api/v1/admin/workflows/validate",
+        json={"source": '{\n\t"steps": [\n}'},
+        headers=acme.as_("erin", write=True),
+    ).json()
+    assert broken["errors"][0]["message"].startswith("Not valid JSON")
+    assert broken["errors"][0]["line"] == 3

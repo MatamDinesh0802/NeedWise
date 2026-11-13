@@ -238,7 +238,8 @@ model step never ran. One run of 39 items is a smoke test, not a quality claim.
 
 Declarative, saved by an admin (`PUT /api/v1/admin/workflows/{key}`). A run acts as the admin who
 saved it, with their current access. Triggers: manual only (no `trigger`), a cron `schedule`, or
-an `event` (below). The definition is written in **YAML** (or JSON, which is YAML too):
+an `event` (below). The definition is written in **YAML** or **JSON** (text starting with `{` is
+read as JSON, so tab indentation and numbers like `1e5` work):
 
 ```yaml
 # Admin › Workflows keeps the comments.
@@ -264,8 +265,10 @@ steps:
   `source`) or `definition` (an object, shown back as YAML). Problems come back as `422
   invalid_workflow` with `errors: [{line, column, path, message}]`; `POST
   /api/v1/admin/workflows/validate {source}` checks a text without saving it (the editor calls it
-  as you type). YAML is read with the safe loader, at most 100 KB, without aliases (`*name`), and
-  dates become ISO strings.
+  as you type): the schema, then that every tool step names a registered tool and every approver
+  rule can be met now, each at its line. Saving refuses an unknown tool (`422 unknown_tool`) and
+  an approver rule nobody can meet (`422 invalid_approver`). YAML is read with the safe loader,
+  at most 100 KB, without aliases (`*name`), and dates become ISO strings.
 - **Research steps only read**: company search and read-only tools.
 - **Tool steps** run directly if they only read. If they change something, they are validated,
   then become an approval (with the step's approver rule), and the run waits (`waiting_approval`)
@@ -320,8 +323,10 @@ trigger: {event: document.ready, collection: company-handbook}   # the filter is
   `assignee`, `department`, `completed_by`; approvals: `approval_id`, `tool`, `decision`,
   `status`, `summary`, `note`, `requested_by`, `decided_by`. In a research step they are quoted as
   `<data>` (someone else wrote them).
-- **Audited:** `workflow.triggered` (workflow key, run, event, and what it is about), then the
-  run's own `workflow.succeeded` / `failed` / `cancelled` and every step as for other runs.
+- **Audited:** `workflow.triggered` (workflow key, run, event, and what it is about; for **Run
+  now**, the admin who pressed it as the actor, with `trigger: manual` and the workflow's owner,
+  as whom the run acts), then the run's own `workflow.succeeded` / `failed` / `cancelled` and
+  every step as for other runs.
 - Runs from events show `An event` as their trigger in Admin › Workflows › Runs; a run waiting to
   start shows as *Queued*.
 

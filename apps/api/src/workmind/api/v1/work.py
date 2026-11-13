@@ -27,6 +27,7 @@ from workmind.modules.knowledge.governance import (
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import set_document_labels
 from workmind.modules.knowledge.service import collection_access
+from workmind.modules.tools.registry import ToolRegistry
 from workmind.modules.work.approvals import ApprovalKind, decide
 from workmind.modules.work.approvers import RuleError, describe, first_stage, stored_rule
 from workmind.modules.work.events import task_completed
@@ -36,7 +37,7 @@ from workmind.modules.work.models import Approval, Notification, Task, Workflow,
 from workmind.modules.work.notifications import notify
 from workmind.modules.work.routing import reroute
 from workmind.modules.work.visibility import can_see_task, is_triager, my_departments
-from workmind.modules.work.workflow_source import SourceProblem, parse_source, to_yaml
+from workmind.modules.work.workflow_source import SourceProblem, located, parse_source, to_yaml
 from workmind.modules.work.workflows import (
     Definition,
     WorkflowDeps,
@@ -622,6 +623,57 @@ def _definition(body: WorkflowIn) -> dict[str, Any]:
         ) from exc
 
 
+async def _semantic_problems(
+    session: AsyncSession,
+    ctx: RequestContext,
+    registry: ToolRegistry,
+    definition: dict[str, Any],
+    text: str | None,
+) -> list[SourceProblem]:
+    """What the schema cannot know: every tool step names a registered tool, and every
+    approver rule resolves now to somebody (other than the admin, who requests the run's
+    actions, unless it names one person). At their lines when the text is known."""
+    parsed = Definition.model_validate(definition)
+    problems: list[SourceProblem] = []
+    for index, step in enumerate(parsed.steps):
+        if step.tool is not None and registry.get(step.tool) is None:
+            known = ", ".join(sorted(t.name for t in registry.all())[:12])
+            problems.append(
+                located(
+                    text,
+                    ("steps", index, "tool"),
+                    f"No tool named “{step.tool}” (known tools: {known})",
+                )
+            )
+        rule = step.rule()
+        if rule is None:
+            continue
+        try:
+            await first_stage(session, rule, ctx.user_id)
+        except RuleError as exc:
+            problems.append(
+                located(
+                    text,
+                    ("steps", index, "approver"),
+                    f"The approver rule cannot be met: {exc}",
+                )
+            )
+    return problems
+
+
+def _check_tools(registry: ToolRegistry, definition: dict[str, Any]) -> None:
+    """An unknown tool is refused when saving, not found at every run (a typo would spend a
+    research step's model calls first)."""
+    for step in Definition.model_validate(definition).steps:
+        if step.tool is not None and registry.get(step.tool) is None:
+            raise ApiError(
+                422,
+                "unknown_tool",
+                f"Step {step.id}: unknown tool",
+                f"No tool named “{step.tool}” is registered.",
+            )
+
+
 async def _check_approvers(
     session: AsyncSession, ctx: RequestContext, definition: dict[str, Any]
 ) -> None:
@@ -681,15 +733,23 @@ async def list_workflows(ctx: AdminContext, request: Request) -> list[WorkflowOu
 
 
 @admin_router.post("/validate")
-async def validate_workflow(ctx: AdminContext, body: SourceIn) -> ValidationOut:
+async def validate_workflow(ctx: AdminContext, request: Request, body: SourceIn) -> ValidationOut:
     """Checks a definition written as YAML or JSON without saving it: every problem with its
-    line and column (for the editor). Approver rules and trigger filters that name people,
-    departments or collections are checked when saving."""
+    line and column (for the editor), including tools that do not exist and approver rules
+    nobody can meet. Trigger filters that name departments or collections are checked when
+    saving."""
     parsed, problems = parse_source(body.source, Definition)
+    definition = parsed.model_dump(mode="json", exclude_none=True) if parsed else None
+    if definition is not None:
+        resources = resources_of(request)
+        async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+            problems = await _semantic_problems(
+                session, ctx, resources.tools, definition, body.source
+            )
     return ValidationOut(
-        valid=parsed is not None,
+        valid=definition is not None and not problems,
         errors=[SourceProblemOut(**p.as_json()) for p in problems],
-        definition=parsed.model_dump(mode="json", exclude_none=True) if parsed else None,
+        definition=definition,
     )
 
 
@@ -701,6 +761,7 @@ async def save_workflow(
     if body.key != key:
         raise ApiError(422, "key_mismatch", "The key in the body must match the URL")
     definition = _definition(body)
+    _check_tools(resources_of(request).tools, definition)
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         await _check_event_collection(session, ctx, definition)
         await _check_approvers(session, ctx, definition)
@@ -786,9 +847,20 @@ async def run_workflow(ctx: AdminContext, request: Request, key: str) -> RunOut:
         workflow = await session.scalar(select(Workflow).where(Workflow.key == key))
         if workflow is None:
             raise ApiError(404, "not_found", "Workflow not found")
-        workflow_id = workflow.id
+        workflow_id, owner_id = workflow.id, workflow.owner_id
     deps = WorkflowDeps(resources.db, resources.llm, resources.tools, resources.models)
     run_id = await create_run(deps, ctx.tenant_id, workflow_id, trigger="manual")
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        # Who started it: the run then acts as the workflow's owner, who may be someone else.
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action="workflow.triggered",
+            resource_type="workflow",
+            resource_id=key,
+            details={"run_id": str(run_id), "trigger": "manual", "owner": str(owner_id)},
+        )
     resources.runs.start(_advance(deps, ctx.tenant_id, run_id))  # may take a minute: not here
     async with tenant_transaction(resources.db, ctx.tenant_id) as session:
         run = await session.get(WorkflowRun, run_id)

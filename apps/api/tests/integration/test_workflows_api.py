@@ -61,3 +61,28 @@ async def test_an_admin_deletes_a_workflow_once_no_run_is_in_progress(
         "weekly-digest",
         {"name": "Weekly digest", "runs": 1},
     )
+
+
+async def test_run_now_is_audited_with_who_started_it(
+    api: TestClient, acme: Acme, app_sessions: SessionFactory
+) -> None:
+    # A run acts as the admin who saved the workflow; nothing recorded who pressed Run now.
+    saved = api.put(
+        "/api/v1/admin/workflows/weekly-digest",
+        json={"key": "weekly-digest", "name": "Weekly digest", "definition": DEFINITION},
+        headers=acme.as_("erin", write=True),
+    )
+    assert saved.status_code == 200, saved.text
+    started = api.post(
+        "/api/v1/admin/workflows/weekly-digest/run", headers=acme.as_("priya.raman", write=True)
+    )
+    assert started.status_code == 202, started.text
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        (event,) = (
+            await session.scalars(
+                select(AuditEvent).where(AuditEvent.action == "workflow.triggered")
+            )
+        ).all()
+    assert (event.actor_type, event.actor_id) == ("user", acme.users["priya.raman"])
+    assert (event.resource_id, event.details["run_id"]) == ("weekly-digest", started.json()["id"])
+    assert event.details["owner"] == str(acme.users["erin"])

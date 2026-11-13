@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from tests.fakes import FakeLLM
 from workmind.modules.work.approvers import (
@@ -538,3 +538,16 @@ def test_mentions_are_full_addresses_after_an_at_sign() -> None:
     assert mentioned(text) == ["wei.zhang@acme.test", "noah.fischer@acme.test"]
     assert mentioned("") == []
     assert len(mentioned(" ".join(f"@p{i}@x.test" for i in range(30)))) == 10
+
+
+class _Numbers(BaseModel):
+    ratio: float
+    counts: list[int]
+
+
+def test_json_sources_are_read_as_json() -> None:
+    parsed, problems = parse_source('{\n\t"ratio": 1e5,\n\t"counts": [1, 2]\n}', _Numbers)
+    assert problems == []
+    assert parsed == _Numbers(ratio=100000.0, counts=[1, 2])
+    _, wrong = parse_source('{\n\t"ratio": "x",\n\t"counts": []\n}', _Numbers)
+    assert (wrong[0].path, wrong[0].line) == ("ratio", 2)

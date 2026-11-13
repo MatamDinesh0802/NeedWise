@@ -1,11 +1,15 @@
-"""Workflow definitions written as YAML (or JSON, which is YAML too): parsed, validated, and
-every problem reported at its line, for Admin > Workflows' editor and the API.
+"""Workflow definitions written as YAML or JSON: parsed, validated, and every problem reported
+at its line, for Admin > Workflows' editor and the API.
+
+Text that starts with `{` is read as JSON first (a JSON document is YAML 1.2, but PyYAML reads
+YAML 1.1: it refuses tab indentation and reads 1e5 as a string); anything else as YAML.
 
 Safe by construction: PyYAML's safe loader (no Python objects), a size limit, and no aliases
 (`*name`), which would let a short document expand into a huge one when it is stored as JSON.
 YAML's dates become ISO strings, so the stored definition is plain JSON.
 """
 
+import json
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -76,10 +80,47 @@ def _message(error: Any) -> str:
     return message
 
 
+def _compose(text: str) -> yaml.Node | None:
+    """The YAML node tree, for line numbers; None when the text is not YAML (tabbed JSON)."""
+    try:
+        return cast(yaml.Node | None, yaml.compose(text, Loader=yaml.SafeLoader))  # pyright: ignore[reportUnknownMemberType]
+    except yaml.YAMLError:
+        return None
+
+
+def located(text: str | None, loc: Sequence[int | str], message: str) -> SourceProblem:
+    """A problem found after parsing (an unknown tool, an approver nobody can be), at the line
+    of the part it is about when the text is known."""
+    node = _node_at(_compose(text), loc) if text is not None else None
+    mark = node.start_mark if node is not None else None
+    return SourceProblem(
+        mark.line + 1 if mark else None, mark.column + 1 if mark else None, _path(loc), message
+    )
+
+
+def _load_json(text: str) -> tuple[Any, yaml.Node | None, list[SourceProblem]]:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        return (
+            None,
+            None,
+            [SourceProblem(exc.lineno, exc.colno, "(definition)", f"Not valid JSON: {exc.msg}")],
+        )
+    # Tabs are only whitespace in JSON (one inside a string must be written \t), so as spaces
+    # the text is YAML with the same lines and columns.
+    return data, _compose(text.replace("\t", " ")), []
+
+
 def parse_source[T: BaseModel](text: str, model: type[T]) -> tuple[T | None, list[SourceProblem]]:
     """The validated definition, or the problems (each at its line when it has one)."""
     if len(text) > MAX_SOURCE:
         return None, [SourceProblem(None, None, "(definition)", "The definition is too long")]
+    if text.lstrip().startswith("{"):
+        data, root, problems = _load_json(text)
+        if problems:
+            return None, problems
+        return _validated(model, data, root)
     try:
         events = cast(Iterable[yaml.Event], yaml.parse(text, Loader=yaml.SafeLoader))  # pyright: ignore[reportUnknownMemberType]
         for event in events:
@@ -108,6 +149,12 @@ def parse_source[T: BaseModel](text: str, model: type[T]) -> tuple[T | None, lis
         ]
     except yaml.YAMLError as exc:
         return None, [SourceProblem(None, None, "(definition)", f"Not valid YAML: {exc}")]
+    return _validated(model, data, root)
+
+
+def _validated[T: BaseModel](
+    model: type[T], data: Any, root: yaml.Node | None
+) -> tuple[T | None, list[SourceProblem]]:
     if not isinstance(data, dict):
         return None, [
             SourceProblem(
