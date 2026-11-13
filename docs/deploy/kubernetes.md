@@ -262,7 +262,7 @@ For each one the chart uses, in this order:
 | `keycloakAdminPassword` | `keycloak-admin-password` | Keycloak's bootstrap admin; `KEYCLOAK_ADMIN_PASSWORD` for the seed | with `keycloak.enabled` |
 | `demoPassword` | `demo-password` | `DEMO_PASSWORD` (seed) | no |
 | `anthropicApiKey`, `llmApiKey`, `localLlmApiKey`, `embeddingApiKey`, `transcriptionApiKey` | `anthropic-api-key`, ... | `ANTHROPIC_API_KEY`, `LLM_API_KEY`, ... | no |
-| `smtpPassword`, `googleClientSecret` | `smtp-password`, `google-client-secret` | `SMTP_PASSWORD`, `GOOGLE_CLIENT_SECRET` | no |
+| `smtpPassword`, `googleClientSecret`, `slackClientSecret` | `smtp-password`, `google-client-secret`, `slack-client-secret` | `SMTP_PASSWORD`, `GOOGLE_CLIENT_SECRET`, `SLACK_CLIENT_SECRET` | no |
 | `licenseKey` | `license-key` | `LICENSE_KEY` (Enterprise) | no |
 | `mcpServers` | `mcp-servers` | `MCP_SERVERS` (JSON with the servers' tokens) | no |
 
