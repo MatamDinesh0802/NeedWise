@@ -541,8 +541,8 @@ async def _finish(
             stored.last_success_at = now
             stored.consecutive_failures = 0
             if stored.failure_alerted_at is not None:
+                await announce_recovery(session, stored)  # names the episode it ends
                 stored.failure_alerted_at = None
-                await announce_recovery(session, stored)
         else:
             stored.consecutive_failures += 1
             await check_failing(session, stored, threshold=deps.failure_alert_after, now=now)

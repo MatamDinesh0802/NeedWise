@@ -102,6 +102,8 @@ async def check_failing(
             title=f"“{source.name[:120]}” keeps failing to sync",
             body=f"{source.consecutive_failures} syncs in a row failed. {plain}",
             link=source_link(source.key, admin=admin),
+            # One channel post per failure episode (admins and owners get different links).
+            thing=f"source:{source.id}:{now.isoformat()}",
         )
     source.failure_alerted_at = now
     await record_event(
@@ -123,6 +125,8 @@ async def check_failing(
 async def announce_recovery(session: AsyncSession, source: Source) -> None:
     """The first success after an alert: the same people hear that it works again."""
     recipients = await failure_recipients(session, source)
+    episode = source.failure_alerted_at.isoformat() if source.failure_alerted_at else "?"
+
     for user, admin in recipients:
         await notify(
             session,
@@ -132,6 +136,7 @@ async def announce_recovery(session: AsyncSession, source: Source) -> None:
             title=f"“{source.name[:120]}” syncs again",
             body="The last sync succeeded after the failures you were told about.",
             link=source_link(source.key, admin=admin),
+            thing=f"source:{source.id}:{episode}",
         )
     await record_event(
         session,

@@ -467,9 +467,17 @@ async def escalate_overdue_reviews(
                             title=f"Overdue review: {document.title[:150]}",
                             body=_escalation_body(document, overdue_days, "the collection's owner"),
                             link=document_link(document.id),
+                            thing=_stage_thing(document, "collection_owner"),
                         )
                     else:  # the document's own list leaves them out: which collection, not which
-                        await _tell_withheld(session, owner.id, collection, overdue_days)
+                        await _tell_withheld(
+                            session,
+                            owner.id,
+                            document,
+                            collection,
+                            overdue_days,
+                            "collection_owner",
+                        )
                     report.to_collection_owner.append(document.id)
                 else:
                     stage = "admins"  # nobody else answers for the collection
@@ -542,15 +550,27 @@ async def _tell_admins(
                 title=f"Overdue review: {document.title[:150]}",
                 body=_escalation_body(document, overdue_days, "an administrator"),
                 link=document_link(document.id),
+                thing=_stage_thing(document, "admins"),
             )
         else:  # the collection is closed to them, or the document's own list leaves them out
-            await _tell_withheld(session, admin.id, collection, overdue_days)
+            await _tell_withheld(session, admin.id, document, collection, overdue_days, "admins")
         told.append(admin.id)
     return told
 
 
+def _stage_thing(document: Document, stage: str) -> str:
+    """One escalation stage of one document's review cycle (a Slack channel posts it once)."""
+    cycle = document.next_review_at.isoformat() if document.next_review_at else ""
+    return f"document:{document.id}:{cycle}:{stage}"
+
+
 async def _tell_withheld(
-    session: AsyncSession, user_id: uuid.UUID, collection: Collection, overdue_days: int
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    document: Document,
+    collection: Collection,
+    overdue_days: int,
+    stage: str,
 ) -> None:
     """An overdue review told to someone who cannot read the document: which collection, not
     which document (its collection is closed to them, or its own list leaves them out)."""
@@ -566,6 +586,7 @@ async def _tell_withheld(
             "reviews it, or give the collection an owner."
         ),
         link=governance_link(),
+        thing=_stage_thing(document, stage),
     )
 
 
@@ -611,6 +632,7 @@ async def _demote_overdue(
             title=title,
             body=note,
             link=link,
+            thing=_stage_thing(document, "demoted"),
         )
         told.append(person)
     return told

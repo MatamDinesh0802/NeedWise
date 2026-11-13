@@ -19,7 +19,11 @@ async def notify(
     title: str,
     body: str = "",
     link: str | None = None,
+    thing: str | None = None,
 ) -> None:
+    """`thing`: what the notification is about, when its link does not say (a page shared by
+    many things, like Admin > Legal holds): a tenant's Slack channel gets one post per kind and
+    thing, however many people were told."""
     notification = Notification(
         tenant_id=tenant_id,
         user_id=user_id,
@@ -30,4 +34,4 @@ async def notify(
     )
     session.add(notification)
     await session.flush()  # the outbox rows reference it
-    await enqueue(session, notification)
+    await enqueue(session, notification, thing=thing)

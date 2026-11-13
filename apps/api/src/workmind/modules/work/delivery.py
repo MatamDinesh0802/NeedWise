@@ -206,6 +206,13 @@ def message_body(title: str, body: str, link: str | None) -> str:
     return "\n".join(lines)
 
 
+def slack_text(text: str) -> str:
+    """Text for Slack, escaped as Slack requires for untrusted text: titles carry what people
+    and sources wrote (a request's title, a synced page's <title>), and unescaped `<!channel>`
+    or `<https://evil.example|Open in WorkMind>` would ping a channel or disguise a link."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 EMAIL_FOOTER: Final = (
     "\n\n--\nYou get this email because of your notification settings: "
     f"{APP_URL}/settings#notifications"
@@ -221,7 +228,17 @@ async def _slack_settings(session: AsyncSession) -> AutomationSettings | None:
     return row if isinstance(row, AutomationSettings) else None
 
 
-async def enqueue(session: AsyncSession, notification: Notification) -> None:
+def channel_key(notification: Notification, thing: str | None = None) -> str:
+    """What one Slack channel post stands for: the notification's kind and the thing it is
+    about (its own key, else its link, else its title). Kinds whose link is a shared page (legal
+    holds, budgets, sources, escalations told without a title) pass the thing, or every later
+    one would be taken for the first and never posted."""
+    return f"{notification.kind}:{thing or notification.link or notification.title}"[:500]
+
+
+async def enqueue(
+    session: AsyncSession, notification: Notification, *, thing: str | None = None
+) -> None:
     """Outbox rows for a new notification, from the person's preferences and the tenant's
     Slack settings. Flushed with the notification, committed with the action."""
     preference = preferences_of(await session.get(WorkPreference, notification.user_id))
@@ -249,7 +266,7 @@ async def enqueue(session: AsyncSession, notification: Notification) -> None:
                 channel="slack_dm",
                 kind=notification.kind,
                 subject=notification.title[:200],
-                body=text,
+                body=slack_text(text),
             )
         )
     if (
@@ -265,8 +282,8 @@ async def enqueue(session: AsyncSession, notification: Notification) -> None:
                 channel="slack_channel",
                 kind=notification.kind,
                 subject=notification.title[:200],
-                body=text,
-                dedupe_key=f"{notification.kind}:{notification.link or notification.title}"[:500],
+                body=slack_text(text),
+                dedupe_key=channel_key(notification, thing),
             )
             .on_conflict_do_nothing(index_elements=["tenant_id", "channel", "dedupe_key"])
         )

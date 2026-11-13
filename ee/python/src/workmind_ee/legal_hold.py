@@ -133,6 +133,7 @@ async def _tell(
             title=title,
             body=f"{who} {verb} the hold for “{hold.matter[:200]}” on {what}.",
             link=legal_holds_link(),
+            thing=f"legal_hold:{hold.id}",
         )
 
 

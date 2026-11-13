@@ -131,9 +131,15 @@ goes out (Settings › Notifications, `GET/PUT /api/v1/me/work-preferences`):
   app with `users:read.email` and `chat:write`). Slack finds the person by their email address
   (`users.lookupByEmail`, then `chat.postMessage`).
 - **Slack channel:** an admin may also save an **incoming webhook** and choose categories to post
-  to that channel. A channel gets one post per thing (its kind and link), however many people
-  were told, with the title and a link: everyone in the channel reads those titles, so choose
-  categories whose titles they may see.
+  to that channel. A channel gets one post per thing, however many people were told: per kind
+  and the thing itself (a legal hold, a budget in one period, a source's failure episode, one
+  escalation stage of a document's review cycle), else per kind and link. The post carries the
+  title and link of the first copy written, so everyone in the channel reads those titles:
+  choose categories whose titles they may see (a review escalation's first copy may name a
+  document that people outside its access list cannot open).
+- **Escaped for Slack:** `&`, `<` and `>` in what goes to Slack (direct messages and channel
+  posts) are escaped, so a title someone wrote (a request, a synced page's title) cannot ping
+  `@channel` or show a disguised link.
 - **Never blocking:** `notify()` writes the notification and its outbox rows
   (`notification_deliveries`) in the action's own transaction; the beat task
   (`workmind.deliver_notifications`, every minute) queues digests and sends what is due. A

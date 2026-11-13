@@ -444,6 +444,8 @@ class UsageMeter:
                     title=title,
                     body=body,
                     link=usage_link(),
+                    # One channel post per budget, subject and period (the link is one page).
+                    thing=f"budget:{binding.rule.id}:{subject}:{start.isoformat()}",
                 )
             log.info(
                 "budget_warning_sent",

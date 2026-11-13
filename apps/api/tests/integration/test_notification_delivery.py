@@ -243,6 +243,69 @@ async def test_a_channel_gets_one_post_per_thing_for_the_chosen_categories(
     ]
 
 
+async def test_things_that_share_a_page_still_get_one_post_each(
+    app_sessions: SessionFactory, acme: Acme
+) -> None:
+    # Every legal hold links to Admin > Legal holds, every budget warning to /analytics: the
+    # channel post was keyed on the link, so after the first hold (or warning) the others were
+    # dropped for 30 days. And a source that failed again in a new episode was never posted.
+    await connect_slack(app_sessions, acme, channel=["legal_holds", "sources"])
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        for matter in ("Smith v. Acme", "Jones v. Acme"):
+            hold = uuid.uuid4()
+            for who in ("erin", "priya.raman"):  # one fan-out: still one post per hold
+                await notify(
+                    session,
+                    acme.tenant_id,
+                    acme.users[who],
+                    kind="legal_hold.placed",
+                    title=f"Legal hold placed: {matter}",
+                    link="/admin/legal-holds",
+                    thing=f"legal_hold:{hold}",
+                )
+        for episode, link in (
+            ("e1", "/admin/sources?source=x"),
+            ("e1", "/knowledge/sources"),
+            ("e2", "/admin/sources?source=x"),
+        ):
+            await notify(
+                session,
+                acme.tenant_id,
+                acme.users["erin"],
+                kind="source.failing",
+                title="“Wiki” keeps failing to sync",
+                link=link,
+                thing=f"source:wiki:{episode}",
+            )
+
+    slack = SlackStub()
+    await deliver_due(deps(app_sessions, Mailer(), slack), acme.tenant_id, datetime.now(UTC))
+
+    titles = sorted(p["text"].split("\n", 1)[0] for p in slack.posts)
+    assert titles == [
+        "Legal hold placed: Jones v. Acme",
+        "Legal hold placed: Smith v. Acme",
+        "“Wiki” keeps failing to sync",
+        "“Wiki” keeps failing to sync",
+    ]
+
+
+async def test_slack_gets_titles_escaped_so_they_cannot_ping_or_disguise_links(
+    app_sessions: SessionFactory, acme: Acme
+) -> None:
+    await connect_slack(app_sessions, acme, channel=["assignments"])
+    await prefer(app_sessions, acme, "olivia.grant", channels={"assignments": {"slack": True}})
+    crafted = "<!channel> Payroll & bonus <https://evil.example|Open in WorkMind>"
+    await tell(app_sessions, acme, "olivia.grant", "task.assigned", crafted, "/tasks/1")
+
+    slack = SlackStub()
+    await deliver_due(deps(app_sessions, Mailer(), slack), acme.tenant_id, datetime.now(UTC))
+
+    expected = "&lt;!channel&gt; Payroll &amp; bonus &lt;https://evil.example|Open in WorkMind&gt;"
+    assert [p["text"].split("\n", 1)[0] for p in slack.posts] == [expected]
+    assert [m["text"].split("\n", 1)[0] for m in slack.messages] == [expected]
+
+
 async def test_a_digest_once_a_day_at_the_persons_hour_with_what_they_have_not_read(
     app_sessions: SessionFactory, acme: Acme
 ) -> None:
