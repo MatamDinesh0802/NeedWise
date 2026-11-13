@@ -186,7 +186,8 @@ costs.
   then a model, else a person; workflows in YAML on schedules and events
   ([docs/automation.md](docs/automation.md)).
 - **Meetings become commitments.** Upload a recording or transcript: local speech-to-text (a
-  23-minute meeting in under a minute on a laptop CPU), decisions and action items that each
+  23-minute meeting transcribed in 42 to 51 s on a laptop's CPU, 78 s in the Docker worker),
+  decisions and action items that each
   link to the moment they were said, one click to a tracked task ([docs/meetings.md](docs/meetings.md)).
 - **Questions about company data, answered with a chart, the SQL and checked numbers.** Upload
   CSV or Excel tables and describe them once in a semantic layer; the BI agent queries them
