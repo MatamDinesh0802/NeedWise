@@ -238,7 +238,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > Slack and GitHub during every sync and Drive revocations from the changes feed every minute
 > (Enterprise), tested against fakes of the three APIs. Pending: a test Drive and Slack
 > workspace (DoD; permission sync has not met a live API either), the Sources UI, a screen for
-> identity mappings, Confluence and SharePoint, and owner reminders (Phase 11 notifications).
+> a document's own list, Confluence and SharePoint, and owner reminders (Phase 11 notifications).
 
 **Goal:** knowledge flows in automatically from the tools companies already use.
 

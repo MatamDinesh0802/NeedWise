@@ -660,6 +660,7 @@ async def test_a_list_nobody_could_be_mapped_to_hides_it_from_everyone_until_map
     assert saved.status_code == 200, saved.text
     assert saved.json()["documents_changed"] == 1
     assert saved.json()["mapping"]["external"] == external  # stored lower case
+    assert saved.json()["mapping"]["principal_name"]  # the group's name, for people
     await drain(app_sessions, fga, w)
     # Marcus is in leadership and in Engineering; Priya is in leadership, not in Engineering.
     assert w.canary in search(api, w, "marcus.bell", query)

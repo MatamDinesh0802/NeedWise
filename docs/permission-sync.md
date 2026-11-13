@@ -78,7 +78,10 @@ An entry that maps to nobody **grants nothing**: it stays on the list without a 
 list whose entries all map to nobody means nobody sees the document, not even the collection's
 editors. Nothing is guessed from names.
 
-Administrators see what is unmapped and map it:
+Administrators see what is unmapped and map it in **Admin > Sources > Source accounts** (each
+unmatched account with the number of documents that name it and their sources; **Map** fills
+the form, which maps it to a group, a department's members or managers, a person or the whole
+organization), or through the API:
 
 ```bash
 # Unmapped source principals: how many documents name each, from which sources (no titles)
@@ -94,8 +97,7 @@ curl -X DELETE ... http://localhost:8480/api/v1/admin/identity-mappings/<mapping
 A mapping names a WorkMind principal (`user:`, `group:`, `dept:`, `dept-manager:` or `org:`
 with an id of this tenant). An explicit mapping wins over the e-mail match (for aliases). Saving
 or deleting one changes the lists of every document that names that source principal in the
-same transaction, queues the OpenFGA changes and refreshes the chunks. There is no screen for
-this yet: the API above is the interface.
+same transaction, queues the OpenFGA changes and refreshes the chunks.
 
 ## Lists set by an editor (Community)
 
@@ -195,7 +197,9 @@ and re-create it, or license the feature again.
 
 ## Not built
 
-- A screen for identity mappings and for a document's list (the API exists).
+- A screen for a document's own list: editors use the API, and the Knowledge Hub does not show
+  yet that a document has one (`own_acl` is in the API's document responses).
+- Browser tests of the Source accounts screen (it has component tests only).
 - Push notifications from Drive (`changes.watch` needs a public HTTPS endpoint); the changes
   feed is polled every minute instead.
 - Immediate revocation for Slack and GitHub (their events are not read: changes apply at the

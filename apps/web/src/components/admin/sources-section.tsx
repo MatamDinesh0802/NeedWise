@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
+import { IdentityMappingsSection } from "@/components/admin/identity-mappings-section";
 import { ConfirmDialog } from "@/components/data/confirm-dialog";
 import { Field, SimpleSelect } from "@/components/data/form";
 import { EmptyState, ErrorAlert, RefreshingHint, TableSkeleton } from "@/components/data/states";
@@ -135,6 +136,8 @@ export function SourcesSection() {
       )}
 
       <StaleDocuments />
+
+      <IdentityMappingsSection />
 
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">

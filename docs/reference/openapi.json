@@ -9760,6 +9760,17 @@
             "type": "string",
             "title": "Principal"
           },
+          "principal_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principal Name"
+          },
           "created_by": {
             "anyOf": [
               {
@@ -9783,6 +9794,7 @@
           "id",
           "external",
           "principal",
+          "principal_name",
           "created_by",
           "updated_at"
         ],

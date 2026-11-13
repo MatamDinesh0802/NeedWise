@@ -22,6 +22,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Request, Response
 from pydantic import AfterValidator, BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from workmind.api.deps import resources_of
 from workmind.api.v1.admin import AdminContext
@@ -31,6 +32,7 @@ from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.connectors.models import EXTERNAL_PATTERN, IdentityMapping
 from workmind.modules.governance.audit import Actor, record_event
+from workmind.modules.identity.models import Department, Group, User
 from workmind.modules.knowledge import document_acl
 
 router = APIRouter(prefix="/admin/identity-mappings", tags=["admin"])
@@ -59,6 +61,9 @@ class MappingOut(BaseModel):
     id: uuid.UUID
     external: str
     principal: str
+    # Who that is, for people: a person's, group's or department's name ("... (managers)",
+    # "Everyone in the organization"); None if it no longer exists.
+    principal_name: str | None
     created_by: uuid.UUID | None
     updated_at: datetime
 
@@ -79,14 +84,43 @@ class MappingSaved(BaseModel):
     documents_changed: int
 
 
-def _out(m: IdentityMapping) -> MappingOut:
+def _out(m: IdentityMapping, names: dict[str, str]) -> MappingOut:
     return MappingOut(
         id=m.id,
         external=m.external,
         principal=m.principal,
+        principal_name=names.get(m.principal),
         created_by=m.created_by,
         updated_at=m.updated_at,
     )
+
+
+async def _names(session: AsyncSession, principals: list[str]) -> dict[str, str]:
+    """Readable names of principals (only this tenant's rows are visible: RLS)."""
+    ids: dict[str, set[uuid.UUID]] = {"user": set(), "group": set(), "dept": set()}
+    for principal in principals:
+        kind, _, raw = principal.partition(":")
+        if kind != "org":
+            ids["dept" if kind == "dept-manager" else kind].add(uuid.UUID(raw))
+    found: dict[str, str] = {}
+    for kind, model, column in (
+        ("user", User, User.display_name),
+        ("group", Group, Group.name),
+        ("dept", Department, Department.name),
+    ):
+        if ids[kind]:
+            rows = await session.execute(select(model.id, column).where(model.id.in_(ids[kind])))
+            found |= {f"{kind}:{row_id}": str(name) for row_id, name in rows}
+    names: dict[str, str] = {}
+    for principal in principals:
+        kind, _, raw = principal.partition(":")
+        if kind == "org":
+            names[principal] = "Everyone in the organization"
+        elif kind == "dept-manager" and f"dept:{raw}" in found:
+            names[principal] = f"{found[f'dept:{raw}']} (managers)"
+        elif principal in found:
+            names[principal] = found[principal]
+    return names
 
 
 async def _refresh(resources: Resources, tenant_id: uuid.UUID, payloads: dict[Any, Any]) -> None:
@@ -103,8 +137,9 @@ async def list_mappings(ctx: AdminContext, request: Request) -> MappingsOut:
             await session.scalars(select(IdentityMapping).order_by(IdentityMapping.external))
         ).all()
         unmapped = await document_acl.unmapped(session)
+        names = await _names(session, [m.principal for m in mappings])
     return MappingsOut(
-        mappings=[_out(m) for m in mappings],
+        mappings=[_out(m, names) for m in mappings],
         unmapped=[
             UnmappedOut(external=u.external, documents=u.documents, sources=u.sources)
             for u in unmapped
@@ -147,7 +182,7 @@ async def save_mapping(ctx: AdminContext, request: Request, body: MappingIn) -> 
             },
         )
         await session.refresh(mapping)
-        out = _out(mapping)
+        out = _out(mapping, await _names(session, [mapping.principal]))
     await _refresh(resources, ctx.tenant_id, payloads)
     return MappingSaved(mapping=out, documents_changed=len(payloads))
 
