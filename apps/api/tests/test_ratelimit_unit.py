@@ -110,6 +110,10 @@ LIMITED = {
     ("POST", "/api/v1/meetings"): "ingest",
     ("POST", "/api/v1/admin/analytics/tables"): "ingest",
     ("POST", "/api/v1/admin/sources/{key}/sync"): "sync",
+    ("POST", "/api/v1/requests"): "chat",
+    ("POST", "/api/v1/admin/requests/inbound-email"): "chat",
+    ("POST", "/api/v1/admin/routing/preview"): "agent_test",
+    ("POST", "/api/v1/admin/slack/test"): "agent_test",
 }
 
 
