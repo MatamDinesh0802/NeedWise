@@ -161,6 +161,21 @@ export function describeSourcePath(path: string, steps: readonly { id?: unknown 
   return path.replace(/\./g, " › ");
 }
 
+/**
+ * A problem as the editor lists it: "Step “send”" and "Give either …", not "Step 2" and "step
+ * send: give either …" (the API names the step in the message when the definition is invalid).
+ */
+export function problemView(problem: SourceProblem, steps: readonly { id?: unknown }[] = []): { line: number | null; where: string; message: string } {
+  let where = describeSourcePath(problem.path, steps);
+  let message = problem.message;
+  const named = /^step ([a-z0-9-]+):\s*([\s\S]+)$/i.exec(message);
+  if (named && /^steps\[\d+\]/.test(problem.path)) {
+    where = where.replace(/^Step (?:\d+|“[^”]*”)/, `Step “${named[1]}”`);
+    message = named[2].charAt(0).toUpperCase() + named[2].slice(1);
+  }
+  return { line: problem.line, where, message };
+}
+
 /** The character range of a 1-based line, to select it in the editor. */
 export function lineRange(text: string, line: number): { start: number; end: number } {
   let start = 0;

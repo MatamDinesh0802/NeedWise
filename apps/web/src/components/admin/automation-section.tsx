@@ -167,10 +167,11 @@ function EscalationCard({ saved }: { saved: AutomationSettings }) {
                 </Field>
               );
             })}
-            <Field label="Escalate to" hint="When nobody is found, the next one down the line.">
+            <Field label="Escalate to" hint="The approver's backup (set in their Settings), their department's managers, the org admins: from the one chosen, down the line.">
               {({ id, describedBy }) => (
                 <SimpleSelect<EscalateTo>
                   id={id}
+                  className="w-full min-w-0"
                   describedBy={describedBy}
                   value={draft.escalate_to}
                   disabled={pending || !draft.enabled}

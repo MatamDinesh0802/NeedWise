@@ -99,8 +99,8 @@ export const automationKeys = {
 };
 
 export const ESCALATE_TO_LABELS: Record<EscalateTo, string> = {
-  backup: "The approver's backup, else their manager, else the org admins",
-  manager: "The approver's department manager, else the org admins",
+  backup: "Their backup, else manager, else org admins",
+  manager: "Their manager, else org admins",
   org_admins: "The org admins",
 };
 

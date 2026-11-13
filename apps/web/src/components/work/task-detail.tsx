@@ -225,7 +225,7 @@ function TaskCard({ task, me, names, refreshing }: { task: Task; me: Me; names: 
             <dt className="text-muted-foreground">Routing</dt>
             <dd className="flex flex-col gap-0.5">
               <span>
-                {task.triage ? "Waiting in triage" : destination(task.routing)} · {routingLine(task.routing)}
+                {task.triage ? "Waiting in triage for a person to route it" : `${destination(task.routing)} · ${routingLine(task.routing)}`}
               </span>
               <span className="text-xs text-muted-foreground">{task.routing.explanation}</span>
             </dd>

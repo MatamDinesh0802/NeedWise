@@ -116,11 +116,11 @@ function PreferencesForm({ saved, me }: { saved: WorkPreferences; me: Me }) {
               const channels = draft.channels[category.key];
               return (
                 <TableRow key={category.key}>
-                  <TableHead scope="row" className="py-2 align-top font-normal whitespace-normal">
+                  <TableHead scope="row" className="py-2 align-middle font-normal whitespace-normal">
                     <span className="font-medium">{category.label}</span>
                     <span className="block text-xs text-muted-foreground">{category.description}</span>
                   </TableHead>
-                  <TableCell className="align-top">
+                  <TableCell className="align-middle">
                     <SimpleSelect<EmailMode>
                       size="sm"
                       ariaLabel={`Email for ${category.label}`}
@@ -130,7 +130,7 @@ function PreferencesForm({ saved, me }: { saved: WorkPreferences; me: Me }) {
                       options={EMAIL_MODES.map((mode) => ({ value: mode, label: EMAIL_MODE_LABELS[mode] }))}
                     />
                   </TableCell>
-                  <TableCell className="align-top">
+                  <TableCell className="align-middle">
                     <Checkbox
                       aria-label={`Slack message for ${category.label}`}
                       checked={channels.slack}
@@ -230,7 +230,7 @@ function BackupApprover({
         </Button>
       )}
       <p className="text-xs text-muted-foreground">
-        When an approval waits for you too long, it also goes to them (Admin › Automation sets how long). Without one, your manager gets it.
+        When an approval waits for you too long, it also goes to them (your admins set how long). Without one, it goes to your department&apos;s managers, or the org admins.
       </p>
       {directory.error ? <p className="text-xs text-destructive">{errorMessage(directory.error).title}</p> : null}
     </div>

@@ -7,6 +7,7 @@ import {
   isRunActive,
   lineRange,
   linkedWorkflow,
+  problemView,
   runSteps,
   runTriggerText,
   sourceProblems,
@@ -39,6 +40,17 @@ describe("definition editor", () => {
     expect(text.slice(lineRange(text, 2).start, lineRange(text, 2).end)).toBe("  - id: a");
     expect(lineRange(text, 3).end).toBe(text.length);
     expect(lineRange(text, 9)).toEqual({ start: text.length, end: text.length });
+  });
+
+  it("lists a problem under the step's id, without repeating it", () => {
+    const problem = { line: 7, column: 5, path: "steps[1]", message: "step send: give either `research` or `tool`" };
+    expect(problemView(problem)).toEqual({ line: 7, where: "Step “send”", message: "Give either `research` or `tool`" });
+    expect(problemView({ ...problem, path: "steps[1].approver", message: "approver: role must be one of org_admins" }, definition.steps)).toEqual({
+      line: 7,
+      where: "Step “send” › approver",
+      message: "approver: role must be one of org_admins",
+    });
+    expect(problemView({ line: null, column: null, path: "(definition)", message: "Not valid YAML: x" })).toEqual({ line: null, where: "", message: "Not valid YAML: x" });
   });
 
   it("names steps by their id", () => {

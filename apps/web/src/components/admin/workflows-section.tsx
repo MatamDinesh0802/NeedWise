@@ -21,9 +21,9 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { usePolling } from "@/hooks/use-polling";
 import {
   BLANK_SOURCE,
-  describeSourcePath,
   isRunActive,
   linkedWorkflow,
+  problemView,
   RUN_STATUS_LABELS,
   runSteps,
   runTriggerText,
@@ -296,7 +296,7 @@ function useSourceCheck(text: string): { check: SourceCheck | null; checking: bo
 }
 
 function editorProblems(problems: readonly SourceProblem[], steps: readonly { id?: unknown }[]): EditorProblem[] {
-  return problems.map((p) => ({ line: p.line, where: describeSourcePath(p.path, steps), message: p.message }));
+  return problems.map((p) => problemView(p, steps));
 }
 
 function WorkflowEditor({ workflow, template, onDone }: { workflow: Workflow | null; template: boolean; onDone: () => void }) {
