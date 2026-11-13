@@ -6,9 +6,143 @@ Employees ask questions in plain language and get answers grounded in company kn
 citations, drawn only from sources they are allowed to see. Specialized agents (HR, Finance,
 Engineering…) handle department work. Actions that leave the system need human approval.
 
-> **Status: pre-1.0, built in public.** Phases 0–11 are built. Phase 12, production hardening
-> for v1.0, is in progress: what exists is under [Running it in production](#running-it-in-production).
-> Nothing here is ready for real company data yet. Follow along in the [roadmap](docs/ROADMAP.md).
+![Alice, an HR manager, gets the L3 salary band with a citation she can open; Bob, an engineer, asks the same and is told the sources available to him don't contain it](docs/media/demo.gif)
+
+The [full walkthrough](docs/media/demo.mp4) (1 min 44 s, recorded with Claude Sonnet 5.5 on the
+demo company; waits for the model are sped up): a cited answer and its source, the same question without access, three department agents on one
+question, an email approved after an edit, a meeting's clickable timestamps, a chart with its
+SQL, and an administrator adding an agent.
+
+> **Status: v1.0, pending the release tag.** All 13 phases of the [roadmap](docs/ROADMAP.md)
+> are built; a last end-to-end pass and the release remain. Not done yet: a public repository
+> (so the release workflows have never run), a test on a cloud Kubernetes cluster, and checking
+> Google Drive and Slack sync against real workspaces. It has been run only on the fictional demo
+> company, not on real company data.
+
+## Quick start
+
+You need Docker with the Compose plugin (the `docker compose` command), `git` and `make`. These
+ports on `127.0.0.1` must be free: 8480, 8400, 3400, 8401, 5432, 6379, 6333 and 8025
+([to move one](docs/getting-started/configuration.md#ports-passwords-and-compose)).
+
+```bash
+git clone <repo-url> workmind && cd workmind
+cp .env.example .env    # then add a model to .env (below), e.g. ANTHROPIC_API_KEY=sk-ant-...
+make quickstart         # builds and starts the stack, waits until it is healthy, seeds the demo company
+```
+
+Open **http://localhost:8480**, sign in as `alice@acme.test` with the password `workmind-demo`,
+and ask *"What is the salary band for an L3 engineer?"* The answer cites Salary Bands 2026:
+click the citation to open it.
+
+| Model | Lines in `.env` |
+|---|---|
+| Claude (the default) | `ANTHROPIC_API_KEY=sk-ant-...` |
+| Fully local (Ollama, vLLM, llama.cpp) | `LLM_PROVIDER=openai_compatible`, `LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_MODEL=qwen3:14b` |
+
+No key yet? `make quickstart` works without one: search, the Knowledge Hub and the admin pages
+work, and the assistant says that no language model is set up. Add a key to `.env` later and run
+`make up`. Every model role can be set separately, and restricted documents can be kept on a
+local model ([models](docs/models.md), [local models](docs/getting-started/local-models.md)).
+
+**How long it takes.** Measured on 2026-11-13 from fresh clones, on an Apple M5 laptop (Docker
+Desktop: 8 CPUs, 16 GB) that was running seven other build-and-test jobs at the same time:
+
+| From `git clone` | First run (empty build cache) | Second run (build cache kept) |
+|---|---|---|
+| Every service healthy | 1 min 54 s | 1 min 24 s |
+| Demo company seeded (47 documents indexed) | 3 min 3 s | 2 min 40 s |
+| First cited answer in the browser | about 3 min 50 s: the key added after `make quickstart`, then `make up` (41 s) | about 2 min 45 s: the key in `.env` first |
+
+The service images (0.9 GB compressed: Postgres, Keycloak, Qdrant, the embedding server…) were
+already on that machine, so a first run elsewhere also waits for that download. The answer
+times add up the measured steps (sign-in about 2 s, the answer 2.4 s); a person reading and
+typing along was not timed. Details:
+[Quickstart › How long it takes](docs/getting-started/quickstart.md#how-long-it-takes).
+
+> **On a Mac?** `make embeddings` runs the embedding model on the Apple GPU instead
+> (`brew install llama.cpp`; set `EMBEDDING_BASE_URL=http://host.docker.internal:8091/v1`).
+> Both produce the same vectors, so you can switch without re-indexing.
+>
+> **Memory:** the core stack needs about 3 GB. Docker Desktop's memory limit can stay
+> around 8 GB. Run local LLMs in Ollama **natively** (Docker cannot use the Apple GPU), and
+> keep the rest of your RAM for them.
+
+| URL | What |
+|---|---|
+| http://localhost:8480 | The app: UI, API and login on one origin, via Caddy |
+| http://localhost:8480/api/docs | Interactive API docs |
+| http://localhost:8480/auth | Keycloak (admin console login: `admin` / `admin`, dev only) |
+| http://localhost:8025 | Mailpit: every email the demo sends lands here; nothing is delivered |
+
+`make status` prints component health, `make down` stops the stack (data is kept), `make reset`
+deletes it, and `make` lists every command.
+
+## Demo logins and what to try first
+
+Every demo login uses the password `workmind-demo` (development only). **View as…** in the user
+menu switches between them.
+
+| Sign in as | Who | Try |
+|---|---|---|
+| `alice@acme.test` | HR manager | *"What is the salary band for an L3 engineer?"*: a cited answer from a restricted document |
+| `bob@acme.test` | Software engineer | The same question: *"I couldn't find this in the sources available to you"*, with no hint that the document exists |
+| `olivia.grant@acme.test` | Head of operations | **Research & act**: *"Prepare this week's operations report and email it to leadership@acme.test."* The email waits on an approval card; edit it, approve it, and find it in Mailpit |
+| `carol@acme.test` | Finance analyst | **Insights**: *"Monthly revenue trend this year and the top 3 drivers"*: a chart, the explanation and the SQL |
+| `dan@acme.test` | Account executive | **Insights**: *"Show revenue by customer."* Dan only ever sees his own 13 customers, whatever SQL the model writes |
+| `erin@acme.test` | IT administrator | **Admin**: add an agent in Agents, try it in its test console; models, budgets, the audit log |
+| `mallory@acme.test` | External contractor | Sees one collection: the red-team user |
+
+Also: `priya.raman@acme.test` (CEO) and `hannah.schmidt@acme.test` (CFO). More to try:
+
+- **Department agents.** Set `ASSISTANT_MODE=auto` in `.env`, run `make up`, and ask as Bob:
+  *"For my on-call week: how do I restart the fleet controller, what P1 response time do
+  customers get, and how close may I get to a moving AMR-500?"* Engineering, Support and
+  Operations agents each answer their part ([ADR 0009](docs/adr/0009-orchestration-without-a-graph-framework.md)).
+- **Meetings.** As Olivia, upload `seed/acme/meetings/weekly-ops-sync-2026-11-02.m4a` to
+  Operations SOPs in **Meetings**: local speech-to-text (the first upload downloads the speech
+  model), then decisions and action items that link to the moment they were said.
+- **Conflicting sources.** *"How many weeks of parental leave do we get?"*: an older policy and
+  a Slack thread disagree with the official 2026 policy; the answer prefers the official one and
+  says so.
+
+The demo company and every login: [seed/README.md](seed/README.md) and
+[Quickstart](docs/getting-started/quickstart.md#demo-logins).
+
+## Documentation
+
+The documentation lives in [`docs/`](docs/index.md) and builds into a site with
+`make docs-serve` (http://127.0.0.1:8495; needs [uv](https://docs.astral.sh/uv/)). It is not
+hosted anywhere yet. Good places to start:
+
+| You want to | Read |
+|---|---|
+| Install and try it | [Quickstart](docs/getting-started/quickstart.md), [configuration](docs/getting-started/configuration.md), [local models](docs/getting-started/local-models.md) |
+| Use it | [User guide](docs/user-guide/assistant.md) |
+| Administer it | [Agents](docs/agents.md), [models](docs/models.md), [usage and budgets](docs/usage.md), [governance](docs/governance.md) |
+| Run it for real | [Kubernetes](docs/deploy/kubernetes.md), [backup and restore](docs/operations/backup-restore.md), [upgrades](docs/operations/upgrade.md) |
+| Understand it | [Architecture](docs/ARCHITECTURE.md), [decision records](docs/adr/), [roadmap](docs/ROADMAP.md) |
+
+## Benchmarks (v1.0)
+
+Measured on 2026-11-12 at commit `1b62d52`, on one laptop, against the fictional company Acme
+Robotics (49 documents: the 47 the seed indexes and 2 meeting transcripts; 82 questions, 59
+attacks), with Claude Sonnet 5.5 in every role. One run per configuration: small datasets,
+non-deterministic models. Method, every report and the limitations:
+[docs/benchmarks/v1.0.md](docs/benchmarks/v1.0.md).
+
+| | Result |
+|---|---|
+| Permission leaks | **0** in 312 retrieval checks, 118 red-team answers on four surfaces, 51 analytics answers |
+| Answers with every required fact / faithfulness / abstention | 81/82 / 99.5% / 6/6 |
+| Cross-department questions: one search / department agents | 14/15 / 15/15 |
+| Routing to department agents / text-to-SQL execution accuracy | 53/56 / 33/36 |
+| Time to first token, p50 / p95, QA questions (one search; `auto` mode) | 0.8 / 1.5 s; 2.6 / 6.0 s |
+| Cost per answer, QA questions (one search; `auto`); BI agent | $0.0071; $0.0114; $0.026 |
+| Load, stub model | up to 400 simulated users at unloaded chat latency on one laptop ([load](docs/benchmarks/load.md)) |
+
+A [case study](docs/case-study.md) tells how it was built for Acme, what went wrong and what it
+costs.
 
 ## What works today
 
@@ -78,69 +212,13 @@ Engineering…) handle department work. Actions that leave the system need human
 - **Open source and model-agnostic.** Runs fully local (Ollama/vLLM) or with paid providers
   through swappable adapters. Sensitive data can be pinned to local models.
 
-## Benchmarks (v1.0)
+## Editions
 
-Measured on 2026-11-12 at commit `1b62d52`, on one laptop, against the fictional company Acme
-Robotics (49 documents, 82 questions, 59 attacks), with Claude Sonnet 5.5 in every role. One run
-per configuration: small datasets, non-deterministic models. Method, every report and the
-limitations: [docs/benchmarks/v1.0.md](docs/benchmarks/v1.0.md).
-
-| | Result |
-|---|---|
-| Permission leaks | **0** in 312 retrieval checks, 118 red-team answers on four surfaces, 51 analytics answers |
-| Answers with every required fact / faithfulness / abstention | 81/82 / 99.5% / 6/6 |
-| Cross-department questions: one search / department agents | 14/15 / 15/15 |
-| Routing to department agents / text-to-SQL execution accuracy | 53/56 / 33/36 |
-| Time to first token, p50 / p95, QA questions (one search; `auto` mode) | 0.8 / 1.5 s; 2.6 / 6.0 s |
-| Cost per answer, QA questions (one search; `auto`); BI agent | $0.0071; $0.0114; $0.026 |
-| Load, stub model | up to 400 simulated users at unloaded chat latency on one laptop ([load](docs/benchmarks/load.md)) |
-
-A [case study](docs/case-study.md) tells how it was built for Acme, what went wrong and what it
-costs.
-
-## Quick start
-
-Requirements: Docker with Compose v2.
-
-```bash
-git clone <repo-url> workmind && cd workmind
-make quickstart    # the stack, a local embedding model in Docker, and the Acme demo company
-```
-
-Open **http://localhost:8480** and sign in as `alice@acme.test` / `workmind-demo`. The first
-run downloads about 2.5 GB (images and the embedding model) and takes a few minutes.
-
-**For answers, add a model** to `.env` (git-ignored), then `make up`:
-
-| Option | `.env` |
-|---|---|
-| Claude (default) | `ANTHROPIC_API_KEY=sk-ant-...` |
-| Fully local (Ollama, vLLM, llama.cpp) | `LLM_PROVIDER=openai_compatible`, `LLM_BASE_URL=http://host.docker.internal:11434/v1`, `LLM_MODEL=qwen3:14b` |
-
-Every model role (answers, question rewriting, judging) can be set separately, and restricted
-documents can be pinned to a local model ([ADR 0007](docs/adr/0007-model-providers-and-lightweight-parsing.md),
-[ADR 0008](docs/adr/0008-retrieval-fusion-and-sensitivity-routing.md)).
-
-> **On a Mac?** `make embeddings` runs the embedding model on the Apple GPU instead
-> (`brew install llama.cpp`; set `EMBEDDING_BASE_URL=http://host.docker.internal:8091/v1`).
-> Both produce the same vectors, so you can switch without re-indexing.
-
-Demo logins use the password `workmind-demo` (development only): `alice@acme.test` (HR manager),
-`bob@acme.test` (engineer), `carol@acme.test` (finance), `dan@acme.test` (sales),
-`erin@acme.test` (IT admin), `mallory@acme.test` (external contractor). Ask each of them
-"What is the salary band for an L3 engineer?" and compare. See [seed/README.md](seed/README.md).
-
-| URL | What |
-|---|---|
-| http://localhost:8480 | The app: UI, API and login on one origin, via Caddy |
-| http://localhost:8480/api/docs | Interactive API docs |
-| http://localhost:8480/auth | Keycloak (admin console login: `admin` / `admin`, dev only) |
-
-`make status` prints component health; `make` lists every command.
-
-> **macOS memory tip:** the core stack needs about 3 GB. Docker Desktop's memory limit can stay
-> around 8 GB. Run local LLMs in Ollama **natively** (Docker cannot use the Apple GPU), and
-> keep the rest of your RAM for them.
+Community (everything outside `ee/`) is complete and Apache-2.0, security basics included.
+Enterprise adds features for large organizations from `ee/` and runs only with a license key.
+Built so far: department budgets, the chargeback report, retention policies and the export of
+the audit chain for a SIEM; with them the boundary, license checks and development licenses
+(`make ee-dev-license`). See [docs/enterprise.md](docs/enterprise.md).
 
 ## Local development
 
@@ -217,7 +295,7 @@ seed/         Acme Robotics: the fictional demo company and test corpus
 evals/        Evaluation datasets, runners and published results
 ee/           Enterprise Edition (separate license): budgets, chargeback, retention, SIEM export
 docs/         The docs site (mkdocs.yml): guides, architecture, roadmap, ADRs, security, operations
-e2e/browser   Browser end-to-end tests (Playwright) against a running stack
+e2e/browser   Browser end-to-end tests (Playwright) against a running stack; the demo recorder
 loadtests/    Load tests (Locust) and the stub model server
 scripts/      Backup, restore, upgrade test, supply-chain scans
 ```
@@ -226,14 +304,6 @@ scripts/      Backup, restore, upgrade test, supply-chain scans
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Commits need a DCO sign-off
 (`git commit -s`). Report security issues privately: see [SECURITY.md](SECURITY.md).
-
-## Editions
-
-Community (everything outside `ee/`) is complete and Apache-2.0, security basics included.
-Enterprise adds features for large organizations from `ee/` and runs only with a license key.
-Built so far: department budgets, the chargeback report, retention policies and the export of
-the audit chain for a SIEM; with them the boundary, license checks and development licenses
-(`make ee-dev-license`). See [docs/enterprise.md](docs/enterprise.md).
 
 ## License
 

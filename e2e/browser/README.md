@@ -109,6 +109,12 @@ Approvals, tasks and meetings may be empty (CI has none).
 - No test file left a document behind on either stack. The `@model` tests have not been run
   yet: that run made no model calls.
 
+## The demo video
+
+`demo/` is not part of the suite: it records the captioned walkthrough in `docs/media/demo.mp4`
+and the README's GIF (`make demo-video`; [demo/README.md](demo/README.md)). It reuses this
+package's Playwright, so it adds no dependency.
+
 ## Not covered
 
 Firefox and WebKit, visual comparison, connectors and their sync, uploading a meeting, chat

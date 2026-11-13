@@ -4,3 +4,5 @@ node_modules/
 test-results/
 playwright-report/
 blob-report/
+# The demo recording's raw video and marks (demo/README.md); the results go to docs/media.
+demo/out/

@@ -6,11 +6,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+import pytest
 from pydantic import BaseModel
 
 from workmind.providers.llm import (
     AnthropicLLM,
     LLMMessage,
+    LLMNotConfiguredError,
     LLMRequest,
     OpenAICompatibleLLM,
     RoleConfig,
@@ -109,6 +111,57 @@ async def test_the_anthropic_tool_loop_echoes_full_content_and_matches_tool_ids(
     assert "fallbacks" not in second  # no model switch in the middle of a loop
     assert second["tools"][0]["input_schema"]["properties"]["q"] == {"type": "string"}
     assert len(result.usage) == 2
+
+
+# What anthropic.AsyncAnthropic raises at request time when it finds no key, token or profile.
+NO_AUTH = TypeError(
+    '"Could not resolve authentication method. Expected one of api_key, auth_token, or '
+    'credentials to be set. Or for the `Authorization` header to be explicitly omitted"'
+)
+
+
+def anthropic_raising(error: Exception) -> AnthropicLLM:
+    llm = AnthropicLLM(ROLES, api_key="test", fallbacks=True)  # type: ignore[arg-type]
+
+    class Messages:
+        async def create(self, **params: Any) -> Message:
+            raise error
+
+        def stream(self, **params: Any) -> Any:
+            raise error
+
+    class Beta:
+        messages = Messages()
+
+    class FakeClient:
+        beta = Beta()
+
+    llm._client = FakeClient()  # type: ignore[assignment]
+    return llm
+
+
+async def test_a_missing_anthropic_key_is_a_model_that_is_not_configured() -> None:
+    """A fresh install without ANTHROPIC_API_KEY: the chat says so instead of failing vaguely."""
+    llm = anthropic_raising(NO_AUTH)
+
+    with pytest.raises(LLMNotConfiguredError, match="ANTHROPIC_API_KEY"):
+        await llm.complete("answer", REQUEST)
+    with pytest.raises(LLMNotConfiguredError):
+        async for _ in llm.stream("answer", REQUEST):
+            pass
+
+    async def execute(call: ToolCall) -> tuple[str, bool]:
+        return "", False
+
+    with pytest.raises(LLMNotConfiguredError):
+        await llm.run_tools("agent", REQUEST, TOOLS, execute)
+
+
+async def test_any_other_type_error_from_the_anthropic_client_is_not_hidden() -> None:
+    llm = anthropic_raising(TypeError("unexpected keyword argument 'betas'"))
+
+    with pytest.raises(TypeError, match="betas"):
+        await llm.complete("answer", REQUEST)
 
 
 async def test_the_anthropic_tool_loop_stops_at_its_step_limit() -> None:

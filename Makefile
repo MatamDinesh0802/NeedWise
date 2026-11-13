@@ -2,9 +2,10 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 INFRA := postgres valkey qdrant openfga keycloak caddy
-HTTP_PORT ?= 8480
+# The app's port for status, e2e and the `make up` message: the environment, then .env, then 8480.
+HTTP_PORT ?= $(or $(shell sed -n 's/^HTTP_PORT=\([0-9][0-9]*\).*/\1/p' .env 2>/dev/null | tail -n 1),8480)
 
-.PHONY: help objects-dir up down reset logs ps status infra api-dev web-dev install lint fmt test e2e e2e-browser seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check backup restore upgrade-test helm-check helm-kind-test
+.PHONY: help objects-dir up down reset logs ps status infra api-dev web-dev install lint fmt test e2e e2e-browser demo-video seed authz-model embeddings ee-dev-license docs docs-serve docs-gen docs-lock loadtest loadtest-stub loadtest-report loadtest-sweep loadtest-check backup restore upgrade-test helm-check helm-kind-test
 
 help: ## List available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -102,6 +103,12 @@ E2E_BASE_URL ?= http://localhost:$(HTTP_PORT)
 e2e-browser: ## Browser end-to-end tests (Playwright, Chromium) against the running, seeded stack
 	cd e2e/browser && pnpm install --frozen-lockfile && pnpm exec playwright install chromium
 	cd e2e/browser && E2E_BASE_URL=$(E2E_BASE_URL) pnpm exec playwright test
+
+# The demo video (e2e/browser/demo/README.md): needs a seeded stack with a model and ffmpeg on PATH.
+demo-video: ## Record the demo walkthrough and render docs/media/demo.mp4 and demo.gif (calls the model)
+	cd e2e/browser && pnpm install --frozen-lockfile && pnpm exec playwright install chromium
+	cd e2e/browser && E2E_BASE_URL=$(E2E_BASE_URL) pnpm exec playwright test -c demo/playwright.config.ts
+	cd e2e/browser && node demo/render.mjs
 
 # Local embeddings: EmbeddingGemma-300M on llama.cpp (Apple GPU via Metal). 4 slots x 2048 tokens.
 EMBED_GGUF ?= $(firstword $(wildcard $(HOME)/.cache/huggingface/hub/models--ggml-org--embeddinggemma-300M-GGUF/snapshots/*/embeddinggemma-300M-Q8_0.gguf))

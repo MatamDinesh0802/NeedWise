@@ -22,6 +22,7 @@ describe("view as", () => {
       "erin@acme.test",
       "priya.raman@acme.test",
       "hannah.schmidt@acme.test",
+      "olivia.grant@acme.test",
       "mallory@acme.test",
     ]);
     expect(DEMO_ACCOUNTS.find((a) => a.email === "mallory@acme.test")?.role).toMatch(/guest/);
