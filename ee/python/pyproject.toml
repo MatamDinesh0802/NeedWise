@@ -26,4 +26,4 @@ extend = "../../apps/api/pyproject.toml"
 src = ["src", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "S105", "S106"]  # asserts, and fake credentials in fixtures

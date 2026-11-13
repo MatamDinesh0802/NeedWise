@@ -19,8 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from workmind.api.deps import rate_limit, resources_of, settings_of
 from workmind.api.v1.admin import AdminContext
+from workmind.core.config import Settings
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
+from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_key, tenant_transaction
 from workmind.modules.connectors.models import Source
 from workmind.modules.connectors.registry import CREDENTIALS, build_connector, validate_config
@@ -232,14 +234,18 @@ async def delete_source(ctx: AdminContext, request: Request, key: str) -> Respon
 
 
 def sync_deps(request: Request) -> SyncDeps:
-    resources, settings = resources_of(request), settings_of(request)
+    return sync_deps_from(resources_of(request), settings_of(request))
+
+
+def sync_deps_from(resources: Resources, settings: Settings) -> SyncDeps:
+    """What a sync needs, from the process's resources (the API, Enterprise tasks)."""
     return SyncDeps(
         sessions=resources.db,
         storage=resources.storage,
         ingestion=resources.ingestion,
         qdrant=resources.qdrant,
         collection_name=resources.collection_name,
-        secrets=_secrets(request),
+        secrets=SecretBox(settings.secrets_key.get_secret_value()),
         connectors=lambda source, credentials: build_connector(
             source,
             credentials,

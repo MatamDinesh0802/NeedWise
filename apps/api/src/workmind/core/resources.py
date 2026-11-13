@@ -85,6 +85,8 @@ class Resources:
     usage: UsageMeter
     # Request rate limits per person, tenant and address (core/ratelimit.py).
     limits: RateLimiter
+    # What these were created from (Enterprise tasks that sync sources need it).
+    settings: Settings | None = None
 
     @property
     def llm(self) -> LLMProvider:
@@ -230,6 +232,7 @@ class Resources:
             limits=RateLimiter(
                 valkey, merge_limits(settings.rate_limits), enabled=settings.rate_limits_enabled
             ),
+            settings=settings,
         )
         if isinstance(resources.ingestion, InlineDispatcher):
             resources.ingestion.start_runs = resources.start_workflow_runs

@@ -13,7 +13,8 @@ export type EnterpriseFeature =
   | "retention_policies"
   | "department_budgets"
   | "chargeback_reports"
-  | "advanced_audit_export";
+  | "advanced_audit_export"
+  | "permission_sync";
 
 export const ENTERPRISE_FEATURES: Readonly<Record<EnterpriseFeature, { label: string; description: string }>> = {
   retention_policies: {
@@ -31,6 +32,10 @@ export const ENTERPRISE_FEATURES: Readonly<Record<EnterpriseFeature, { label: st
   advanced_audit_export: {
     label: "Advanced audit export",
     description: "Audit log exports for security tools and long-term retention.",
+  },
+  permission_sync: {
+    label: "Permission sync",
+    description: "Each synced document gets its source's access list (Drive, Slack, GitHub), within its collection.",
   },
 };
 

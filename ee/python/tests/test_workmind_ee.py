@@ -10,6 +10,7 @@ pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra
 from pydantic import ValidationError
 from workmind.core.edition import FEATURES, Edition, License
 from workmind.core.extensions import ENTRY_POINT_GROUP, ExtensionRegistry, enable_extensions
+from workmind.modules.connectors.extensions import PERMISSION_SYNC
 from workmind.modules.usage.extensions import CHARGEBACK_REPORT, DEPARTMENT_BUDGETS
 
 import workmind_ee
@@ -94,7 +95,7 @@ def test_department_names_never_run_as_spreadsheet_formulas(name: str, cell: str
     assert safe_cell(name) == cell
 
 
-def test_setup_registers_retention_and_the_siem_export() -> None:
+def test_setup_registers_retention_the_siem_export_and_permission_sync() -> None:
     registry = ExtensionRegistry(_enterprise())
     workmind_ee.setup(registry, registry.edition)
     paths = {
@@ -107,13 +108,16 @@ def test_setup_registers_retention_and_the_siem_export() -> None:
         "chargeback_reports",
         "retention_policies",
         "advanced_audit_export",
+        "permission_sync",
     }
     assert ("/admin/retention", "retention_policies") in paths
     assert ("/admin/retention/run", "retention_policies") in paths
     assert ("/admin/audit-events/export.jsonl", "advanced_audit_export") in paths
     assert [(t.name, t.every_s, t.feature) for t in registry.scheduled_tasks] == [
-        ("workmind_ee.retention.apply", 86_400.0, "retention_policies")
+        ("workmind_ee.retention.apply", 86_400.0, "retention_policies"),
+        ("workmind_ee.permission_sync.drive_changes", 60.0, "permission_sync"),
     ]
+    assert registry.implemented(PERMISSION_SYNC)
 
 
 def test_retention_never_goes_below_30_days() -> None:
