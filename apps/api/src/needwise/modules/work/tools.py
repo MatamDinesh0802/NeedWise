@@ -90,7 +90,10 @@ def send_email_tool(mailer: SmtpMailer | None, sessions: async_sessionmaker[Asyn
 
     return Tool(
         name="send_email",
-        description="Send an email. Always needs the user's approval; they may edit it first.",
+        description=(
+            "Send an email. Use it when the user asks for an email to be sent. Nothing is sent "
+            "until the user approves it; they may edit it first."
+        ),
         input_model=SendEmail,
         side_effect="external",
         scope="assistant:ask",

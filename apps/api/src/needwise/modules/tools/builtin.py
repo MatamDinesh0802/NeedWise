@@ -80,7 +80,9 @@ def draft_email_tool() -> Tool:
     return Tool(
         name="draft_email",
         description=(
-            "Prepare an email draft for the user to review. It is never sent automatically."
+            "Prepare an email draft for the user to review. It is never sent. When the user "
+            'asks for an email to be sent ("email it to", "send it to"), use send_email '
+            "instead: it waits for their approval, and they can edit it first."
         ),
         input_model=DraftEmail,
         side_effect="read",
