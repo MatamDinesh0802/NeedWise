@@ -223,7 +223,11 @@ function queryLabel(query: QueryProgress): string {
 
 function queryDetail(query: QueryProgress, several: boolean): string {
   const where = query.dataset && several ? `${query.dataset}${query.dialect ? ` (${DIALECT_NAMES[query.dialect]})` : ""} · ` : "";
-  if (query.status === "failed") return `${where}${query.error ?? "Failed"}. The assistant can correct it and try again.`;
+  if (query.status === "failed") {
+    // The agent's reason starts with the API's code ("query_failed: …"): people get the words.
+    const reason = (query.error ?? "Failed").replace(/^[a-z_]+: /, "").replace(/\.$/, "");
+    return `${where}${reason}. The assistant can correct it and try again.`;
+  }
   if (query.status === "running") return `${where}Running with your access…`;
   const rows = query.rows ?? 0;
   const count = `${rows.toLocaleString("en")} ${rows === 1 ? "row" : "rows"}${query.truncated ? " (more matched)" : ""}`;

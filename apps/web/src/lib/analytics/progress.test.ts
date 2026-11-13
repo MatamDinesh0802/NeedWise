@@ -95,7 +95,7 @@ describe("progressSteps", () => {
     ]);
     expect(steps[0].detail).toBe("Datasets: uploads, shop");
     expect(steps[1].label).toBe("Query 1: a typo");
-    expect(steps[1].detail).toMatch(/^shop \(PostgreSQL\) · query_failed: .*try again\.$/);
+    expect(steps[1].detail).toBe('shop (PostgreSQL) · Database error: column "nope" does not exist. The assistant can correct it and try again.');
     expect(steps[2]).toMatchObject({ label: "Q1: Shop revenue", detail: "shop (PostgreSQL) · 1 row in 12 ms", sql: "SELECT sum(amount_eur) FROM orders" });
     expect(steps[3]).toMatchObject({ label: "Rewriting figures that didn't match", detail: "Not in the results: €9M" });
     expect(steps[4].detail).toBe("1 of 1 backed by a result");
