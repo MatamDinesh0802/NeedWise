@@ -396,7 +396,10 @@ function AddPersonForm({
     >
       <DialogHeader>
         <DialogTitle>Add person</DialogTitle>
-        <DialogDescription>They appear as Invited until they sign in for the first time.</DialogDescription>
+        <DialogDescription>
+          No email is sent. They can sign in once they have a login with this verified email (through your identity provider, or a user an
+          operator creates in Keycloak), and appear as Invited until their first sign-in.
+        </DialogDescription>
       </DialogHeader>
       <div className="flex flex-col gap-3">
         <Field label="Email" error={emailError}>

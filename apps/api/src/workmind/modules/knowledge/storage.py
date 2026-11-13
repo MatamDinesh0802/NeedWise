@@ -5,8 +5,9 @@ Keys are built here (`object_key`: tenants/<tenant_id>/objects/<sha256>), never 
 name, and every key read from the database is checked against the reading tenant
 (`owned_key`) before it is used. Deleting a tenant removes its whole prefix (`delete_prefix`).
 
-Implementations: LocalObjectStorage (a directory: dev, single server) and MemoryObjectStorage
-(tests). An S3-compatible implementation arrives with the production hardening phase.
+Implementations: LocalObjectStorage (a directory: development, one server, or a ReadWriteMany
+volume shared by several) and MemoryObjectStorage (tests), both held to one contract
+(tests/test_storage_contract.py). An S3-compatible implementation is not built.
 """
 
 import asyncio
@@ -111,6 +112,8 @@ class MemoryObjectStorage:
         self.objects[key] = data
 
     async def get(self, key: str) -> bytes:
+        if key not in self.objects:
+            raise FileNotFoundError(key)  # as the directory answers
         return self.objects[key]
 
     async def delete(self, key: str) -> None:

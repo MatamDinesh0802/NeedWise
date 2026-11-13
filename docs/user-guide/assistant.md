@@ -25,11 +25,14 @@ the **Sources** panel at that passage. For each source the panel shows:
 - its **sensitivity label**: internal, confidential or restricted;
 - a warning when an official document is **past its review date**: its owner has not confirmed
   that it is still correct ([Knowledge governance](../governance.md));
-- **Open document**, and for a PDF, **Open PDF at page N**.
+- **Open document**, and for a PDF, **Open PDF at page N**, which opens the PDF at that page.
+  The passage is not highlighted in the PDF: WorkMind records the page, not the passage's
+  position on it.
 
 Under **Also searched**, the panel lists the passages the search found that the answer did not
 cite. If a document changed after the answer was written, the panel says the passage changed;
-if you have since lost access to it, it says that too and does not show it.
+if it was deleted or you have since lost access to it, it says "This document was deleted, or you
+no longer have access to it", does not show the passage and offers no link to it.
 
 ## What the assistant uses, and what it does not
 

@@ -29,7 +29,8 @@ noise from outvoting a confident semantic match while still rescuing exact ident
 
 **Caveat:** these settings were tuned on the same set they are reported on. They are
 settings, not constants (`RETRIEVAL_RRF_K`, `RETRIEVAL_SPARSE_WEIGHT`), and the decision is
-revisited when the corpus grows (ARCHITECTURE 22.1 targets about 500 documents).
+revisited when the corpus grows (ARCHITECTURE 22.1 targets about 500 documents; the corpus has
+49 as of 2026-11-13, so they have not been revisited).
 
 ### 2. Lock 2 checks `viewer` on the collection, not on each document
 Documents inherit their collection's access. Checking the collection needs one OpenFGA batch

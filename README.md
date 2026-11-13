@@ -14,10 +14,13 @@ question, an email approved after an edit, a meeting's clickable timestamps, a c
 SQL, and an administrator adding an agent.
 
 > **Status: v1.0, pending the release tag.** All 13 phases of the [roadmap](docs/ROADMAP.md)
-> are built; a last end-to-end pass and the release remain. Not done yet: a public repository
-> (so the release workflows have never run), a test on a cloud Kubernetes cluster, and checking
-> Google Drive and Slack sync against real workspaces. It has been run only on the fictional demo
-> company, not on real company data.
+> are built, each with the gaps its section lists; a last end-to-end pass and the release remain.
+> Not done yet: a public repository (so the release workflows have never run), a test on a cloud
+> Kubernetes cluster, and checking Google Drive, Slack, Confluence and SharePoint/OneDrive sync,
+> and permission sync, against real services (all tested against fakes of their APIs). Designed
+> but not built: metrics and alerts, S3 storage, invitations by email, a reranker, and the rest
+> of [this list](docs/ARCHITECTURE.md#what-the-design-describes-that-is-not-built). It has been
+> run only on the fictional demo company, not on real company data.
 
 ## Quick start
 
@@ -119,15 +122,15 @@ hosted anywhere yet. Good places to start:
 |---|---|
 | Install and try it | [Quickstart](docs/getting-started/quickstart.md), [configuration](docs/getting-started/configuration.md), [local models](docs/getting-started/local-models.md) |
 | Use it | [User guide](docs/user-guide/assistant.md) |
-| Administer it | [Agents](docs/agents.md), [models](docs/models.md), [usage and budgets](docs/usage.md), [governance](docs/governance.md) |
+| Administer it | [People, departments, groups and roles](docs/user-guide/administration.md), [agents](docs/agents.md), [models](docs/models.md), [usage and budgets](docs/usage.md), [governance](docs/governance.md), [connectors](docs/connectors.md), [automation](docs/automation.md) |
 | Run it for real | [Kubernetes](docs/deploy/kubernetes.md), [backup and restore](docs/operations/backup-restore.md), [upgrades](docs/operations/upgrade.md) |
 | Understand it | [Architecture](docs/ARCHITECTURE.md), [decision records](docs/adr/), [roadmap](docs/ROADMAP.md) |
 
 ## Benchmarks (v1.0)
 
 Measured on 2026-11-12 at commit `1b62d52`, on one laptop, against the fictional company Acme
-Robotics (49 documents: the 47 the seed indexes and 2 meeting transcripts; 82 questions, 59
-attacks), with Claude Sonnet 5.5 in every role. One run per configuration: small datasets,
+Robotics (49 documents at the time: the 47 the seed indexed then and 2 meeting transcripts; the
+seed has 49 since 2026-11-13; 82 questions, 59 of today's 68 attacks), with Claude Sonnet 5.5 in every role. One run per configuration: small datasets,
 non-deterministic models. Method, every report and the limitations:
 [docs/benchmarks/v1.0.md](docs/benchmarks/v1.0.md).
 
@@ -216,8 +219,9 @@ costs.
 
 Community (everything outside `ee/`) is complete and Apache-2.0, security basics included.
 Enterprise adds features for large organizations from `ee/` and runs only with a license key.
-Built so far: department budgets, the chargeback report, retention policies and the export of
-the audit chain for a SIEM; with them the boundary, license checks and development licenses
+Built so far: department budgets, the chargeback report, retention policies, the export of the
+audit chain for a SIEM, per-document permission sync from Drive, Slack and GitHub, and legal
+holds; with them the boundary, license checks and development licenses
 (`make ee-dev-license`). See [docs/enterprise.md](docs/enterprise.md).
 
 ## Local development
@@ -258,8 +262,8 @@ Not yet: v1.0 is not released. What exists for it so far, and what has been chec
   limits, and a test that sends every route another tenant's ids
   ([docs/multi-tenancy.md](docs/multi-tenancy.md)).
 - **Security.** A [threat model](docs/security/threat-model.md), a review against the
-  [OWASP Top 10 for LLM Applications](docs/security/owasp-llm-top10.md) and a red team of 59
-  attacks; dependency, image, chart and workflow scans with SBOMs
+  [OWASP Top 10 for LLM Applications](docs/security/owasp-llm-top10.md) and a red team of 68
+  attacks (the v1.0 benchmark answered the first 59 with a model); dependency, image, chart and workflow scans with SBOMs
   ([supply chain](docs/security/supply-chain.md)); how to report a vulnerability:
   [SECURITY.md](SECURITY.md).
 - **Releases.** release-please and a release workflow for multi-arch images with SBOM and
@@ -293,7 +297,8 @@ apps/web      Next.js frontend (TypeScript, pnpm)
 deploy/       Postgres init, Caddy, the Keycloak realm, the Helm chart (deploy/helm)
 seed/         Acme Robotics: the fictional demo company and test corpus
 evals/        Evaluation datasets, runners and published results
-ee/           Enterprise Edition (separate license): budgets, chargeback, retention, SIEM export
+ee/           Enterprise Edition (separate license): budgets, chargeback, retention, SIEM export,
+              permission sync, legal hold
 docs/         The docs site (mkdocs.yml): guides, architecture, roadmap, ADRs, security, operations
 e2e/browser   Browser end-to-end tests (Playwright) against a running stack; the demo recorder
 loadtests/    Load tests (Locust) and the stub model server

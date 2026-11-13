@@ -1,7 +1,8 @@
 # Quickstart
 
 This runs WorkMind on your machine with **Acme Robotics**, a fictional 180-person company with
-departments, demo logins and 47 documents in 14 collections, some of them restricted.
+departments, demo logins and 49 documents in 14 collections, some of them restricted and two with
+their own access lists.
 
 ![Alice gets a cited answer about the L3 salary band; Bob, without access, is told the sources available to him don't contain it](../media/demo.gif)
 
@@ -56,7 +57,7 @@ machine at the time (load average 12 to 14), so an idle machine is likely faster
 | Build the API and web images | 79 s | 12 s |
 | Start until every service is healthy | 34 s (the embedding model downloads meanwhile) | 71 s (Keycloak's first start was the slowest) |
 | **Every service healthy, from the clone** | **1 min 54 s** | **1 min 24 s** |
-| Seed the demo company: 47 documents (364 chunks) on CPU embeddings, analytics data, logins | 69 s | 76 s |
+| Seed the demo company: 47 documents (364 chunks; the seed had 47 then, 49 since 2026-11-13) on CPU embeddings, analytics data, logins | 69 s | 76 s |
 | **`make quickstart` done, from the clone** | **3 min 3 s** | **2 min 40 s** |
 | Add the key to `.env`, then `make up` | 41 s | not needed: the key was in `.env` first |
 | Sign in (page to signed in) | 1 to 2 s | 2 s |

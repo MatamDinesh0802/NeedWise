@@ -1,9 +1,11 @@
 # Evaluation
 
-WorkMind is evaluated against **Acme Robotics**, a fictional company whose 47 documents follow
+WorkMind is evaluated against **Acme Robotics**, a fictional company whose 49 documents follow
 a fact plan (`seed/acme/corpus_plan.yaml`) and are checked against it: 34 generated in Phase 2,
-10 legal documents written by hand for Phase 11 and rendered with the same converters, and 3
-prompt-injection fixtures written by hand for Phase 12 (vendor release notes, a meeting
+10 legal documents written by hand for Phase 11 and rendered with the same converters, 3
+prompt-injection fixtures written by hand for Phase 12, and 2 documents with their own access
+lists added on 2026-11-13 for the document-list attacks (the measurements below dated before
+then ran on the first 47) (vendor release notes, a meeting
 transcript, a Slack export; see [Red team](#red-team)). The v1.0 measurements ran on a
 development index that also held 2 meeting transcripts indexed by tests (49 documents, 421
 chunks; the seed alone gives 364). Every

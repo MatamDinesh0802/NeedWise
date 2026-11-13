@@ -17,7 +17,9 @@ identity must work for the web UI, API clients and MCP clients.
 - UI, API and Keycloak share one origin behind Caddy, so the cookie works without CORS.
 - Application permissions (departments, groups, document access) live in WorkMind, not in
   Keycloak (see ADR 0006).
-- Machine clients use scoped personal access tokens or Keycloak service accounts.
+- Machine clients use scoped personal access tokens or Keycloak service accounts. (*As built,
+  2026-11-13:* personal access tokens only; Keycloak service accounts with client credentials are
+  not built.)
 
 ## Consequences
 - Tokens are never readable by browser JavaScript.

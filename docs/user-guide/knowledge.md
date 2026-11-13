@@ -53,10 +53,12 @@ them into notes as well as a searchable transcript ([Meetings](../meetings.md)).
 1. **Parse**: the text is read with its headings and page numbers, which citations show later.
 2. **Chunk**: the text is cut by section into passages of up to about 320 tokens; a table is
    split by rows, with its header repeated in every piece.
-3. **Label**: a scan suggests a sensitivity label from what the text contains: a valid IBAN or
-   national ID number makes it *restricted*, a pay word next to an amount makes it
+3. **Label**: a scan suggests a sensitivity label from what the text contains: a valid IBAN or a
+   US social security number makes it *restricted*, a pay word next to an amount makes it
    *confidential*. Words alone ("medical", "salary") never raise it, and the scan never lowers
-   the collection's default.
+   the collection's default. It is a pattern scan, not named-entity detection: names, home
+   addresses, phone numbers and email addresses do not raise the label, so a collection that
+   holds personal data should get the right default (or an editor sets the label).
 4. **Embed and index**: each passage is stored for hybrid search (meaning and keywords), with the
    collection's access list attached, so a search can only ever return what the person may read.
    A document can also have **its own access list**, narrower than its collection's: synced from

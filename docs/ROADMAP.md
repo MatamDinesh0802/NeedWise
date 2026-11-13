@@ -1,6 +1,6 @@
 # WorkMind AI — Roadmap, Releases and Go-to-Market
 
-> **Status:** Draft v0.2 · **Phase 0 complete** · **Last updated:** 2026-11-13
+> **Status:** plan v0.2 · **Phases 0 to 12 built** (7 and 12 with work remaining; no release after v0.1.0 is tagged yet) · **Last updated:** 2026-11-13
 > **Companion doc:** [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## 1. Strategy in one paragraph
@@ -22,7 +22,7 @@ Sizes are rough estimates in **weeks of focused work**; part-time takes longer. 
 |---|---|---|---|---|
 | 0 ✅ | v0.0.x | Foundation and synthetic company | 1–2 wk | Repo public (pre-alpha), architecture post |
 | 1 ✅ | v0.1 | Identity, tenancy and permissions | 2 wk | Login + permission model demo |
-| 2 ✅ | v0.2 | Knowledge ingestion | 2 wk | 500-document corpus ingested, live status |
+| 2 ✅ | v0.2 | Knowledge ingestion | 2 wk | 500-document corpus ingested, live status (as built: 49 documents) |
 | 3 ✅ | v0.3 | Retrieval engine + evaluation harness | 2–3 wk | First published eval numbers |
 | 4 ✅ | **v0.4** | **AI Assistant — first usable product** | 2 wk | **Public launch** (HN, Reddit, LinkedIn video) |
 | 5 ✅ | v0.5 | Multi-agent orchestration | 2–3 wk | "Do you need multi-agent? I measured it." |
@@ -37,7 +37,9 @@ Sizes are rough estimates in **weeks of focused work**; part-time takes longer. 
 
 ✅ built (4: launch pending the public repository; 8 to 11: with the gaps their sections list);
 🚧 built with work remaining (7: live Drive, Slack, Confluence and SharePoint verification; 12:
-the release). Each phase's section below has the details. On 2026-11-13 the last Phase 7 to 11
+the release). Each phase's section below has the details, including a **Not built** list of the
+scope items that were dropped or deferred. "Built" is not "done" in the sense of §3: only v0.1.0
+is tagged, so no later phase has its release yet ([releasing](operations/releasing.md)). On 2026-11-13 the last Phase 7 to 11
 branches were merged into `main` and the development stack was rebuilt from it; what that run
 checked is under each phase ("Integrated 2026-11-13").
 
@@ -70,6 +72,9 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > cache (1 min 24 s with the cache kept), and the demo company was seeded after 3 min 3 s
 > (2 min 40 s). The 0.9 GB of service images were already on the machine; their download was
 > not timed.
+>
+> OpenTelemetry, as built: optional spans of the API's HTTP requests over OTLP, and the trace id
+> in log lines. No metrics, alerts, Langfuse or worker traces (ARCHITECTURE §21).
 
 **LinkedIn post #1 — "I'm building an open-source enterprise AI workspace, in public."**
 - The problem: company knowledge is scattered, and AI assistants leak permissions.
@@ -84,7 +89,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - [x] Slice 1: tenant data model with forced Row-Level Security, plus isolation tests
 - [x] Slice 2: Keycloak realm as code, `make seed`
 - [x] Slice 3: login/logout (BFF), sessions, back-channel logout, `/api/v1/me`, end-to-end tests
-- [ ] Slice 4: web sign-in and user menu
+- [x] Slice 4: web sign-in and user menu
 - [x] Slice 5: OpenFGA model, outbox sync, reconcile, authz matrix tests
 - [x] Slice 6a: admin API (people, departments, groups, audit log) with guard rails and a role × endpoint test matrix
 - [x] Slice 6b: admin UI (people, departments, groups, audit log with integrity check) and access tokens in Settings
@@ -102,6 +107,12 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Tests: the **authz matrix** (role × resource × action) and **tenant-isolation tests**.
 
 **DoD:** log in as each demo user and see the correct capabilities. The audit log shows logins and admin changes. Isolation tests pass.
+
+> **Not built:** invitations by email. **Add person** creates the WorkMind user (status
+> *invited*), who can sign in only once a Keycloak user with the same verified email exists
+> (created by an operator, or through a federated identity provider); no email is sent
+> ([administration guide](user-guide/administration.md#adding-people)). The principal set is not
+> cached (computed per request, ARCHITECTURE §11.7), and reconcile does not run on a schedule.
 
 **LinkedIn post #2 — "Most RAG demos skip the hardest enterprise problem: who is allowed to see what."**
 - Show the login flow diagram and the OpenFGA model.
@@ -126,6 +137,14 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **DoD:** the full Acme corpus ingests with zero unhandled failures. Re-uploading an unchanged file is skipped. Throughput (docs/min) is measured and recorded.
 
+> **Not built:** the S3 storage adapter (only a local directory; the local and in-memory stores
+> share a contract suite, `tests/test_storage_contract.py`); Docling, OCR and the HybridChunker
+> (lightweight parsers instead, [ADR 0007](adr/0007-model-providers-and-lightweight-parsing.md));
+> the Presidio PII scan (a regex scan for IBANs, US SSNs and pay figures suggests the label; no
+> names, addresses, phone numbers or emails); metadata enrichment beyond the title; the Qdrant
+> alias (a collection per model, `wm reindex` to switch); a ~500-document corpus (49 documents
+> in 14 collections, [case study](case-study.md)).
+
 **LinkedIn post #3 — "What actually happens between 'upload PDF' and 'AI answers'."**
 - Pipeline diagram.
 - Lessons on chunking tables and on versioning.
@@ -137,6 +156,12 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > `wm eval` with QA / red-team / abstention suites, the CI permission gate, and the ablation.
 > Deferred: the reranker adapter (no measurable headroom yet: Evidence@3 is 98.8%), the
 > local-vs-paid comparison (D3: the maintainer runs Claude), and growing QA from 82 to ~200 items.
+> Not built: metadata filters extracted from the question (department, dates, document type)
+> and the freshness boost (old documents are reminded to their owners, not ranked lower); the CI
+> model smoke set and any recall or faithfulness gate. CI runs the red-team and retrieval checks
+> retrieval-only (hash embeddings) and gates leaks at 0; the model-backed suites are run by hand
+> against the stack and their reports committed in `evals/results/`. "Baseline targets" are the
+> measured numbers in those reports; no threshold enforces them.
 
 **Goal:** high-quality, permission-safe retrieval, with numbers to prove it.
 
@@ -181,6 +206,10 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > were recorded with `make demo-video` against the development stack
 > ([how](../e2e/browser/demo/README.md)). These timings were taken before the seed grew to 49
 > documents (two with their own access lists) on 2026-11-13; they were not taken again.
+>
+> Not built: the PDF highlight in the citations panel. It shows the cited passage's text and
+> links "Open PDF at page N", which opens the PDF at that page with nothing highlighted (the
+> parsers record page numbers, not positions).
 
 **Goal:** a real person can install WorkMind and get cited, permission-aware answers in minutes.
 
@@ -206,6 +235,12 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 > Measured: routing 36/36; agents beat the single pipeline only on three-area questions, at 3x latency
 > and 4-5x cost, so `single` stays the default and `auto` is offered.
+>
+> Not built: the validator with re-plan (aggregation drops findings with unknown citation
+> markers; nothing re-plans), Postgres checkpoints (dropped by ADR 0009: runs are short and
+> approvals are stored actions), and the provider fallback chain and circuit breaker (the SDK
+> retries 429 and 5xx three times, and Claude falls back on refusals server-side; a provider that
+> is down fails the request). `Send` fan-out is plain `asyncio.gather` (ADR 0009).
 
 **Goal:** complex, cross-department requests answered by cooperating agents, with proof that it helps.
 
@@ -286,6 +321,11 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > [report](../evals/results/2026-11-13-permission-gate-final.md)). A Confluence source was
 > created and removed through the API on that stack. No connector was synced against a live
 > service.
+>
+> **DoD not met:** no test Google Drive or Slack workspace has been synced live, so "stay in sync
+> within the interval" and "deletions in the source disappear" are verified against fakes and
+> the live web crawler and GitHub only. Not built: the stretch goal, a Slack or Teams bot (there
+> is no inbound Slack or Teams endpoint; Slack is used to sync and to notify).
 
 **Goal:** knowledge flows in automatically from the tools companies already use.
 
@@ -391,6 +431,10 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 **DoD:**
 - A 30-minute recording produces a summary, decisions and action items with clickable timestamps.
 - Processing time is measured on reference hardware.
+
+> As measured: on the 23-minute demo recording, not a 30-minute one (transcription 42 to 51 s on
+> the laptop's CPU, 78 s in the Docker worker; [meetings.md](meetings.md)). No 30-minute recording
+> was run.
 
 **LinkedIn post #10 — "From a 30-minute meeting to tracked commitments, fully self-hosted."**
 
@@ -539,7 +583,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - [x] **Security review** against the OWASP Top 10 for LLM Applications (2025) and a threat
   model: 11 fixes, each with a regression test ([review](security/owasp-llm-top10.md),
   [threat model](security/threat-model.md)). Red team grown from 16 to 59 attacks on four
-  surfaces. Live, after the merges, on the rebuilt and re-seeded stack: the retrieval permission
+  surfaces (68 since 2026-11-13, with 9 attacks on documents' own access lists; the numbers below
+  are the 59-attack runs). Live, after the merges, on the rebuilt and re-seeded stack: the retrieval permission
   gate 0 leaks in 156 checks ([report](../evals/results/2026-11-12-permission-gate.md)); all 59
   attacks answered with Claude Sonnet 5.5, 0 leaks and 2 violations after a scoring fix, neither
   an obeyed instruction ([report](../evals/results/2026-11-12-redteam-v1.md),
@@ -618,7 +663,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - Load tests (Locust). Performance tuning.
 - Multi-tenant mode hardening.
 - Backup and restore. Upgrade and migration guide (tested from v0.x).
-- Helm chart. Complete docs site.
+- Helm chart. Complete docs site. (*The admin screens got their guide on 2026-11-13:
+  [administration](user-guide/administration.md).*)
 - A case study write-up.
 
 **DoD:** v1.0 published with benchmarks (quality, latency, cost, leak rate) and a tested upgrade path.
@@ -666,7 +712,7 @@ Earlier drafts proposed a CLA. With Apache-2.0 it isn't needed: the license alre
 
 | Capability | Community (free, self-hosted) | Enterprise / Cloud (paid) |
 |---|---|---|
-| AI assistant: hybrid RAG, reranking, citations | ✅ | ✅ |
+| AI assistant: hybrid RAG, citations (a reranker is not built) | ✅ | ✅ |
 | Permission-aware retrieval (WorkMind-managed permissions) | ✅ | ✅ |
 | Multi-agent orchestration, agents as configuration | ✅ | ✅ |
 | Local models and bring-your-own API keys | ✅ | ✅ |
@@ -696,7 +742,7 @@ Earlier drafts proposed a CLA. With Apache-2.0 it isn't needed: the license alre
   - Multi-arch Docker images (amd64 + arm64) on GitHub Container Registry.
   - The eval report for that version.
 - **Migrations** always go forward through Alembic. Breaking changes are called out in release notes.
-- **Every release also gets:** a LinkedIn post, a devlog entry in `docs/devlog/`, and a refreshed demo deployment.
+- **Every release also gets:** a LinkedIn post, a devlog entry in `docs/devlog/`, and a refreshed demo deployment. (*As built:* `docs/devlog/` has drafts of posts 1 to 6; posts 7 to 13 are not written, and there is no demo deployment.)
 
 ---
 

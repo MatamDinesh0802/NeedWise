@@ -165,6 +165,12 @@ in Admin → Models) and its `restricted_data` setting; a difference reloads. Th
 a change drops its cache at once; others (more API processes, Celery workers) see it within 5
 seconds. Workers build their resources per task, so they always start fresh.
 
+**When a provider fails.** The provider SDKs retry 429 and 5xx answers three times with backoff.
+With Claude, Anthropic's server-side fallback answers a request its safety classifiers refused
+(`LLM_FALLBACKS`, on by default). There is no circuit breaker and no fallback from one provider
+or model to another (for example from a local model to a paid API): a call that still fails
+fails the request, which says the model is unavailable.
+
 ## API
 
 Owners and admins only, with a browser session (access tokens cannot administer). Every change

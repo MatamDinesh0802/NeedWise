@@ -468,7 +468,12 @@ All under `/api/v1/admin/sources`, for org admins and collection owners as descr
   (`source.synced`).
 - Live verification: Connect Slack, Connect Google Drive, Confluence and SharePoint/OneDrive were
   tested against scripted providers and fakes of their documented APIs, not against a real Slack
-  workspace, Google account, Confluence site or Microsoft 365 tenant.
+  workspace, Google account, Confluence site or Microsoft 365 tenant. Permission sync has not met
+  a live API either.
+- **A Slack or Teams bot** (asking WorkMind inside chat, the Phase 7 stretch goal): there is no
+  inbound Slack or Teams endpoint. Slack is used to sync channels and to send notifications.
+- A collection owner's web source cannot reach private or loopback addresses, and there is no
+  setting to allow a network for them (only an org admin's configuration reaches the intranet).
 
 ## Writing a connector
 

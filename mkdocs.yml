@@ -137,6 +137,7 @@ nav:
       - Approvals and tasks: user-guide/approvals-and-tasks.md
       - MCP in Claude, Cursor and IDEs: mcp.md
   - Admin guide:
+      - People, departments, groups and roles: user-guide/administration.md
       - Agents: agents.md
       - Models and keys: models.md
       - Usage and budgets: usage.md

@@ -1,6 +1,8 @@
 # WorkMind AI — System Architecture
 
-> **Status:** Draft v0.2 · Phase 0 implemented · **Last updated:** 2026-11-12 (security review: section 20)
+> **Status:** design v0.2 with as-built notes · Phases 0 to 12 built, the v1.0 release not tagged yet · **Last updated:** 2026-11-13 (final pass before v1.0)
+>
+> **How to read it:** this document began as the design. Where the code differs, an *As built* note says so, and the table [What the design describes that is not built](#what-the-design-describes-that-is-not-built) lists the larger gaps in one place. A design statement without a note and not in that table is built.
 > **Companion doc:** [ROADMAP.md](ROADMAP.md) covers phases, releases, the open-source plan and the LinkedIn plan.
 
 WorkMind AI is an open-source, self-hostable AI workspace for companies. Employees ask questions and get answers grounded in company knowledge, with citations, drawn only from sources they are allowed to see. Specialized agents handle department work. Actions that change anything outside WorkMind need human approval.
@@ -36,6 +38,33 @@ WorkMind AI is an open-source, self-hostable AI workspace for companies. Employe
 25. End-to-end walkthrough of one request
 26. Open decisions
 
+### What the design describes that is not built
+
+Checked against the code on 2026-11-13. Each row has an *As built* note at its place in this
+document; [ROADMAP.md](ROADMAP.md) lists the same gaps per phase.
+
+| Design (section) | As built |
+|---|---|
+| Prometheus metrics, Grafana, alert rules, `authz_projection_drift_total` (§7.6, §21) | Not built: no metrics endpoint and no alerts. Lock-2 drift is a warning log event (`authz_projection_drift`) |
+| Tracing of every layer, `gen_ai.*` spans, Langfuse (§21) | Optional OTLP spans of the API's HTTP requests only; log lines carry the trace id |
+| Masking of `confidential` content in logs and traces (§7.3, §21) | No masking step: logs carry ids and counts only, for every label (a coding rule, §20) |
+| Presidio PII scan (§3, §7.3, §10.1) | A regex scan (IBAN, US SSN, pay figures); no names, addresses, phones or emails |
+| Docling, OCR, bounding boxes, PDF highlight (§10) | Lightweight parsers (ADR 0007); page numbers only, no highlight |
+| Reranker, freshness boost, filters extracted from the question (§11.1) | Not built: hybrid search with RRF and a trust boost |
+| Principal-set cache, scheduled reconcile (§7.5) | Computed on every request; reconcile on seeding, tenant creation and `wm authz sync` |
+| Qdrant alias for embedding model changes (§8) | A collection per model and dimension, no alias; `wm reindex` re-embeds |
+| S3, Azure Blob, GCS storage (§3, §8) | A local directory only (multi-node Kubernetes needs a ReadWriteMany volume) |
+| Provider circuit breaker and cross-provider fallback chain (§12.5, §21) | SDK retries and Claude's server-side refusal fallback only |
+| LangGraph graph, checkpoints, validator with re-plan (§12.3, §12.4) | Plain asyncio orchestrator (ADR 0009), no validator node |
+| Invitations by email that create the Keycloak user (§6.6) | A WorkMind user with status *invited*; no email, no Keycloak user |
+| Keycloak service accounts (client credentials) for integrations (§6.5) | Session cookies and personal access tokens only |
+| Inbound webhooks, a Slack or Teams bot (§6.5) | Not built |
+| Per-tenant session lifetimes and server-side token refresh (§6.3) | Deployment-wide lifetimes; no access or refresh token is kept |
+| Long-term memory, `memory_items` and other tables of §9 (§9, §17) | Not built (§9 lists what exists instead) |
+| Email ingestion, language detection, enrichment, spreadsheets as BI sources (§10.1) | Not built |
+| A ~500-document corpus (§22.1) | 49 documents in 14 collections |
+| CI model smoke set, recall gate, nightly and per-release suites (P6, §22.3, §22.4) | CI gates permission leaks only; model suites are run by hand and committed |
+
 ---
 
 ## 1. Design principles
@@ -47,7 +76,7 @@ WorkMind AI is an open-source, self-hostable AI workspace for companies. Employe
 | P3 | **Open source by default, swappable by design** | Every layer runs on open-source software. The layers companies actually swap (LLM, embeddings, identity provider, storage…) sit behind adapters. |
 | P4 | **Modular monolith first** | One backend codebase with strict module boundaries, run as a few processes. Split into services only when measurements demand it. |
 | P5 | **Humans approve side effects** | By default, anything that leaves WorkMind (sending email, updating an external system) needs explicit approval. |
-| P6 | **Measure, don't claim** | Retrieval quality, faithfulness, routing, leak rate, latency and cost are measured in CI. |
+| P6 | **Measure, don't claim** | Retrieval quality, faithfulness, routing, leak rate, latency and cost are measured. *As built:* CI gates only the leak rate (retrieval-only, with hash embeddings); the rest is measured by `wm eval` runs against the stack, with the reports committed in `evals/results/` (§22.4). |
 | P7 | **Isolation at every layer** | Tenant boundaries are enforced in the database, vector store, object storage, cache and logs, not only in application code. |
 | P8 | **One-command self-hosting** | `docker compose up` gives a working system with demo data. |
 
@@ -116,6 +145,8 @@ Every default is open source. Paid alternatives plug in through adapters (see §
 
 > **License note:** every library imported into our code is permissive (MIT, BSD or Apache). AGPL components (SearXNG, Grafana) run as separate services. That keeps our own licensing options open (see ROADMAP §4).
 
+> **As built:** this table is the design. Not built or replaced: the reranker (none), Docling and OCR (lightweight parsers instead, [ADR 0007](adr/0007-model-providers-and-lightweight-parsing.md)), Presidio (a regex scan for IBANs, US SSNs and pay figures suggests the label; no named-entity detection), S3, Azure Blob and GCS storage (only a local directory), BM25 through fastembed (WorkMind computes its own sparse vectors), Langfuse, Prometheus and Grafana (no metrics endpoint; tracing is optional OTLP, §21), SearXNG, Ragas, and LiteLLM (our own adapters, ADR 0007).
+
 ---
 
 ## 4. System overview
@@ -162,8 +193,8 @@ flowchart LR
   WK --> LLM
   WK --> EXT["External sources<br/>Drive, Slack, Confluence, GitHub, SharePoint"]
 
-  API -.->|"OTel"| OBS["Langfuse, Prometheus, Grafana"]
-  WK -.->|"OTel"| OBS
+  API -.->|"OTel (optional, HTTP spans only)"| OBS["OTLP collector (Langfuse, Prometheus and Grafana not built)"]
+  WK -.->|"not traced"| OBS
 ```
 
 | Component | Responsibility |
@@ -276,7 +307,7 @@ sequenceDiagram
   K-->>A: id_token, access_token, refresh_token
   A->>A: Verify id_token (signature via JWKS, issuer, audience, expiry, nonce)
   A->>D: Find or create user (just-in-time provisioning), resolve tenant from organization claim
-  A->>V: Store session (user, tenant, encrypted tokens, expiry)
+  A->>V: Store session (user, tenant, id_token for logout, expiry)
   A-->>W: Set-Cookie wm_session (HttpOnly, Secure, SameSite=Lax) and redirect to app
   W->>A: Later API calls send the cookie automatically
 ```
@@ -287,8 +318,8 @@ sequenceDiagram
 |---|---|
 | Session ID | 256-bit random, opaque. The cookie holds only the ID; data lives in Valkey. |
 | Cookie | `HttpOnly`, `Secure`, `SameSite=Lax`, path `/` |
-| Idle timeout / absolute lifetime | 30 minutes sliding / 12 hours (configurable per tenant) |
-| Token refresh | The API refreshes the Keycloak access token server-side shortly before it expires |
+| Idle timeout / absolute lifetime | 30 minutes sliding / 12 hours (*as built:* deployment-wide settings `SESSION_IDLE_TIMEOUT_S` and `SESSION_ABSOLUTE_TIMEOUT_S`, not per tenant) |
+| Token refresh | *As built:* none. WorkMind never calls Keycloak as the user, so it keeps no access or refresh token; the session holds the user, the tenant and the `id_token` (for RP-initiated logout), stored as plain JSON in Valkey under the session's hash. Keycloak's own session ends at its own lifetime |
 | CSRF | `SameSite=Lax`, plus an `Origin` (or `Referer`) check on every state-changing request, plus a required custom header `X-CSRF-Protection: 1` that cross-site forms cannot send |
 | Logout | Delete the session and redirect to Keycloak end-session (RP-initiated logout) |
 | Remote kill | Keycloak back-channel logout endpoint: disabling a user in Keycloak ends their WorkMind sessions immediately. Caddy hides it from the public; Keycloak calls it on the internal network. |
@@ -322,13 +353,13 @@ The same context flows into agents, tools, retrieval and Celery tasks. This is w
 | Client | Method |
 |---|---|
 | MCP clients, CLI, scripts | **Personal access tokens**: `wm_pat_<tenant-slug>_<256-bit secret>`. Only the SHA-256 is stored, and the plain token is shown once. They expire (1–365 days), act *as the user*, and carry scopes (`profile:read`, `knowledge:read`, `assistant:ask`). No scope grants administration, and a token can never create tokens. Revoking the token or disabling the user stops it immediately. |
-| Integrations / automation | **Service accounts** via Keycloak client-credentials, with narrow scopes |
-| Inbound webhooks (Slack events, etc.) | Signature verification per provider. No session involved. |
+| Integrations / automation | **Service accounts** via Keycloak client-credentials, with narrow scopes. *Not built:* the API authenticates only a session cookie or a personal access token; internal jobs (connectors, workflows, evals, the seed) use an in-process service context, not an OAuth client |
+| Inbound webhooks (Slack events, etc.) | Signature verification per provider. No session involved. *Not built:* there is no inbound Slack or Teams endpoint (no bot); the request mailbox is a stub endpoint ([automation.md](automation.md)) |
 
 ### 6.6 User provisioning
 
 - **Just-in-time:** a user is created on first login if their organization (or email domain) belongs to a tenant.
-- **Invitations:** an org admin invites by email. WorkMind creates the Keycloak user through the Admin API with a "set password" required action.
+- **Invitations:** an org admin invites by email. WorkMind creates the Keycloak user through the Admin API with a "set password" required action. *As built:* **Admin › People › Add person** creates only the WorkMind user (status *invited*), which links to a Keycloak identity with the same verified email at its first sign-in. No email is sent and no Keycloak user is created: an operator creates it in Keycloak (or the person signs in through a federated identity provider). See [user-guide/administration.md](user-guide/administration.md#adding-people).
 - **SCIM provisioning and IdP group sync:** Enterprise edition, later (see ROADMAP §5).
 
 ### 6.7 Keycloak setup (as code)
@@ -403,10 +434,10 @@ Every document carries two labels that change how it is used:
 | Sensitivity | Meaning | Effect |
 |---|---|---|
 | `internal` | Default | — |
-| `confidential` | Business sensitive | Masked in logs and traces |
+| `confidential` | Business sensitive | No different handling as built: logs and traces carry ids and counts, never document or answer text, for every label (§20); there is no masking step |
 | `restricted` | Highly sensitive (PII, salaries, legal) | Per tenant policy, sent **only to local models**, never to external LLM APIs (§11.6) |
 
-The sensitivity label is suggested automatically at ingestion (Presidio PII scan + rules) and can be overridden by the collection owner.
+The sensitivity label is suggested automatically at ingestion (Presidio PII scan + rules) and can be overridden by the collection owner. *As built:* a regex scan (`modules/knowledge/sensitivity.py`: IBANs with their mod-97 check, US social security numbers, pay words next to amounts) can raise a document to `restricted`; names, addresses, phone numbers and email addresses are not detected, and Presidio is not a dependency.
 
 `official` covers one version of a document: the approval names the version the approver could read, and new content (an upload with the same name, a connector sync) drops the document back to the collection's non-official default until it is approved again. Only people who can open the collection approve. A collection's `default_trust` is the one standing exception: a new document takes it. Details: [docs/governance.md](governance.md#official-status).
 
@@ -468,16 +499,16 @@ Object IDs in OpenFGA are WorkMind UUIDs (`user:<uuid>`, `department:<uuid>`), n
 - **PostgreSQL holds the admin records:** memberships, collection grants, document grants. The admin UI writes these.
 - Every change writes an **outbox row in the same database transaction**. A worker reads the outbox and writes the matching tuples to OpenFGA. Writes are idempotent and retried, so the two stores cannot silently drift (the *transactional outbox* pattern).
   - Rows are applied in commit order. Processing stops at the first failure, so a later delete never overtakes an earlier write.
-  - Until Celery arrives in Phase 2, the worker runs inside the API process. `SKIP LOCKED` row locks make several API replicas safe.
-- A **reconcile** job recomputes every identity tuple from Postgres and repairs drift in either direction. It runs on seeding, and later on a schedule.
+  - The worker runs inside the API process (*as built,* also after Celery arrived). `SKIP LOCKED` row locks make several API replicas safe.
+- A **reconcile** job recomputes every identity tuple from Postgres and repairs drift in either direction. *As built:* it runs on seeding, on tenant creation and with `wm authz sync`; there is no scheduled reconcile.
   - Reconcile and outbox processing share a per-tenant advisory lock. Without it, a reconcile could delete a tuple that a concurrently committed change had just added.
 - An integration test checks, for every Acme user, that the group and department memberships computed in Postgres (lock 1) equal what OpenFGA answers (lock 2).
-- A user's **principal set** (`user:…`, `group:…` including nested groups, `dept:…`, `org:…`) is computed from Postgres. It is cached in Valkey for 60 seconds and invalidated immediately on membership changes.
+- A user's **principal set** (`user:…`, `group:…` including nested groups, `dept:…`, `org:…`) is computed from Postgres. *As built:* on every request, not cached (§11.1, §11.7).
 
 ### 7.6 Permission-aware retrieval: two locks
 
 1. **Lock 1, pre-filter (fast).** Each chunk in Qdrant carries an `acl` payload: the list of principals allowed to view it, e.g. `["dept:hr", "group:hr-records", "user:42"]`. Every search filters on `acl ∈ user.principals`, plus `tenant_id`, plus `is_active`. Unauthorized chunks are never even scored, so recall for allowed content is unaffected.
-2. **Lock 2, recheck (exact).** Before generating an answer, the documents behind the final chunks are checked with an OpenFGA `BatchCheck`. A mismatch drops the chunk and increments the `authz_projection_drift_total` metric, which alerts us because it means Lock 1 is stale.
+2. **Lock 2, recheck (exact).** Before generating an answer, the documents behind the final chunks are checked with an OpenFGA `BatchCheck`. A mismatch drops the chunk and means Lock 1 is stale. *As built:* it is logged as a warning (`authz_projection_drift`, with the tenant and the dropped document ids); there is no `authz_projection_drift_total` metric and no alert. Alert on that log event in your log pipeline (§21).
 
 Design details:
 - A document with its own access list also carries `own_acl: true` and `doc_acl` (its principals); lock 1 requires no own list or one naming the caller, and lock 2 also checks `viewer` on the document whenever PostgreSQL or the payload says it has a list ([permission-sync.md](permission-sync.md)).
@@ -531,7 +562,7 @@ Two details matter:
 
 The `tenants` table itself has no RLS: login must resolve a tenant before one is known. The runtime role can only read it. A CI guardrail test fails if any table with a `tenant_id` column lacks forced RLS and a policy. A second suite (`test_cross_tenant.py`) calls every route of the app as one tenant with another tenant's ids and fails when a new route has no probe.
 
-**Embedding model changes:** Qdrant collections are named per embedding model (e.g. `chunks_bge_m3_v1`) behind an alias (`chunks_active`). Switching models means building a new collection in the background, re-embedding, then switching the alias atomically. There is no downtime and rollback is possible.
+**Embedding model changes:** Qdrant collections are named per embedding model (e.g. `chunks_bge_m3_v1`) behind an alias (`chunks_active`). Switching models means building a new collection in the background, re-embedding, then switching the alias atomically. There is no downtime and rollback is possible. *As built:* the collection is named per model and dimension (`QDRANT_COLLECTION`, `core/config.py`) and there is **no alias**: after changing the model, `wm reindex <tenant>` re-embeds into the new collection while answers come from it as it fills, and going back means changing the setting back ([operations/upgrade.md](operations/upgrade.md)).
 
 **Tenant lifecycle:** `wm tenant create` makes the tenant row, its OpenFGA store and (optionally) its Keycloak organization. `wm tenant delete` suspends the tenant, then deletes its sessions, Qdrant points, files and datasets, OpenFGA tuples and store, Valkey keys, optionally its Keycloak organization and unshared users, and finally the row (every tenant table cascades), then verifies that nothing remains in any layer (`wm tenant verify-empty` runs the check alone). Backups, shipped logs and OpenFGA's record of a deleted store are not reached; see [multi-tenancy.md](multi-tenancy.md).
 
@@ -583,6 +614,16 @@ Conventions:
 | **Governance** | `audit_events` | `actor_id, actor_type, action, resource_type, resource_id, metadata, ip, prev_hash, hash` (append-only, hash-chained) |
 | | `usage_events` | `user_id, run_id, provider, model, tokens_in, tokens_out, cost_usd` |
 
+> **As built (all of §9):** the table above is the design. These tables do not exist:
+> `memory_items` (there is no long-term memory: nothing is remembered across conversations, and
+> Settings has no memory page), `saved_insights` (answers are stored per person as
+> `analytics_runs`), `agent_runs`, `agent_steps` and `tool_calls` (run events live in a Valkey
+> stream and tool calls in the audit log and `messages.tool_steps`), `citations` (stored on the
+> message), `feedback` (columns of `messages`), `ingestion_jobs` (status on documents and
+> versions), `meeting_segments` and `decisions`/`action_items` (JSON on `meetings`),
+> `data_sources` and `semantic_models` (`analytics_sources` and `analytics_models`). The tables
+> that exist are the `__tablename__`s under `apps/api/src/workmind/modules/*/models.py`.
+>
 > **As built (v0.11, [usage.md](usage.md), [governance.md](governance.md)):** `usage_events` has
 > one row per model call: `user_id, department_id, agent_key, feature, model, model_id, provider,
 > local, input_tokens, output_tokens, cost_usd, ref_type, ref_id, latency_ms, status, source`. The
@@ -620,8 +661,8 @@ flowchart TD
 | Change detection | Same hash → skip parsing and embedding; only update metadata and ACLs. Ingestion is idempotent per `(document_id, content_hash)`. |
 | Parse | Docling converts PDF/DOCX/PPTX/XLSX/HTML/images into a structured document: headings, paragraphs, tables, page numbers, bounding boxes. |
 | Chunk | Docling `HybridChunker` (structure- and tokenizer-aware), about 512 tokens max. The heading path is prepended for embedding ("contextual chunk header"). Raw text is stored for display. Tables stay whole as Markdown. |
-| Special types | **Spreadsheets:** row groups with headers repeated, and the file can also be registered as a BI data source. **Slack / chat:** one chunk per thread, with participants and timestamps, trust = `discussion`. **Email:** one chunk per message with quoted replies stripped. **Meeting transcripts:** topic segments with speaker labels and timestamps. |
-| Enrich | Title, author, dates, department, document type, language. A Presidio PII scan suggests the sensitivity label. Trust defaults come from the collection. |
+| Special types | **Spreadsheets:** row groups with headers repeated, and the file can also be registered as a BI data source. **Slack / chat:** one chunk per thread, with participants and timestamps, trust = `discussion`. **Email:** one chunk per message with quoted replies stripped. **Meeting transcripts:** topic segments with speaker labels and timestamps. *As built:* email files (`.eml`, `.msg`) are not accepted, and a spreadsheet in the Knowledge Hub is not a BI dataset (datasets are uploaded in Admin › Analytics, [analytics.md](analytics.md)); language is not detected anywhere |
+| Enrich | Title, author, dates, department, document type, language. A Presidio PII scan suggests the sensitivity label. Trust defaults come from the collection. *As built:* the title (from the file or the source), the trust and sensitivity defaults of the collection, and the regex scan of §7.3; no author, department, document type or language is extracted or stored |
 | Permissions | Map source permissions (or collection defaults) to OpenFGA tuples and compute the `acl` payload |
 | Embed | Batched dense embeddings through the `EmbeddingProvider`. BM25 sparse vectors are computed locally, so keyword search works with any embedding provider. |
 | Index | Upsert points to Qdrant and rows to `chunks`. The new version becomes active atomically; old-version chunks are marked inactive, then deleted. |
@@ -632,7 +673,7 @@ flowchart TD
 - Each stage is a Celery task with retries and exponential backoff. After N failures the job goes to a dead-letter state that is visible in the UI and can be retried.
 - Deleting a document in the source (or the UI) removes its chunks from Qdrant and Postgres, its cache entries and its OpenFGA tuples.
 - **Freshness:** `valid_until` and `last_reviewed_at` drive a nightly stale-document job that flags old documents to their owners and lowers their ranking. As built: daily review reminders per review cycle ([governance.md](governance.md#review-cycles)), and daily reminders for synced documents unchanged in their source or missing upstream, once per staleness episode ([connectors.md](connectors.md#stale-documents-and-reminders)); ranking is not lowered.
-- Citation anchors: page numbers and bounding boxes from Docling let the UI highlight the exact passage in a PDF viewer.
+- Citation anchors: page numbers and bounding boxes from Docling let the UI highlight the exact passage in a PDF viewer. *As built:* page numbers only (the parsers give no bounding boxes): the sources panel shows the passage's text and links "Open PDF at page N", which opens the PDF at that page with nothing highlighted.
 
 ---
 
@@ -642,10 +683,10 @@ flowchart TD
 
 | Step | What happens |
 |---|---|
-| 1. Query understanding | Rewrite the message into a standalone question using conversation context. Extract filters (department, dates, document type) with structured output. |
+| 1. Query understanding | Rewrite the message into a standalone question using conversation context. Extract filters (department, dates, document type) with structured output. *As built:* the rewrite only; no filters are extracted from the question (the Qdrant payload has no document type, department or date to filter on) |
 | 2. Principal resolution | Load the user's principal set (as built: from Postgres on every request, not cached, so a disabled account or a changed role applies at once) |
 | 3. Hybrid search | One Qdrant query: dense top-50 + BM25 top-50, both filtered by tenant, ACL, active status and extracted filters, fused with Reciprocal Rank Fusion |
-| 4. Rerank | A cross-encoder reranks the ~40 fused candidates down to the top ~8. Trust and freshness boosts are applied. |
+| 4. Rerank | A cross-encoder reranks the ~40 fused candidates down to the top ~8. Trust and freshness boosts are applied. *As built:* no reranker and no freshness boost; the trust boost is applied in fusion |
 | 5. Recheck | OpenFGA `BatchCheck` on the final documents (Lock 2) |
 | 6. Context assembly | Deduplicate, group by document, fit the token budget, attach trust and date labels |
 | 7. Generate | Answer with inline citation markers `[S1]` that map to chunk IDs |
@@ -791,6 +832,11 @@ flowchart TD
 
 ### 12.3 State
 
+> **As built:** §12.3 and §12.4 are the original LangGraph design, kept for the record. The
+> orchestrator is plain asyncio ([ADR 0009](adr/0009-orchestration-without-a-graph-framework.md)):
+> no `StateGraph`, no `AsyncPostgresSaver` checkpoints, no input guard and no validator that
+> re-plans (aggregation only drops findings whose citation markers are unknown).
+
 ```python
 class RunState(TypedDict):
     ctx: RequestContext                                   # immutable user/tenant context
@@ -848,7 +894,7 @@ app = graph.compile(checkpointer=AsyncPostgresSaver(pool))
 
 - **Runs are short-lived** (seconds to a minute). Their events live in a Valkey Stream and the result in PostgreSQL; a run interrupted by a restart ends with `run.failed` and can be asked again. No graph state is checkpointed ([ADR 0009](adr/0009-orchestration-without-a-graph-framework.md)).
 - **Approvals:** an agent that wants to act stores a *proposed action* in PostgreSQL and ends its run. The UI shows an approval card; the decision starts a new run that executes (or discards) the stored action. Nothing waits in memory, and planning never re-runs on resume.
-- **Provider resilience:** retries with jitter on 429/5xx, a circuit breaker per provider, and a configured fallback chain (e.g. local → paid API, if tenant policy allows).
+- **Provider resilience:** retries with jitter on 429/5xx, a circuit breaker per provider, and a configured fallback chain (e.g. local → paid API, if tenant policy allows). *As built:* the provider SDK's retries (3, with backoff, on 429 and 5xx) and, for Claude, Anthropic's server-side fallback after a refusal (`LLM_FALLBACKS`). There is no circuit breaker and no fallback from one provider to another: a provider that is down fails the request ([models.md](models.md)).
 
 ### 12.6 Why multi-agent? (and how we prove it)
 
@@ -996,7 +1042,7 @@ Clicking a decision or action item jumps to that moment in the recording. Privac
 ## 17. Conversation memory and context engineering
 
 - **Short-term memory:** recent turns verbatim, plus a rolling summary of older turns when the token budget is exceeded. Every turn is rewritten into a standalone question for retrieval.
-- **Long-term memory (opt-in):** facts like *"I manage the EU sales team"* are stored per user in `memory_items` and retrieved when relevant. Users can view, edit and delete everything in Settings.
+- **Long-term memory (opt-in):** facts like *"I manage the EU sales team"* are stored per user in `memory_items` and retrieved when relevant. Users can view, edit and delete everything in Settings. *Not built:* nothing is remembered across conversations, and Settings has no memory page.
 - **Context budget allocator,** per model context window:
 
   | Part | Share of the window |
@@ -1148,9 +1194,25 @@ per component). The table below is the summary; "as built" says what exists (rev
   - Retrieval latency.
   - Ingestion throughput, queue depth and failures.
   - `authz_projection_drift_total`, approval wait time.
-- **Logs:** structlog JSON with `request_id`, `trace_id` and `tenant_id`. Content is redacted by default.
+- **Logs:** structlog JSON with `request_id`, `trace_id` and `tenant_id`. Content is never logged (a coding rule, §20; there is no redaction step).
 - **Product analytics:** `usage_events` feed the in-app Analytics page (usage, cost per department, agent success rates).
 - **Alerts:** error rate, p95 latency, ingestion dead letters, authz drift > 0, provider circuit breaker open.
+
+> **As built (2026-11-13):**
+> - **Traces:** optional. With `OTEL_EXPORTER_OTLP_ENDPOINT` set, the API exports spans of its
+>   HTTP requests (FastAPI instrumentation only) over OTLP/HTTP to any collector (Jaeger, Tempo,
+>   Langfuse's OTLP endpoint). Not built: instrumentation of SQLAlchemy, httpx, Celery or Valkey,
+>   any span in the Celery worker or beat, manual spans for orchestration steps, tool calls,
+>   retrieval or LLM calls, and `gen_ai.*` attributes. Model calls, tokens and cost are recorded
+>   in `usage_events` instead ([usage.md](usage.md)).
+> - **Metrics:** none. There is no Prometheus client, no `/metrics` route, no ServiceMonitor in
+>   the Helm chart and no alert rules.
+> - **Logs:** structlog JSON (`LOG_FORMAT=json`) with `request_id` and `tenant_id`, and
+>   `trace_id`/`span_id` when tracing is on. The events to alert on today are log events:
+>   `authz_projection_drift` (lock 2 dropped a document lock 1 let through), `sync_failed`,
+>   `routing_model_failed`, and failed notification deliveries.
+> - **Product analytics:** built as described ([usage.md](usage.md)).
+> - **Alerts:** none are shipped; the health checks are `/healthz` and `/readyz`.
 
 ---
 
@@ -1158,7 +1220,7 @@ per component). The table below is the summary; "as built" says what exists (rev
 
 ### 22.1 Synthetic company: "Acme Robotics"
 
-A generated but realistic corpus of about 500 documents across departments:
+A generated but realistic corpus of about 500 documents across departments (*as built:* 49 documents in 14 collections, plus 2 meeting transcripts; see [case-study.md](case-study.md)):
 - An HR handbook in 2025 and 2026 versions, with deliberate conflicts.
 - Engineering ADRs and API docs.
 - Finance reports (XLSX), support tickets, sales proposals.
@@ -1186,7 +1248,7 @@ It is both the **demo data** and the **test set**.
 
 | Metric | Definition | Gate |
 |---|---|---|
-| Recall@k / Precision@k | Relevant chunks found in the top k / share of top k that are relevant | Recall regression > 3 points blocks merge |
+| Recall@k / Precision@k | Relevant chunks found in the top k / share of top k that are relevant | Recall regression > 3 points blocks merge (*not built:* reported only) |
 | MRR, nDCG@10 | Ranking quality | Reported |
 | Citation correctness | The cited chunk exists and supports the claim | Target set after baseline |
 | Faithfulness | Share of answer claims supported by the retrieved context (LLM judge + human spot checks) | Target set after baseline |
@@ -1206,6 +1268,13 @@ Judges use a different model family from the generator where possible. Judge pro
 - **Nightly:** the full suite.
 - **Each release:** full suite across providers (local vs. paid models). The comparison table is published in the release notes and on LinkedIn.
 - Results are saved to `evals/results/<date>-<git-sha>.json` plus a Markdown report.
+
+> **As built:** CI runs `wm eval --retrieval-only` on every push and pull request (hash
+> embeddings, `RETRIEVAL_MIN_SIMILARITY=0`): every red-team and retrieval check for permission
+> leaks, gated at 0 (exit code 2). There is no model smoke set in CI, no recall or faithfulness
+> threshold, and no nightly or per-release eval workflow. The model-backed suites are run by hand
+> against the stack (`wm eval`), and their Markdown reports are committed as
+> `evals/results/<date>-<label>.md` (the JSON stays local).
 
 ---
 
