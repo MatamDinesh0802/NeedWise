@@ -7,5 +7,6 @@ that covers the rest of this repository. It is proprietary. Viewing the source i
 permitted; using, copying, modifying or distributing it in production requires a
 commercial agreement with the copyright holder.
 
-The full commercial license terms will be published here before any Enterprise
-Edition feature ships. Until then, this directory contains no functional code.
+The full commercial license terms will be published here. Until then, no use in
+production is licensed. Development and evaluation with the development license
+that `make ee-dev-license` writes are permitted.
