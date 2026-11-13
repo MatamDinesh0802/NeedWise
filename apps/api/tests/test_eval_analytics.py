@@ -380,7 +380,7 @@ async def test_a_wrong_query_is_a_miss_and_its_reason_is_kept(acme: Path) -> Non
 class IgnoresDansPolicy(LocalAnalytics):
     """Says Dan's row policy applies, but does not apply it."""
 
-    async def access(self, ctx: RequestContext) -> AccessInfo:
+    async def access(self, ctx: RequestContext, dataset: str | None = None) -> AccessInfo:
         info = await super().access(ctx)
         return info.model_copy(
             update={

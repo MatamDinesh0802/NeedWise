@@ -178,7 +178,13 @@ async def test_an_answer_is_stored_for_the_asker_only(api: TestClient, acme: Acm
         "truncated",
         "elapsed_ms",
         "error",
+        "dataset",
+        "dialect",
     }
+    assert (answer["queries"][0]["dataset"], answer["queries"][0]["dialect"]) == (
+        "uploads",
+        "duckdb",
+    )
     assert answer["queries"][0]["columns"][0] == {"name": "month", "type": "DATE", "format": "date"}
     assert answer["verification"] == {
         "numbers": [{"text": "€38.9M", "value": 38_900_000.0, "verified": True, "query": "Q2"}],
@@ -190,6 +196,7 @@ async def test_an_answer_is_stored_for_the_asker_only(api: TestClient, acme: Acm
             "table": "invoice_lines",
             "description": "One row per invoice line. Revenue counts lines whose status is not "
             "'void' (void lines were cancelled and re-issued).",
+            "dataset": "uploads",
         }
     ]
     assert set(answer["usage"]) == {"model", "input_tokens", "output_tokens", "cost_usd"}

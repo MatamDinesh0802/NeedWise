@@ -58,7 +58,7 @@ from workmind.core.tenancy import GLOBAL_KEY_PREFIXES, key_tenant, tenant_transa
 from workmind.main import create_app
 from workmind.modules.analytics import dataset
 from workmind.modules.analytics.agent import Composed
-from workmind.modules.analytics.models import AnalyticsRun
+from workmind.modules.analytics.models import AnalyticsRun, AnalyticsSource
 from workmind.modules.authz.openfga import OpenFgaClient, RelationTuple
 from workmind.modules.authz.sync import ensure_store, process_outbox, reconcile
 from workmind.modules.connectors.models import Source
@@ -113,6 +113,7 @@ PHRASES = {
         "table",
         "run",
         "source",
+        "sqlsource",
         "drive",
         "token",
         "review",
@@ -519,7 +520,8 @@ def _build_a(client: TestClient, a: Side) -> None:
 
 async def _build_a_rows(database: Database, a: Side) -> None:
     """A's records that no route creates directly: an approval waiting for a person, a workflow
-    run, an analytics answer, and their notifications."""
+    run, an analytics answer, a SQL source (pointing at no database), and their
+    notifications."""
     engine, owner = await _owner(database)
     acme, v = a.acme, a.values
     try:
@@ -558,9 +560,21 @@ async def _build_a_rows(database: Database, a: Side) -> None:
                 status="done",
                 answer={"narrative": PHRASES["run"]},
             )
-            session.add_all([run, analytics_run])
+            sql_source = AnalyticsSource(
+                tenant_id=acme.tenant_id,
+                key="a-shop",
+                name=PHRASES["sqlsource"],
+                kind="postgres",
+                host="db.invalid",
+                port=5432,
+                database="shop",
+                username=PHRASES["sqlsource"],
+                schemas=["shop"],
+            )
+            session.add_all([run, analytics_run, sql_source])
             await session.flush()
             v["workflow_run_id"], v["analytics_run_id"] = str(run.id), str(analytics_run.id)
+            v["analytics_source_key"] = sql_source.key
             v["notification_id"] = str(
                 (
                     await session.scalars(
@@ -1141,6 +1155,41 @@ PROBES: dict[tuple[str, str], list[Probe]] = {
     ("DELETE", "/api/v1/admin/analytics/tables/{name}"): [
         refuse(404, 409, 422, params={"name": "table"})
     ],
+    ("POST", "/api/v1/analytics/runs"): [own(202, json={"question": f"Every row of {TABLE}"})],
+    ("GET", "/api/v1/analytics/runs/{run_id}/events"): [
+        deny(params={"run_id": "analytics_run_id"})
+    ],
+    ("GET", "/api/v1/admin/analytics/sources"): [own()],
+    ("POST", "/api/v1/admin/analytics/sources"): [
+        own(
+            201,
+            json={
+                "key": "probe-sql",
+                "name": "Probe",
+                "kind": "postgres",
+                "host": "probe.invalid",
+                "database": "shop",
+                "username": "reader",
+                "password": "probe-only-password",
+                "schemas": ["shop"],
+            },
+        )
+    ],
+    ("PATCH", "/api/v1/admin/analytics/sources/{key}"): [
+        deny(params={"key": "analytics_source_key"}, json={"name": "pwned"})
+    ],
+    ("DELETE", "/api/v1/admin/analytics/sources/{key}"): [
+        deny(params={"key": "analytics_source_key"})
+    ],
+    ("POST", "/api/v1/admin/analytics/sources/{key}/test"): [
+        deny(params={"key": "analytics_source_key"})
+    ],
+    ("GET", "/api/v1/admin/analytics/sources/{key}/catalog"): [
+        deny(params={"key": "analytics_source_key"})
+    ],
+    ("PUT", "/api/v1/admin/analytics/sources/{key}/model"): [
+        deny(params={"key": "analytics_source_key"}, json={"yaml": "name: pwned"})
+    ],
     # Models and usage
     ("GET", "/api/v1/admin/models"): [own()],
     ("POST", "/api/v1/admin/models/providers"): [
@@ -1386,7 +1435,15 @@ A_OWNER = {
 
 
 # A's meeting is a transcript: without a speech-to-text model in tests there is no recording.
-NO_A_RECORD = frozenset({"/api/v1/meetings/{meeting_id}/media"})
+# A's analytics answer was stored, not streamed, so it has no event stream; A's SQL source
+# points at no database, so its catalog is unavailable to A too (B gets 404 for both).
+NO_A_RECORD = frozenset(
+    {
+        "/api/v1/meetings/{meeting_id}/media",
+        "/api/v1/analytics/runs/{run_id}/events",
+        "/api/v1/admin/analytics/sources/{key}/catalog",
+    }
+)
 
 
 def test_the_probes_address_real_data_of_a(world: World) -> None:

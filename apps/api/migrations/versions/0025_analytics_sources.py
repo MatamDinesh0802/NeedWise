@@ -65,9 +65,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "key ~ '^[a-z0-9]+(-[a-z0-9]+)*$'", name=op.f("ck_analytics_sources_key_format")
         ),
-        sa.CheckConstraint(
-            "kind IN ('postgres', 'mysql')", name=op.f("ck_analytics_sources_kind")
-        ),
+        sa.CheckConstraint("kind IN ('postgres', 'mysql')", name=op.f("ck_analytics_sources_kind")),
         sa.CheckConstraint(
             "tls_mode IN ('disable', 'require', 'verify-full')",
             name=op.f("ck_analytics_sources_tls_mode"),
