@@ -9,7 +9,7 @@
 # docs/security/supply-chain.md explains the scans this image goes through.
 
 # uv as a stage of its own, so Dependabot sees its FROM line too.
-FROM ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b AS uv
+FROM ghcr.io/astral-sh/uv:0.11.33@sha256:77280f2f771df71f90786c314fe1bbc1e023feac652969bbf139c280babf2eb7 AS uv
 
 FROM python:3.13.18-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
