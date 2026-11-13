@@ -37,6 +37,7 @@ from workmind.core.resources import Resources
 from workmind.core.tenancy import tenant_key, tenant_transaction
 from workmind.modules.connectors import oauth
 from workmind.modules.connectors.base import ConnectorError
+from workmind.modules.connectors.extensions import PERMISSION_SYNC, PermissionSync
 from workmind.modules.connectors.health import (
     DEFAULT_STALE_DAYS,
     Health,
@@ -241,6 +242,9 @@ class SourceOut(BaseModel):
     documents: int
     stale_after_days: int | None
     stale: StaleCounts
+    # Enterprise permission sync is licensed and reads this kind's permissions (Drive, Slack,
+    # GitHub): each document also gets its source's access list (docs/permission-sync.md).
+    permission_sync: bool
 
 
 class KindOption(BaseModel):
@@ -446,8 +450,16 @@ async def _access(
     return out
 
 
+def _syncers(request: Request) -> list[PermissionSync]:
+    """The licensed permission sync implementations (none in Community)."""
+    return resources_of(request).extensions.call(PERMISSION_SYNC)
+
+
 async def _outputs(
-    session: AsyncSession, sources: Sequence[Source], now: datetime
+    session: AsyncSession,
+    sources: Sequence[Source],
+    now: datetime,
+    syncers: Sequence[PermissionSync] = (),
 ) -> list[SourceOut]:
     if not sources:
         return []
@@ -529,15 +541,18 @@ async def _outputs(
                 documents=counts.get(s.id, 0),
                 stale_after_days=s.stale_after_days,
                 stale=stale.get(s.id, StaleCounts(not_updated=0, missing_upstream=0)),
+                permission_sync=any(syncer.supports(s) for syncer in syncers),
             )
         )
     return out
 
 
-async def _output(session: AsyncSession, source: Source) -> SourceOut:
+async def _output(
+    session: AsyncSession, source: Source, syncers: Sequence[PermissionSync] = ()
+) -> SourceOut:
     await session.flush()
     await session.refresh(source)
-    return (await _outputs(session, [source], datetime.now(UTC)))[0]
+    return (await _outputs(session, [source], datetime.now(UTC), syncers))[0]
 
 
 # --- Sources ----------------------------------------------------------------------------------
@@ -553,7 +568,7 @@ async def list_sources(ctx: ManagerContext, request: Request) -> list[SourceOut]
         if not scope.everything:
             query = query.where(Source.collection_id.in_(list(scope.collections)))
         sources = (await session.scalars(query)).all()
-        return await _outputs(session, sources, datetime.now(UTC))
+        return await _outputs(session, sources, datetime.now(UTC), _syncers(request))
 
 
 @router.get("/options")
@@ -694,7 +709,7 @@ async def create_source(ctx: ManagerContext, request: Request, body: SourceCreat
         if body.credentials:
             source.credentials = _secrets(request).seal(source.id, body.credentials)
         await _audit(session, ctx, "admin.source.created", source)
-        return await _output(session, source)
+        return await _output(session, source, _syncers(request))
 
 
 @router.put("/{key}")
@@ -714,7 +729,7 @@ async def update_source(
         if "stale_after_days" in body.model_fields_set:
             source.stale_after_days = body.stale_after_days
         await _audit(session, ctx, "admin.source.updated", source)
-        return await _output(session, source)
+        return await _output(session, source, _syncers(request))
 
 
 async def _set_enabled(ctx: RequestContext, request: Request, key: str, enabled: bool) -> SourceOut:
@@ -724,7 +739,7 @@ async def _set_enabled(ctx: RequestContext, request: Request, key: str, enabled:
         await _audit(
             session, ctx, "admin.source.resumed" if enabled else "admin.source.paused", source
         )
-        return await _output(session, source)
+        return await _output(session, source, _syncers(request))
 
 
 @router.post("/{key}/pause")

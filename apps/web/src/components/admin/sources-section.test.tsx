@@ -96,6 +96,38 @@ describe("SourceCard", () => {
     expect(noOAuth).not.toContain("Connect Slack");
   });
 
+  it("Confluence and SharePoint: Connect, and SharePoint offers it even before the server is set up", () => {
+    const wiki = card(sourceFixture({ kind: "confluence", oauth: "atlassian", config: { site_url: "https://acme.atlassian.net", spaces: ["HR"] }, needs: ["email", "api_token"] }), {
+      oauthConfigured: true,
+    });
+    expect(wiki).toContain("Space HR on acme.atlassian.net");
+    expect(wiki).toContain("Connect Confluence");
+    expect(wiki).toContain(">Credentials<");
+    expect(wiki).toContain("Not connected to Confluence yet");
+
+    const library = card(sourceFixture({ kind: "sharepoint", oauth: "microsoft", config: {}, needs: ["refresh_token"] }), { oauthConfigured: false });
+    expect(library).toContain("Connect SharePoint");
+    expect(library).toContain("Not connected to Microsoft yet");
+    expect(library).not.toContain(">Credentials<");
+  });
+
+  it("says when permission sync narrows a source's documents, and how many accounts map to nobody", () => {
+    const drive = card(
+      sourceFixture({
+        kind: "gdrive",
+        oauth: "google",
+        config: { folder_id: "1AbCdEfGhIjK" },
+        has_credentials: true,
+        permission_sync: true,
+        last_run: runFixture({ stats: { items: 3, unchanged: 3, acl_changed: 1, acl_unmapped: 2 } }),
+      }),
+    );
+    expect(drive).toContain("Permission sync:");
+    expect(drive).toContain("each file&#x27;s sharing in Drive");
+    expect(drive).toContain("2 accounts the source named map to nobody in WorkMind yet (Source accounts, below)");
+    expect(card(sourceFixture())).not.toContain("Permission sync:");
+  });
+
   it("links stale documents to the detail panel, and owners don't get the admin sharing link", () => {
     const html = card(sourceFixture({ stale: { not_updated: 2, missing_upstream: 1 } }), { scope: "owned" });
     expect(html).toContain("3 stale documents");

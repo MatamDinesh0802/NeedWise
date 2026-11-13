@@ -9,10 +9,10 @@
 import { ApiError, apiJson, buildRequestInit, parseProblem, type ProblemDetails } from "@/lib/api";
 import { slugError, suggestSlug } from "@/lib/slug";
 
-export type SourceKind = "web" | "github" | "slack" | "gdrive";
+export type SourceKind = "web" | "github" | "slack" | "gdrive" | "confluence" | "sharepoint";
 export type SourceStatus = "idle" | "syncing" | "ok" | "error";
 export type SourceHealth = "healthy" | "failing" | "paused" | "never_synced";
-export type OAuthProvider = "google" | "slack";
+export type OAuthProvider = "google" | "slack" | "atlassian" | "microsoft";
 /** Which page a source lives on: every source (org admins) or the collections you own. */
 export type SourcesScope = "all" | "owned";
 
@@ -24,6 +24,10 @@ export interface SourceStats {
   failed?: number;
   missing?: number;
   items?: number;
+  /** Permission sync (Enterprise): documents whose own access list changed in the run. */
+  acl_changed?: number;
+  /** Entries the source named that map to nobody in WorkMind (they grant nothing). */
+  acl_unmapped?: number;
   [key: string]: unknown;
 }
 
@@ -94,6 +98,8 @@ export interface Source {
   documents: number;
   stale_after_days: number | null;
   stale: { not_updated: number; missing_upstream: number };
+  /** Enterprise permission sync is licensed and reads this kind's permissions (Drive, Slack, GitHub). */
+  permission_sync: boolean;
 }
 
 export interface SourceCreate {
@@ -118,9 +124,11 @@ export interface SourceUpdate {
 
 export interface KindOption {
   kind: SourceKind;
+  label: string;
+  description: string;
   credentials: string[];
   oauth: OAuthProvider | null;
-  /** The deployment has this provider's OAuth client (GOOGLE_CLIENT_*, SLACK_CLIENT_*). */
+  /** The deployment has this provider's OAuth client (GOOGLE_*, SLACK_*, ATLASSIAN_*, MICROSOFT_CLIENT_*). */
   oauth_configured: boolean;
   default_stale_after_days: number | null;
 }
@@ -243,6 +251,8 @@ export const KIND_LABELS: Record<SourceKind, string> = {
   github: "GitHub",
   slack: "Slack",
   gdrive: "Google Drive",
+  confluence: "Confluence",
+  sharepoint: "SharePoint / OneDrive",
 };
 
 export const KIND_HINTS: Record<SourceKind, string> = {
@@ -250,9 +260,30 @@ export const KIND_HINTS: Record<SourceKind, string> = {
   github: "Markdown and documents from a repository branch.",
   slack: "Channel history, one document per channel and month.",
   gdrive: "A folder and its subfolders; Docs, Sheets and Slides are exported.",
+  confluence: "The pages of Confluence Cloud spaces, with their attachments and page tree.",
+  sharepoint: "A SharePoint document library or a OneDrive, or one folder in it.",
 };
 
-export const OAUTH_LABELS: Record<OAuthProvider, string> = { google: "Google Drive", slack: "Slack" };
+/** The name on "Connect …" buttons: what the person signs in to. */
+export const OAUTH_LABELS: Record<OAuthProvider, string> = { google: "Google Drive", slack: "Slack", atlassian: "Confluence", microsoft: "SharePoint" };
+
+/** The deployment settings each provider's OAuth client needs (docs/connectors.md). */
+export const OAUTH_SETTINGS: Record<OAuthProvider, readonly [string, string]> = {
+  google: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+  slack: ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"],
+  atlassian: ["ATLASSIAN_CLIENT_ID", "ATLASSIAN_CLIENT_SECRET"],
+  microsoft: ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
+};
+
+/** Kinds that only connect with OAuth (no credential to paste). */
+export const OAUTH_ONLY: readonly SourceKind[] = ["gdrive", "sharepoint"];
+
+/** Kinds whose permissions Enterprise permission sync reads (docs/permission-sync.md). */
+export const PERMISSION_SYNC_SOURCES: Partial<Record<SourceKind, string>> = {
+  gdrive: "each file's sharing in Drive",
+  slack: "who is in each private channel",
+  github: "a private repository's collaborators and teams",
+};
 
 export const STATUS_LABELS: Record<SourceStatus, string> = {
   idle: "Not synced yet",
@@ -280,7 +311,9 @@ export const HEALTH_ORDER: readonly SourceHealth[] = ["failing", "never_synced",
 export const CREDENTIAL_LABELS: Record<string, { label: string; hint: string; optional?: boolean }> = {
   token: { label: "Access token", hint: "Only needed for private repositories (read-only scope is enough).", optional: true },
   bot_token: { label: "Bot token", hint: "xoxb-… with channels:history and channels:read (groups:* for private channels)." },
-  refresh_token: { label: "Google account", hint: "Set by “Connect Google Drive”." },
+  refresh_token: { label: "Account", hint: "Set by “Connect”." },
+  email: { label: "Account email", hint: "The Atlassian account WorkMind reads with (with an API token, instead of connecting)." },
+  api_token: { label: "API token", hint: "From id.atlassian.com › Security › API tokens; that account's read access is enough." },
 };
 
 export const RELATION_LABELS: Record<AccessEntry["relation"], string> = { owner: "owner", editor: "can edit", viewer: "can view" };
@@ -378,6 +411,17 @@ export function whatSyncs(source: Pick<Source, "kind" | "config">): string {
     }
     case "gdrive":
       return typeof c.folder_id === "string" ? `Drive folder ${c.folder_id}` : "A Drive folder";
+    case "confluence": {
+      const spaces = list(c.spaces);
+      const site = typeof c.site_url === "string" ? c.site_url.replace(/^https:\/\//, "") : "Confluence";
+      return `${spaces.length === 1 ? `Space ${spaces[0]}` : `${spaces.length} spaces`} on ${site}`;
+    }
+    case "sharepoint": {
+      const where = typeof c.site_url === "string" && c.site_url ? c.site_url.replace(/^https:\/\//, "") : "The connected account's OneDrive";
+      const library = typeof c.library === "string" && c.library ? ` › ${c.library}` : "";
+      const folder = typeof c.folder === "string" && c.folder ? ` › ${c.folder}` : "";
+      return `${where}${library}${folder}`;
+    }
   }
 }
 
@@ -473,6 +517,8 @@ export interface SourceForm {
   github: { repo: string; branch: string; paths: string };
   slack: { channels: string; days: string };
   gdrive: { folder: string };
+  confluence: { siteUrl: string; spaces: string; includeAttachments: boolean };
+  sharepoint: { siteUrl: string; library: string; folder: string };
   /** Write-only; sent on create (and with "Set credentials"). */
   credentials: Record<string, string>;
 }
@@ -493,6 +539,8 @@ export function emptySourceForm(kind: SourceKind = "web"): SourceForm {
     github: { repo: "", branch: "", paths: "" },
     slack: { channels: "", days: "90" },
     gdrive: { folder: "" },
+    confluence: { siteUrl: "", spaces: "", includeAttachments: true },
+    sharepoint: { siteUrl: "", library: "", folder: "" },
     credentials: {},
   };
 }
@@ -534,6 +582,16 @@ export function formFromSource(source: Source): SourceForm {
     },
     slack: { channels: strings(c.channels).join("\n"), days: c.days != null ? String(c.days) : form.slack.days },
     gdrive: { folder: typeof c.folder_id === "string" ? c.folder_id : "" },
+    confluence: {
+      siteUrl: typeof c.site_url === "string" ? c.site_url : "",
+      spaces: strings(c.spaces).join("\n"),
+      includeAttachments: c.include_attachments !== false,
+    },
+    sharepoint: {
+      siteUrl: typeof c.site_url === "string" ? c.site_url : "",
+      library: typeof c.library === "string" ? c.library : "",
+      folder: typeof c.folder === "string" ? c.folder : "",
+    },
   };
 }
 
@@ -596,14 +654,40 @@ export function configPayload(form: SourceForm): { config: Record<string, unknow
       if (folder.length < 5) errors["gdrive.folder"] = "Paste the folder's link or id.";
       return { config: { folder_id: folder }, errors };
     }
+    case "confluence": {
+      const site = form.confluence.siteUrl.trim();
+      if (!CONFLUENCE_SITE.test(site)) errors["confluence.siteUrl"] = "Your Confluence Cloud address, like https://acme.atlassian.net.";
+      const spaces = lines(form.confluence.spaces);
+      const bad = spaces.find((k) => !/^~?[A-Za-z0-9_:-]{1,255}$/.test(k));
+      if (spaces.length === 0) errors["confluence.spaces"] = "Add at least one space key.";
+      else if (spaces.length > 50) errors["confluence.spaces"] = "At most 50 spaces.";
+      else if (bad) errors["confluence.spaces"] = `“${bad}” isn't a space key (it's in the space's URL, like ENG).`;
+      return { config: { site_url: site, spaces, include_attachments: form.confluence.includeAttachments }, errors };
+    }
+    case "sharepoint": {
+      const site = form.sharepoint.siteUrl.trim();
+      if (site && !SHAREPOINT_SITE.test(site)) errors["sharepoint.siteUrl"] = "A SharePoint site, like https://contoso.sharepoint.com/sites/finance, or empty for your OneDrive.";
+      const config: Record<string, unknown> = {};
+      if (site) config.site_url = site;
+      if (form.sharepoint.library.trim()) config.library = form.sharepoint.library.trim();
+      if (form.sharepoint.folder.trim()) config.folder = form.sharepoint.folder.trim().replace(/^\/+|\/+$/g, "");
+      return { config, errors };
+    }
   }
 }
 
+const CONFLUENCE_SITE = /^https:\/\/[a-z0-9][a-z0-9-]{0,62}\.atlassian\.net(\/wiki)?\/?$/i;
+const SHAREPOINT_SITE = /^https:\/\/[a-z0-9][a-z0-9-]{0,62}\.sharepoint\.com(\/[^\s]*)?$/i;
+
 /**
- * `slackOAuth`: the deployment can "Connect Slack", so a new Slack source may be saved without a
- * pasted bot token (it connects right after).
+ * `slackOAuth` / `atlassianOAuth`: the deployment can "Connect Slack" / "Connect Confluence", so
+ * a new Slack or Confluence source may be saved without pasted credentials (it connects right
+ * after).
  */
-export function validateSourceForm(form: SourceForm, { creating, slackOAuth = false }: { creating: boolean; slackOAuth?: boolean }): SourceFormErrors {
+export function validateSourceForm(
+  form: SourceForm,
+  { creating, slackOAuth = false, atlassianOAuth = false }: { creating: boolean; slackOAuth?: boolean; atlassianOAuth?: boolean },
+): SourceFormErrors {
   const errors: SourceFormErrors = { ...configPayload(form).errors };
   if (!form.name.trim()) errors.name = "Add a name.";
   if (creating) {
@@ -611,6 +695,13 @@ export function validateSourceForm(form: SourceForm, { creating, slackOAuth = fa
     if (keyProblem) errors.key = keyProblem;
     if (!form.collection) errors.collection = "Choose the collection documents go into.";
     if (form.kind === "slack" && !slackOAuth && !form.credentials.bot_token?.trim()) errors["credentials.bot_token"] = "Slack needs a bot token.";
+    if (form.kind === "confluence") {
+      const email = form.credentials.email?.trim() ?? "";
+      const token = form.credentials.api_token?.trim() ?? "";
+      if (email && !token) errors["credentials.api_token"] = "Add the API token for this account.";
+      else if (token && !email) errors["credentials.email"] = "Add the account's email.";
+      else if (!email && !token && !atlassianOAuth) errors["credentials.email"] = "Confluence needs an account email and API token (connecting with OAuth isn't set up on this server).";
+    }
   }
   if (form.intervalMinutes < 5 || form.intervalMinutes > 10080) errors.intervalMinutes = "From 5 minutes to a week.";
   return errors;
@@ -628,6 +719,7 @@ export function credentialsPayload(credentials: Record<string, string>): Record<
 export function credentialFields(kind: SourceKind): string[] {
   if (kind === "github") return ["token"];
   if (kind === "slack") return ["bot_token"];
+  if (kind === "confluence") return ["email", "api_token"];
   return [];
 }
 
@@ -642,7 +734,7 @@ export function toCreatePayload(form: SourceForm): SourceCreate {
     enabled: form.enabled,
     stale_after_days: form.staleAfterDays,
   };
-  const credentials = form.kind === "gdrive" ? undefined : credentialsPayload(form.credentials);
+  const credentials = OAUTH_ONLY.includes(form.kind) ? undefined : credentialsPayload(form.credentials);
   if (credentials) body.credentials = credentials;
   return body;
 }
@@ -663,8 +755,8 @@ export function anySyncing(sources: readonly Pick<Source, "syncing">[]): boolean
 }
 
 /**
- * What to do after creating a source: connect it with OAuth (Drive always, Slack when no bot
- * token was typed and the deployment can connect Slack), or sync it right away.
+ * What to do after creating a source: connect it with OAuth (Drive and SharePoint always, Slack
+ * and Confluence when no credentials were typed), or sync it right away.
  */
 export function afterCreate(source: Pick<Source, "kind" | "enabled" | "has_credentials" | "oauth">): "connect" | "sync" | "nothing" {
   if (source.oauth && !source.has_credentials) return "connect";
@@ -683,8 +775,12 @@ export function configFieldKey(kind: SourceKind, apiField: string): string {
     channels: "slack.channels",
     days: "slack.days",
     folder_id: "gdrive.folder",
+    spaces: "confluence.spaces",
+    include_attachments: "confluence.includeAttachments",
+    library: "sharepoint.library",
+    folder: "sharepoint.folder",
   };
-  const key = map[apiField];
+  const key = apiField === "site_url" ? `${kind}.siteUrl` : map[apiField];
   return key && key.startsWith(`${kind}.`) ? key : "config";
 }
 
@@ -692,6 +788,7 @@ export function configFieldKey(kind: SourceKind, apiField: string): string {
 export function oauthResult(params: Pick<URLSearchParams, "get">): { ok: boolean; provider: OAuthProvider; source: string | null } | null {
   const result = params.get("oauth");
   if (result !== "connected" && result !== "failed") return null;
-  const provider: OAuthProvider = params.get("provider") === "slack" ? "slack" : "google";
+  const named = params.get("provider");
+  const provider: OAuthProvider = named === "slack" || named === "atlassian" || named === "microsoft" ? named : "google";
   return { ok: result === "connected", provider, source: params.get("source") };
 }

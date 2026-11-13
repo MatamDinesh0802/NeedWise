@@ -9362,6 +9362,8 @@
               "assignments",
               "escalations",
               "reviews",
+              "sources",
+              "legal_holds",
               "budgets",
               "mentions",
               "other"
@@ -13373,6 +13375,8 @@
                 "assignments",
                 "escalations",
                 "reviews",
+                "sources",
+                "legal_holds",
                 "budgets",
                 "mentions",
                 "other"
@@ -13417,6 +13421,8 @@
                 "assignments",
                 "escalations",
                 "reviews",
+                "sources",
+                "legal_holds",
                 "budgets",
                 "mentions",
                 "other"
@@ -14383,6 +14389,8 @@
                 "assignments",
                 "escalations",
                 "reviews",
+                "sources",
+                "legal_holds",
                 "budgets",
                 "mentions",
                 "other"
@@ -14415,6 +14423,8 @@
                 "assignments",
                 "escalations",
                 "reviews",
+                "sources",
+                "legal_holds",
                 "budgets",
                 "mentions",
                 "other"
@@ -17387,6 +17397,10 @@
           },
           "stale": {
             "$ref": "#/components/schemas/StaleCounts"
+          },
+          "permission_sync": {
+            "type": "boolean",
+            "title": "Permission Sync"
           }
         },
         "type": "object",
@@ -17421,7 +17435,8 @@
           "stats",
           "documents",
           "stale_after_days",
-          "stale"
+          "stale",
+          "permission_sync"
         ],
         "title": "SourceOut"
       },

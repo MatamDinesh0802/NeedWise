@@ -102,6 +102,35 @@ describe("per-kind config forms → payload", () => {
     expect(toCreatePayload(f)).not.toHaveProperty("credentials");
   });
 
+  it("confluence: the site, space keys and attachments; an API token, or OAuth when it is set up", () => {
+    const f = form("confluence", {
+      confluence: { siteUrl: "https://acme.atlassian.net/wiki", spaces: "ENG\nHR", includeAttachments: false },
+      credentials: { email: "sync@acme.test", api_token: "ATATT-1" },
+    });
+    expect(toCreatePayload(f)).toMatchObject({
+      config: { site_url: "https://acme.atlassian.net/wiki", spaces: ["ENG", "HR"], include_attachments: false },
+      credentials: { email: "sync@acme.test", api_token: "ATATT-1" },
+    });
+    expect(validateSourceForm(f, { creating: true })).toEqual({});
+    const bare = { ...f, credentials: {} };
+    expect(validateSourceForm(bare, { creating: true })["credentials.email"]).toMatch(/API token/);
+    expect(validateSourceForm(bare, { creating: true, atlassianOAuth: true })).toEqual({});
+    expect(validateSourceForm({ ...f, credentials: { email: "sync@acme.test" } }, { creating: true })).toEqual({ "credentials.api_token": "Add the API token for this account." });
+    expect(configPayload(form("confluence", { confluence: { siteUrl: "https://wiki.internal", spaces: "ENG", includeAttachments: true } })).errors["confluence.siteUrl"]).toMatch(/atlassian\.net/);
+    expect(configPayload(form("confluence", { confluence: { siteUrl: "https://acme.atlassian.net", spaces: "", includeAttachments: true } })).errors["confluence.spaces"]).toBe("Add at least one space key.");
+  });
+
+  it("sharepoint: an optional site, library and folder; it always connects with Microsoft", () => {
+    const f = form("sharepoint", {
+      sharepoint: { siteUrl: "https://contoso.sharepoint.com/sites/finance", library: "Policies", folder: "/2026/" },
+      credentials: { token: "x" },
+    });
+    expect(toCreatePayload(f)).toMatchObject({ config: { site_url: "https://contoso.sharepoint.com/sites/finance", library: "Policies", folder: "2026" } });
+    expect(toCreatePayload(f)).not.toHaveProperty("credentials");
+    expect(configPayload(form("sharepoint")).config).toEqual({}); // the connecting account's OneDrive
+    expect(configPayload(form("sharepoint", { sharepoint: { siteUrl: "https://contoso.example.com", library: "", folder: "" } })).errors["sharepoint.siteUrl"]).toMatch(/SharePoint site/);
+  });
+
   it("validates key, name and collection on create only", () => {
     const f = { ...emptySourceForm("web"), web: { startUrls: "https://x.example/", maxPages: "10", pathPrefix: "" } };
     expect(validateSourceForm(f, { creating: true })).toEqual({
@@ -131,6 +160,19 @@ describe("per-kind config forms → payload", () => {
   it("maps API config fields back to form fields", () => {
     expect(configFieldKey("web", "start_urls")).toBe("web.startUrls");
     expect(configFieldKey("slack", "start_urls")).toBe("config");
+    expect(configFieldKey("confluence", "site_url")).toBe("confluence.siteUrl");
+    expect(configFieldKey("sharepoint", "site_url")).toBe("sharepoint.siteUrl");
+    expect(configFieldKey("confluence", "spaces")).toBe("confluence.spaces");
+  });
+
+  it("round-trips Confluence and SharePoint sources into the edit form", () => {
+    const wiki = sourceFixture({ kind: "confluence", config: { site_url: "https://acme.atlassian.net", spaces: ["HR"], include_attachments: true } });
+    expect(toUpdatePayload(formFromSource(wiki)).config).toEqual({ site_url: "https://acme.atlassian.net", spaces: ["HR"], include_attachments: true });
+    const library = sourceFixture({ kind: "sharepoint", config: { site_url: "https://contoso.sharepoint.com/sites/finance", library: null, folder: "Policies" } });
+    expect(toUpdatePayload(formFromSource(library)).config).toEqual({ site_url: "https://contoso.sharepoint.com/sites/finance", folder: "Policies" });
+    expect(whatSyncs(wiki)).toBe("Space HR on acme.atlassian.net");
+    expect(whatSyncs(library)).toBe("contoso.sharepoint.com/sites/finance › Policies");
+    expect(whatSyncs(sourceFixture({ kind: "sharepoint", config: {} }))).toBe("The connected account's OneDrive");
   });
 });
 
@@ -243,6 +285,8 @@ describe("stale threshold, disconnect, OAuth", () => {
   it("reads the OAuth result for either provider", () => {
     expect(oauthResult(new URLSearchParams("oauth=connected&provider=slack&source=chat"))).toEqual({ ok: true, provider: "slack", source: "chat" });
     expect(oauthResult(new URLSearchParams("oauth=failed"))).toEqual({ ok: false, provider: "google", source: null });
+    expect(oauthResult(new URLSearchParams("oauth=connected&provider=microsoft&source=finance-docs"))?.provider).toBe("microsoft");
+    expect(oauthResult(new URLSearchParams("oauth=failed&provider=atlassian"))?.provider).toBe("atlassian");
     expect(oauthResult(new URLSearchParams("source=chat"))).toBeNull();
   });
 

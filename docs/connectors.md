@@ -86,7 +86,11 @@ it. Described in words, since the docs carry no screenshots:
   who set it up; a health badge (and a "Syncing…" badge while a sync runs). A **Mapping** box
   reads like "acme/eng-handbook (main) → Engineering Docs → visible to Marcus Bell (owner) ·
   Engineering (department) can view", with the collection linked and, for admins, a link to change
-  who can see it (Admin › Collections). Then **Last successful sync**, **Next scheduled sync**
+  who can see it (Admin › Collections). When Enterprise permission sync applies to the source
+  (Drive, Slack, GitHub with the `permission_sync` license feature), the box adds "Permission
+  sync: each document is also limited to each file's sharing in Drive" (or the channel's members,
+  or the repository's collaborators and teams), and how many accounts the source named map to
+  nobody yet. Then **Last successful sync**, **Next scheduled sync**
   ("In 30 min", "Due now", "Paused") and **Last run** ("30 minutes ago: 2 added · 1 updated · 11
   unchanged · 1 deleted").
 - **Errors** of a failing source sit in a red box: the explanation in plain words first ("What
@@ -95,7 +99,9 @@ it. Described in words, since the docs carry no screenshots:
   notified", and the source's own message behind **What the source said**.
 - A link such as **3 stale documents (1 missing upstream, 2 unchanged past the threshold)** opens
   that source's stale documents.
-- **Actions** on each card: **Connect Google Drive** / **Connect Slack** (or Reconnect),
+- **Actions** on each card: **Connect Google Drive** / **Connect Slack** / **Connect Confluence** /
+  **Connect SharePoint** (or Reconnect; Slack and Confluence only when the deployment has their
+  OAuth client, since they also take pasted credentials),
   **Credentials** (write-only: you can replace or remove them, never read them), **History**,
   **Disconnect**, **Edit**, **Pause** / **Resume**, **Sync now** (disabled while paused or
   syncing).
@@ -105,7 +111,8 @@ it. Described in words, since the docs carry no screenshots:
   deleted), and each error with the item it concerns, its plain explanation and the raw message.
   **Stale documents**: that source's stale documents.
 - **Edit** changes what the source syncs (start URLs and page limit, repository, branch and
-  paths, channels and days, Drive folder), its name, the schedule (every 15 minutes to every
+  paths, channels and days, Drive folder, Confluence site, spaces and attachments, SharePoint
+  site, library and folder), its name, the schedule (every 15 minutes to every
   week), whether it is enabled, and **Stale after** (never, 30 days, 3 months, 6 months, a year,
   2 years). The collection it syncs into cannot be changed (see "What is not built").
 - **Disconnect** asks you to type the source's key. It removes the source, its credentials and
@@ -226,9 +233,10 @@ WorkMind calls `https://acme.atlassian.net/wiki/...` with Basic authentication.
    asks for `offline_access`, which gives a refresh token.
 3. **Authorization → OAuth 2.0 (3LO)**, callback URL: `<PUBLIC_URL>/api/v1/oauth/atlassian/callback`.
 4. Set `ATLASSIAN_CLIENT_ID` and `ATLASSIAN_CLIENT_SECRET` (the app's client id and secret).
-5. Create a `confluence` source without credentials, then open
-   `/api/v1/admin/sources/<key>/oauth/atlassian/start` in the browser (a Connect button in the
-   UI). Grant access **to the same site** as the source's `site_url`: WorkMind looks the site up
+5. Create a `confluence` source without credentials (**New source** › Confluence, leaving the
+   email and API token empty: the form then says **Create and connect**), or choose **Connect
+   Confluence** on its card; both go through `/api/v1/admin/sources/<key>/oauth/atlassian/start`.
+   Grant access **to the same site** as the source's `site_url`: WorkMind looks the site up
    among the sites the person granted (`accessible-resources`) and stores its cloud id with the
    tokens. A grant for another site is refused (`?oauth=failed`).
 
@@ -291,8 +299,9 @@ The files of one document library, or of one folder in it, through Microsoft Gra
 5. Set `MICROSOFT_CLIENT_ID` (the application id), `MICROSOFT_CLIENT_SECRET` and
    `MICROSOFT_TENANT_ID` (the directory id or a verified domain; `organizations`, the default,
    accepts any work or school account).
-6. Create a `sharepoint` source, then open `/api/v1/admin/sources/<key>/oauth/microsoft/start`
-   in the browser and sign in. The flow is the authorization code grant with PKCE; WorkMind
+6. Create a `sharepoint` source (**New source** › SharePoint / OneDrive: **Create and connect**),
+   or choose **Connect SharePoint** on its card, and sign in with Microsoft (both go through
+   `/api/v1/admin/sources/<key>/oauth/microsoft/start`). The flow is the authorization code grant with PKCE; WorkMind
    stores the refresh token encrypted and the new one Microsoft returns at each renewal.
 
 The connected account's own SharePoint permissions decide what is read: sign in with an account
@@ -431,8 +440,12 @@ All under `/api/v1/admin/sources`, for org admins and collection owners as descr
   repository, URLs) and the collection's access are editable; moving a source's documents to
   another collection is not (it would move their permissions, trust and review cycle). Add a new
   source and disconnect the old one.
-- Notifications are in-app only (no email or Slack), and there is no escalation when an owner
-  ignores a stale-document task.
+- No escalation when an owner ignores a stale-document task. (The notifications follow each
+  person's channels: stale-document reminders are in the "Document reviews" category,
+  failing-source alerts and recoveries in "Sources"; email or Slack when the person chose it,
+  docs/automation.md.)
+- Permission sync (Enterprise) reads Drive, Slack and GitHub permissions only: Confluence,
+  SharePoint/OneDrive and web sources give their documents the collection's access.
 - The run history keeps the newest 100 runs per source; older ones are only in the audit log
   (`source.synced`).
 - Live verification: Connect Slack, Connect Google Drive, Confluence and SharePoint/OneDrive were
@@ -468,13 +481,17 @@ Implement `scan(cursor) -> ScanResult` and `fetch(item) -> bytes` (`modules/conn
   truncated scan, cleared when listed again, ignored for a windowed scan, deleted by a complete
   scan; the staleness clock from the source's own date; stale reminders once per episode, a new
   episode after a change, missing-upstream documents without a threshold, no reminder for an owner
-  who cannot open the collection; the daily task alerting a failing source.
+  who cannot open the collection or whom the document's own list leaves out, archived documents
+  never stale; the daily task alerting a failing source; deletions that keep held documents
+  (complete scans and tombstones); the Confluence and SharePoint connectors through the engine.
 - `tests/integration/test_sources_api.py`: health, last run and the permission mapping after a
   real crawl; a failing source's plain error; pause and resume; collection owners limited to
   their collections (404 elsewhere, 403 for someone who owns none, 403 with an access token);
   `stale_after_days` defaults and updates; stale documents with titles withheld from an admin who
-  cannot open the collection; Connect Slack against a scripted Slack (state bound to the session,
-  single use, token stored and never returned).
+  cannot open the collection or whom the document's own list leaves out; Connect Slack against a
+  scripted Slack (state bound to the session, single use, token stored and never returned); the
+  connector catalogue; Connect Confluence and SharePoint against their documented token
+  endpoints; whether permission sync applies to each source, without and with the license.
 - `tests/test_connectors_health.py`: health, next sync, the plain explanations, and the
   connectors' truncation and modification times.
 - `tests/integration/test_cross_tenant.py` classifies every new route.

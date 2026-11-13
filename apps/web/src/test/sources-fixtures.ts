@@ -54,6 +54,7 @@ export function sourceFixture(overrides: Partial<Source> = {}): Source {
     documents: 14,
     stale_after_days: 180,
     stale: { not_updated: 0, missing_upstream: 0 },
+    permission_sync: false,
     ...overrides,
   };
 }

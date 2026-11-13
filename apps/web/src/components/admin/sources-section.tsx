@@ -1,12 +1,14 @@
 "use client";
 
 import {
+  BookOpen,
   CircleAlert,
   CircleCheck,
   CirclePause,
   CirclePlay,
   Clock,
   FileCode,
+  FolderTree,
   Globe,
   HardDrive,
   History,
@@ -18,6 +20,7 @@ import {
   Plug,
   Plus,
   RefreshCw,
+  ShieldCheck,
   Unplug,
   type LucideIcon,
 } from "lucide-react";
@@ -61,6 +64,9 @@ import {
   KIND_LABELS,
   nextSyncText,
   OAUTH_LABELS,
+  OAUTH_ONLY,
+  OAUTH_SETTINGS,
+  PERMISSION_SYNC_SOURCES,
   oauthResult,
   SOURCE_KEY_MAX,
   sortSources,
@@ -96,6 +102,8 @@ const KIND_ICONS: Record<SourceKind, LucideIcon> = {
   github: FileCode,
   slack: MessagesSquare,
   gdrive: HardDrive,
+  confluence: BookOpen,
+  sharepoint: FolderTree,
 };
 
 const HEALTH_STYLE: Record<SourceHealth, string> = {
@@ -153,7 +161,9 @@ export function SourcesSection({ scope = "all", embedded = false }: { scope?: So
             Sources
           </h3>
           {embedded ? null : (
-            <p className="text-sm text-muted-foreground">Keep a collection in sync with a website, a GitHub repository, Slack channels or a Drive folder.</p>
+            <p className="text-sm text-muted-foreground">
+              Keep a collection in sync with a website, a GitHub repository, Slack channels, a Drive folder, Confluence spaces or a SharePoint library.
+            </p>
           )}
           <RefreshingHint active={sources.state.status === "success" && sources.state.refreshing} />
         </div>
@@ -381,6 +391,8 @@ export function SourceCard({
   const staleTotal = source.stale.not_updated + source.stale.missing_upstream;
   const pastedCredentials = source.needs.filter((f) => f !== "refresh_token");
   const headingId = `source-${source.id}`;
+  const unmappedCount = (lastRun ?? source).stats.acl_unmapped;
+  const unmapped = typeof unmappedCount === "number" ? unmappedCount : 0;
 
   async function run(kind: "sync" | "toggle", action: () => Promise<unknown>, done: string) {
     setBusy(kind);
@@ -455,6 +467,13 @@ export function SourceCard({
             </>
           ) : null}
         </p>
+        {source.permission_sync ? (
+          <p className="mt-1 text-muted-foreground">
+            <ShieldCheck className="mr-1 inline size-3 align-[-2px]" aria-hidden="true" />
+            <span className="text-foreground">Permission sync:</span> each document is also limited to {PERMISSION_SYNC_SOURCES[source.kind] ?? "who can see it in the source"}.
+            {unmapped > 0 ? ` ${unmapped} ${unmapped === 1 ? "account the source named maps" : "accounts the source named map"} to nobody in WorkMind yet${scope === "all" ? " (Source accounts, below)" : ""}.` : ""}
+          </p>
+        ) : null}
       </div>
 
       <dl className="grid gap-x-6 gap-y-2 text-xs sm:grid-cols-4">
@@ -506,7 +525,7 @@ export function SourceCard({
           {credentialsText(source)}
         </p>
         <div className="flex flex-wrap gap-2">
-          {source.oauth && (oauthConfigured !== false || source.kind === "gdrive") ? (
+          {source.oauth && (oauthConfigured !== false || OAUTH_ONLY.includes(source.kind)) ? (
             <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void connect()}>
               {busy === "connect" ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Plug data-icon="inline-start" />}
               {source.has_credentials ? `Reconnect ${OAUTH_LABELS[source.oauth]}` : `Connect ${OAUTH_LABELS[source.oauth]}`}
@@ -576,6 +595,8 @@ function lastRunText(run: NonNullable<Source["last_run"]>, stats: string | null)
 
 function credentialsText(source: Source): string {
   if (source.kind === "gdrive") return source.has_credentials ? "Google account connected (tokens stored encrypted)" : "Not connected to Google yet";
+  if (source.kind === "sharepoint") return source.has_credentials ? "Microsoft account connected (tokens stored encrypted)" : "Not connected to Microsoft yet";
+  if (source.kind === "confluence") return source.has_credentials ? "Connected (tokens or API token stored encrypted, never shown)" : "Not connected to Confluence yet";
   if (source.kind === "slack") return source.has_credentials ? "Slack bot token stored (encrypted, never shown)" : "Not connected to Slack yet";
   if (source.kind === "github") return source.has_credentials ? "Token stored (encrypted, never shown)" : "No token (public repositories only)";
   return "No credentials needed";
@@ -584,7 +605,7 @@ function credentialsText(source: Source): string {
 function ConnectError({ error, provider }: { error: unknown; provider: Source["oauth"] }) {
   const code = errorMessage(error).code;
   if (code === "oauth_not_configured" && provider) {
-    const env = provider === "google" ? ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] : ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"];
+    const env = OAUTH_SETTINGS[provider];
     return (
       <Alert>
         <Info aria-hidden="true" />
@@ -592,7 +613,7 @@ function ConnectError({ error, provider }: { error: unknown; provider: Source["o
         <AlertDescription>
           An administrator of the deployment needs to create an OAuth client and set <code>{env[0]}</code> and <code>{env[1]}</code>, with the redirect
           URI <code>…/api/v1/oauth/{provider}/callback</code> (see docs/connectors.md).
-          {provider === "slack" ? " Until then, paste a bot token under Credentials." : ""}
+          {provider === "slack" ? " Until then, paste a bot token under Credentials." : provider === "atlassian" ? " Until then, enter an account email and API token under Credentials." : ""}
         </AlertDescription>
       </Alert>
     );
@@ -621,7 +642,12 @@ function SourceFormView({
 
   const kindOption = options?.kinds.find((k) => k.kind === form.kind) ?? null;
   const slackOAuth = form.kind === "slack" && kindOption?.oauth_configured === true;
-  const errors = validateSourceForm(form, { creating, slackOAuth });
+  const atlassianOAuth = form.kind === "confluence" && kindOption?.oauth_configured === true;
+  const errors = validateSourceForm(form, { creating, slackOAuth, atlassianOAuth });
+  const connectsAfter =
+    OAUTH_ONLY.includes(form.kind) ||
+    (slackOAuth && !form.credentials.bot_token?.trim()) ||
+    (atlassianOAuth && !form.credentials.email?.trim() && !form.credentials.api_token?.trim());
   const server: SourceFormErrors = Object.fromEntries(fieldErrors(error).map((f) => [f.field, f.message]));
   for (const e of detailErrors(error, ["invalid_config"])) {
     const key = configFieldKey(form.kind, e.field);
@@ -701,7 +727,7 @@ function SourceFormView({
         {creating ? (
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-sm font-medium">Kind</legend>
-            <div className="grid gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Kind">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Kind">
               {(Object.keys(KIND_LABELS) as SourceKind[]).map((kind) => {
                 const KindIcon = KIND_ICONS[kind];
                 const active = form.kind === kind;
@@ -790,6 +816,51 @@ function SourceFormView({
               })}
               {text("slack.days", "Days of history", form.slack.days, (days) => patch({ slack: { ...form.slack, days } }), { hint: "1–3650." })}
             </>
+          ) : form.kind === "confluence" ? (
+            <>
+              {text("confluence.siteUrl", "Site", form.confluence.siteUrl, (siteUrl) => patch({ confluence: { ...form.confluence, siteUrl } }), {
+                hint: "Your Confluence Cloud address.",
+                placeholder: "https://acme.atlassian.net",
+                mono: true,
+              })}
+              {lines("confluence.spaces", "Space keys", form.confluence.spaces, (spaces) => patch({ confluence: { ...form.confluence, spaces } }), {
+                hint: "One per line (the key is in the space's URL, like ENG). All of them go into this collection.",
+                placeholder: "ENG",
+              })}
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium" id="confluence-attachments-label">
+                    Attachments
+                  </p>
+                  <p className="text-xs text-muted-foreground">Also sync the PDF, Office and text files attached to pages.</p>
+                </div>
+                <Switch
+                  checked={form.confluence.includeAttachments}
+                  onCheckedChange={(includeAttachments) => patch({ confluence: { ...form.confluence, includeAttachments } })}
+                  aria-labelledby="confluence-attachments-label"
+                />
+              </div>
+            </>
+          ) : form.kind === "sharepoint" ? (
+            <>
+              {text("sharepoint.siteUrl", "Site (optional)", form.sharepoint.siteUrl, (siteUrl) => patch({ sharepoint: { ...form.sharepoint, siteUrl } }), {
+                hint: "Empty: the OneDrive of the account that connects.",
+                placeholder: "https://contoso.sharepoint.com/sites/finance",
+                mono: true,
+              })}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {text("sharepoint.library", "Library (optional)", form.sharepoint.library, (library) => patch({ sharepoint: { ...form.sharepoint, library } }), {
+                  hint: "Its name or drive id; empty: the site's default library.",
+                  placeholder: "Documents",
+                })}
+                {text("sharepoint.folder", "Folder (optional)", form.sharepoint.folder, (folder) => patch({ sharepoint: { ...form.sharepoint, folder } }), {
+                  hint: "Only this folder and its subfolders.",
+                  placeholder: "Policies/2026",
+                  mono: true,
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">You sign in with Microsoft right after saving.</p>
+            </>
           ) : (
             text("gdrive.folder", "Folder", form.gdrive.folder, (folder) => patch({ gdrive: { folder } }), {
               hint: "Paste the folder's link or id; subfolders are included. You connect your Google account right after saving.",
@@ -805,11 +876,12 @@ function SourceFormView({
             <p className="-mt-1 text-xs text-muted-foreground">
               Stored encrypted and never shown again. You can replace them later.
               {slackOAuth ? " Or leave the token empty and connect Slack right after saving." : ""}
+              {atlassianOAuth ? " Or leave both empty and connect Confluence right after saving." : ""}
             </p>
             {credentialFields(form.kind).map((field) => (
               <Field
                 key={field}
-                label={`${CREDENTIAL_LABELS[field]?.label ?? field}${CREDENTIAL_LABELS[field]?.optional || (field === "bot_token" && slackOAuth) ? " (optional)" : ""}`}
+                label={`${CREDENTIAL_LABELS[field]?.label ?? field}${CREDENTIAL_LABELS[field]?.optional || (field === "bot_token" && slackOAuth) || (form.kind === "confluence" && atlassianOAuth) ? " (optional)" : ""}`}
                 hint={CREDENTIAL_LABELS[field]?.hint}
                 error={shown(`credentials.${field}`)}
               >
@@ -864,7 +936,7 @@ function SourceFormView({
           Cancel
         </Button>
         <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : creating ? (form.kind === "gdrive" || (slackOAuth && !form.credentials.bot_token?.trim()) ? "Create and connect" : "Create and sync") : "Save source"}
+          {pending ? "Saving…" : creating ? (connectsAfter ? "Create and connect" : "Create and sync") : "Save source"}
         </Button>
       </DialogFooter>
     </form>

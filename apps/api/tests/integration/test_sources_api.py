@@ -30,6 +30,8 @@ from sqlalchemy import select, update
 
 from tests.integration.conftest import VALKEY_URL, Acme, Database
 from workmind.core.config import Settings
+from workmind.core.edition import Edition, License
+from workmind.core.extensions import enable_extensions
 from workmind.core.tenancy import tenant_transaction
 from workmind.main import create_app
 from workmind.modules.governance.audit import Actor
@@ -979,3 +981,45 @@ async def test_oauth_start_checks_the_kind(api: TestClient, acme: Acme) -> None:
 
     assert (wrong.status_code, wrong.json()["code"]) == (409, "wrong_kind")
     assert missing.status_code == 404
+
+
+async def test_each_source_says_whether_permission_sync_applies_to_it(
+    database: Database, acme: Acme, tmp_path: Path, api: TestClient
+) -> None:
+    """Community: never. Licensed (permission_sync): the kinds whose permissions it reads."""
+    for key, kind, config in (
+        ("drive", "gdrive", {"folder_id": "1AbCdEfGh"}),
+        ("repo", "github", {"repo": "acme/handbook"}),
+        ("wiki", "confluence", {"site_url": "https://acme.atlassian.net", "spaces": ["HR"]}),
+    ):
+        created = post_source(
+            api,
+            acme,
+            {"key": key, "name": key.title(), "kind": kind, "config": config, "enabled": False},
+        )
+        assert created.status_code == 201, created.text
+    community = {
+        s["key"]: s["permission_sync"]
+        for s in api.get("/api/v1/admin/sources", headers=acme.as_("erin")).json()
+    }
+    pytest.importorskip("workmind_ee", reason="install the ee extra: uv sync --extra ee")
+    now = datetime.now(UTC)
+    license_ = License(
+        "Acme Robotics",
+        frozenset({"permission_sync"}),
+        now - timedelta(days=1),
+        now + timedelta(days=30),
+        key_id="test",
+    )
+    app = create_app(
+        oauth_settings(database, tmp_path), extensions=enable_extensions(Edition(license_))
+    )
+    with TestClient(app) as licensed:
+        listed = licensed.get("/api/v1/admin/sources", headers=acme.as_("erin")).json()
+
+    assert community == {"drive": False, "repo": False, "wiki": False}
+    assert {s["key"]: s["permission_sync"] for s in listed} == {
+        "drive": True,
+        "repo": True,
+        "wiki": False,
+    }
