@@ -22,6 +22,10 @@ separate worker processes (worker.py), each killed when its resident memory pass
 when a query runs past its timeout plus a grace period, with a bounded number of queries at
 once and per person. execute_sync and execute (in a thread of this process) are for tests and
 tools that trust their SQL.
+
+The same workers run queries on PostgreSQL and MySQL sources (QueryPool.execute_remote,
+remote.py), with the same memory and time limits, and a limit on the connections a tenant opens
+at once.
 """
 
 import asyncio
@@ -42,7 +46,7 @@ from datetime import date, datetime, timedelta
 from datetime import time as clock
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import duckdb
 from pydantic import JsonValue
@@ -108,6 +112,11 @@ class DatasetMissingError(EngineError):
 
 class QueryBusyError(EngineError):
     """Too many queries at once, for this person or for the server: try again shortly."""
+
+
+class SourceUnavailableError(EngineError):
+    """A database source could not be reached or refused the connection. `message` says why
+    and names the host: for admins (the source's status), not for people asking questions."""
 
 
 @dataclass(frozen=True)
@@ -385,10 +394,49 @@ class QueryPool:
             "timeout_s": timeout_s,
             "max_result_bytes": self.max_result_bytes,
         }
+        return await self._run(request, timeout_s, timeout_s, owner)
+
+    async def execute_remote(
+        self,
+        target: dict[str, Any],
+        sql: str,
+        *,
+        max_rows: int,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
+        connect_timeout_s: float = 5.0,
+        owner: str | None = None,
+        connections: tuple[str, int] | None = None,
+    ) -> EngineResult:
+        """Run one checked SELECT on a database source (remote.Target as JSON) in a worker.
+        `connections`: (key, limit) bounding the connections open at once under that key (a
+        tenant's), taken before the person's own slot."""
+        if max_rows < 1:
+            raise ValueError("max_rows must be positive")
+        if self._closed:
+            raise RuntimeError("the query pool is closed")
+        request = {
+            "source": target,
+            "sql": sql,
+            "max_rows": max_rows,
+            "timeout_s": timeout_s,
+            "max_result_bytes": self.max_result_bytes,
+        }
+        if connections is None:
+            return await self._run(request, timeout_s + connect_timeout_s, timeout_s, owner)
+        key, limit = connections
+        lease = await self._take(key, limit, timeout_s, "connections")
+        try:
+            return await self._run(request, timeout_s + connect_timeout_s, timeout_s, owner)
+        finally:
+            await self._slots.give_back(key, lease)
+
+    async def _run(
+        self, request: dict[str, Any], wait_s: float, timeout_s: float, owner: str | None
+    ) -> EngineResult:
         lease = await self._enter(owner, timeout_s)
         try:
             holder: dict[str, _Worker] = {}
-            call = self._executor.submit(self._call, request, timeout_s, time.monotonic(), holder)
+            call = self._executor.submit(self._call, request, wait_s, time.monotonic(), holder)
             try:
                 reply = await asyncio.wrap_future(call)
             except asyncio.CancelledError:
@@ -419,16 +467,24 @@ class QueryPool:
     async def _enter(self, owner: str | None, wait_s: float) -> str | None:
         if owner is None:
             return None
+        return await self._take(owner, self.per_owner, wait_s, "person")
+
+    async def _take(
+        self, key: str, limit: int, wait_s: float, kind: Literal["person", "connections"]
+    ) -> str:
         deadline = time.monotonic() + wait_s
         # The longest a query can hold its slot: waiting for a pool thread, starting a worker,
-        # running, being killed. A lease lives that long, in case this process dies first.
-        hold_s = 2 * wait_s + self.startup_s + self.grace_s + 5
+        # connecting, running, being killed. A lease lives that long, in case this process
+        # dies first.
+        hold_s = 3 * wait_s + self.startup_s + self.grace_s + 5
         while True:
-            if (lease := await self._slots.take(owner, self.per_owner, hold_s)) is not None:
+            if (lease := await self._slots.take(key, limit, hold_s)) is not None:
                 return lease
             if time.monotonic() >= deadline:
                 raise QueryBusyError(
                     "Your earlier queries are still running. Try again when they have finished."
+                    if kind == "person"
+                    else "Too many queries are running on this data source. Try again shortly."
                 )
             await asyncio.sleep(0.05)
 
@@ -583,6 +639,8 @@ def _from_reply(reply: Mapping[str, Any], timeout_s: float) -> EngineResult:
         raise QueryTimeoutError(_timeout_message(timeout_s))
     if kind == "missing":
         raise DatasetMissingError(message)
+    if kind == "unavailable":
+        raise SourceUnavailableError(message)
     raise QueryFailedError(message)
 
 
@@ -606,14 +664,24 @@ def serve(memory_mb: int) -> None:
 def _answer(request: Mapping[str, Any], limit: int) -> bytes:
     timeout_s = float(request["timeout_s"])
     try:
-        result = _execute(
-            Path(request["path"]),
-            str(request["sql"]),
-            int(request["max_rows"]),
-            timeout_s,
-            {},
-            [(str(name), str(sql)) for name, sql in request["fences"]],
-        )
+        if "source" in request:  # a database source (remote.py)
+            from workmind.modules.analytics import remote
+
+            result = remote.execute(
+                remote.Target.from_json(dict(request["source"])),
+                str(request["sql"]),
+                max_rows=int(request["max_rows"]),
+                timeout_s=timeout_s,
+            )
+        else:
+            result = _execute(
+                Path(request["path"]),
+                str(request["sql"]),
+                int(request["max_rows"]),
+                timeout_s,
+                {},
+                [(str(name), str(sql)) for name, sql in request["fences"]],
+            )
         reply: dict[str, Any] = {
             "ok": True,
             "columns": [[c.name, c.type] for c in result.columns],
@@ -625,6 +693,8 @@ def _answer(request: Mapping[str, Any], limit: int) -> bytes:
         reply = {"ok": False, "error": "timeout", "message": exc.message}
     except DatasetMissingError as exc:
         reply = {"ok": False, "error": "missing", "message": exc.message}
+    except SourceUnavailableError as exc:
+        reply = {"ok": False, "error": "unavailable", "message": exc.message}
     except EngineError as exc:
         reply = {"ok": False, "error": "failed", "message": exc.message}
     except Exception:  # never stop the worker over one query

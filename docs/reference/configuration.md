@@ -131,6 +131,9 @@ not shown here; where one exists it is a development value.
 | <a id="analytics_workers"></a>`ANALYTICS_WORKERS` | integer, ≥ 1, ≤ 32 | `3` | Analytics query worker processes per API container: how many queries run at once. Split across the container's `WEB_CONCURRENCY` processes (at least one each), so the container's memory bound is this x `ANALYTICS_WORKER_MEMORY_MB`. |
 | <a id="analytics_worker_memory_mb"></a>`ANALYTICS_WORKER_MEMORY_MB` | integer, ≥ 256, ≤ 65536 | `1024` | A query worker is stopped above this resident memory. |
 | <a id="analytics_queries_per_user"></a>`ANALYTICS_QUERIES_PER_USER` | integer, ≥ 1, ≤ 32 | `1` | How many of one person's queries run at once, across every API process and pod (counted in Valkey); more wait. |
+| <a id="analytics_source_private_networks"></a>`ANALYTICS_SOURCE_PRIVATE_NETWORKS` | string | `""` | PostgreSQL and MySQL sources (docs/analytics-sql-sources.md). A source's host may resolve to a private or loopback address only inside these networks (comma-separated CIDRs, e.g. "10.20.0.0/16,192.168.5.0/24"); empty: public addresses only. Link-local addresses and cloud metadata endpoints are refused whatever this says. |
+| <a id="analytics_source_connections"></a>`ANALYTICS_SOURCE_CONNECTIONS` | integer, ≥ 1, ≤ 64 | `4` | Connections the API opens at once to one tenant's database sources, across every API process (counted in Valkey); more queries wait their turn, up to the timeout. |
+| <a id="analytics_source_connect_timeout_s"></a>`ANALYTICS_SOURCE_CONNECT_TIMEOUT_S` | number, > 0, ≤ 60 | `5.0` | *Not described yet.* |
 
 ## Tools and connectors
 

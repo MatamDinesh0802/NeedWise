@@ -12,6 +12,16 @@
     await analytics.put_table(ctx, "customers", csv_bytes, "text/csv")
     await analytics.delete_table(ctx, "customers")
 
+Datasets: the uploaded files are the dataset "uploads" (the default everywhere), and each
+PostgreSQL or MySQL source an admin connected is a dataset of its own, named by its key, with its
+own semantic model, access list and row policies (sources.py, docs/analytics-sql-sources.md):
+
+    await analytics.datasets(ctx)                       # what this person may ask about
+    await analytics.run_sql(ctx, "SELECT ...", dataset="shop")
+    await analytics.create_source(ctx, SourceIn(...))   # admins: connect, introspect, model
+    await analytics.source_catalog(ctx, "shop")
+    await analytics.set_source_model(ctx, "shop", yaml_text)
+
 Permissions are decided here, in code, never by a model:
 - Who may query: the model's `access` principals, checked against the request's principals.
 - Which rows: the row policies that apply to the user become filters the SQL guard injects
@@ -25,10 +35,11 @@ the agent can show `detail` to the model so it can correct its query). See docs/
 
 import asyncio
 import hashlib
+import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -41,7 +52,7 @@ from sqlglot import exp
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_key, tenant_transaction
-from workmind.modules.analytics import dataset, engine
+from workmind.modules.analytics import dataset, engine, remote, sources
 from workmind.modules.analytics.compiler import (
     CompileError,
     SemanticQuery,
@@ -49,8 +60,14 @@ from workmind.modules.analytics.compiler import (
     duplicate_keys_sql,
     orphan_keys_sql,
 )
-from workmind.modules.analytics.guard import GuardedQuery, QueryRejectedError, check
-from workmind.modules.analytics.models import AnalyticsModel, AnalyticsRun
+from workmind.modules.analytics.guard import (
+    DIALECT,
+    Dialect,
+    GuardedQuery,
+    QueryRejectedError,
+    check,
+)
+from workmind.modules.analytics.models import AnalyticsModel, AnalyticsRun, AnalyticsSource
 from workmind.modules.analytics.semantic import (
     GRAINS,
     Format,
@@ -65,10 +82,24 @@ from workmind.modules.analytics.semantic import (
     resolve,
     row_filters,
 )
+from workmind.modules.analytics.sources import (
+    UPLOADS,
+    CatalogTable,
+    SourceHostError,
+    SourceIn,
+    SourcePatch,
+    password_context,
+)
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import User
+from workmind.modules.model_catalog.secrets import KeyRing, SecretsError
 
 SessionFactory = async_sessionmaker[AsyncSession]
+DatasetKind = Literal["files", "postgres", "mysql"]
+# Progress of one query, for the BI agent's live steps: ("query_compiled", {"sql", ...}), then
+# ("executing", {...}).
+StepCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
+JOIN_CHECK_TTL_S = 300.0  # a database's data changes: its join checks are redone after this
 MANAGER_ROLES = ("owner", "admin")
 MAX_QUESTION_CHARS = 2000
 RunStatus = Literal["running", "done", "failed"]  # models.RUN_STATUSES
@@ -114,6 +145,20 @@ def _not_manager() -> AnalyticsError:
     )
 
 
+def _no_source(key: str) -> AnalyticsError:
+    return AnalyticsError(404, "not_found", "Data source not found", f"No data source {key!r}.")
+
+
+def _unavailable(name: str) -> AnalyticsError:
+    return AnalyticsError(
+        503,
+        "source_unavailable",
+        "The data source is unavailable",
+        f"The data source {name!r} cannot be reached right now. Try again later; if it keeps "
+        "failing, an admin can see why in Admin > Analytics.",
+    )
+
+
 # --- Results ---------------------------------------------------------------------------------
 
 
@@ -148,6 +193,16 @@ class AccessInfo(BaseModel):
     summary: str
 
 
+class DatasetInfo(BaseModel):
+    """A dataset this organization has: the uploaded files, or a database source."""
+
+    key: str  # "uploads", or the source's key
+    name: str  # the model's name
+    kind: DatasetKind
+    dialect: Dialect
+    access: "AccessInfo"
+
+
 class ColumnDescription(BaseModel):
     name: str
     type: str
@@ -164,6 +219,7 @@ class TableDescription(BaseModel):
     # restricts it for this person (the total would tell them how many rows they cannot see).
     rows: int | None
     restricted: bool = False  # a row policy limits the rows this person sees
+    source_table: str | None = None  # a database source's table (schema.table)
 
 
 class FieldDescription(BaseModel):
@@ -190,6 +246,9 @@ class ModelDescription(BaseModel):
     dataset_version: str | None
     updated_at: datetime
     examples: list[str] = []  # example questions, from the model
+    dataset: str = UPLOADS  # which dataset: "uploads", or a database source's key
+    kind: DatasetKind = "files"
+    dialect: Dialect = DIALECT  # the SQL run_sql takes for this dataset
     # Admins only:
     yaml: str | None = None
     problems: list[str] = []
@@ -208,6 +267,41 @@ class AdminState(BaseModel):
     yaml: str | None
     dataset_version: str | None
     tables: list[DatasetTable]
+
+
+class SourceOut(BaseModel):
+    """A database source as admins see it: never the password."""
+
+    key: str
+    name: str
+    kind: remote.SourceKind
+    host: str
+    port: int
+    database: str
+    username: str
+    password_set: bool
+    tls_mode: remote.TlsMode
+    tls_ca: str | None
+    schemas: list[str]
+    enabled: bool
+    yaml: str | None
+    checked_at: datetime | None
+    server_version: str | None
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SourceCheck(BaseModel):
+    ok: bool
+    server_version: str | None
+    elapsed_ms: int
+    error: str | None
+
+
+class SourceCatalog(BaseModel):
+    tables: list[CatalogTable]
+    truncated: bool  # more columns than the catalog lists
 
 
 class RunSummary(BaseModel):
@@ -229,6 +323,43 @@ class RunOut(RunSummary):
 
 
 @dataclass(frozen=True)
+class SourceRef:
+    """A database source as one query needs it (the password still sealed)."""
+
+    id: uuid.UUID
+    key: str
+    name: str
+    kind: remote.SourceKind
+    host: str
+    port: int
+    database: str
+    username: str
+    password: bytes | None
+    tls_mode: remote.TlsMode
+    tls_ca: str | None
+    schemas: tuple[str, ...]
+    enabled: bool
+
+    @classmethod
+    def of(cls, row: AnalyticsSource) -> "SourceRef":
+        return cls(
+            id=row.id,
+            key=row.key,
+            name=row.name,
+            kind=cast(remote.SourceKind, row.kind),
+            host=row.host,
+            port=row.port,
+            database=row.database,
+            username=row.username,
+            password=row.password,
+            tls_mode=cast(remote.TlsMode, row.tls_mode),
+            tls_ca=row.tls_ca,
+            schemas=tuple(row.schemas or ()),
+            enabled=row.enabled,
+        )
+
+
+@dataclass(frozen=True)
 class LoadedModel:
     id: uuid.UUID
     yaml: str | None
@@ -237,11 +368,56 @@ class LoadedModel:
     dataset_version: str | None
     dataset_tables: dict[str, Any]
     updated_at: datetime
+    dataset: str = UPLOADS
+    source: SourceRef | None = None  # a database source; None: the uploaded files
 
     def dataset_path(self, root: Path, tenant_id: uuid.UUID) -> Path | None:
-        if not self.dataset_version:
+        if self.source is not None or not self.dataset_version:
             return None
         return dataset.dataset_path(root, tenant_id, self.dataset_version)
+
+    @property
+    def has_data(self) -> bool:
+        if self.source is not None:
+            return self.source.enabled and self.source.password is not None
+        return self.dataset_version is not None
+
+    @property
+    def kind(self) -> DatasetKind:
+        return self.source.kind if self.source is not None else "files"
+
+
+async def load_dataset(
+    session: AsyncSession, tenant_id: uuid.UUID, key: str | None
+) -> LoadedModel | None:
+    """The uploaded files' model (key None or "uploads"), or a database source's (its key);
+    None when there is no such dataset. Must run in the tenant's transaction."""
+    if key is None or key == UPLOADS:
+        return await load_model(session, tenant_id)
+    row = await session.scalar(select(AnalyticsSource).where(AnalyticsSource.key == key))
+    if row is None:
+        return None
+    return _source_model(row)
+
+
+def _source_model(row: AnalyticsSource) -> LoadedModel:
+    model, error = None, None
+    if row.yaml:
+        try:
+            model = parse(row.yaml, cast(Dialect, row.kind))
+        except ModelError as exc:
+            error = str(exc)
+    return LoadedModel(
+        id=row.id,
+        yaml=row.yaml,
+        model=model,
+        error=error,
+        dataset_version=None,
+        dataset_tables={},
+        updated_at=row.updated_at,
+        dataset=row.key,
+        source=SourceRef.of(row),
+    )
 
 
 async def load_model(session: AsyncSession, tenant_id: uuid.UUID) -> LoadedModel | None:
@@ -289,11 +465,23 @@ class Analytics:
         max_rows: int = 1000,
         timeout_s: float = engine.DEFAULT_TIMEOUT_S,
         pool: engine.QueryPool | None = None,
+        keyring: KeyRing | None = None,
+        source_networks: Sequence[sources.Network] = (),
+        source_connections: int = 4,
+        connect_timeout_s: float = 5.0,
     ) -> None:
         self.sessions = sessions
         self.root = root
         self.max_rows = max_rows
         self.timeout_s = timeout_s
+        # Database sources: their passwords' keys, where they may be (private networks the
+        # operator allowed), connections a tenant may have open at once, the connect timeout.
+        self.keyring = keyring
+        self.source_networks = tuple(source_networks)
+        self.source_connections = source_connections
+        self.connect_timeout_s = connect_timeout_s
+        # (source, join) -> (when checked, repeated keys): a database's data changes.
+        self._source_duplicates: dict[tuple[uuid.UUID, str], tuple[float, int]] = {}
         # Queries run in worker processes (memory and time limits that hold, a bounded number
         # at once and per person); a pool starts its workers on first use.
         self.pool = pool or engine.shared_pool()
@@ -308,9 +496,9 @@ class Analytics:
 
     # --- Reading ---
 
-    async def access(self, ctx: RequestContext) -> AccessInfo:
+    async def access(self, ctx: RequestContext, dataset: str | None = None) -> AccessInfo:
         async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
-            loaded = await load_model(session, ctx.tenant_id)
+            loaded = await load_dataset(session, ctx.tenant_id, dataset)
             if loaded is None or loaded.model is None:
                 return _access_info(ctx, loaded, None, [])
             resolved = await resolve(session, loaded.model, ctx.tenant_id)
@@ -318,9 +506,38 @@ class Analytics:
         policies = applicable_policies(resolved, ctx) if allowed else []
         return _access_info(ctx, loaded, resolved, policies)
 
-    async def describe(self, ctx: RequestContext) -> ModelDescription:
+    async def datasets(self, ctx: RequestContext) -> list[DatasetInfo]:
+        """Every dataset with a valid model: the uploaded files first, then the enabled
+        database sources by key; each with what this person may do with it."""
+        found: list[DatasetInfo] = []
         async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
-            loaded = await load_model(session, ctx.tenant_id)
+            loaded = [await load_model(session, ctx.tenant_id)]
+            rows = await session.scalars(
+                select(AnalyticsSource)
+                .where(AnalyticsSource.enabled.is_(True))
+                .order_by(AnalyticsSource.key)
+            )
+            loaded += [_source_model(row) for row in rows]
+            for item in loaded:
+                if item is None or item.model is None:
+                    continue
+                resolved = await resolve(session, item.model, ctx.tenant_id)
+                allowed = can_query(resolved, ctx)
+                policies = applicable_policies(resolved, ctx) if allowed else []
+                found.append(
+                    DatasetInfo(
+                        key=item.dataset,
+                        name=item.model.name,
+                        kind=item.kind,
+                        dialect=item.model.dialect,
+                        access=_access_info(ctx, item, resolved, policies),
+                    )
+                )
+        return found
+
+    async def describe(self, ctx: RequestContext, dataset: str | None = None) -> ModelDescription:
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            loaded = await load_dataset(session, ctx.tenant_id, dataset)
             manager = ctx.has_role(*MANAGER_ROLES)
             if loaded is not None and loaded.error and manager:
                 raise AnalyticsError(
@@ -336,20 +553,45 @@ class Analytics:
         description = _describe(loaded, loaded.model, _access_info(ctx, loaded, resolved, policies))
         if manager:
             description.yaml = loaded.yaml
-            description.problems = await self._problems(loaded, resolved, ctx.tenant_id)
+            if loaded.source is None:  # a source's model is checked against it when saved
+                description.problems = await self._problems(loaded, resolved, ctx.tenant_id)
         return description
 
     async def run_sql(
-        self, ctx: RequestContext, sql: str, *, max_rows: int | None = None
+        self,
+        ctx: RequestContext,
+        sql: str,
+        *,
+        max_rows: int | None = None,
+        dataset: str | None = None,
+        on_step: StepCallback | None = None,
     ) -> QueryResult:
-        """Run SQL written by a person or the agent, under this user's permissions."""
+        """Run SQL written by a person or the agent, under this user's permissions, on the
+        uploaded files or (`dataset`) a database source, in that dataset's SQL dialect."""
         cap = min(max_rows or self.max_rows, self.max_rows)
-        return await self._run(ctx, kind="sql", cap=cap, sql=sql, query=None)
+        return await self._run(
+            ctx, kind="sql", cap=cap, sql=sql, query=None, dataset=dataset, on_step=on_step
+        )
 
-    async def run_semantic(self, ctx: RequestContext, query: SemanticQuery) -> QueryResult:
+    async def run_semantic(
+        self,
+        ctx: RequestContext,
+        query: SemanticQuery,
+        *,
+        dataset: str | None = None,
+        on_step: StepCallback | None = None,
+    ) -> QueryResult:
         """Compile a semantic query (metrics by dimensions) and run it like any other SQL."""
         cap = min(query.limit, self.max_rows)
-        return await self._run(ctx, kind="semantic", cap=cap, sql=None, query=query)
+        return await self._run(
+            ctx,
+            kind="semantic",
+            cap=cap,
+            sql=None,
+            query=query,
+            dataset=dataset,
+            on_step=on_step,
+        )
 
     # --- Administration (org owner or admin) ---
 
@@ -610,13 +852,329 @@ class Analytics:
             dataset.remove(old_path)  # after the switch: no new reader can pick it
         return built.tables
 
+    # --- Database sources (org owner or admin) ---
+
+    async def sources(self, ctx: RequestContext) -> list[SourceOut]:
+        if not ctx.has_role(*MANAGER_ROLES):
+            raise _not_manager()
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            rows = await session.scalars(select(AnalyticsSource).order_by(AnalyticsSource.key))
+            return [_source_out(row) for row in rows]
+
+    async def source(self, ctx: RequestContext, key: str) -> SourceOut:
+        if not ctx.has_role(*MANAGER_ROLES):
+            raise _not_manager()
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            return _source_out(await _source_row(session, key))
+
+    async def create_source(self, ctx: RequestContext, body: SourceIn) -> SourceOut:
+        """Store a connection (the password sealed). It is not tried here: test_source and
+        source_catalog connect, set_source_model checks the model against the database."""
+        if not ctx.has_role(*MANAGER_ROLES):
+            raise _not_manager()
+        keyring = self._keyring()
+        await self._check_new_host(body.host, body.port or sources.DEFAULT_PORTS[body.kind])
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            taken = await session.scalar(
+                select(AnalyticsSource.id).where(AnalyticsSource.key == body.key)
+            )
+            if taken is not None:
+                raise AnalyticsError(
+                    409, "conflict", "Key already used", f"A data source {body.key!r} exists."
+                )
+            row = AnalyticsSource(
+                tenant_id=ctx.tenant_id,
+                key=body.key,
+                name=body.name.strip(),
+                kind=body.kind,
+                host=body.host,
+                port=body.port or sources.DEFAULT_PORTS[body.kind],
+                database=body.database,
+                username=body.username,
+                tls_mode=body.tls_mode,
+                tls_ca=body.tls_ca,
+                schemas=list(body.schemas),
+                enabled=body.enabled,
+                created_by=ctx.user_id,
+                updated_by=ctx.user_id,
+            )
+            session.add(row)
+            await session.flush()
+            row.password = keyring.seal(
+                body.password.get_secret_value(), context=_password_context(ctx.tenant_id, row)
+            )
+            await self._audit_source(session, ctx, row, "analytics.source.created")
+            await session.flush()
+            await session.refresh(row)
+            return _source_out(row)
+
+    async def update_source(self, ctx: RequestContext, key: str, body: SourcePatch) -> SourceOut:
+        if not ctx.has_role(*MANAGER_ROLES):
+            raise _not_manager()
+        changes = body.model_dump(exclude_unset=True)
+        if "host" in changes or "port" in changes:
+            row_now = await self.source(ctx, key)
+            await self._check_new_host(
+                changes.get("host") or row_now.host, changes.get("port") or row_now.port
+            )
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            row = await _source_row(session, key, lock=True)
+            place = _password_context(ctx.tenant_id, row)
+            for name in ("name", "host", "port", "database", "username", "tls_mode", "enabled"):
+                if changes.get(name) is not None:
+                    setattr(row, name, changes[name])
+            if "tls_ca" in changes:
+                row.tls_ca = body.tls_ca
+            if body.schemas is not None:
+                row.schemas = list(body.schemas)
+            moved = _password_context(ctx.tenant_id, row) != place
+            if body.password is not None:
+                row.password = self._keyring().seal(
+                    body.password.get_secret_value(),
+                    context=_password_context(ctx.tenant_id, row),
+                )
+            elif moved and row.password is not None:
+                raise AnalyticsError(
+                    422,
+                    "password_required",
+                    "Enter the password again",
+                    "The stored password only works for the host, port, database and user it "
+                    "was entered for. Enter it again with the new connection settings.",
+                )
+            row.updated_by = ctx.user_id
+            await self._audit_source(
+                session, ctx, row, "analytics.source.updated", changed=sorted(changes)
+            )
+            await session.flush()
+            await session.refresh(row)
+            return _source_out(row)
+
+    async def delete_source(self, ctx: RequestContext, key: str) -> None:
+        if not ctx.has_role(*MANAGER_ROLES):
+            raise _not_manager()
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            row = await _source_row(session, key, lock=True)
+            await self._audit_source(session, ctx, row, "analytics.source.deleted")
+            await session.delete(row)
+
+    async def test_source(self, ctx: RequestContext, key: str) -> SourceCheck:
+        """Connect and ask the server's version, in the same read-only session queries get."""
+        ref = await self._source_ref(ctx, key)
+        started = time.perf_counter()
+        try:
+            result = await self._run_trusted(ctx, ref, "SELECT version()", max_rows=1)
+        except AnalyticsError as exc:
+            return SourceCheck(
+                ok=False,
+                server_version=None,
+                elapsed_ms=round((time.perf_counter() - started) * 1000),
+                error=exc.detail or exc.title,
+            )
+        version = str(result.rows[0][0])[:200] if result.rows else None
+        await self._record_check(ctx.tenant_id, ref.id, version=version)
+        return SourceCheck(
+            ok=True,
+            server_version=version,
+            elapsed_ms=round((time.perf_counter() - started) * 1000),
+            error=None,
+        )
+
+    async def source_catalog(self, ctx: RequestContext, key: str) -> SourceCatalog:
+        """The tables and columns of the source's schemas that its user may read (the
+        database's information_schema lists only those), for an admin to pick from."""
+        ref = await self._source_ref(ctx, key)
+        result = await self._run_trusted(
+            ctx,
+            ref,
+            sources.catalog_sql(ref.kind, ref.schemas),
+            max_rows=sources.MAX_CATALOG_COLUMNS,
+        )
+        await self._record_check(ctx.tenant_id, ref.id)
+        return SourceCatalog(tables=sources.catalog_tables(result.rows), truncated=result.truncated)
+
+    async def set_source_model(self, ctx: RequestContext, key: str, yaml_text: str) -> SourceOut:
+        """Validate a source's semantic model (in its SQL dialect), check it against the
+        database (every table in the source's schemas, every column there), and store it."""
+        ref = await self._source_ref(ctx, key)
+        try:
+            model = parse(yaml_text, ref.kind)
+        except ModelError as exc:
+            raise AnalyticsError(
+                422, "invalid_model", "The semantic model is not valid", str(exc)
+            ) from exc
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            resolved = await resolve(session, model, ctx.tenant_id)
+        problems = [f"{key} matches nobody in this organization" for key in resolved.unresolved]
+        outside = sorted(
+            f"{name} ({schema})"
+            for name, (schema, _) in model.relations().items()
+            if schema not in ref.schemas
+        )
+        if outside:
+            problems.append(
+                f"Tables outside the source's schemas ({', '.join(ref.schemas)}): "
+                + ", ".join(outside)
+            )
+        if not problems:
+            catalog = await self.source_catalog(ctx, key)
+            problems = _catalog_problems(model, catalog.tables)
+        if problems:
+            raise AnalyticsError(
+                422, "invalid_model", "The semantic model is not valid", "; ".join(problems)
+            )
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            row = await _source_row(session, key, lock=True)
+            if row.yaml != yaml_text:
+                row.yaml = yaml_text
+                row.updated_by = ctx.user_id
+                await self._audit_source(
+                    session,
+                    ctx,
+                    row,
+                    "analytics.source.model.updated",
+                    model={
+                        "name": model.name,
+                        "tables": sorted(model.tables),
+                        "metrics": len(model.metrics),
+                        "row_policies": [p.name for p in model.row_policies],
+                        "sha256": hashlib.sha256(yaml_text.encode()).hexdigest(),
+                    },
+                )
+            await session.flush()
+            await session.refresh(row)
+            return _source_out(row)
+
+    def _keyring(self) -> KeyRing:
+        if self.keyring is None:
+            raise AnalyticsError(
+                503,
+                "secrets_unavailable",
+                "No encryption key",
+                "Data source passwords cannot be stored: no encryption key is configured.",
+            )
+        return self.keyring
+
+    async def _check_new_host(self, host: str, port: int) -> None:
+        """A host an admin enters: refused when it is, or resolves to, an address WorkMind may
+        not connect to. A name that does not resolve yet is accepted (it is checked again
+        before every connection)."""
+        try:
+            sources.check_host(host, self.source_networks)
+            await sources.resolve_host(host, port, self.source_networks)
+        except SourceHostError as exc:
+            if "does not resolve" in str(exc):
+                return
+            raise AnalyticsError(
+                422, "invalid_source", "This host cannot be used", f"{host}: {exc}"
+            ) from exc
+
+    async def _source_ref(self, ctx: RequestContext, key: str) -> SourceRef:
+        if not ctx.has_role(*MANAGER_ROLES):
+            raise _not_manager()
+        async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
+            return SourceRef.of(await _source_row(session, key))
+
+    async def _run_trusted(
+        self, ctx: RequestContext, ref: SourceRef, sql: str, *, max_rows: int
+    ) -> engine.EngineResult:
+        """SQL WorkMind wrote (a version check, the catalog), in the same read-only session
+        and limits as any query; for admins, who may see why a connection failed."""
+        try:
+            target = await self._target(ctx.tenant_id, ref)
+            return await self.pool.execute_remote(
+                target.to_json(),
+                sql,
+                max_rows=max_rows,
+                timeout_s=self.timeout_s,
+                connect_timeout_s=self.connect_timeout_s,
+                owner=tenant_key(ctx.tenant_id, "analytics", "running", ctx.user_id),
+                connections=(
+                    tenant_key(ctx.tenant_id, "analytics", "connections"),
+                    self.source_connections,
+                ),
+            )
+        except engine.SourceUnavailableError as exc:
+            await self._record_check(ctx.tenant_id, ref.id, error=exc.message)
+            raise AnalyticsError(
+                503, "source_unavailable", "The data source is unavailable", exc.message
+            ) from exc
+        except engine.QueryTimeoutError as exc:
+            raise AnalyticsError(
+                408, "query_timeout", "The query could not run", exc.message
+            ) from exc
+        except engine.QueryBusyError as exc:
+            raise AnalyticsError(
+                429, "analytics_busy", "Too many queries at once", exc.message
+            ) from exc
+        except engine.EngineError as exc:
+            await self._record_check(ctx.tenant_id, ref.id, error=exc.message)
+            raise AnalyticsError(
+                400, "query_failed", "The query could not run", exc.message
+            ) from exc
+
+    async def _record_check(
+        self,
+        tenant_id: uuid.UUID,
+        source_id: uuid.UUID,
+        *,
+        error: str | None = None,
+        version: str | None = None,
+    ) -> None:
+        """The source's status for admins: when it was last reached, or why it was not."""
+        async with tenant_transaction(self.sessions, tenant_id) as session:
+            row = await session.get(AnalyticsSource, source_id)
+            if row is None:
+                return
+            row.checked_at = datetime.now(UTC)
+            row.last_error = error[:500] if error else None
+            if version is not None:
+                row.server_version = version
+
+    async def _audit_source(
+        self,
+        session: AsyncSession,
+        ctx: RequestContext,
+        row: AnalyticsSource,
+        action: str,
+        **extra: Any,
+    ) -> None:
+        await record_event(
+            session,
+            tenant_id=ctx.tenant_id,
+            actor=Actor(type="user", id=ctx.user_id),
+            action=action,
+            resource_type="analytics_source",
+            resource_id=str(row.id),
+            details={
+                "key": row.key,
+                "kind": row.kind,
+                "host": row.host,
+                "port": row.port,
+                "database": row.database,
+                "username": row.username,
+                "tls_mode": row.tls_mode,
+                "schemas": list(row.schemas or []),
+                "enabled": row.enabled,
+                **extra,
+            },
+        )
+
     # --- Internals ---
 
-    async def _prepare(self, ctx: RequestContext) -> _Prepared:
+    async def _prepare(self, ctx: RequestContext, dataset: str | None = None) -> _Prepared:
         async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
-            loaded = await load_model(session, ctx.tenant_id)
+            loaded = await load_dataset(session, ctx.tenant_id, dataset)
+            if loaded is None and dataset not in (None, UPLOADS):
+                raise AnalyticsError(
+                    404,
+                    "unknown_dataset",
+                    "No such dataset",
+                    f"There is no dataset {dataset!r}. Use one of the datasets listed.",
+                )
             if loaded is None or loaded.model is None:
                 raise _not_configured()
+            if loaded.source is not None and not loaded.source.enabled:
+                raise _not_configured(f"The data source {loaded.source.name!r} is turned off.")
             resolved = await resolve(session, loaded.model, ctx.tenant_id)
             email = await session.scalar(select(User.email).where(User.id == ctx.user_id))
         if email is None:
@@ -642,9 +1200,11 @@ class Analytics:
         cap: int,
         sql: str | None,
         query: SemanticQuery | None,
+        dataset: str | None = None,
+        on_step: StepCallback | None = None,
     ) -> QueryResult:
-        prepared = await self._prepare(ctx)
-        audit = _Audit(kind=kind)
+        prepared = await self._prepare(ctx, dataset)
+        audit = _Audit(kind=kind, dataset=prepared.loaded.dataset)
         if not prepared.allowed:
             audit.status = "denied"
             await self._audit(ctx, audit)
@@ -673,6 +1233,8 @@ class Analytics:
                 tables=prepared.model.tables.keys(),
                 row_filters=prepared.filters,
                 max_rows=cap,
+                dialect=prepared.model.dialect,
+                relations=prepared.model.relations() if prepared.loaded.source else None,
             )
         except QueryRejectedError as exc:
             audit.status, audit.reason = "rejected", exc.reason[:300]
@@ -684,6 +1246,10 @@ class Analytics:
         audit.row_policies = [
             p.name for p in prepared.policies if set(p.filters) & set(guarded.filtered)
         ]
+        if on_step is not None:
+            step = {"dataset": prepared.loaded.dataset, "dialect": prepared.model.dialect}
+            await on_step("query_compiled", {**step, "sql": guarded.query})
+            await on_step("executing", step)
 
         try:
             result = await self._execute(ctx, prepared, guarded, cap)
@@ -693,6 +1259,11 @@ class Analytics:
             await self._audit(ctx, audit)
             if isinstance(exc, engine.DatasetMissingError):
                 raise _not_configured(exc.message) from exc
+            if isinstance(exc, engine.SourceUnavailableError):
+                source = prepared.loaded.source
+                if source is not None:
+                    await self._record_check(ctx.tenant_id, source.id, error=exc.message)
+                raise _unavailable(source.name if source else "uploads") from exc
             if isinstance(exc, engine.QueryBusyError):
                 raise AnalyticsError(
                     429, "analytics_busy", "Too many queries at once", exc.message
@@ -737,6 +1308,9 @@ class Analytics:
         """Refuse a semantic query whose many-to-one join is not many-to-one in the loaded data:
         a repeated key on the one side would count fact rows twice (silently: the numbers would
         still be in the results, so verification would back them)."""
+        if prepared.loaded.source is not None:
+            await self._check_source_joins(ctx, prepared, joins)
+            return
         path = prepared.loaded.dataset_path(self.root, ctx.tenant_id)
         if path is None:
             return  # nothing loaded: the query itself reports it
@@ -761,9 +1335,114 @@ class Analytics:
                     f"{join.right.split('.')[0]} table."
                 )
 
+    async def _check_source_joins(
+        self, ctx: RequestContext, prepared: _Prepared, joins: Sequence[Join]
+    ) -> None:
+        """_check_joins on a database: the same count, through the guard (no row policies:
+        whether a key repeats is about the table, and the person sees only the count), redone
+        after JOIN_CHECK_TTL_S since the data changes."""
+        source, model = prepared.loaded.source, prepared.model
+        if source is None:
+            return
+        now = time.monotonic()
+        for join in joins:
+            key = (source.id, join.right)
+            cached = self._source_duplicates.get(key)
+            if cached is None or now - cached[0] > JOIN_CHECK_TTL_S:
+                try:
+                    guarded = check(
+                        duplicate_keys_sql(join, model.dialect),
+                        tables=model.tables.keys(),
+                        max_rows=1,
+                        dialect=model.dialect,
+                        relations=model.relations(),
+                    )
+                    result = await self._execute_source(ctx, source, guarded, 1)
+                except (QueryRejectedError, engine.EngineError, AnalyticsError):
+                    return  # the query itself will report what is wrong
+                count = result.rows[0][0] if result.rows else 0
+                if len(self._source_duplicates) > 1000:
+                    self._source_duplicates.clear()
+                cached = (now, int(count) if isinstance(count, int | float) else 0)
+                self._source_duplicates[key] = cached
+            if cached[1]:
+                raise CompileError(
+                    f"The join {join.left} = {join.right} is declared many-to-one, but "
+                    f"{join.right} repeats {cached[1]} time(s) in the database, so this "
+                    "breakdown would count rows twice. An admin needs to fix the model or the "
+                    f"{join.right.split('.')[0]} table."
+                )
+
+    async def _target(self, tenant_id: uuid.UUID, source: SourceRef) -> remote.Target:
+        """Where to connect, checked now, with the password opened. Raises
+        SourceUnavailableError with the reason (for admins)."""
+        if source.password is None:
+            raise engine.SourceUnavailableError("No password is set for this source.")
+        if self.keyring is None:
+            raise engine.SourceUnavailableError("No encryption key is configured.")
+        try:
+            addresses = await sources.resolve_host(source.host, source.port, self.source_networks)
+        except SourceHostError as exc:
+            raise engine.SourceUnavailableError(f"{source.host}: {exc}") from exc
+        context = password_context(
+            tenant_id,
+            source.id,
+            source.kind,
+            source.host,
+            source.port,
+            source.database,
+            source.username,
+        )
+        try:
+            password = self.keyring.open(source.password, context=context)
+        except SecretsError as exc:
+            raise engine.SourceUnavailableError(
+                f"The stored password cannot be used ({exc}); enter it again."
+            ) from exc
+        return remote.Target(
+            kind=source.kind,
+            # verify-full checks the certificate against the name: connect by name. Otherwise
+            # connect to the address just checked (a name that resolves elsewhere later, DNS
+            # rebinding, is not followed).
+            address=source.host if source.tls_mode == "verify-full" else addresses[0],
+            host=source.host,
+            port=source.port,
+            database=source.database,
+            user=source.username,
+            password=password,
+            tls_mode=source.tls_mode,
+            tls_ca=source.tls_ca,
+            connect_timeout_s=self.connect_timeout_s,
+        )
+
+    async def _execute_source(
+        self,
+        ctx: RequestContext,
+        source: SourceRef,
+        guarded: GuardedQuery,
+        cap: int,
+        *,
+        sql: str | None = None,
+    ) -> engine.EngineResult:
+        target = await self._target(ctx.tenant_id, source)
+        return await self.pool.execute_remote(
+            target.to_json(),
+            sql or guarded.sql,
+            max_rows=cap,
+            timeout_s=self.timeout_s,
+            connect_timeout_s=self.connect_timeout_s,
+            owner=tenant_key(ctx.tenant_id, "analytics", "running", ctx.user_id),
+            connections=(
+                tenant_key(ctx.tenant_id, "analytics", "connections"),
+                self.source_connections,
+            ),
+        )
+
     async def _execute(
         self, ctx: RequestContext, prepared: _Prepared, guarded: GuardedQuery, cap: int
     ) -> engine.EngineResult:
+        if prepared.loaded.source is not None:
+            return await self._execute_source(ctx, prepared.loaded.source, guarded, cap)
         path = prepared.loaded.dataset_path(self.root, ctx.tenant_id)
         if path is None:
             raise engine.DatasetMissingError("No data has been loaded for analytics yet.")
@@ -862,6 +1541,7 @@ class Analytics:
 @dataclass
 class _Audit:
     kind: str
+    dataset: str = UPLOADS
     status: str = ""
     reason: str | None = None
     sql_sha256: str | None = None
@@ -875,6 +1555,7 @@ class _Audit:
     def details(self) -> dict[str, Any]:
         details: dict[str, Any] = {
             "kind": self.kind,
+            "dataset": self.dataset,
             "status": self.status,
             "sql_sha256": self.sql_sha256,
             "executed_sha256": self.executed_sha256,
@@ -886,6 +1567,68 @@ class _Audit:
             "reason": self.reason,
         }
         return {k: v for k, v in details.items() if v is not None}
+
+
+async def _source_row(session: AsyncSession, key: str, *, lock: bool = False) -> AnalyticsSource:
+    query = select(AnalyticsSource).where(AnalyticsSource.key == key)
+    if lock:
+        query = query.with_for_update()
+    row = await session.scalar(query)
+    if row is None:
+        raise _no_source(key)
+    return row
+
+
+def _password_context(tenant_id: uuid.UUID, row: AnalyticsSource) -> bytes:
+    return password_context(
+        tenant_id, row.id, row.kind, row.host, row.port, row.database, row.username
+    )
+
+
+def _source_out(row: AnalyticsSource) -> SourceOut:
+    return SourceOut(
+        key=row.key,
+        name=row.name,
+        kind=cast(remote.SourceKind, row.kind),
+        host=row.host,
+        port=row.port,
+        database=row.database,
+        username=row.username,
+        password_set=row.password is not None,
+        tls_mode=cast(remote.TlsMode, row.tls_mode),
+        tls_ca=row.tls_ca,
+        schemas=list(row.schemas or []),
+        enabled=row.enabled,
+        yaml=row.yaml,
+        checked_at=row.checked_at,
+        server_version=row.server_version,
+        last_error=row.last_error,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _catalog_problems(model: SemanticModel, catalog: Sequence[CatalogTable]) -> list[str]:
+    """Model tables and columns the database does not have (or the source's user cannot see)."""
+    found = {(t.schema_name, t.name): {c.name for c in t.columns} for t in catalog}
+    problems: list[str] = []
+    for name, table in model.tables.items():
+        location = table.location
+        if location is None:
+            continue
+        columns = found.get(location)
+        if columns is None:
+            problems.append(
+                f"Table {name}: {table.source_table} is not in the database, or its user may "
+                "not read it"
+            )
+            continue
+        missing = [c for c in table.columns if c not in columns]
+        if missing:
+            problems.append(
+                f"Table {name}: {table.source_table} has no column {', '.join(missing)}"
+            )
+    return problems
 
 
 async def _own_run(session: AsyncSession, ctx: RequestContext, run_id: uuid.UUID) -> AnalyticsRun:
@@ -920,7 +1663,7 @@ def _access_info(
     policies: list[RowPolicy],
 ) -> AccessInfo:
     configured = loaded is not None and loaded.model is not None
-    has_data = loaded is not None and loaded.dataset_version is not None
+    has_data = loaded is not None and loaded.has_data
     allowed = resolved is not None and can_query(resolved, ctx)
     restricted = sorted({t for p in policies for t in p.filters})
     texts = [f"{p.name}: {p.description.strip()}" for p in policies]
@@ -961,6 +1704,7 @@ def _describe(loaded: LoadedModel, model: SemanticModel, access: AccessInfo) -> 
             ],
             rows=None if name in restricted else _rows(loaded.dataset_tables, name),
             restricted=name in restricted,
+            source_table=table.source_table,
         )
         for name, table in model.tables.items()
     ]
@@ -996,6 +1740,9 @@ def _describe(loaded: LoadedModel, model: SemanticModel, access: AccessInfo) -> 
         dataset_version=loaded.dataset_version,
         updated_at=loaded.updated_at,
         examples=list(model.examples),
+        dataset=loaded.dataset,
+        kind=loaded.kind,
+        dialect=model.dialect,
     )
 
 

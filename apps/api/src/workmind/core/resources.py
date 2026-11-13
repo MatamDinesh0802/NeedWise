@@ -137,11 +137,18 @@ class Resources:
             rrf_k=settings.retrieval_rrf_k,
             min_similarity=settings.retrieval_min_similarity,
         )
+        keyring = KeyRing.from_settings(settings)
         analytics = Analytics(
             db,
             settings.analytics_path,
             max_rows=settings.analytics_max_rows,
             timeout_s=settings.analytics_timeout_s,
+            # PostgreSQL and MySQL sources: passwords sealed like provider keys, private hosts
+            # only in the networks the operator allows, a connection budget per tenant.
+            keyring=keyring,
+            source_networks=settings.source_networks,
+            source_connections=settings.analytics_source_connections,
+            connect_timeout_s=settings.analytics_source_connect_timeout_s,
             # ANALYTICS_WORKERS is per container: each of its uvicorn processes gets a share,
             # and one person's running queries are counted in Valkey, across every process.
             pool=QueryPool(
@@ -177,7 +184,7 @@ class Resources:
             db,
             settings,
             http,
-            KeyRing.from_settings(settings),
+            keyring,
             system=create_llm(settings, http),
             system_local=create_local_llm(settings, http),
         )

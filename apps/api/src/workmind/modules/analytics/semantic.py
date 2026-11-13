@@ -8,6 +8,11 @@ Who may query the model, and which rows they see, come from principals written a
 Every SQL fragment in the YAML (dimensions, metrics, metric filters, row-policy filters) is
 parsed with sqlglot when the model is loaded, so a typo or a reference to an unknown table or
 column is an error for the admin, not a surprise at query time.
+
+A model describes one dataset: the uploaded files (DuckDB SQL), or a PostgreSQL or MySQL
+database (sources.py). The dataset decides the SQL dialect its fragments are written in
+(`parse(text, dialect=...)`); in a database's model every table names the table it reads
+(`source_table: schema.table`).
 """
 
 import re
@@ -16,7 +21,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import sqlglot
 import yaml
@@ -27,10 +32,19 @@ from sqlglot import exp
 from sqlglot.errors import SqlglotError
 
 from workmind.core.context import RequestContext
-from workmind.modules.analytics.guard import DIALECT, FORBIDDEN_NODES, denied_function
+from workmind.modules.analytics.guard import (
+    DIALECT,
+    FORBIDDEN_NODES,
+    Dialect,
+    denied_function,
+    unavailable_function,
+)
 from workmind.modules.identity.models import Department, Group, User
 
 IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+# A table in a database, as `schema.table` (MySQL: `database.table`), each part as the database
+# spells it.
+SOURCE_TABLE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]{0,62}\.[A-Za-z_][A-Za-z0-9_$]{0,62}$")
 # Names DuckDB uses for its own catalog views, and the guard's own aliases.
 RESERVED_PREFIXES = ("pg_", "duckdb_", "sqlite_", "pragma_", "information_schema", "_wm")
 Format = Literal["eur", "number", "percent", "text", "date"]
@@ -60,6 +74,16 @@ class Table(_Strict):
     description: str
     time_column: str | None = None  # the default date for time grains and date ranges
     columns: dict[str, Column] = Field(min_length=1)
+    # Database sources only: the table this one reads, `schema.table` (MySQL: database.table).
+    source_table: str | None = None
+
+    @property
+    def location(self) -> tuple[str, str] | None:
+        """(schema, table) in the database, for a database source's table."""
+        if self.source_table is None:
+            return None
+        schema, _, table = self.source_table.partition(".")
+        return schema, table
 
 
 class Join(_Strict):
@@ -107,6 +131,8 @@ class SemanticModel(_Strict):
     dimensions: dict[str, Dimension] = {}
     metrics: dict[str, Metric] = Field(min_length=1)
     row_policies: list[RowPolicy] = []
+    # Set by parse() from the dataset, never by the YAML: the SQL dialect of every fragment.
+    dialect: Dialect = DIALECT
 
     @field_validator("tables", "dimensions", "metrics")
     @classmethod
@@ -130,6 +156,21 @@ class SemanticModel(_Strict):
                 raise ValueError(
                     f"table {name}: names starting with {RESERVED_PREFIXES} are reserved"
                 )
+            if self.dialect == DIALECT and table.source_table is not None:
+                raise ValueError(
+                    f"table {name}: source_table is only for database sources; uploaded tables "
+                    "are named by the table key"
+                )
+            if self.dialect != DIALECT:
+                if table.source_table is None:
+                    raise ValueError(
+                        f"table {name}: add source_table, the table in the database (schema.table)"
+                    )
+                if not SOURCE_TABLE.match(table.source_table):
+                    raise ValueError(
+                        f"table {name}: source_table must be schema.table (letters, digits, "
+                        "_ and $)"
+                    )
             bad = [c for c in table.columns if not IDENTIFIER.match(c)]
             if bad:
                 raise ValueError(f"table {name}: bad column names {bad}")
@@ -156,6 +197,9 @@ class SemanticModel(_Strict):
                 raise ValueError(f"{name}: reserved for time grains ({', '.join(GRAINS)})")
         for name, dimension in self.dimensions.items():
             _check_dimension(self, name, dimension)
+        locations = [t.source_table for t in self.tables.values() if t.source_table]
+        if len(set(locations)) != len(locations):
+            raise ValueError("two tables read the same source_table")
         for name, metric in self.metrics.items():
             if metric.table not in self.tables:
                 raise ValueError(f"metric {name}: unknown table {metric.table}")
@@ -192,7 +236,12 @@ class SemanticModel(_Strict):
         raise ValueError(f"{table} cannot be reached from {fact}")
 
     def dimension_tables(self, name: str) -> set[str]:
-        return {c.table for c in expression(self.dimensions[name].sql).find_all(exp.Column)}
+        node = expression(self.dimensions[name].sql, self.dialect)
+        return {c.table for c in node.find_all(exp.Column)}
+
+    def relations(self) -> dict[str, tuple[str, str]]:
+        """Model table -> (schema, table) in the database; empty for uploaded files."""
+        return {name: loc for name, table in self.tables.items() if (loc := table.location)}
 
     def column_format(self, table: str, column: str) -> Format | None:
         found = self.columns_of(table).get(column)
@@ -213,27 +262,31 @@ def _split_column(qualified: str) -> tuple[str, str]:
 
 
 @lru_cache(maxsize=512)
-def _parsed(sql: str) -> exp.Expr:
+def _parsed(sql: str, dialect: Dialect) -> exp.Expr:
     try:
-        parsed = sqlglot.parse_one(sql, dialect=DIALECT)
+        parsed = sqlglot.parse_one(sql, dialect=dialect)
     except SqlglotError as exc:
         raise ValueError(f"not valid SQL: {sql!r}") from exc
     return parsed
 
 
-def expression(sql: str) -> exp.Expr:
+def expression(sql: str, dialect: Dialect = DIALECT) -> exp.Expr:
     """A fresh copy of a parsed SQL fragment from the model (callers may modify it)."""
-    return _parsed(sql).copy()
+    return _parsed(sql, dialect).copy()
 
 
-def _check_fragment(where: str, node: exp.Expr, *, subqueries: bool = False) -> None:
+def _check_fragment(
+    where: str, node: exp.Expr, dialect: Dialect, *, subqueries: bool = False
+) -> None:
     if isinstance(node, exp.Query):
         raise ValueError(f"{where}: must be an expression, not a statement")
     for part in node.walk():
         if isinstance(part, FORBIDDEN_NODES):
             raise ValueError(f"{where}: must be an expression, not a statement")
-        if isinstance(part, exp.Func) and (name := denied_function(part)):
+        if isinstance(part, exp.Func) and (name := denied_function(part, dialect)):
             raise ValueError(f"{where}: the function {name}() is not allowed")
+        if reason := unavailable_function(part, dialect):
+            raise ValueError(f"{where}: {reason}")
         if isinstance(part, exp.Query) and not subqueries:
             raise ValueError(f"{where}: subqueries are not allowed")
         if isinstance(part, exp.Window):
@@ -244,8 +297,8 @@ def _check_fragment(where: str, node: exp.Expr, *, subqueries: bool = False) -> 
 
 def _check_dimension(model: SemanticModel, name: str, dimension: Dimension) -> None:
     where = f"dimension {name}"
-    node = expression(dimension.sql)
-    _check_fragment(where, node)
+    node = expression(dimension.sql, model.dialect)
+    _check_fragment(where, node, model.dialect)
     if any(isinstance(part, exp.AggFunc) for part in node.walk()):
         raise ValueError(f"{where}: aggregates belong in metrics")
     columns = list(node.find_all(exp.Column))
@@ -260,14 +313,14 @@ def _check_dimension(model: SemanticModel, name: str, dimension: Dimension) -> N
 
 def _check_metric(model: SemanticModel, name: str, metric: Metric) -> None:
     where = f"metric {name}"
-    node = expression(metric.sql)
-    _check_fragment(where, node)
+    node = expression(metric.sql, model.dialect)
+    _check_fragment(where, node, model.dialect)
     if not any(isinstance(part, exp.AggFunc) for part in node.walk()):
         raise ValueError(f"{where}: sql must aggregate (sum, count, avg, ...)")
     fragments = [node]
     if metric.filter:
-        condition = expression(metric.filter)
-        _check_fragment(f"{where} filter", condition)
+        condition = expression(metric.filter, model.dialect)
+        _check_fragment(f"{where} filter", condition, model.dialect)
         if any(isinstance(part, exp.AggFunc) for part in condition.walk()):
             raise ValueError(f"{where}: the filter is a row condition, not an aggregate")
         fragments.append(condition)
@@ -280,18 +333,18 @@ def _check_metric(model: SemanticModel, name: str, metric: Metric) -> None:
                 raise ValueError(f"{where}: unknown column {metric.table}.{column.name}")
 
 
-def policy_expression(condition: str) -> exp.Expr:
+def policy_expression(condition: str, dialect: Dialect = DIALECT) -> exp.Expr:
     """A row-policy condition with its placeholders as sentinel columns (see row_filters)."""
     text = condition
     for placeholder, sentinel in PLACEHOLDERS.items():
         text = text.replace(placeholder, sentinel)
-    return expression(text)
+    return expression(text, dialect)
 
 
 def _check_policy_filter(model: SemanticModel, policy: str, table: str, condition: str) -> None:
     where = f"row policy {policy}, table {table}"
-    node = policy_expression(condition)
-    _check_fragment(where, node, subqueries=True)
+    node = policy_expression(condition, model.dialect)
+    _check_fragment(where, node, model.dialect, subqueries=True)
     sentinels = set(PLACEHOLDERS.values())
     for literal in node.find_all(exp.Literal):
         if literal.is_string and any(s in literal.this for s in sentinels):
@@ -355,19 +408,24 @@ def _enclosing_selects(node: exp.Expr) -> list[exp.Select]:
     return found
 
 
-def parse(text: str) -> SemanticModel:
-    """Parse and validate a semantic model from YAML. Raises ModelError with a readable reason."""
-    return _parse_cached(text)
+def parse(text: str, dialect: Dialect = DIALECT) -> SemanticModel:
+    """Parse and validate a semantic model from YAML, its SQL in `dialect` (the dataset's: duckdb
+    for uploaded files, postgres or mysql for a database). Raises ModelError with a readable
+    reason."""
+    return _parse_cached(text, dialect)
 
 
-@lru_cache(maxsize=32)
-def _parse_cached(text: str) -> SemanticModel:
+@lru_cache(maxsize=64)
+def _parse_cached(text: str, dialect: Dialect) -> SemanticModel:
     try:
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise ModelError(f"not valid YAML: {exc}") from exc
     if not isinstance(raw, dict):
         raise ModelError("the semantic model must be a YAML mapping")
+    if "dialect" in raw:
+        raise ModelError("dialect: set by the dataset (uploaded files or a database), not here")
+    raw = {**cast(dict[str, Any], raw), "dialect": dialect}
     try:
         return SemanticModel.model_validate(raw)
     except ValidationError as exc:
@@ -465,7 +523,7 @@ def row_filters(resolved: Resolved, ctx: RequestContext, email: str) -> dict[str
     filters: dict[str, list[exp.Expr]] = {}
     for policy in applicable_policies(resolved, ctx):
         for table, condition in policy.filters.items():
-            node = policy_expression(condition)
+            node = policy_expression(condition, resolved.model.dialect)
             for column in list(node.find_all(exp.Column)):
                 if not column.table and column.name in values:
                     column.replace(exp.Literal.string(values[column.name]))

@@ -6,6 +6,7 @@ Docker (`make infra`). Inside docker compose, `compose.yaml` overrides the hostn
 """
 
 import base64
+import ipaddress
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, Self
@@ -189,6 +190,15 @@ class Settings(BaseSettings):
     analytics_workers: int = Field(default=3, ge=1, le=32)
     analytics_worker_memory_mb: int = Field(default=1024, ge=256, le=65_536)
     analytics_queries_per_user: int = Field(default=1, ge=1, le=32)
+    # PostgreSQL and MySQL sources (docs/analytics-sql-sources.md). A source's host may resolve to
+    # a private or loopback address only inside these networks (comma-separated CIDRs, e.g.
+    # "10.20.0.0/16,192.168.5.0/24"); empty: public addresses only. Link-local addresses and
+    # cloud metadata endpoints are refused whatever this says.
+    analytics_source_private_networks: str = ""
+    # Connections the API opens at once to one tenant's database sources, across every API
+    # process (counted in Valkey); more queries wait their turn, up to the timeout.
+    analytics_source_connections: int = Field(default=4, ge=1, le=64)
+    analytics_source_connect_timeout_s: float = Field(default=5.0, gt=0, le=60)
 
     # Request rate limits per person, tenant and client address (core/ratelimit.py,
     # docs/multi-tenancy.md). Overrides as JSON, e.g. {"chat": {"per_user": 10}}; 0 = no limit.
@@ -222,6 +232,28 @@ class Settings(BaseSettings):
         if self.secrets_key.get_secret_value() == DEV_SECRETS_KEY:
             raise ValueError("SECRETS_KEY must be set in production")
         return self
+
+    @model_validator(mode="after")
+    def _source_networks(self) -> Self:
+        for value in self.analytics_source_private_networks.split(","):
+            if value.strip():
+                try:
+                    ipaddress.ip_network(value.strip(), strict=False)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"ANALYTICS_SOURCE_PRIVATE_NETWORKS: {value.strip()!r} is not a network "
+                        "(write CIDRs such as 10.0.0.0/8, comma-separated)"
+                    ) from exc
+        return self
+
+    @property
+    def source_networks(self) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+        """ANALYTICS_SOURCE_PRIVATE_NETWORKS, parsed."""
+        return tuple(
+            ipaddress.ip_network(v.strip(), strict=False)
+            for v in self.analytics_source_private_networks.split(",")
+            if v.strip()
+        )
 
     @model_validator(mode="after")
     def _known_rate_limits(self) -> Self:
