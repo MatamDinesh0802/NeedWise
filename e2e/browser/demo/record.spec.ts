@@ -126,6 +126,16 @@ async function ask(page: Page, question: string, created: Created, email: string
   await expect(stop).toBeHidden({ timeout: MODEL });
 }
 
+/** Sends a follow-up in the open conversation and waits until the answer has finished. */
+async function followUp(page: Page, text: string, onStreaming?: () => void): Promise<void> {
+  await typeSlowly(page.getByRole("textbox", { name: "Ask a question" }), text);
+  await page.getByRole("button", { name: "Send" }).click();
+  const stop = page.getByRole("button", { name: "Stop answering" });
+  await expect(stop).toBeVisible();
+  onStreaming?.();
+  await expect(stop).toBeHidden({ timeout: MODEL });
+}
+
 test("record the demo walkthrough", async ({ browser, baseURL }) => {
   test.setTimeout(20 * 60_000);
   await fs.mkdir(OUT, { recursive: true });
@@ -214,6 +224,15 @@ test("record the demo walkthrough", async ({ browser, baseURL }) => {
     timeline.mark("research-ask", 1);
     await ask(page, QUESTIONS.report, created, "olivia.grant@acme.test", () => timeline.mark("research-working", 8));
     const approval = page.getByRole("article", { name: /^Send an email/ }).last();
+    // Some models draft the email for review (draft_email) instead of proposing to send it.
+    // Olivia then asks for it to be sent, as a person would; that proposal waits for approval.
+    const drafted = page.getByRole("listitem").filter({ hasText: "Drafted an email" }).last();
+    if (!(await approval.isVisible()) && (await drafted.isVisible())) {
+      timeline.mark("research-drafted", 1);
+      await caption(page, "5/8", "The assistant drafted the report as an email. Olivia asks it to send it.");
+      await page.waitForTimeout(2500);
+      await followUp(page, "Send it to leadership@acme.test.", () => timeline.mark("send-working", 8));
+    }
     await expect(approval).toBeVisible({ timeout: MODEL });
     timeline.mark("approval", 1);
     await approval.scrollIntoViewIfNeeded();
