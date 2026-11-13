@@ -7,6 +7,9 @@ and is scored against the queue it belongs in:
     correct      the expected department, or triage for a request a person should route
     wrong queue  a department other than the expected one: the costly error (the request
                  sits with people who don't handle it); triage instead is only slower
+    model errors router model calls that failed (an API error, an answer outside the schema):
+                 those items went to triage because the model was unavailable, so a triage
+                 they count as correct says nothing about the model
     rules        the items the seeded rules must decide alone, and that they never decide the
                  others (no model needed: `--retrieval-only` runs only this part)
 
@@ -35,6 +38,7 @@ class RequestRoutingRecord:
     correct: bool
     wrong_queue: bool
     rules_as_expected: bool  # rule items: the rules routed it; others: the rules did not
+    model_failed: bool  # the router model was asked and its call failed
     latency_ms: int
     explanation: str
 
@@ -77,6 +81,7 @@ async def evaluate_request_routing(
                 wrong_queue=routed not in ("triage", item.expected),
                 rules_as_expected=by_rules == (item.via == "rule")
                 and (not by_rules or routed == item.expected),
+                model_failed=decision.model_failed,
                 latency_ms=round((time.perf_counter() - started) * 1000),
                 explanation=decision.explanation,
             )
@@ -94,6 +99,7 @@ def summarize_request_routing(records: Sequence[RequestRoutingRecord]) -> dict[s
         "wrong_queue": sum(r.wrong_queue for r in records),
         "triaged": sum(r.routed_to == "triage" for r in records),
         "rules_as_expected": sum(r.rules_as_expected for r in records),
+        "model_errors": sum(r.model_failed for r in records),
         "by_via": {
             via: share([r for r in records if r.via == via]) for via in ("rule", "model", "triage")
         },
@@ -109,13 +115,21 @@ def request_routing_section(records: Sequence[RequestRoutingRecord]) -> list[str
         f"Correct queue: **{s['correct']}/{s['items']}** (rule items {s['by_via']['rule']}, "
         f"model items {s['by_via']['model']}, triage items {s['by_via']['triage']}). "
         f"Sent to a wrong department: **{s['wrong_queue']}**. Sent to triage: {s['triaged']}. "
-        f"Rules behaved as the dataset expects on {s['rules_as_expected']}/{s['items']}.",
+        f"Rules behaved as the dataset expects on {s['rules_as_expected']}/{s['items']}. "
+        f"Router model calls that failed: **{s['model_errors']}**"
+        + (
+            " (those items went to triage because the model was unavailable: the model and "
+            "triage scores above do not measure the model)."
+            if s["model_errors"]
+            else "."
+        ),
         "",
         "| Item | Expected | Routed | By | Confidence |",
         "|---|---|---|---|---|",
     ]
     for r in records:
         mark = "" if r.correct else " ✗"
+        mark += " (model error)" if r.model_failed else ""
         confidence = f"{r.confidence:.2f}" if r.confidence is not None else "-"
         out.append(f"| {r.id} | {r.expected} | {r.routed_to}{mark} | {r.method} | {confidence} |")
     return out

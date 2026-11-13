@@ -281,7 +281,56 @@ def test_rules_match_whole_words_and_categories_outweigh_keywords() -> None:
         RULES, title="My laptop and VPN", description="for payslips", category="People"
     )
     assert [s.department for s in scores] == [HR, IT]
-    assert scores[0].points == 10
+    assert (scores[0].category, scores[0].points) == (True, 0)
+
+
+def test_a_chosen_category_outweighs_any_number_of_keywords() -> None:
+    # A weight of 10 per category let 11 keyword hits of another department win over it.
+    many = tuple(f"word{i}" for i in range(12))
+    rules = [
+        RuleView(uuid.uuid4(), FINANCE, many, ()),
+        RuleView(uuid.uuid4(), HR, (), ("people",)),
+    ]
+    text = " ".join(many)
+    scores = match_rules(rules, title=text, description="", category="People")
+    assert [s.department for s in scores] == [HR, FINANCE]
+    assert scores[1].points == 12
+
+
+async def test_a_chosen_category_decides_against_many_keywords() -> None:
+    many = tuple(f"word{i}" for i in range(11))
+    rules = [
+        RuleView(uuid.uuid4(), FINANCE, many, ()),
+        RuleView(uuid.uuid4(), HR, (), ("people",)),
+    ]
+    decision = await decide_route(
+        title=" ".join(many),
+        description="",
+        category="People",
+        departments=DEPARTMENTS,
+        rules=rules,
+        policy=RoutingPolicy(),
+        llm=FakeLLM(),
+        organization="Acme",
+    )
+    assert (decision.method, decision.department) == ("rule", HR)
+
+
+async def test_a_confidence_just_below_the_threshold_does_not_count() -> None:
+    # It was rounded first: 0.696 became 0.70 and passed the 0.7 threshold.
+    llm = FakeLLM(structured=[RouteChoice(department="hr", confidence=0.696)])
+    decision = await route("Question about my pension contributions", llm)
+    assert (decision.method, decision.department) == ("triage", None)
+    assert "confidence 0.696; it needs 0.70" in decision.explanation
+    exact = FakeLLM(structured=[RouteChoice(department="hr", confidence=0.7)])
+    assert (await route("Pension", exact)).method == "model"
+
+
+async def test_a_failed_model_call_is_marked_as_one() -> None:
+    failed = await route("Something odd", FakeLLM(structured=[LLMError("400")]))
+    assert (failed.method, failed.model_failed) == ("triage", True)
+    unsure = FakeLLM(structured=[RouteChoice(department="hr", confidence=0.2)])
+    assert (await route("Something odd", unsure)).model_failed is False
 
 
 async def route(

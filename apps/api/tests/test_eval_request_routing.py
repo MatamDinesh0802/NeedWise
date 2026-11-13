@@ -102,3 +102,23 @@ async def test_scoring_with_a_scripted_router() -> None:
     section = "\n".join(request_routing_section(records))
     assert "Sent to a wrong department: **1**" in section
     assert "| engineering ✗ | model | 0.90 |" in section
+
+
+async def test_failed_router_calls_are_counted_not_scored_as_caution() -> None:
+    # Every router call failed (a schema the provider refused) and the report still read
+    # "wrong department 0, triage items 5/5", like a cautious router.
+    departments, rules = seeded()
+    records = await evaluate_request_routing(
+        ITEMS,
+        departments=departments,
+        rules=rules,
+        policy=RoutingPolicy(),
+        llm=FakeLLM(),  # nothing scripted: every structured call fails
+        organization="Acme Robotics",
+    )
+    summary = summarize_request_routing(records)
+    asked = sum(r.via != "rule" for r in records)
+    assert summary["model_errors"] == asked > 0
+    section = "\n".join(request_routing_section(records))
+    assert f"Router model calls that failed: **{asked}**" in section
+    assert "(model error)" in section

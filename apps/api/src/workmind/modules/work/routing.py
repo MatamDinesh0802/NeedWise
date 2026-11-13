@@ -47,7 +47,6 @@ log = structlog.get_logger("workmind.routing")
 
 Source = Literal["form", "email", "assistant"]
 Method = Literal["rule", "model", "triage", "human"]
-CATEGORY_WEIGHT: Final = 10  # a category the requester chose outweighs any number of keywords
 MAX_TEXT: Final = 4000
 
 ROUTER_SYSTEM = """You route internal requests at {organization} to the department queue \
@@ -88,6 +87,9 @@ class RoutingDecision:
     matched: tuple[str, ...] = ()
     rule_ids: tuple[str, ...] = ()
     model: str | None = None
+    # The router model was asked and its call failed (an error, an answer that does not fit the
+    # schema): triage because the model was unavailable, not because it was unsure.
+    model_failed: bool = False
 
     def as_json(self, source: Source) -> dict[str, Any]:
         return {
@@ -129,36 +131,44 @@ def _contains(haystack: str, phrase: str) -> bool:
 @dataclass
 class _Score:
     department: DepartmentView
-    points: int = 0
+    category: bool = False  # the category the requester chose is one of this department's
+    points: int = 0  # distinct keywords found
     matched: list[str] = field(default_factory=list[str])
     rule_ids: list[str] = field(default_factory=list[str])
+
+    @property
+    def rank(self) -> tuple[bool, int]:
+        """A chosen category outweighs any number of keywords; then the most keywords."""
+        return (self.category, self.points)
 
 
 def match_rules(
     rules: Sequence[RuleView], *, title: str, description: str, category: str | None
 ) -> list[_Score]:
-    """Departments whose rules match, best first. A chosen category weighs CATEGORY_WEIGHT,
-    each distinct keyword found one point."""
+    """Departments whose rules match, best first: a department whose category the requester
+    chose comes before any other, however many keywords those match; then the most distinct
+    keywords found."""
     text = normalize(f"{title}\n{description}")
     wanted = normalize(category or "")
     scores: dict[uuid.UUID, _Score] = {}
     for rule in rules:
         hits: list[str] = []
-        points = 0
-        if wanted and any(normalize(c) == wanted for c in rule.categories):
+        chosen = bool(wanted) and any(normalize(c) == wanted for c in rule.categories)
+        if chosen:
             hits.append(f"category “{category}”")
-            points += CATEGORY_WEIGHT
+        points = 0
         for keyword in rule.keywords:
             if _contains(text, keyword):
                 hits.append(f"“{normalize(keyword)}”")
                 points += 1
-        if not points:
+        if not (chosen or points):
             continue
         score = scores.setdefault(rule.department.id, _Score(rule.department))
+        score.category = score.category or chosen
         score.points += points
         score.matched += [h for h in hits if h not in score.matched]
         score.rule_ids.append(str(rule.id))
-    return sorted(scores.values(), key=lambda s: (-s.points, s.department.key))
+    return sorted(scores.values(), key=lambda s: (not s.category, -s.points, s.department.key))
 
 
 def _department_lines(departments: Sequence[DepartmentView], rules: Sequence[RuleView]) -> str:
@@ -186,7 +196,7 @@ async def decide_route(
 ) -> RoutingDecision:
     """Rules first, then the model. Pure: no database, so the eval suite runs it as is."""
     scores = match_rules(rules, title=title, description=description, category=category)
-    if scores and (len(scores) == 1 or scores[0].points > scores[1].points):
+    if scores and (len(scores) == 1 or scores[0].rank > scores[1].rank):
         best = scores[0]
         return RoutingDecision(
             method="rule",
@@ -198,7 +208,7 @@ async def decide_route(
         )
     tie = ""
     if scores:
-        tied = [s for s in scores if s.points == scores[0].points]
+        tied = [s for s in scores if s.rank == scores[0].rank]
         tie = f"Rules matched {' and '.join(s.department.name for s in tied)} equally. "
     if not policy.use_model or llm is None or not departments:
         return RoutingDecision(
@@ -231,22 +241,25 @@ async def decide_route(
             department=None,
             explanation=f"{tie or 'No rule matched. '}The model was unavailable, so a person "
             "will route it.",
+            model_failed=True,
         )
     by_key = {d.key: d for d in departments}
     picked = by_key.get(choice.department.strip().lower())
     why = f": {reason}" if (reason := choice.reason.strip().rstrip(".")) else ""
-    confidence = round(float(choice.confidence), 2)
+    # The threshold is compared with what the model said, never a rounded value: 0.696 is below
+    # 0.7. Shown with up to three decimals, so a value just below never reads as the threshold.
+    confidence = round(float(choice.confidence), 3)
     prefix = tie or "No rule matched. "
-    if picked is not None and confidence >= policy.threshold:
+    if picked is not None and float(choice.confidence) >= policy.threshold:
         return RoutingDecision(
             method="model",
             department=picked,
             confidence=confidence,
             model=usage.model or None,
             explanation=f"{prefix}The model chose {picked.name} "
-            f"(confidence {confidence:.2f}){why}.",
+            f"(confidence {_shown(confidence)}){why}.",
         )
-    guess = f"{picked.name}, confidence {confidence:.2f}" if picked else "no department"
+    guess = f"{picked.name}, confidence {_shown(confidence)}" if picked else "no department"
     return RoutingDecision(
         method="triage",
         department=None,
@@ -255,6 +268,12 @@ async def decide_route(
         explanation=f"{prefix}The model was not sure enough ({guess}; it needs "
         f"{policy.threshold:.2f}){why}. A person will route it.",
     )
+
+
+def _shown(confidence: float) -> str:
+    """0.9 -> "0.90", 0.696 -> "0.696": two decimals, three when the third one counts."""
+    text = f"{confidence:.3f}"
+    return text[:-1] if text.endswith("0") else text
 
 
 # --- Loading and creating --------------------------------------------------------------------

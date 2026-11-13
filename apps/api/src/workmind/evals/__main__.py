@@ -359,7 +359,8 @@ async def run(args: argparse.Namespace) -> int:
         print(
             f"request routing: {s['correct']}/{s['items']} correct queue, "
             f"{s['wrong_queue']} to a wrong department, {s['triaged']} to triage, rules as "
-            f"expected on {s['rules_as_expected']}/{s['items']}",
+            f"expected on {s['rules_as_expected']}/{s['items']}, {s['model_errors']} router model "
+            "calls failed",
             file=sys.stderr,
         )
     if result.analytics:

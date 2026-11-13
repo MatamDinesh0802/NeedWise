@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from workmind.providers.llm import (
     AnthropicLLM,
@@ -243,3 +243,46 @@ def test_a_strict_schema_keeps_fields_named_title_or_default() -> None:
     assert "title" not in chart["properties"]["title"]
     assert "default" not in chart["properties"]["default"]
     assert schema["required"] == ["narrative", "chart"]
+
+
+class _Bounded(BaseModel):
+    confidence: float = Field(ge=0, le=1)
+    reason: str = Field(default="", max_length=300, min_length=0)
+    picks: list[int] = Field(min_length=2, max_length=5)
+    one: list[str] = Field(min_length=1)
+
+
+def _keywords(node: Any) -> set[str]:
+    if isinstance(node, dict):
+        found: set[str] = set()
+        for key, value in node.items():  # pyright: ignore[reportUnknownVariableType]
+            found.add(str(key))  # pyright: ignore[reportUnknownArgumentType]
+            found |= _keywords(value)
+        return found
+    if isinstance(node, list):
+        return set().union(*(_keywords(v) for v in node))  # pyright: ignore[reportUnknownVariableType]
+    return set()
+
+
+def test_a_strict_schema_leaves_out_constraints_the_provider_refuses() -> None:
+    # Claude answered 400 "For number type, properties maximum, minimum are not supported" to
+    # the router's schema, so every request no rule matched went to triage.
+    from workmind.modules.work.routing import RouteChoice
+
+    for model in (_Bounded, RouteChoice):
+        schema = _strict_schema(model)
+        assert not _keywords(schema) & {
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "maxLength",
+            "minLength",
+            "maxItems",
+        }
+    bounded = _strict_schema(_Bounded)["properties"]
+    assert "minItems" not in bounded["picks"]
+    assert bounded["one"]["minItems"] == 1  # 0 or 1 is supported
+    # The reply is still validated against the model itself.
+    with pytest.raises(ValueError, match="less than or equal to 1"):
+        RouteChoice.model_validate_json('{"department": "hr", "confidence": 1.5, "reason": ""}')

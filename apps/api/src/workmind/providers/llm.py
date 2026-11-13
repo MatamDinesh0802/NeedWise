@@ -568,9 +568,29 @@ class PinnedModel:
         )
 
 
+# Constraints that strict structured outputs refuse (Claude answers 400 "For number type,
+# properties maximum, minimum are not supported"). They are left out of the schema the model
+# gets; the reply is still validated against the full Pydantic model, so they still hold.
+UNSUPPORTED_CONSTRAINTS = frozenset(
+    {
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "minLength",
+        "maxLength",
+        "maxItems",
+        "uniqueItems",
+    }
+)
+
+
 def _strict_schema(schema: type[BaseModel]) -> dict[str, Any]:
     """JSON schema with additionalProperties: false and every property required, as strict
-    structured outputs expect. Optional fields become nullable instead of omittable."""
+    structured outputs expect. Optional fields become nullable instead of omittable. Numeric,
+    length and array-size constraints are dropped (only minItems 0 or 1 is kept): the provider
+    refuses them, and the caller validates the reply with the model itself."""
     raw = schema.model_json_schema()
 
     def tighten(node: Any, *, names: bool = False) -> Any:  # pyright: ignore[reportUnknownParameterType]
@@ -582,8 +602,10 @@ def _strict_schema(schema: type[BaseModel]) -> dict[str, Any]:
             node = {
                 k: tighten(v, names=k in ("properties", "$defs"))
                 for k, v in node.items()  # pyright: ignore[reportUnknownVariableType]
-                if k not in skip
+                if k not in skip and k not in UNSUPPORTED_CONSTRAINTS
             }
+            if node.get("minItems", 0) not in (0, 1):
+                del node["minItems"]
             if node.get("type") == "object" and "properties" in node:
                 node["additionalProperties"] = False
                 node["required"] = list(node["properties"])
