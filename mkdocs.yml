@@ -190,3 +190,10 @@ nav:
       - "#4 Hybrid search, measured": devlog/post-04-hybrid-search-measured.md
       - "#5 Same question, two people": devlog/post-05-same-question-two-people.md
       - "#6 Multi-agent, measured": devlog/post-06-multi-agent-measured.md
+      - "#7 Knowledge in your IDE": devlog/post-07-company-knowledge-in-your-ide.md
+      - "#8 Permissions in sync": devlog/post-08-keeping-permissions-in-sync.md
+      - "#9 When AI asks permission": devlog/post-09-when-should-ai-ask-permission.md
+      - "#10 Meetings to commitments": devlog/post-10-meeting-to-commitments.md
+      - "#11 LLM-written SQL, safely": devlog/post-11-llm-writes-sql-safely.md
+      - "#12 A new agent without code": devlog/post-12-new-agent-without-code.md
+      - "#13 v1.0: what I learned": devlog/post-13-v1-what-i-learned.md
