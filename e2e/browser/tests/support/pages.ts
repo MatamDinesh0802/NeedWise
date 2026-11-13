@@ -44,6 +44,7 @@ export const ADMIN_PAGES: readonly AppPage[] = [
   ["/admin/budgets", "Budgets"],
   ["/admin/audit", "Audit log"],
   ["/admin/retention", /^Retention/],
+  ["/admin/legal-holds", /^Legal holds/],
 ].map(([path, heading]) => ({ path: path as string, section: "Admin", heading: { name: heading, level: 3 } }));
 
 /** The administration navigation's link names, in order. */
@@ -62,11 +63,12 @@ export const ADMIN_SECTION_LINKS = [
   "Budgets",
   "Audit log",
   "Retention",
+  "Legal holds",
 ];
 
 /** The pages the accessibility and layout checks cover. */
 export const MAIN_PATHS = ["/", "/chat", "/knowledge", "/agents", "/approvals", "/tasks", "/requests", "/meetings", "/insights", "/analytics", "/settings"];
-export const MAIN_ADMIN_PATHS = ["/admin/people", "/admin/agents", "/admin/workflows", "/admin/automation", "/admin/models", "/admin/budgets", "/admin/governance", "/admin/audit", "/admin/retention"];
+export const MAIN_ADMIN_PATHS = ["/admin/people", "/admin/agents", "/admin/workflows", "/admin/automation", "/admin/models", "/admin/budgets", "/admin/governance", "/admin/audit", "/admin/retention", "/admin/legal-holds"];
 
 export function sectionTitle(page: Page) {
   return page.getByRole("heading", { level: 1 });
