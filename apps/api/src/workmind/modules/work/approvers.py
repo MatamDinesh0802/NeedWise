@@ -17,9 +17,11 @@ an any-of group: everyone it resolves to gets a copy of the approval, the first 
 answers for the stage, and a chain's next stage starts only when the previous one approved.
 
 Never self-approval: every rule other than a single named person leaves out the person who
-asked. A stage left with nobody is refused when the action is proposed (and, for a chain's
-later stage, when it starts). People are resolved when their stage starts, with the
-directory as it is then: active members (never guests).
+asked. A chain needs a different person at every stage: whoever approved an earlier stage of a
+request gets no copy of a later one (nor an escalated copy), and cannot approve it. A stage left
+with nobody is refused when the action is proposed (also when no assignment of distinct people
+to the stages exists), and, for a chain's later stage, when it starts. People are resolved when
+their stage starts, with the directory as it is then: active members (never guests).
 """
 
 import uuid
@@ -255,12 +257,31 @@ async def resolve_stage(
     return [p for p in resolved if p != requester]
 
 
+def distinct_people(stages: Sequence[Sequence[uuid.UUID]]) -> bool:
+    """Whether every stage can be approved by a different person (a matching of stages to
+    people, by augmenting paths: chains have at most MAX_STAGES stages)."""
+    holder: dict[uuid.UUID, int] = {}
+
+    def place(stage: int, tried: set[uuid.UUID]) -> bool:
+        for candidate in stages[stage]:
+            if candidate in tried:
+                continue
+            tried.add(candidate)
+            if candidate not in holder or place(holder[candidate], tried):
+                holder[candidate] = stage
+                return True
+        return False
+
+    return all(place(index, set()) for index in range(len(stages)))
+
+
 async def first_stage(session: AsyncSession, rule: Rule, requester: uuid.UUID) -> list[uuid.UUID]:
     """The first stage's approvers, after checking that every stage resolves to somebody other
-    than the requester right now (a chain that cannot finish is refused at once, not days
-    later). Raises RuleError naming the stage."""
+    than the requester right now, and that the stages can be approved by different people (a
+    chain that cannot finish is refused at once, not days later). Raises RuleError naming the
+    stage."""
     single = is_single_person(rule)
-    first: list[uuid.UUID] = []
+    resolved: list[list[uuid.UUID]] = []
     for index, stage in enumerate(rule):
         people = await resolve_stage(session, stage, requester, single=single)
         if not people:
@@ -269,9 +290,13 @@ async def first_stage(session: AsyncSession, rule: Rule, requester: uuid.UUID) -
                 f"Nobody can approve {where} ({describe([stage])}): approvers must be active "
                 "colleagues other than the person who asked"
             )
-        if index == 0:
-            first = people
-    return first
+        resolved.append(people)
+    if not distinct_people(resolved):
+        raise RuleError(
+            f"The chain ({describe(rule)}) needs a different person at each of its "
+            f"{len(rule)} stages, and these stages do not have that many people between them"
+        )
+    return resolved[0]
 
 
 # --- Escalation targets ----------------------------------------------------------------------

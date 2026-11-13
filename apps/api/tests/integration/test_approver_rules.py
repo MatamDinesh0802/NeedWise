@@ -263,6 +263,99 @@ async def test_a_chain_whose_next_stage_lost_its_approvers_fails_instead_of_runn
     assert stored.status == "failed"
 
 
+async def test_one_person_never_approves_two_stages_of_a_chain(
+    app_sessions: SessionFactory, acme: Acme
+) -> None:
+    # The docs' own example: Hannah manages Finance and is on the second stage's list, so she
+    # used to get a stage-2 copy after approving stage 1 and run the action alone.
+    sent: list[dict[str, Any]] = []
+    rule = {
+        "chain": [
+            {"department_manager": "requester"},
+            {"any_of": ["hannah.schmidt@acme.test", "priya.raman@acme.test"]},
+        ]
+    }
+    first = await ask(app_sessions, acme, "carol", rule)
+    assert first.approver_id == acme.users["hannah.schmidt"]
+    forwarded = await decide(
+        app_sessions, outbox(sent), person(acme, "hannah.schmidt"), first.id, decision="approve"
+    )
+    assert forwarded.status == "forwarded"
+    assert forwarded.result is not None
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        second = [await session.get(Approval, uuid.UUID(i)) for i in forwarded.result["next"]]
+    assert names(acme, [a.approver_id for a in second if a is not None]) == ["priya.raman"]
+
+    # A copy for an earlier decider (none is issued; e.g. one made before this rule) is refused.
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        assert second[0] is not None
+        planted = Approval(
+            tenant_id=acme.tenant_id,
+            tool="mail",
+            arguments=second[0].arguments,
+            summary=second[0].summary,
+            requested_by=acme.users["carol"],
+            approver_id=acme.users["hannah.schmidt"],
+            expires_at=second[0].expires_at,
+            origin=dict(second[0].origin),
+            approver_rule=second[0].approver_rule,
+            stage=1,
+        )
+        session.add(planted)
+    with pytest.raises(ApiError) as refused:
+        await decide(
+            app_sessions,
+            outbox(sent),
+            person(acme, "hannah.schmidt"),
+            planted.id,
+            decision="approve",
+        )
+    assert (refused.value.status, sent) == (403, [])
+
+    assert second[0] is not None
+    done = await decide(
+        app_sessions, outbox(sent), person(acme, "priya.raman"), second[0].id, decision="approve"
+    )
+    assert (done.status, len(sent)) == ("executed", 1)
+
+
+async def test_a_chain_that_needs_one_person_twice_is_refused_or_fails(
+    app_sessions: SessionFactory, acme: Acme
+) -> None:
+    sent: list[dict[str, Any]] = []
+    with pytest.raises(RuleError, match="different person"):
+        await ask(
+            app_sessions,
+            acme,
+            "bob",
+            {"chain": ["hannah.schmidt@acme.test", {"department_manager": "finance"}]},
+        )
+    # Possible when proposed (Priya, then Hannah), impossible once Hannah took stage 1.
+    first = await ask(
+        app_sessions,
+        acme,
+        "carol",
+        {
+            "chain": [
+                {"any_of": ["hannah.schmidt@acme.test", "priya.raman@acme.test"]},
+                "hannah.schmidt@acme.test",
+            ]
+        },
+    )
+    hannahs = next(
+        a
+        for a in await copies(app_sessions, acme, first)
+        if a.approver_id == acme.users["hannah.schmidt"]
+    )
+    decided = await decide(
+        app_sessions, outbox(sent), person(acme, "hannah.schmidt"), hannahs.id, decision="approve"
+    )
+    assert decided.status == "failed"
+    assert decided.result is not None
+    assert "only people who approved an earlier step" in decided.result["error"]
+    assert sent == []
+
+
 # --- Escalation --------------------------------------------------------------------------------
 
 
@@ -482,3 +575,95 @@ async def test_tasks_are_reminded_before_they_are_due_and_escalated_when_overdue
     )
     assert any(n.title.startswith("Overdue since") for n in escalated)
     assert any(n.title.startswith("Nobody has picked this up yet") for n in escalated)
+
+
+async def test_an_escalated_copy_never_gives_a_later_stage_to_its_decider_or_a_shorter_window(
+    app_sessions: SessionFactory, acme: Acme
+) -> None:
+    # Bob's chain: his manager (Marcus), then an org admin. Stage 1 escalates to the org admins
+    # (Marcus has no backup and manages his department alone); Erin approves that copy. Stage 2
+    # used to go to Erin again, with the 42 hours stage 1 had left instead of the 72 h TTL.
+    sent: list[dict[str, Any]] = []
+    first = await ask(
+        app_sessions,
+        acme,
+        "bob",
+        {"chain": [{"department_manager": "requester"}, {"role": "org_admins"}]},
+    )
+    now = datetime.now(UTC)
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        await session.execute(
+            update(Approval)
+            .where(Approval.id == first.id)
+            .values(created_at=now - timedelta(hours=30), expires_at=now + timedelta(hours=42))
+        )
+    await run_escalation(app_sessions, acme.tenant_id, now)
+    stage_one = await copies(app_sessions, acme, await reload(app_sessions, acme, first))
+    assert "erin" in names(acme, [a.approver_id for a in stage_one])
+    erins = next(a for a in stage_one if a.approver_id == acme.users["erin"])
+
+    forwarded = await decide(
+        app_sessions, outbox(sent), person(acme, "erin", "admin"), erins.id, decision="approve"
+    )
+    assert forwarded.status == "forwarded"
+    assert forwarded.result is not None
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        second = [await session.get(Approval, uuid.UUID(i)) for i in forwarded.result["next"]]
+    assert names(acme, [a.approver_id for a in second if a is not None]) == ["priya.raman"]
+    stage_two_copy = second[0]
+    assert stage_two_copy is not None
+    window = stage_two_copy.expires_at - datetime.now(UTC)
+    assert timedelta(hours=71) < window <= timedelta(hours=72)
+
+    # Escalating stage 2 never hands it back to Erin either.
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        await session.execute(
+            update(Approval)
+            .where(Approval.id == stage_two_copy.id)
+            .values(created_at=now - timedelta(hours=30))
+        )
+    await run_escalation(app_sessions, acme.tenant_id, datetime.now(UTC))
+    stage_two = await copies(app_sessions, acme, await reload(app_sessions, acme, stage_two_copy))
+    assert "erin" not in names(acme, [a.approver_id for a in stage_two])
+
+
+async def test_an_edit_changes_the_summary_that_describes_the_action(
+    app_sessions: SessionFactory, acme: Acme
+) -> None:
+    # The card's header and the inbox kept the proposal's subject after the approver edited it.
+    sent: list[dict[str, Any]] = []
+    registry = outbox(sent)
+    base = registry.get("mail")
+    assert base is not None
+    registry = ToolRegistry()
+    registry.register(
+        Tool(
+            "mail",
+            "Send mail",
+            Mail,
+            "external",
+            "assistant:ask",
+            base.handler,
+            summarize=lambda a: f"Send an email to {a['to']}: {a['body']}",
+        )
+    )
+    async with tenant_transaction(app_sessions, acme.tenant_id) as session:
+        first = await propose(
+            session,
+            person(acme, "bob"),
+            tool="mail",
+            arguments={"to": "board@acme.test", "body": "Q4 budget"},
+            summary="Weekly report: Send an email to board@acme.test: Q4 budget",
+            rule=parse_rule("marcus.bell@acme.test"),
+        )
+    done = await decide(
+        app_sessions,
+        registry,
+        person(acme, "marcus.bell"),
+        first.id,
+        decision="approve",
+        edited_arguments={"to": "board@acme.test", "body": "Q4 budget (checked)"},
+    )
+    assert done.status == "executed"
+    assert done.summary == "Weekly report: Send an email to board@acme.test: Q4 budget (checked)"
+    assert (await reload(app_sessions, acme, first)).summary == done.summary

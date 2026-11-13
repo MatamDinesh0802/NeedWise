@@ -58,10 +58,17 @@ approver:                                           # all of these steps, in ord
 - **Never self-approval:** a rule never includes the person who asked (a single named person
   keeps its old meaning, so a workflow's owner may still name themselves). Guests never
   approve; disabled people are left out.
+- **A different person at every step:** whoever approved an earlier step of a chain gets no copy
+  of a later step, not even through an escalation, and an approval by them is refused (`403`).
+  In the example above, a Finance requester's first step goes to Hannah (their manager), so the
+  second step goes to Priya alone.
 - People are resolved when their step starts, with the directory as it is then. A request
   whose rule leaves a step with nobody is refused at once (`no_approver`: the research agent
-  says so; a workflow step fails); a chain whose later step has nobody left when it starts
-  fails instead of running half-approved.
+  says so; a workflow step fails), and so is a chain whose steps do not have enough different
+  people between them; a chain whose later step has nobody left when it starts (only people who
+  approved earlier steps, or nobody active) fails instead of running half-approved. A chain
+  step approved through an escalated copy gives the next step the request's full time to
+  decide.
 - **Where rules apply:** a workflow step's own `approver`; otherwise the organization's rule for
   that tool (Admin › Automation), for workflow steps and for the actions the assistant proposes
   in research mode; otherwise the default above.

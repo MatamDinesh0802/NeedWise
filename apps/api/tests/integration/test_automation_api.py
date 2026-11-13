@@ -333,6 +333,11 @@ async def test_the_assistants_actions_follow_the_tenants_approver_rule(
     card = api.get(f"/api/v1/approvals/{approval.id}", headers=acme.as_("bob")).json()
     assert card["rule"] == "a manager of the requester's department"
     assert (card["stage"], card["stages"]) == (1, 1)
+    # The model is told who decides: it used to say the action waited for Bob's own approval,
+    # though Bob cannot decide it (decide() answers 404 to him).
+    (reply,) = llm.tool_replies
+    assert "waits for Marcus Bell to approve it" in reply.content
+    assert "waiting for their approval" not in reply.content
 
     # Alice manages HR: nobody else can approve her email, so nothing is proposed.
     alice = RequestContext(

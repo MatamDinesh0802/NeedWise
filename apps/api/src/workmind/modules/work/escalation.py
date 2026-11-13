@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import User
-from workmind.modules.work.approvals import add_copy
+from workmind.modules.work.approvals import add_copy, earlier_deciders
 from workmind.modules.work.approvers import (
     escalation_targets,
     managers_of_department_id,
@@ -192,7 +192,9 @@ async def _escalate_approvals(
             approval.approver_id,
             first_choice=policy.escalate_to,
             backup=await _backup_of(session, approval.approver_id),
-            exclude=[approval.requested_by, *holders],
+            # Never the requester, someone who already holds a copy, or someone who approved an
+            # earlier stage of this chain (two stages are two people).
+            exclude=[approval.requested_by, *holders, *await earlier_deciders(session, approval)],
         )
         details: dict[str, object] = {
             "approver": str(approval.approver_id),

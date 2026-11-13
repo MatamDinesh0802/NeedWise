@@ -17,8 +17,9 @@ Approver rules (approvers.py) say who those approvers are: a named person, the o
 department's managers, any one of a group, or a chain of stages that all approve in order. A
 chain's stage that approves is "forwarded": the next stage's approvers get their copies, with
 the arguments as approved so far, and only the last stage's approval runs the action. Rules
-never resolve to the person who asked. An escalation (escalation.py) adds copies for the
-escalation target to the same stage.
+never resolve to the person who asked, and a chain never to someone who approved one of its
+earlier stages (earlier_deciders): two stages are two people. An escalation (escalation.py)
+adds copies for the escalation target to the same stage, under the same two exclusions.
 """
 
 import uuid
@@ -34,10 +35,12 @@ from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.governance.audit import Actor, record_event
+from workmind.modules.identity.models import User
 from workmind.modules.identity.service import load_identity
 from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError, ToolRegistry
 from workmind.modules.work.approvers import (
+    MAX_STAGES,
     Rule,
     RuleError,
     describe,
@@ -176,6 +179,39 @@ async def add_copy(
     return approval
 
 
+async def earlier_deciders(session: AsyncSession, approval: Approval) -> list[uuid.UUID]:
+    """Who approved the earlier stages of this approval's chain request, following
+    `origin.forwarded_from` back to the first stage. Empty outside a chain's later stages."""
+    deciders: list[uuid.UUID] = []
+    seen: set[str] = set()
+    current = approval.origin.get("forwarded_from")
+    while isinstance(current, str) and current not in seen and len(seen) <= MAX_STAGES:
+        seen.add(current)
+        try:
+            previous = await session.get(Approval, uuid.UUID(current))
+        except ValueError:
+            break
+        if previous is None:
+            break
+        if previous.decided_by is not None:
+            deciders.append(previous.decided_by)
+        current = previous.origin.get("forwarded_from")
+    return deciders
+
+
+async def approver_names(session: AsyncSession, approval: Approval) -> list[str]:
+    """The display names of everyone holding a copy of this approval's request, sorted."""
+    request_id = approval.origin.get("request_id")
+    holders = (
+        select(Approval.approver_id).where(Approval.origin["request_id"].astext == str(request_id))
+        if request_id
+        else select(Approval.approver_id).where(Approval.id == approval.id)
+    )
+    return sorted(
+        (await session.scalars(select(User.display_name).where(User.id.in_(holders)))).all()
+    )
+
+
 def _stage_note(rule: Rule | None, stage: int) -> str:
     if rule is None or len(rule) < 2:
         return ""
@@ -224,6 +260,14 @@ async def decide(
             problem = await kind.check(session, approval, decider)
             if problem is not None:
                 raise ApiError(403, "not_allowed", "You may not decide this", problem)
+        if decision == "approve" and decider.user_id in await earlier_deciders(session, approval):
+            # Never issued (stages leave earlier deciders out); refused all the same.
+            raise ApiError(
+                403,
+                "not_allowed",
+                "You may not decide this",
+                "You approved an earlier step of this request: another person approves this one.",
+            )
         # Claim it atomically: a double click or two devices can never run the action twice.
         claimed = await session.scalar(
             update(Approval)
@@ -242,6 +286,8 @@ async def decide(
         if claimed is None:
             raise ApiError(409, "not_pending", "This approval was already decided or has expired")
         await session.refresh(approval)
+        if decision == "approve" and edited_arguments is not None:
+            _summarize_edit(registry, approval, edited_arguments)
         if request_id := approval.origin.get("request_id"):
             # The same request went to several approvers: this decision answers it for all.
             await session.execute(
@@ -295,21 +341,48 @@ async def decide(
     return approval
 
 
+def _summarize_edit(registry: ToolRegistry, approval: Approval, edited: dict[str, Any]) -> None:
+    """The approval's title describes what runs: an edit that changes the tool's own
+    description of the call (e.g. an email's subject) changes it in the summary too, so the
+    inbox and the card's header show the edited action, not the proposal."""
+    tool = registry.get(approval.tool)
+    if tool is None:
+        return
+    try:
+        before, after = tool.describe(approval.arguments), tool.describe(edited)
+    except (KeyError, TypeError, ValueError):
+        return
+    if before != after and before in approval.summary:
+        approval.summary = approval.summary.replace(before, after, 1)[:1000]
+
+
 async def _forward(session: AsyncSession, approval: Approval, rule: Rule, now: datetime) -> bool:
     """A chain's stage approved: the next stage's approvers get copies, with the arguments as
     approved so far. Returns False (and marks the request failed) when the next stage has
     nobody left who may decide: the action never runs half-approved."""
     stage = approval.stage + 1
+    # Two stages are two people: whoever approved this stage or an earlier one gets no copy.
+    decided = {approval.decided_by, *await earlier_deciders(session, approval)}
     try:
-        approvers = await resolve_stage(session, rule[stage], approval.requested_by)
+        resolved = await resolve_stage(session, rule[stage], approval.requested_by)
     except RuleError as exc:
         approvers, problem = [], str(exc)
     else:
-        problem = f"nobody can approve step {stage + 1} of {len(rule)} ({describe([rule[stage]])})"
+        approvers = [p for p in resolved if p not in decided]
+        problem = (
+            f"nobody can approve step {stage + 1} of {len(rule)} ({describe([rule[stage]])})"
+            + (": only people who approved an earlier step" if resolved else "")
+        )
     if not approvers:
         approval.status, approval.result = "failed", {"error": problem}
         return False
-    ttl = approval.expires_at - approval.created_at
+    # The request's own time to decide each stage: an escalated copy was created later than
+    # the original, with the original's deadline, so its own dates would shorten it.
+    original = (
+        await session.get(Approval, approval.escalated_from) if approval.escalated_from else None
+    )
+    timed = original or approval
+    ttl = timed.expires_at - timed.created_at
     origin = {
         **approval.origin,
         "request_id": str(uuid.uuid4()),

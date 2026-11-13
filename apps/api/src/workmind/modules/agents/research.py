@@ -16,8 +16,8 @@ from workmind.core.tenancy import tenant_transaction
 from workmind.modules.assistant.safety import without_images
 from workmind.modules.tools.execute import execute_tool
 from workmind.modules.tools.registry import ToolError, ToolRegistry
-from workmind.modules.work.approvals import propose
-from workmind.modules.work.approvers import RuleError
+from workmind.modules.work.approvals import approver_names, propose
+from workmind.modules.work.approvers import RuleError, describe
 from workmind.modules.work.policy import load_policy
 from workmind.providers.llm import (
     LLMMessage,
@@ -113,6 +113,7 @@ async def research(
                 try:
                     async with tenant_transaction(sessions, ctx.tenant_id) as session:
                         policy = await load_policy(session)
+                        rule = policy.approver_rules.rule_for(call.name)
                         approval = await propose(
                             session,
                             ctx,
@@ -120,7 +121,12 @@ async def research(
                             arguments=call.arguments,
                             summary=summary,
                             origin={"via": "research", **(origin or {})},
-                            rule=policy.approver_rules.rule_for(call.name),
+                            rule=rule,
+                        )
+                        deciders = (
+                            await approver_names(session, approval)
+                            if approval.approver_id != ctx.user_id
+                            else []
                         )
                 except RuleError as problem:
                     await record(ResearchStep(call.name, ok=False, error="no_approver"))
@@ -134,9 +140,18 @@ async def research(
                         summary=summary,
                     )
                 )
+                if not deciders:  # the person who asked confirms it
+                    return (
+                        f"Approval requested: {summary}. It runs only if the person approves "
+                        "it; tell them it is waiting for their approval. Do not call it again.",
+                        False,
+                    )
+                rule_words = f" (the organization's rule: {describe(rule)})" if rule else ""
                 return (
-                    f"Approval requested: {summary}. It runs only if the person approves it; "
-                    "tell them it is waiting for their approval. Do not call it again.",
+                    f"Approval requested: {summary}. It waits for {', '.join(deciders)} to "
+                    f"approve it{rule_words}, not for the person who asked, who cannot approve "
+                    "it themselves. Tell them who decides it and that it runs only once "
+                    "approved. Do not call it again.",
                     False,
                 )
             await record(ResearchStep(call.name, ok=False, error=exc.code))
