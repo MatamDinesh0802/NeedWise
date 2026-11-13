@@ -14,7 +14,9 @@ throwaway shop databases (shop_databases.py) and the Acme people:
 """
 
 import asyncio
+import base64
 import ipaddress
+import os
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -39,6 +41,7 @@ from workmind.evals.runner import Askers, Evaluator
 from workmind.modules.analytics import engine, remote
 from workmind.modules.analytics.compiler import SemanticQuery
 from workmind.modules.analytics.models import AnalyticsSource
+from workmind.modules.analytics.rotation import rotate_source_passwords
 from workmind.modules.analytics.service import Analytics, AnalyticsError
 from workmind.modules.analytics.sources import SourceIn, SourcePatch
 from workmind.modules.governance.models import AuditEvent
@@ -461,6 +464,31 @@ async def test_private_hosts_need_the_operators_setting(
         with pytest.raises(AnalyticsError) as refused:
             await strict.create_source(erin, shop.source(host=host))
         assert refused.value.code == "invalid_source", host
+
+
+async def test_rotation_moves_source_passwords_to_the_new_key(shop: Shop) -> None:
+    await shop.connect()
+    new = base64.b64encode(os.urandom(32)).decode()
+    rotated = Analytics(
+        shop.sessions, shop.service.root, pool=shop.service.pool, keyring=KeyRing(new),
+        source_networks=LOCAL,
+    )  # fmt: skip
+
+    report = await rotate_source_passwords(shop.sessions, KeyRing(new, [KEY]))
+    try:
+        assert report.rotated >= 1
+        assert report.failed == 0
+        # Only the new key opens it now; the old one alone cannot.
+        rows = (await rotated.run_sql(await shop.ctx("carol"), "SELECT 1", dataset="shop")).rows
+        assert rows == [[1]]
+        with pytest.raises(AnalyticsError) as old:
+            await shop.sql("carol", "SELECT 1")
+        assert old.value.code == "source_unavailable"
+        again = await rotate_source_passwords(shop.sessions, KeyRing(new, [KEY]))
+        assert (again.rotated, again.current >= 1) == (0, True)
+    finally:  # back to the test key for the other tests
+        await rotate_source_passwords(shop.sessions, KeyRing(KEY, [new]))
+    assert await shop.sql("carol", "SELECT 1") == [[1]]
 
 
 async def test_a_moved_source_needs_its_password_again(shop: Shop) -> None:
