@@ -4,7 +4,7 @@
 - **Numbers:** from the v1.0.0 release check ([benchmarks](../benchmarks/v1.0.md)) and the final test runs of 2026-11-13 (1,967 backend, 1,197 web and 184 browser tests).
 - **Video:** upload `docs/media/demo.mp4` (1 min 32 s, recorded on 2026-11-13 with Gemini 3.1 Flash Lite) directly to LinkedIn. `docs/media/demo.gif` is the fallback.
 - **Before posting:**
-  - the repo is public and the v1.0.0 release is published
+  - done on 2026-11-13: the repository is public and v1.0.0 is released
   - "10 days" is true for you. Git history: first commit 2026-11-04, last 2026-11-13.
 
 ---

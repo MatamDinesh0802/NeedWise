@@ -2,8 +2,7 @@
 
 NeedWise is built in public, one phase at a time ([Roadmap](../ROADMAP.md)). Each milestone gets
 a short post that shows something real: a diagram, a measured number, the app itself. These are
-the drafts. None has been posted yet: they wait until the repository is public, because each one
-links to it.
+the drafts. None has been posted yet.
 
 Every number in a post comes from a committed evaluation report or a measured page of these
 docs, and every image is generated from the code or the running app (the images and their HTML

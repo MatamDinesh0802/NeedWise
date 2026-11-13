@@ -1,6 +1,6 @@
 # NeedWise — Roadmap, Releases and Go-to-Market
 
-> **Status:** plan v0.2 · **Phases 0 to 12 built; v1.0.0 tagged on 2026-11-13**, not yet published (no public repository; Phase 7 has work remaining) · **Last updated:** 2026-11-13
+> **Status:** plan v0.2 · **Phases 0 to 12 built; v1.0.0 released on 2026-11-13** ([GitHub Release](https://github.com/MatamDinesh0802/NeedWise/releases/tag/v1.0.0), images on GHCR; Phase 7 has work remaining) · **Last updated:** 2026-11-13
 > **Companion doc:** [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## 1. Strategy in one paragraph
@@ -605,8 +605,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   [rescored](../evals/results/2026-11-12-redteam-v1-rescored.md)). One model, one run.
 - [x] **Dependency and image scanning in CI** ([supply chain](security/supply-chain.md)):
   osv-scanner, Trivy (repository, images, the rendered Helm chart), hadolint, actionlint, zizmor,
-  SBOMs, CodeQL, Dependabot; images, actions and scanners pinned. `make scan` passes locally;
-  the workflows have never run on GitHub (no repository yet).
+  SBOMs, CodeQL, Dependabot; images, actions and scanners pinned. `make scan` passes locally,
+  and the workflows pass on GitHub since 2026-11-13.
 - [x] **Load tests and performance tuning** ([load benchmarks](benchmarks/load.md)): 10 to 800
   simulated users on the main stack with a stub model, on one laptop. Up to 200 users nothing
   was saturated; at 400 the API's one process was (search p95 46 to 420 ms). Batched token
@@ -631,7 +631,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   run `nw authz sync`). Not tested: a cloud cluster, TLS, managed databases, the embedding
   server, model calls, an upgrade between two NeedWise versions.
 - [x] **Docs site** (MkDocs, `make docs`, strict build in CI), with the configuration and HTTP
-  API reference generated from the code. Not published: Pages needs a public repository.
+  API reference generated from the code. Not hosted: the docs are read in the repository.
 - [x] **Browser end-to-end suite** in CI (`e2e/browser`): 162 tests pass on the rebuilt stack,
   including the 3 that call the model; the API end-to-end tests pass too (16, model tests
   included).
@@ -645,8 +645,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - [x] **A case study** ([case study](case-study.md)) of the build for the synthetic Acme Robotics:
   choices, phases, results, what went wrong, costs, lessons.
 - [x] **The v1.0.0 release** ([release notes](releases/v1.0.0.md), [releasing](operations/releasing.md#v100)):
-  tagged on 2026-11-13 as an annotated tag in the maintainer's repository, not published (no
-  public repository, so no GitHub Release and no images). See *Release check* below.
+  released on 2026-11-13: a [GitHub Release](https://github.com/MatamDinesh0802/NeedWise/releases/tag/v1.0.0) and multi-arch images on GHCR,
+  after the release workflow's permission gate passed on those images. See *Release check* below.
 - [x] **A final review** of the merged code (2026-11-13): security, operations, CI and the
   published claims. Fixed, each security and correctness fix with a regression test: `nw tenant
   delete --keycloak` missed organizations whose name did not contain the slug (Keycloak searches
@@ -658,7 +658,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   tenant session index only grew. Operations: backups pin objects before the database snapshot (a
   delete during a backup aborted it or left a restored row without its file), refuse a Postgres
   role without `BYPASSRLS`, validate `--keep` and remove failed runs; restores name stuck meetings
-  and refuse other embedding settings; PostgreSQL 18 is stated as required. CI, never run on
+  and refuse other embedding settings; PostgreSQL 18 is stated as required. CI, before its first run on
   GitHub: object storage owned by uid 10001 on Linux runners (seeding failed), the relevance floor
   off only for the permission gate (the guest e2e test failed without a model key), a gitleaks
   allowlist for 10 fixture findings, release-please signs off its commits. Claims: report-backed

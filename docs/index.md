@@ -14,9 +14,10 @@ The [full walkthrough](media/demo.mp4) (1 min 32 s): cited answers, the same que
 access, department agents, an approval, a meeting, a chart with its SQL, and an administrator
 adding an agent.
 
-!!! warning "Status: v1.0.0, tagged on 2026-11-13, not published yet"
-    All 13 phases of the [roadmap](ROADMAP.md) are built ([release notes](releases/v1.0.0.md)).
-    There is no public repository yet, so no published images: build them from the tag.
+!!! info "Status: v1.0.0, released on 2026-11-13"
+    All 13 phases of the [roadmap](ROADMAP.md) are built ([release notes](releases/v1.0.0.md),
+    [GitHub Release](https://github.com/MatamDinesh0802/NeedWise/releases/tag/v1.0.0)). Images: `ghcr.io/matamdinesh0802/needwise-api:1.0.0` and `ghcr.io/matamdinesh0802/needwise-web:1.0.0`
+    (linux/amd64 and linux/arm64).
     NeedWise has been run only on the fictional demo company: try it there, or on test data,
     before anything real.
 

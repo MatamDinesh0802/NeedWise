@@ -217,8 +217,7 @@ tried to transcribe a meeting that has no recording.
 - **The first bottleneck was our own code**, the per-token event path, not the database or the
   vector store.
 
-What is still missing before a real company should use it: a published release (v1.0.0 is
-tagged, not published) and a public repository, an install on a cloud or production Kubernetes cluster (the chart was only tested
+What is still missing before a real company should use it: an install on a cloud or production Kubernetes cluster (the chart was only tested
 on kind), live verification of the Drive and Slack
 connectors, an external penetration test, a judge from another model family, measurements with
 local models, and a corpus and question set much larger than Acme's.

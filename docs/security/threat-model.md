@@ -260,7 +260,7 @@ E: elevation of privilege. "Residual" lists what is not prevented.
    stream themselves must not load images.
 8. **Supply chain** is outside this review. Lockfile and image scanning, SBOMs and digest
    pinning were added by separate Phase 12 work ([supply-chain.md](supply-chain.md)); those CI
-   workflows have not run on GitHub yet.
+   workflows run on GitHub (first run 2026-11-13).
 
 ## 6. Keeping this current
 
