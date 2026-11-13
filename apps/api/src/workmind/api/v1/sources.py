@@ -28,7 +28,7 @@ from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sync import SyncDeps, sync_source
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.identity.models import SLUG_PATTERN
-from workmind.modules.knowledge import service
+from workmind.modules.knowledge import governance, service
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import delete_document_points
 from workmind.modules.knowledge.storage import owned_key
@@ -247,6 +247,7 @@ def sync_deps(request: Request) -> SyncDeps:
             google_client=(settings.google_client_id, secret(settings.google_client_secret)),
         ),
         max_bytes=settings.max_upload_bytes,
+        extensions=resources.extensions,
     )
 
 
@@ -360,7 +361,9 @@ async def google_callback(
 
 class StaleDocument(BaseModel):
     id: uuid.UUID
-    title: str
+    # None when the caller cannot read the document (a restricted collection, or a document
+    # whose own access list leaves them out): admins manage, they do not read everything.
+    title: str | None
     collection: str
     reason: Literal["expired", "not_updated"]
     updated_at: datetime
@@ -372,7 +375,7 @@ async def stale_documents(
     ctx: AdminContext, request: Request, days: int = 365
 ) -> list[StaleDocument]:
     """Documents past their `valid_until`, or not updated for `days`: candidates for review.
-    Admins see titles only, never content."""
+    Admins see titles only, never content, and only of documents they can read themselves."""
     cutoff = datetime.now(UTC) - timedelta(days=days)
     async with tenant_transaction(resources_of(request).db, ctx.tenant_id) as session:
         keys = {c.id: c.key for c in await session.scalars(select(Collection))}
@@ -384,11 +387,12 @@ async def stale_documents(
                 .limit(500)
             )
         ).all()
+        withheld = await governance.unreadable_documents(session, ctx, {d.id for d in rows})
     now = datetime.now(UTC)
     return [
         StaleDocument(
             id=d.id,
-            title=d.title,
+            title=None if d.id in withheld else d.title,
             collection=keys.get(d.collection_id, ""),
             reason="expired" if d.valid_until and d.valid_until < now else "not_updated",
             updated_at=d.updated_at,

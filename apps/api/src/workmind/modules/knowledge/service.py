@@ -2,7 +2,9 @@
 
 Visibility uses the same principal strings as retrieval (lock 1), so "can I see this document in
 the Knowledge Hub" and "can the assistant use it for me" always agree. A collection you cannot
-see answers 404, never 403, so its existence is not revealed (ARCHITECTURE 7.6).
+see answers 404, never 403, so its existence is not revealed (ARCHITECTURE 7.6). A document with
+its own access list (document_acl.py) is visible only to those on it who can see the
+collection; to anyone else it does not exist either.
 """
 
 import hashlib
@@ -18,8 +20,9 @@ from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.modules.authz.sync import enqueue
 from workmind.modules.governance.audit import Actor, record_event
-from workmind.modules.knowledge import governance
-from workmind.modules.knowledge.acl import acl_principals, document_tuple
+from workmind.modules.knowledge import document_acl, governance
+from workmind.modules.knowledge.acl import acl_principals, document_tuples
+from workmind.modules.knowledge.document_acl import AclEntry, Origin
 from workmind.modules.knowledge.models import (
     Chunk,
     Collection,
@@ -97,7 +100,11 @@ async def visible_collections(
     ).all()
     rows = await session.execute(
         select(Document.collection_id, func.count())
-        .where(Document.collection_id.in_(ids), Document.status == "ready")
+        .where(
+            Document.collection_id.in_(ids),
+            Document.status == "ready",
+            document_acl.visible_clause(ctx.principals),
+        )
         .group_by(Document.collection_id)
     )
     # Not dict(rows): Result has .keys(), so dict() would treat it as a mapping.
@@ -145,12 +152,18 @@ async def upload(
     sensitivity: str | None = None,
     source: str = "upload",
     synced: SyncedItem | None = None,
+    acl: Sequence[AclEntry] | None = None,
+    acl_origin: Origin = "source",
 ) -> UploadResult:
     """Stores the file and records a new version. A file with the same name in the same
     collection is a new version of the same document (a synced item: the same source item);
     identical bytes change nothing. New content for an official document ends its official
     status, and voids a pending request for it (docs/governance.md): approvals are for the
-    content the approver read."""
+    content the approver read.
+
+    `acl`: a new document's own access list, set in the same transaction, so it is never
+    indexed or visible with its collection's wider access first. For an existing document the
+    caller changes the list with document_acl.set_acl."""
     filename = PurePath(filename).name  # never trust a client-supplied path
     try:
         mime = detect_mime(filename, declared_mime)
@@ -224,8 +237,18 @@ async def upload(
     session.add(version)
     await session.flush()
     demoted = False
-    if is_new:
-        enqueue(session, ctx.tenant_id, writes=[document_tuple(document)])
+    if is_new and acl is not None:
+        await document_acl.set_acl(
+            session,
+            ctx.tenant_id,
+            document,
+            acl,
+            origin=acl_origin,
+            actor=Actor(type="user", id=ctx.user_id),
+            fresh=True,
+        )
+    elif is_new:
+        enqueue(session, ctx.tenant_id, writes=document_tuples(document))
     else:
         demoted = (
             await governance.new_version_stored(
@@ -264,7 +287,8 @@ async def delete_document(
             )
         ).all()
     )
-    enqueue(session, ctx.tenant_id, deletes=[document_tuple(document)])
+    grants = (await document_acl.grants_of(session, [document.id]))[document.id]
+    enqueue(session, ctx.tenant_id, deletes=document_tuples(document, grants))
     await session.execute(delete(Chunk).where(Chunk.document_id == document.id))
     await session.delete(document)
     await session.flush()

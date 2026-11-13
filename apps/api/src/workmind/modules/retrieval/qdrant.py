@@ -16,6 +16,9 @@ import httpx
 PAYLOAD_INDEXES: dict[str, dict[str, Any]] = {
     "tenant_id": {"type": "keyword", "is_tenant": True},  # tenant-optimized storage layout
     "acl": {"type": "keyword"},
+    # A document's own access list (ADR 0012): only narrows `acl`.
+    "own_acl": {"type": "bool"},
+    "doc_acl": {"type": "keyword"},
     "document_id": {"type": "keyword"},
     "collection_id": {"type": "keyword"},
     "trust": {"type": "keyword"},
@@ -48,6 +51,7 @@ class QdrantClient:
         self._http = http
         self._base = base_url.rstrip("/")
         self._headers = {"api-key": api_key} if api_key else {}
+        self._indexed: set[str] = set()  # collections whose payload indexes this process ensured
 
     async def _call(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
         try:
@@ -63,31 +67,37 @@ class QdrantClient:
 
     async def delete_collection(self, name: str) -> None:
         await self._call("DELETE", f"/collections/{name}")
+        self._indexed.discard(name)
 
     async def collection_exists(self, name: str) -> bool:
         return bool((await self._call("GET", f"/collections/{name}/exists"))["exists"])
 
     async def ensure_collection(self, name: str, *, dense_size: int) -> None:
         """Idempotent and safe under concurrency: parallel ingestions of a brand-new index (or
-        several workers) may all find it missing; whoever loses the race just carries on."""
+        several workers) may all find it missing; whoever loses the race just carries on. The
+        payload indexes are ensured once per process, so an index added in an upgrade (own_acl,
+        doc_acl) also reaches a collection created before it."""
         if await self.collection_exists(name):
-            return
-        # Created concurrently by someone else: fine, the payload indexes below are idempotent.
-        with contextlib.suppress(QdrantConflictError):
-            await self._call(
-                "PUT",
-                f"/collections/{name}",
-                {
-                    "vectors": {"dense": {"size": dense_size, "distance": "Cosine"}},
-                    "sparse_vectors": {"bm25": {"modifier": "idf"}},
-                },
-            )
+            if name in self._indexed:
+                return
+        else:
+            # Created concurrently by someone else: fine, the payload indexes are idempotent.
+            with contextlib.suppress(QdrantConflictError):
+                await self._call(
+                    "PUT",
+                    f"/collections/{name}",
+                    {
+                        "vectors": {"dense": {"size": dense_size, "distance": "Cosine"}},
+                        "sparse_vectors": {"bm25": {"modifier": "idf"}},
+                    },
+                )
         for field, schema in PAYLOAD_INDEXES.items():
             await self._call(
                 "PUT",
                 f"/collections/{name}/index?wait=true",
                 {"field_name": field, "field_schema": schema},
             )
+        self._indexed.add(name)
 
     async def list_collections(self) -> list[str]:
         result = await self._call("GET", "/collections")

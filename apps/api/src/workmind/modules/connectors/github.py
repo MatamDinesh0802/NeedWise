@@ -7,7 +7,12 @@ from typing import Any
 
 import httpx
 
-from workmind.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
+from workmind.modules.connectors.base import (
+    ConnectorError,
+    ConnectorRefusedError,
+    RemoteItem,
+    ScanResult,
+)
 
 API = "https://api.github.com"
 # Extensions WorkMind parses; others are mapped onto a parser that reads them correctly.
@@ -56,12 +61,20 @@ class GitHubConnector:
         if response.status_code == 403 and response.headers.get("x-ratelimit-remaining") == "0":
             raise ConnectorError("GitHub rate limit reached; add a token or wait")
         if response.status_code in (401, 403):
-            raise ConnectorError("GitHub refused the credentials")
+            raise ConnectorRefusedError("GitHub refused the credentials")
         if response.status_code == 404:
-            raise ConnectorError(f"{self._repo} not found (or the token cannot see it)")
+            raise ConnectorRefusedError(f"{self._repo} not found (or the token cannot see it)")
         if response.is_error:
             raise ConnectorError(f"GitHub answered HTTP {response.status_code}")
         return response
+
+    @property
+    def repo(self) -> str:
+        return self._repo
+
+    async def get(self, path: str, **params: str) -> httpx.Response:
+        """A read-only REST call with this source's token (permission sync uses it)."""
+        return await self._get(path, **params)
 
     def _wanted(self, path: str) -> bool:
         in_paths = any(p == "" or path == p or path.startswith(p + "/") for p in self._paths)

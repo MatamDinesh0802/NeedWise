@@ -2216,6 +2216,102 @@
         }
       }
     },
+    "/api/v1/documents/{document_id}/acl": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Get Document Acl",
+        "description": "The document's own access list, for the collection's editors who can see it.",
+        "operationId": "get_document_acl_api_v1_documents__document_id__acl_get",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentAclOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Set Document Acl",
+        "description": "A collection editor limits an uploaded document to some of the collection's viewers, or\nlifts the limit. Synced documents follow their source (permission sync) and meeting\ndocuments their meeting, so neither is changed here. The list only narrows: someone on it\nwho cannot view the collection still cannot see the document. The editor must stay on it,\nso nobody locks themselves out by mistake.",
+        "operationId": "set_document_acl_api_v1_documents__document_id__acl_put",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentAclUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentAclOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/collections": {
       "get": {
         "tags": [
@@ -3646,7 +3742,7 @@
           "admin"
         ],
         "summary": "Stale Documents",
-        "description": "Documents past their `valid_until`, or not updated for `days`: candidates for review.\nAdmins see titles only, never content.",
+        "description": "Documents past their `valid_until`, or not updated for `days`: candidates for review.\nAdmins see titles only, never content, and only of documents they can read themselves.",
         "operationId": "stale_documents_api_v1_admin_sources_stale_get",
         "parameters": [
           {
@@ -3674,6 +3770,102 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/identity-mappings": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Mappings",
+        "operationId": "list_mappings_api_v1_admin_identity_mappings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Save Mapping",
+        "operationId": "save_mapping_api_v1_admin_identity_mappings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MappingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingSaved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/identity-mappings/{mapping_id}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete Mapping",
+        "operationId": "delete_mapping_api_v1_admin_identity_mappings__mapping_id__delete",
+        "parameters": [
+          {
+            "name": "mapping_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mapping Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -5937,6 +6129,38 @@
   },
   "components": {
     "schemas": {
+      "AclEntryOut": {
+        "properties": {
+          "principal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principal"
+          },
+          "external": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External"
+          }
+        },
+        "type": "object",
+        "required": [
+          "principal",
+          "external"
+        ],
+        "title": "AclEntryOut"
+      },
       "ActionEdit": {
         "properties": {
           "text": {
@@ -8476,6 +8700,88 @@
         ],
         "title": "DimensionOut"
       },
+      "DocumentAclOut": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "own_acl": {
+            "type": "boolean",
+            "title": "Own Acl"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "source",
+                  "manual"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/AclEntryOut"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "own_acl",
+          "origin",
+          "updated_at",
+          "entries"
+        ],
+        "title": "DocumentAclOut"
+      },
+      "DocumentAclUpdate": {
+        "properties": {
+          "viewers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "pattern": "^(user|group|dept|dept-manager|org):[0-9a-f-]{36}$"
+                },
+                "type": "array",
+                "maxItems": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "viewers"
+        ],
+        "title": "DocumentAclUpdate",
+        "description": "`viewers`: who may see the document, within the collection's access (null: no list of\nits own, back to the collection's access)."
+      },
       "DocumentDetail": {
         "properties": {
           "id": {
@@ -8602,6 +8908,11 @@
                 "type": "null"
               }
             ]
+          },
+          "own_acl": {
+            "type": "boolean",
+            "title": "Own Acl",
+            "default": false
           },
           "versions": {
             "items": {
@@ -8772,6 +9083,11 @@
                 "type": "null"
               }
             ]
+          },
+          "own_acl": {
+            "type": "boolean",
+            "title": "Own Acl",
+            "default": false
           }
         },
         "type": "object",
@@ -9405,6 +9721,113 @@
           "redirect_url"
         ],
         "title": "LogoutResponse"
+      },
+      "MappingIn": {
+        "properties": {
+          "external": {
+            "type": "string",
+            "maxLength": 340,
+            "minLength": 3,
+            "title": "External",
+            "description": "the principal as the source names it"
+          },
+          "principal": {
+            "type": "string",
+            "pattern": "^(user|group|dept|dept-manager|org):[0-9a-f-]{36}$",
+            "title": "Principal",
+            "description": "who that is in WorkMind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "external",
+          "principal"
+        ],
+        "title": "MappingIn"
+      },
+      "MappingOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "external": {
+            "type": "string",
+            "title": "External"
+          },
+          "principal": {
+            "type": "string",
+            "title": "Principal"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "external",
+          "principal",
+          "created_by",
+          "updated_at"
+        ],
+        "title": "MappingOut"
+      },
+      "MappingSaved": {
+        "properties": {
+          "mapping": {
+            "$ref": "#/components/schemas/MappingOut"
+          },
+          "documents_changed": {
+            "type": "integer",
+            "title": "Documents Changed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mapping",
+          "documents_changed"
+        ],
+        "title": "MappingSaved"
+      },
+      "MappingsOut": {
+        "properties": {
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/MappingOut"
+            },
+            "type": "array",
+            "title": "Mappings"
+          },
+          "unmapped": {
+            "items": {
+              "$ref": "#/components/schemas/UnmappedOut"
+            },
+            "type": "array",
+            "title": "Unmapped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mappings",
+          "unmapped"
+        ],
+        "title": "MappingsOut"
       },
       "MarkRead": {
         "properties": {
@@ -11495,7 +11918,14 @@
             "title": "Id"
           },
           "title": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Title"
           },
           "collection": {
@@ -12306,6 +12736,32 @@
           "for_agents"
         ],
         "title": "ToolOut"
+      },
+      "UnmappedOut": {
+        "properties": {
+          "external": {
+            "type": "string",
+            "title": "External"
+          },
+          "documents": {
+            "type": "integer",
+            "title": "Documents"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "external",
+          "documents",
+          "sources"
+        ],
+        "title": "UnmappedOut"
       },
       "UploadOut": {
         "properties": {

@@ -177,6 +177,7 @@ async def _run_sync(tenant_id: str, source_id: str) -> dict[str, Any]:
                 google_client=(settings.google_client_id, secret(settings.google_client_secret)),
             ),
             max_bytes=settings.max_upload_bytes,
+            extensions=extensions,  # permission sync, when licensed (docs/permission-sync.md)
         )
         try:
             report = await sync_source(deps, tenant, uuid.UUID(source_id))

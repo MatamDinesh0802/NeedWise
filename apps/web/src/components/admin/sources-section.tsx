@@ -706,9 +706,13 @@ function StaleDocuments() {
         <ul className="flex max-h-72 flex-col divide-y overflow-y-auto">
           {items.slice(0, 50).map((doc) => (
             <li key={doc.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-              <Link href={`/knowledge/documents/${doc.id}`} className="min-w-0 truncate underline-offset-2 hover:underline">
-                {doc.title}
-              </Link>
+              {doc.title === null ? (
+                <span className="min-w-0 truncate text-muted-foreground italic">Title withheld: you can&apos;t open this document</span>
+              ) : (
+                <Link href={`/knowledge/documents/${doc.id}`} className="min-w-0 truncate underline-offset-2 hover:underline">
+                  {doc.title}
+                </Link>
+              )}
               <span className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="font-mono">{doc.collection}</span>
                 {doc.reason === "expired" ? (

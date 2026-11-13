@@ -21,9 +21,10 @@ from workmind.modules.knowledge.governance import (
     OFFICIAL_KIND,
     official_status_kind,
     unreadable_collections,
+    unreadable_documents,
     withhold_official_request,
 )
-from workmind.modules.knowledge.models import Collection
+from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import set_document_labels
 from workmind.modules.knowledge.service import collection_access
 from workmind.modules.work.approvals import ApprovalKind, decide
@@ -82,7 +83,7 @@ def approval_kinds(resources: Resources) -> dict[str, ApprovalKind]:
 
 def _approval(a: Approval, withheld: set[uuid.UUID] | None = None) -> ApprovalOut:
     arguments, summary = a.arguments, a.summary
-    if a.tool == OFFICIAL_KIND and _collection_of(a) in (withheld or set()):
+    if a.tool == OFFICIAL_KIND and _document_of(a) in (withheld or set()):
         arguments, summary = withhold_official_request(a.arguments)
     return ApprovalOut(
         id=a.id,
@@ -109,13 +110,30 @@ def _collection_of(approval: Approval) -> uuid.UUID | None:
         return None
 
 
+def _document_of(approval: Approval) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(approval.arguments.get("document_id")))
+    except ValueError:
+        return None
+
+
 async def _withheld(
     session: AsyncSession, ctx: RequestContext, approvals: list[Approval]
 ) -> set[uuid.UUID]:
-    """Collections of official-status requests the caller cannot open: those requests are shown
-    without the document's title and the requester's note (docs/governance.md)."""
-    ids = {c for a in approvals if a.tool == OFFICIAL_KIND and (c := _collection_of(a))}
-    return await unreadable_collections(session, ctx, ids)
+    """Documents of official-status requests the caller cannot read (their collection is closed
+    to them, or their own access list leaves them out): those requests are shown without the
+    document's title and the requester's note (docs/governance.md). For a document deleted
+    since, its collection decides."""
+    requests = [a for a in approvals if a.tool == OFFICIAL_KIND and _document_of(a)]
+    ids = {d for a in requests if (d := _document_of(a))}
+    withheld = await unreadable_documents(session, ctx, ids)
+    existing = set(await session.scalars(select(Document.id).where(Document.id.in_(ids))))
+    gone = [a for a in requests if _document_of(a) not in existing]
+    closed = await unreadable_collections(
+        session, ctx, {c for a in gone if (c := _collection_of(a))}
+    )
+    withheld |= {d for a in gone if _collection_of(a) in closed and (d := _document_of(a))}
+    return withheld
 
 
 @router.get("/approvals")

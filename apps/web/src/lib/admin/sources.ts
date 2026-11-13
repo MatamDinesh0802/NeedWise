@@ -60,7 +60,8 @@ export interface SourceUpdate {
 
 export interface StaleDocument {
   id: string;
-  title: string;
+  /** Null for a document the admin can't read (its collection, or its own access list). */
+  title: string | null;
   collection: string;
   reason: "expired" | "not_updated";
   updated_at: string;
