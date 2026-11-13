@@ -2969,7 +2969,7 @@ wheels = [
 
 [[package]]
 name = "workmind"
-version = "0.0.1"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -3079,7 +3079,7 @@ dev = [
 
 [[package]]
 name = "workmind-ee"
-version = "0.0.1"
+version = "1.0.0"
 source = { editable = "../../ee/python" }
 
 [[package]]

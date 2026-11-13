@@ -20,10 +20,10 @@ build them first (below).
 
 ```bash
 # 1. Build and push the two images (no published images yet)
-docker build --build-context ee=ee -t registry.example.com/workmind/workmind-api:0.0.1 apps/api
-docker build -t registry.example.com/workmind/workmind-web:0.0.1 apps/web
-docker push registry.example.com/workmind/workmind-api:0.0.1
-docker push registry.example.com/workmind/workmind-web:0.0.1
+docker build --build-context ee=ee -t registry.example.com/workmind/workmind-api:1.0.0 apps/api
+docker build -t registry.example.com/workmind/workmind-web:1.0.0 apps/web
+docker push registry.example.com/workmind/workmind-api:1.0.0
+docker push registry.example.com/workmind/workmind-web:1.0.0
 
 # 2. Install, everything bundled
 helm install workmind deploy/helm/workmind --namespace workmind --create-namespace \

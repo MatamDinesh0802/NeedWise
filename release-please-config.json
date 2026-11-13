@@ -31,7 +31,15 @@
           "path": "apps/api/uv.lock",
           "jsonpath": "$.package[?(@.name.value == 'workmind' || @.name.value == 'workmind-ee')].version"
         },
-        { "type": "json", "path": "apps/web/package.json", "jsonpath": "$.version" }
+        { "type": "json", "path": "apps/web/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "e2e/browser/package.json", "jsonpath": "$.version" },
+        { "type": "toml", "path": "loadtests/pyproject.toml", "jsonpath": "$.project.version" },
+        {
+          "type": "toml",
+          "path": "loadtests/uv.lock",
+          "jsonpath": "$.package[?(@.name.value == 'workmind-loadtests')].version"
+        },
+        { "type": "generic", "path": "deploy/helm/workmind/Chart.yaml" }
       ]
     }
   }

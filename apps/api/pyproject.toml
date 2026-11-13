@@ -1,6 +1,6 @@
 [project]
 name = "workmind"
-version = "0.0.1"
+version = "1.0.0"
 description = "WorkMind AI API: open-source, permission-aware enterprise AI workspace"
 requires-python = ">=3.12"
 license = "Apache-2.0"

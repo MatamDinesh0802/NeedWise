@@ -1,6 +1,6 @@
 {
   "name": "workmind-e2e-browser",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "license": "Apache-2.0",
   "description": "Browser end-to-end tests for WorkMind AI, run against a running, seeded stack.",

@@ -74,13 +74,15 @@ jobs:
           VERSION: ${{ steps.v.outputs.version }}
         run: |
           python3 - <<'EOF'
-          import json, os, sys, tomllib
+          import json, os, re, sys, tomllib
 
           want = os.environ["VERSION"]
+          chart = re.search(r'^appVersion:\s*"?([^"\s#]+)', open("deploy/helm/workmind/Chart.yaml").read(), re.M)
           found = {
               "apps/api/pyproject.toml": tomllib.load(open("apps/api/pyproject.toml", "rb"))["project"]["version"],
               "ee/python/pyproject.toml": tomllib.load(open("ee/python/pyproject.toml", "rb"))["project"]["version"],
               "apps/web/package.json": json.load(open("apps/web/package.json"))["version"],
+              "deploy/helm/workmind/Chart.yaml": chart.group(1) if chart else "missing appVersion",
           }
           wrong = {path: v for path, v in found.items() if v != want}
           for path, v in wrong.items():

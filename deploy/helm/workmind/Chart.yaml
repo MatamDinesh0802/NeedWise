@@ -6,9 +6,10 @@ description: >-
   and an embedding server.
 type: application
 # The chart's own version (SemVer). Bump it on every change to the chart.
-version: 0.1.5
-# The WorkMind version the chart deploys by default (the image tag when none is set).
-appVersion: "0.0.1"
+version: 0.2.0
+# The WorkMind version the chart deploys by default (the image tag when none is set). release-please
+# updates it with the other version files (the marker below); bump `version` by hand.
+appVersion: "1.0.0" # x-release-please-version
 # Validated against the Kubernetes 1.33 schemas (kubeconform); gRPC probes need 1.27 or later.
 kubeVersion: ">=1.29.0-0"
 keywords:

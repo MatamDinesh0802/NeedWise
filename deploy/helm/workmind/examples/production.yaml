@@ -7,10 +7,10 @@
 images:
   api:
     repository: registry.example.com/workmind/workmind-api   # yours: no images are published yet
-    tag: "0.0.1"
+    tag: "1.0.0"
   web:
     repository: registry.example.com/workmind/workmind-web
-    tag: "0.0.1"
+    tag: "1.0.0"
 
 config:
   publicUrl: https://workmind.example.com   # yours

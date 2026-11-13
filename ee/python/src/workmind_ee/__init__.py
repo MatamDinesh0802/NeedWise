@@ -7,6 +7,8 @@ Everything is registered in `setup`, and every registration names the licensed f
 belongs to; the core checks that feature on every request, task run and hook call.
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 import structlog
 from workmind.core.edition import Edition
 from workmind.core.extensions import ExtensionRegistry
@@ -17,7 +19,12 @@ from workmind_ee import audit_export, document_retention, legal_hold, permission
 from workmind_ee.budgets import department_budgets
 from workmind_ee.chargeback import chargeback_csv
 
-__version__ = "0.0.1"
+# From the installed package's metadata (ee/python/pyproject.toml), like the core's version, so
+# a release bumps one place.
+try:
+    __version__ = version("workmind-ee")
+except PackageNotFoundError:  # running from a source tree without an installed package
+    __version__ = "0.0.0+unknown"
 
 log = structlog.get_logger("workmind_ee")
 

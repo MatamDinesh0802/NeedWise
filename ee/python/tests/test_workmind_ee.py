@@ -32,6 +32,15 @@ def _enterprise() -> Edition:
     return Edition(license_, clock=lambda: NOW)
 
 
+def test_the_package_reports_the_version_it_was_released_as() -> None:
+    # One version for the repository (docs/operations/releasing.md): the Enterprise package's
+    # comes from its metadata, as the core's does, never a constant a release could miss.
+    import workmind
+
+    assert workmind_ee.__version__ == importlib.metadata.version("workmind-ee")
+    assert workmind_ee.__version__ == workmind.__version__
+
+
 def test_the_package_declares_the_core_entry_point() -> None:
     entry_points = importlib.metadata.entry_points(group=ENTRY_POINT_GROUP)
     assert [(ep.name, ep.value) for ep in entry_points] == [("workmind_ee", "workmind_ee:setup")]

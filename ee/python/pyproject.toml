@@ -3,7 +3,7 @@
 # package's environment and imports from it; the core never imports from here.
 [project]
 name = "workmind-ee"
-version = "0.0.1"
+version = "1.0.0"
 description = "WorkMind AI Enterprise Edition: features loaded only with a valid license"
 requires-python = ">=3.12"
 license = "LicenseRef-WorkMind-Enterprise"

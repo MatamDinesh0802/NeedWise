@@ -80,10 +80,10 @@ release name alone when it already contains "workmind". Installed as `workmind`,
   your cluster can pull from:
 
   ```bash
-  docker build --build-context ee=ee -t registry.example.com/workmind/workmind-api:0.0.1 apps/api
-  docker build -t registry.example.com/workmind/workmind-web:0.0.1 apps/web
-  docker push registry.example.com/workmind/workmind-api:0.0.1
-  docker push registry.example.com/workmind/workmind-web:0.0.1
+  docker build --build-context ee=ee -t registry.example.com/workmind/workmind-api:1.0.0 apps/api
+  docker build -t registry.example.com/workmind/workmind-web:1.0.0 apps/web
+  docker push registry.example.com/workmind/workmind-api:1.0.0
+  docker push registry.example.com/workmind/workmind-web:1.0.0
   ```
 
   The API image contains the Enterprise package, which stays inactive without a license
@@ -152,7 +152,7 @@ authorization tuples. It refuses `config.appEnv: production`; use `demo`. The re
 container, from `seed.data.source`:
 
 - `image`: an image that contains it, e.g. built from the repository root with
-  `printf 'FROM busybox:1.37\nCOPY seed /seed\n' | docker build -t <registry>/workmind-seed:0.0.1 -f - .`
+  `printf 'FROM busybox:1.37\nCOPY seed /seed\n' | docker build -t <registry>/workmind-seed:1.0.0 -f - .`
 - `archive`: a `.tar.gz` of the repository at `seed.data.archiveUrl` (its top directory is
   stripped);
 - `existingClaim`: a PersistentVolumeClaim with the directory's contents at its root.
@@ -512,6 +512,9 @@ Run 6 (after the final review): the seed Job indexed 47 documents (364 chunks) t
 Qdrant API key, `helm test` and the API end-to-end tests (14 passed, 2 model tests skipped)
 passed through the Ingress, and the upgrade to two API replicas and the uninstall went as in
 the earlier runs. The browser suite was not run.
+
+Chart 0.2.0 (WorkMind v1.0.0) differs from 0.1.5 only in `appVersion` (`1.0.0`, the default
+image tag) and its own version. It passed `make helm-check`; it was not installed on kind again.
 
 All: kind v0.33.0, one control-plane node and two workers (containerd 2.3.4, kindnet, the
 local-path storage class), ingress-nginx controller v1.15.1 on the control plane, published
