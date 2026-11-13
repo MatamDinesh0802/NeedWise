@@ -52,16 +52,12 @@ def upgrade() -> None:
     )
     op.add_column(
         "sources",
-        sa.Column(
-            "private_network", sa.Boolean(), server_default=sa.text("false"), nullable=False
-        ),
+        sa.Column("private_network", sa.Boolean(), server_default=sa.text("false"), nullable=False),
     )
     op.add_column(
         "documents", sa.Column("source_deleted_at", sa.DateTime(timezone=True), nullable=True)
     )
-    _for_each_tenant(
-        "UPDATE sources SET credentials_by = owner_id WHERE credentials IS NOT NULL"
-    )
+    _for_each_tenant("UPDATE sources SET credentials_by = owner_id WHERE credentials IS NOT NULL")
     _for_each_tenant(
         "UPDATE sources SET private_network = true WHERE kind = 'web' AND owner_id IN "
         "(SELECT id FROM users WHERE org_role IN ('owner', 'admin'))"
