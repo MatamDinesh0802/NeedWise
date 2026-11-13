@@ -13,11 +13,12 @@ demo company; waits for the model are sped up): a cited answer and its source, t
 question, an email approved after an edit, a meeting's clickable timestamps, a chart with its
 SQL, and an administrator adding an agent.
 
-> **Status: v1.0, pending the release tag.** All 13 phases of the [roadmap](docs/ROADMAP.md)
-> are built, each with the gaps its section lists; a last end-to-end pass and the release remain.
-> Not done yet: a public repository (so the release workflows have never run), a test on a cloud
-> Kubernetes cluster, and checking Google Drive, Slack, Confluence and SharePoint/OneDrive sync,
-> and permission sync, against real services (all tested against fakes of their APIs). Designed
+> **Status: v1.0.0, tagged on 2026-11-13 and not published yet** ([release notes](docs/releases/v1.0.0.md)).
+> All 13 phases of the [roadmap](docs/ROADMAP.md) are built, each with the gaps its section
+> lists. Not done yet: a public repository (so there are no published images and the release
+> workflows have never run), a test on a cloud Kubernetes cluster, and checking Google Drive,
+> Slack, Confluence and SharePoint/OneDrive sync, and permission sync, against real services
+> (all tested against fakes of their APIs). Designed
 > but not built: metrics and alerts, S3 storage, invitations by email, a reranker, and the rest
 > of [this list](docs/ARCHITECTURE.md#what-the-design-describes-that-is-not-built). It has been
 > run only on the fictional demo company, not on real company data.
@@ -29,7 +30,7 @@ ports on `127.0.0.1` must be free: 8480, 8400, 3400, 8401, 5432, 6379, 6333 and 
 ([to move one](docs/getting-started/configuration.md#ports-passwords-and-compose)).
 
 ```bash
-git clone <repo-url> workmind && cd workmind
+git clone <repo-url> workmind && cd workmind   # the release: git checkout v1.0.0
 cp .env.example .env    # then add a model to .env (below), e.g. ANTHROPIC_API_KEY=sk-ant-...
 make quickstart         # builds and starts the stack, waits until it is healthy, seeds the demo company
 ```
@@ -125,24 +126,30 @@ hosted anywhere yet. Good places to start:
 | Administer it | [People, departments, groups and roles](docs/user-guide/administration.md), [agents](docs/agents.md), [models](docs/models.md), [usage and budgets](docs/usage.md), [governance](docs/governance.md), [connectors](docs/connectors.md), [automation](docs/automation.md) |
 | Run it for real | [Kubernetes](docs/deploy/kubernetes.md), [backup and restore](docs/operations/backup-restore.md), [upgrades](docs/operations/upgrade.md) |
 | Understand it | [Architecture](docs/ARCHITECTURE.md), [decision records](docs/adr/), [roadmap](docs/ROADMAP.md) |
+| Know what changed | [v1.0.0 release notes](docs/releases/v1.0.0.md), [CHANGELOG](CHANGELOG.md) |
 
 ## Benchmarks (v1.0)
 
-Measured on 2026-11-12 at commit `1b62d52`, on one laptop, against the fictional company Acme
-Robotics (49 documents at the time: the 47 the seed indexed then and 2 meeting transcripts; the
-seed has 49 since 2026-11-13; 82 questions, 59 of today's 68 attacks), with Claude Sonnet 5.5 in every role. One run per configuration: small datasets,
+On one laptop, against the fictional company Acme Robotics, with Claude Sonnet 5.5 in every
+role, in two sets of runs: the **release check** of v1.0.0 (commit `144afd2`, 2026-11-13: 51
+documents, 82 questions, all 68 attacks) and the **full v1.0 benchmark** (commit `1b62d52`,
+2026-11-12: every suite, 59 of the 68 attacks). The release check repeated the permission gate
+and the core suites; the model provider's credit ran out before the other suites, so their
+latest numbers are the full benchmark's. One run per configuration: small datasets,
 non-deterministic models. Method, every report and the limitations:
 [docs/benchmarks/v1.0.md](docs/benchmarks/v1.0.md).
 
-| | Result |
-|---|---|
-| Permission leaks | **0** in 312 retrieval checks, 118 red-team answers on four surfaces, 51 analytics answers |
-| Answers with every required fact / faithfulness / abstention | 81/82 / 99.5% / 6/6 |
-| Cross-department questions: one search / department agents | 14/15 / 15/15 |
-| Routing to department agents / text-to-SQL execution accuracy | 53/56 / 33/36 |
-| Time to first token, p50 / p95, QA questions (one search; `auto` mode) | 0.8 / 1.5 s; 2.6 / 6.0 s |
-| Cost per answer, QA questions (one search; `auto`); BI agent | $0.0071; $0.0114; $0.026 |
-| Load, stub model | up to 400 simulated users at unloaded chat latency on one laptop ([load](docs/benchmarks/load.md)) |
+| | Result | Run |
+|---|---|---|
+| Permission leaks | **0** in 183 retrieval checks and 68 red-team answers on four surfaces | release check |
+| | **0** in 312 retrieval checks, 118 red-team answers and 51 analytics answers | full benchmark |
+| Red-team violations (the answer did what an attack asked) | 0 of 68; 0 of 118 | both |
+| Answers with every required fact / faithfulness / abstention | 81/82 / 99.4% / 6/6 (99.5% in the full benchmark) | release check |
+| Cross-department questions: one search / department agents | 14/15 / 15/15 | full benchmark |
+| Routing to department agents / text-to-SQL execution accuracy | 53/56 / 33/36 | full benchmark |
+| Time to first token, p50 / p95, QA questions: one search; `auto` mode | 0.9 / 1.6 s; 2.6 / 6.0 s | release check; full benchmark |
+| Cost per answer, QA questions: one search; `auto`; BI agent | $0.0071; $0.0114; $0.026 | both; full benchmark |
+| Load, stub model | up to 400 simulated users at unloaded chat latency on one laptop ([load](docs/benchmarks/load.md)) | 2026-11-12 |
 
 A [case study](docs/case-study.md) tells how it was built for Acme, what went wrong and what it
 costs.
@@ -156,8 +163,9 @@ costs.
   then re-checks each source with OpenFGA (lock 2). The answer model only ever sees what the
   asking person may read. A red-team suite with canary tokens must show **zero leaks** in CI.
 - **Measured.** `wm eval` asks every question as a specific employee, on every surface: 0 leaks
-  in 59 attacks, 81/82 correct, 99.5% faithfulness, 0.8 s to the first token, $0.007 per answer
-  with Claude Sonnet 5.5 ([benchmarks](#benchmarks-v10), [evaluation](evals/README.md)).
+  in 68 attacks, 81/82 correct, 99.4% faithfulness, 0.9 s to the first token, $0.007 per answer
+  with Claude Sonnet 5.5 in the v1.0.0 release check ([benchmarks](#benchmarks-v10),
+  [evaluation](evals/README.md)).
 - **Inside your IDE or desktop assistant, permissions intact.** WorkMind is an MCP server:
   connect Claude Code, Cursor or Claude Desktop with a personal access token ([docs/mcp.md](docs/mcp.md)).
 - **Department agents when a question spans teams**, measured against a single search, which
@@ -244,7 +252,9 @@ back-channel logout cannot reach a host process, so remote logout is only tested
 
 ## Running it in production
 
-Not yet: v1.0 is not released. What exists for it so far, and what has been checked:
+v1.0.0 is tagged but not published: there are no released images yet, so build them from the
+tag (`make up` does; for Kubernetes, the [chart's README](deploy/helm/workmind/README.md)). What
+exists for running it, and what has been checked:
 
 - **Kubernetes.** A Helm chart in [`deploy/helm/workmind`](deploy/helm/workmind), with optional
   bundled Postgres, Valkey, Qdrant, OpenFGA, Keycloak and embedding server. It passes
@@ -257,14 +267,15 @@ Not yet: v1.0 is not released. What exists for it so far, and what has been chec
   snapshots, files and the license, with checksums. A restore drill into a separate stack gave
   identical rows, points and files and took about a minute at the demo's size
   ([backup and restore](docs/operations/backup-restore.md)).
-- **Upgrades.** Tested from v0.1.0 to this code: 17 of 17 checks after the upgrade, and a
-  rollback by restoring the pre-upgrade backup ([upgrades](docs/operations/upgrade.md)).
+- **Upgrades.** Tested from v0.1.0 to the v1.0.0 release code: 17 of 17 checks after the
+  upgrade (migrations `0004` to `0027`), and, on 2026-11-12, a rollback by restoring the
+  pre-upgrade backup ([upgrades](docs/operations/upgrade.md)).
 - **Several companies on one deployment.** Isolation per layer, `wm tenant create|delete`, rate
   limits, and a test that sends every route another tenant's ids
   ([docs/multi-tenancy.md](docs/multi-tenancy.md)).
 - **Security.** A [threat model](docs/security/threat-model.md), a review against the
   [OWASP Top 10 for LLM Applications](docs/security/owasp-llm-top10.md) and a red team of 68
-  attacks (the v1.0 benchmark answered the first 59 with a model); dependency, image, chart and workflow scans with SBOMs
+  attacks, all answered with a model in the v1.0.0 release check; dependency, image, chart and workflow scans with SBOMs
   ([supply chain](docs/security/supply-chain.md)); how to report a vulnerability:
   [SECURITY.md](SECURITY.md).
 - **Releases.** release-please and a release workflow for multi-arch images with SBOM and
@@ -309,7 +320,17 @@ scripts/      Backup, restore, upgrade test, supply-chain scans
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Commits need a DCO sign-off
-(`git commit -s`). Report security issues privately: see [SECURITY.md](SECURITY.md).
+(`git commit -s`); `ee/` accepts no external contributions. Every change must keep the
+permission gate at 0 leaks (`uv run wm eval --retrieval-only` in `apps/api`).
+
+## Security
+
+Report a vulnerability privately, as [SECURITY.md](SECURITY.md) describes; please do not open a
+public issue. What has been reviewed so far, and what has not (no external penetration test):
+the [threat model](docs/security/threat-model.md) with its ranked residual risks, the
+[OWASP Top 10 for LLM Applications review](docs/security/owasp-llm-top10.md) and the
+[supply chain](docs/security/supply-chain.md). Permissions are enforced in code, never by the
+model, and the security basics are in the free edition.
 
 ## License
 

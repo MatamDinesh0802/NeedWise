@@ -1,6 +1,6 @@
 # WorkMind AI — Roadmap, Releases and Go-to-Market
 
-> **Status:** plan v0.2 · **Phases 0 to 12 built** (7 and 12 with work remaining; no release after v0.1.0 is tagged yet) · **Last updated:** 2026-11-13
+> **Status:** plan v0.2 · **Phases 0 to 12 built; v1.0.0 tagged on 2026-11-13**, not yet published (no public repository; Phase 7 has work remaining) · **Last updated:** 2026-11-13
 > **Companion doc:** [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## 1. Strategy in one paragraph
@@ -32,16 +32,20 @@ Sizes are rough estimates in **weeks of focused work**; part-time takes longer. 
 | 9 ✅ | v0.9 | Meeting intelligence | 2 wk | Recording → decisions and action items |
 | 10 ✅ | v0.10 | Business intelligence agent | 3 wk | Question → chart + SQL + explanation |
 | 11 ✅ | v0.11 | Admin, governance and usage analytics | 2 wk | New agent created without code |
-| 12 🚧 | **v1.0** | **Production hardening** | 2–3 wk | **v1.0 launch** (HN, Product Hunt) |
+| 12 ✅ | **v1.0** | **Production hardening** | 2–3 wk | **v1.0 launch** (HN, Product Hunt) |
 | — | after 1.0 | Commercial track | ongoing | WorkMind Cloud + Enterprise edition |
 
-✅ built (4: launch pending the public repository; 8 to 11: with the gaps their sections list);
-🚧 built with work remaining (7: live Drive, Slack, Confluence and SharePoint verification; 12:
-the release). Each phase's section below has the details, including a **Not built** list of the
-scope items that were dropped or deferred. "Built" is not "done" in the sense of §3: only v0.1.0
-is tagged, so no later phase has its release yet ([releasing](operations/releasing.md)). On 2026-11-13 the last Phase 7 to 11
-branches were merged into `main` and the development stack was rebuilt from it; what that run
-checked is under each phase ("Integrated 2026-11-13").
+✅ built (4: launch pending the public repository; 8 to 11: with the gaps their sections list;
+12: tagged as v1.0.0, publishing pending the public repository);
+🚧 built with work remaining (7: live Drive, Slack, Confluence and SharePoint verification). Each
+phase's section below has the details, including a **Not built** list of the scope items that
+were dropped or deferred. Phases 2 to 11 never got releases of their own: v0.1.0 (Phase 1) and
+v1.0.0 (2026-11-13, everything since) are the only tags, and v1.0.0 exists only in the
+maintainer's repository until it is public ([releasing](operations/releasing.md#v100),
+[release notes](releases/v1.0.0.md)). On 2026-11-13 the last Phase 7 to 11 branches were merged
+into `main` and the development stack was rebuilt from it; what that run checked is under each
+phase ("Integrated 2026-11-13"). What remains for the maintainer is in
+[§10](#10-what-remains-after-the-v100-tag).
 
 ---
 
@@ -585,7 +589,7 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 
 **LinkedIn post #12 — "Adding a new AI agent to a company without writing code."**
 
-### Phase 12 — Production hardening (v1.0) 🚧 The hardening pieces are built and merged, the load test is run and tuned, the v1.0 benchmarks and the case study are written, the Helm chart is tested on kind, the final review's findings are fixed, and the end-to-end suites pass on the stack rebuilt with the Phase 7 to 11 merges (2026-11-13); the release remains
+### Phase 12 — Production hardening (v1.0) ✅ Done: v1.0.0 tagged on 2026-11-13 with its benchmarks and a tested upgrade path; publishing it waits for the public repository
 
 **Goal:** a release companies can trust in production.
 
@@ -640,7 +644,9 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   the whole run $8.74. Synthetic company, small datasets, the judge from the same model family.
 - [x] **A case study** ([case study](case-study.md)) of the build for the synthetic Acme Robotics:
   choices, phases, results, what went wrong, costs, lessons.
-- [ ] **The v1.0 release** itself ([releasing](operations/releasing.md)): no public repository yet.
+- [x] **The v1.0.0 release** ([release notes](releases/v1.0.0.md), [releasing](operations/releasing.md#v100)):
+  tagged on 2026-11-13 as an annotated tag in the maintainer's repository, not published (no
+  public repository, so no GitHub Release and no images). See *Release check* below.
 - [x] **A final review** of the merged code (2026-11-13): security, operations, CI and the
   published claims. Fixed, each security and correctness fix with a regression test: `wm tenant
   delete --keycloak` missed organizations whose name did not contain the slug (Keycloak searches
@@ -680,6 +686,20 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
   document-list attacks answered with Claude Sonnet 5.5 with 0 leaks and 0 violations
   ([report](../evals/results/2026-11-13-redteam-document-lists.md)), and request routing with the
   real router model 36/39 ([report](../evals/results/2026-11-13-request-routing.md)).
+- [x] **Release check for v1.0.0 (2026-11-13).** On the release candidate `144afd2` with Claude
+  Sonnet 5.5 ([v1.0 benchmarks](benchmarks/v1.0.md#v100-release-check-2026-11-13)): the
+  permission gate 0 leaks in 183 checks; the core suites 0 leaks in 183 retrieval checks and 68
+  red-team answers, 0 violations, 81/82 answers with every fact, faithfulness 99.4%, abstention
+  6/6, 0.9 s to the first token (p50), $0.0071 per answer. The model provider's credit ran out
+  during the cross-department run (12 of 15 answered, all 12 right), so routing, analytics,
+  meetings, request routing with the model and the `auto` core suites were not repeated: their
+  latest numbers are the full benchmark's (`1b62d52`). No leak and no regression in what ran.
+  The upgrade from v0.1.0 passed 17 of 17 checks on the release code (alembic `0004` to `0027`,
+  [upgrades](operations/upgrade.md#supported-paths)). On the release code: backend 1,967 passed and 28 skipped (MySQL without a test server,
+  diarization without its extra), web 1,197, browser 184 on the rebuilt, re-seeded stack, API
+  end-to-end 13 of 14 in `auto` mode (the guest's question failed at the planner's model call,
+  refused for lack of credit; 14 of 14 in `single` mode), `make docs`, `make helm-check` (chart
+  0.2.0), actionlint and zizmor clean.
 
 **Scope:**
 - Security review against the OWASP Top 10 for LLM Applications. Threat model review. Red-team expansion.
@@ -692,6 +712,10 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - A case study write-up.
 
 **DoD:** v1.0 published with benchmarks (quality, latency, cost, leak rate) and a tested upgrade path.
+
+> As met: v1.0.0 is tagged with its benchmarks ([v1.0 benchmarks](benchmarks/v1.0.md)) and an
+> upgrade from v0.1.0 tested on the release code. "Published" is not met yet: that needs the
+> public repository.
 
 **Launch:**
 - LinkedIn post #13 — *"v1.0: what I learned building an open-source enterprise AI platform."*
@@ -766,7 +790,7 @@ Earlier drafts proposed a CLA. With Apache-2.0 it isn't needed: the license alre
   - Multi-arch Docker images (amd64 + arm64) on GitHub Container Registry.
   - The eval report for that version.
 - **Migrations** always go forward through Alembic. Breaking changes are called out in release notes.
-- **Every release also gets:** a LinkedIn post, a devlog entry in `docs/devlog/`, and a refreshed demo deployment. (*As built:* `docs/devlog/` has drafts of posts 1 to 6; posts 7 to 13 are not written, and there is no demo deployment.)
+- **Every release also gets:** a LinkedIn post, a devlog entry in `docs/devlog/`, and a refreshed demo deployment. (*As built:* `docs/devlog/` has drafts of posts 1 to 13, none posted; posts 7 to 13 suggest their visuals instead of having them made. There is no demo deployment.)
 
 ---
 
@@ -824,3 +848,27 @@ Earlier drafts proposed a CLA. With Apache-2.0 it isn't needed: the license alre
 | Demo hosting cost | Paid API with a strict budget for the public demo. Local models in self-hosted setups. |
 | Maintenance load after launch | Issue templates, scoped contributions, clear "not planned" policy, sustainable cadence |
 | Burnout | Fixed weekly hours. Celebrate each release. Lesson posts keep momentum without big features. |
+
+---
+
+## 10. What remains after the v1.0.0 tag
+
+The code, docs, reports and drafts for v1.0.0 are done; these steps are the maintainer's:
+
+- **Make the repository public** and do the §8 checklist (name check, employment check,
+  GitHub organization, branch protection, private vulnerability reporting), then the repository
+  settings in [releasing](operations/releasing.md#repository-settings-this-needs).
+- **Publish v1.0.0:** push `main` and the tag; the release workflow builds, scans, gates and
+  publishes the images and creates the GitHub Release
+  ([how](operations/releasing.md#publishing-v100-once-the-repository-exists)). The CI, security
+  and docs workflows run for the first time then; expect to fix what only GitHub's runners show.
+- **Live Google Drive and Slack verification** (the Phase 7 DoD): sync a test Drive and a test
+  Slack workspace, check that changes arrive within the interval and that deletions and removed
+  permissions disappear; Confluence and SharePoint/OneDrive likewise when a site and a tenant
+  are at hand.
+- **Re-run the suites the release check could not** (routing, analytics, meetings, request
+  routing with the model, cross-department and the core suites in `auto` mode) once the model
+  account has credit, and update [the benchmarks](benchmarks/v1.0.md).
+- **The launch:** the LinkedIn posts in [the devlog](devlog/index.md) (drafts 1 to 13; make the
+  visuals of 7 to 13, fill in the repository links), Show HN and Product Hunt for v1.0, and the
+  public demo deployment (D4).

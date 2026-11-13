@@ -12,10 +12,11 @@ The [full walkthrough](media/demo.mp4) (1 min 44 s): cited answers, the same que
 access, department agents, an approval, a meeting, a chart with its SQL, and an administrator
 adding an agent.
 
-!!! warning "Status: v1.0, pending the release tag"
-    All 13 phases of the [roadmap](ROADMAP.md) are built; a last end-to-end pass and the release
-    remain. WorkMind has been run only on the fictional demo company: try it there, or on test
-    data, before anything real.
+!!! warning "Status: v1.0.0, tagged on 2026-11-13, not published yet"
+    All 13 phases of the [roadmap](ROADMAP.md) are built ([release notes](releases/v1.0.0.md)).
+    There is no public repository yet, so no published images: build them from the tag.
+    WorkMind has been run only on the fictional demo company: try it there, or on test data,
+    before anything real.
 
 ## Who it is for
 
@@ -38,7 +39,7 @@ adding an agent.
 | **Meetings** | A recording or transcript becomes decisions and action items that link to the moment they were said. [Meetings](meetings.md) |
 | **Approvals** | Anything that changes something outside WorkMind waits for a person to approve it. [Approvals and tasks](user-guide/approvals-and-tasks.md) |
 | **Your models** | Claude by default, or any OpenAI-compatible server, per organization and per role; restricted documents can be kept on a local model. [Models](models.md), [Local models](getting-started/local-models.md) |
-| **Measured** | `wm eval` asks the same questions as different employees and must find zero permission leaks; v1.0: 0 leaks in 59 attacks on four surfaces, 81/82 answers correct, $0.007 per answer. [v1.0 benchmarks](benchmarks/v1.0.md), [Evaluation](evals/README.md) |
+| **Measured** | `wm eval` asks the same questions as different employees and must find zero permission leaks; v1.0.0 release check: 0 leaks in 68 attacks on four surfaces, 81/82 answers correct, $0.007 per answer. [v1.0 benchmarks](benchmarks/v1.0.md), [Evaluation](evals/README.md) |
 
 ## Quickstart
 
@@ -71,6 +72,7 @@ steps.
 | Check how it is secured | [Threat model](security/threat-model.md), [OWASP Top 10 for LLM Applications review](security/owasp-llm-top10.md), [supply chain](security/supply-chain.md) |
 | Understand the design | [Architecture](ARCHITECTURE.md) and the [decision records](adr/README.md) |
 | See what was measured | [v1.0 benchmarks](benchmarks/v1.0.md), [evaluation](evals/README.md), [load benchmarks](benchmarks/load.md) and the [case study](case-study.md) |
+| Know what changed | the [v1.0.0 release notes](releases/v1.0.0.md) and the [changelog](../CHANGELOG.md) |
 | See what comes next | [Roadmap](ROADMAP.md) |
 
 ## License
