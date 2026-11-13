@@ -69,7 +69,10 @@ SECTIONS: Sequence[tuple[str, Sequence[str]]] = (
     ("Documents and ingestion", ["object_storage_path", "ingestion_mode", "max_upload_bytes"]),
     ("Meetings", ["max_meeting_bytes", "transcription_*"]),
     ("Analytics", ["analytics_*"]),
-    ("Tools and connectors", ["searxng_url", "mcp_servers", "google_client_*"]),
+    (
+        "Tools and connectors",
+        ["searxng_url", "mcp_servers", "google_client_*", "slack_client_*", "source_*"],
+    ),
     ("Email", ["smtp_*"]),
     ("Enterprise edition", ["license_*", "deployment_id"]),
     ("Demo data (development only)", ["keycloak_admin_*", "demo_password"]),
@@ -278,6 +281,17 @@ NOTES: dict[str, str] = {
         "URI `<PUBLIC_URL>/api/v1/oauth/google/callback`."
     ),
     "google_client_secret": "That OAuth client's secret.",
+    "slack_client_id": (
+        "Slack sources: the client id of a Slack app whose redirect URL is "
+        "`<PUBLIC_URL>/api/v1/oauth/slack/callback` (bot scopes `channels:history`, "
+        "`channels:read`, `groups:history`, `groups:read`). Unset: Slack sources take a pasted "
+        "bot token instead of **Connect Slack**."
+    ),
+    "slack_client_secret": "That Slack app's client secret.",
+    "source_failure_alert_after": (
+        "Failed syncs in a row after which the people who manage a source are notified, once "
+        "per failure episode (docs/connectors.md)."
+    ),
     "smtp_host": (
         "Outgoing email (`send_email`, always after a person's approval). Unset: email is off. "
         "Development uses Mailpit, which delivers nothing: http://localhost:8025."

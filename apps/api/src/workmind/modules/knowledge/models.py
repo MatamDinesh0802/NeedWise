@@ -154,6 +154,13 @@ class Document(Base, TenantScoped, Timestamps):
     url: Mapped[str | None] = mapped_column(Text)  # where people can open the original
     # The source's version marker (etag, revision): unchanged items are not fetched again.
     source_version: Mapped[str | None] = mapped_column(Text)
+    # Synced documents (docs/connectors.md): when the item last changed in the source (its own
+    # modification time, else when a sync first saw the new content); since when a scan that
+    # was cut short no longer listed it (kept until a complete scan decides); and when its
+    # owner was reminded that it looks stale (once per staleness episode).
+    source_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_missing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stale_reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trust: Mapped[str] = mapped_column(String(16))
     sensitivity: Mapped[str] = mapped_column(String(16))
     # True once an editor sets the label: re-indexing then keeps it instead of re-scanning.

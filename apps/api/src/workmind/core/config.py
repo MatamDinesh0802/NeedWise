@@ -134,6 +134,13 @@ class Settings(BaseSettings):
     smtp_starttls: bool = False
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
+    # Slack sources with "Connect Slack" (OAuth v2; redirect URL:
+    # <PUBLIC_URL>/api/v1/oauth/slack/callback). Unset: paste a bot token instead.
+    slack_client_id: str | None = None
+    slack_client_secret: SecretStr | None = None
+    # Failed syncs in a row before the people who manage a source are notified (once per
+    # failure episode, docs/connectors.md).
+    source_failure_alert_after: int = Field(default=3, ge=1, le=100)
     agent_fast_path: bool = True
     agent_fast_path_min_score: float = 0.3  # EmbeddingGemma similarities; see evals/README.md
     agent_fast_path_min_margin: float = 0.15

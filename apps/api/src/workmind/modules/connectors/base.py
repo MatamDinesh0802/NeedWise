@@ -40,6 +40,12 @@ class ScanResult:
     # missing item as deleted. Incremental scans set it False.
     complete: bool = True
     cursor: dict[str, Any] = field(default_factory=dict[str, Any])
+    # For an incomplete scan: True when it set out to list everything and was cut short (a page
+    # limit, a truncated tree). Known items it did not list may be gone upstream: they are kept
+    # and flagged "missing upstream" until a complete scan decides. False for a scan that only
+    # looks at a window or at changes (Slack's history window, an incremental API): items
+    # outside it are not suspects.
+    truncated: bool = False
 
 
 class Connector(Protocol):

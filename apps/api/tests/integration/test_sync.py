@@ -1,31 +1,38 @@
 """The sync engine against a scripted connector, with real PostgreSQL and Qdrant: adds, skips
 unchanged items without fetching them, versions changed ones, propagates deletions only after a
-complete scan, records failures without deleting anything, and runs one sync at a time.
+complete scan, records failures without deleting anything, and runs one sync at a time. Every
+sync is a run in the history; a source that keeps failing alerts its managers once per episode;
+items a cut-short scan no longer lists are flagged, not deleted; stale synced documents remind
+their owners once per staleness episode.
 
 Needs TEST_QDRANT_URL (and the test database)."""
 
 import os
 import uuid
 from collections.abc import AsyncIterator, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from tests.integration.conftest import SessionFactory, seed_acme
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.connectors.base import ConnectorError, RemoteItem, ScanResult
-from workmind.modules.connectors.models import Source
+from workmind.modules.connectors.models import Source, SourceRun
+from workmind.modules.connectors.reminders import StaleReminderReport, send_source_reminders
 from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sync import SyncDeps, sync_source
+from workmind.modules.governance.models import AuditEvent
+from workmind.modules.identity.models import User
 from workmind.modules.knowledge.dispatch import InlineDispatcher
 from workmind.modules.knowledge.models import Collection, Document
 from workmind.modules.knowledge.pipeline import IngestionDeps
 from workmind.modules.knowledge.storage import LocalObjectStorage
 from workmind.modules.retrieval.qdrant import QdrantClient
+from workmind.modules.work.models import Notification, Task
 from workmind.providers.embeddings import HashEmbeddings
 
 QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
@@ -39,16 +46,20 @@ class ScriptedConnector:
     def __init__(self) -> None:
         self.items: dict[str, tuple[RemoteItem, bytes]] = {}
         self.complete = True
+        self.truncated = False
         self.fail = False
         self.fetched: list[str] = []
 
-    def put(self, external_id: str, text: str, version: str) -> None:
+    def put(
+        self, external_id: str, text: str, version: str, modified_at: datetime | None = None
+    ) -> None:
         item = RemoteItem(
             external_id,
             external_id.title(),
             f"{external_id}.md",
             version,
             f"https://intranet/{external_id}",
+            modified_at,
         )
         self.items[external_id] = (item, f"# {external_id.title()}\n\n{text}\n".encode())
 
@@ -56,7 +67,10 @@ class ScriptedConnector:
         if self.fail:
             raise ConnectorError("intranet answered HTTP 503")
         return ScanResult(
-            [i for i, _ in self.items.values()], self.complete, {"seen": len(self.items)}
+            [i for i, _ in self.items.values()],
+            self.complete,
+            {"seen": len(self.items)},
+            truncated=self.truncated,
         )
 
     async def fetch(self, item: RemoteItem) -> bytes:
@@ -220,3 +234,354 @@ async def test_only_one_sync_runs_at_a_time(
 
     assert report.status == "skipped"
     assert connector.fetched == []
+
+
+# --- Run history, failure episodes, missing items, staleness --------------------------------
+
+
+async def user_id(deps: SyncDeps, source: Source, name: str) -> uuid.UUID:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        return (await session.scalars(select(User.id).where(User.email.startswith(name)))).one()
+
+
+async def stored_source(deps: SyncDeps, source: Source) -> Source:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+    assert stored is not None
+    return stored
+
+
+async def runs(deps: SyncDeps, source: Source) -> list[SourceRun]:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        return list(
+            (
+                await session.scalars(
+                    select(SourceRun)
+                    .where(SourceRun.source_id == source.id)
+                    .order_by(SourceRun.started_at)
+                )
+            ).all()
+        )
+
+
+async def notifications(deps: SyncDeps, source: Source, kind: str) -> list[Notification]:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        return list(
+            (
+                await session.scalars(
+                    select(Notification)
+                    .where(Notification.kind == kind)
+                    .order_by(Notification.created_at)
+                )
+            ).all()
+        )
+
+
+async def audit_actions(deps: SyncDeps, source: Source, prefix: str) -> list[str]:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        return list(
+            (
+                await session.scalars(
+                    select(AuditEvent.action)
+                    .where(AuditEvent.action.startswith(prefix))
+                    .order_by(AuditEvent.seq)
+                )
+            ).all()
+        )
+
+
+async def test_every_sync_is_a_run_with_its_trigger_counts_and_errors(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    erin = await user_id(deps, source, "erin@")
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+
+    await sync_source(deps, source.tenant_id, source.id, trigger="manual", requested_by=erin)
+    await deps.ingestion.drain()  # type: ignore[attr-defined]
+    connector.fail = True
+    await run(deps, source)
+
+    first, second = await runs(deps, source)
+    assert (first.trigger, first.requested_by, first.status, first.complete) == (
+        "manual",
+        erin,
+        "ok",
+        True,
+    )
+    assert first.finished_at is not None
+    assert first.finished_at >= first.started_at
+    assert (first.stats["added"], first.errors) == (1, [])
+    assert (second.trigger, second.requested_by, second.status) == ("schedule", None, "error")
+    assert second.errors == [{"item": None, "message": "intranet answered HTTP 503"}]
+
+
+async def test_a_worker_that_died_mid_sync_leaves_an_interrupted_run(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    connector.put("leave", "x", "v1")
+    long_ago = datetime.now(UTC) - timedelta(hours=2)
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+        assert stored is not None
+        stored.status, stored.last_sync_at = "syncing", long_ago  # its worker died
+        session.add(
+            SourceRun(
+                tenant_id=source.tenant_id,
+                source_id=source.id,
+                status="running",
+                started_at=long_ago,
+            )
+        )
+
+    await run(deps, source)
+
+    dead, fresh = await runs(deps, source)
+    assert dead.status == "error"
+    assert dead.errors == [{"item": None, "message": "the worker stopped before the sync finished"}]
+    assert fresh.status == "ok"
+
+
+async def test_a_source_that_keeps_failing_alerts_once_per_episode_and_says_when_it_recovers(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    deps.failure_alert_after = 2
+    erin, alice = await user_id(deps, source, "erin@"), await user_id(deps, source, "alice@")
+    connector.put("leave", "x", "v1")
+    connector.fail = True
+
+    await run(deps, source)
+    after_one = await notifications(deps, source, "source.failing")
+    await run(deps, source)
+    await run(deps, source)
+    failing = await notifications(deps, source, "source.failing")
+    during = await stored_source(deps, source)
+    connector.fail = False
+    await run(deps, source)
+    recovered = await notifications(deps, source, "source.recovered")
+    after = await stored_source(deps, source)
+    connector.fail = True
+    await run(deps, source)
+    await run(deps, source)  # a new episode
+    second_episode = await notifications(deps, source, "source.failing")
+
+    assert after_one == []
+    # The source's owner (an org admin) and the collection's owner, once for three failures.
+    assert {n.user_id for n in failing} == {erin, alice}
+    assert len(failing) == 2
+    by_user = {n.user_id: n for n in failing}
+    assert by_user[erin].link == "/admin/sources?source=intranet"
+    assert by_user[alice].link == "/knowledge/sources?source=intranet"  # not an admin
+    assert "2 syncs in a row failed" in by_user[erin].body
+    assert "internal error" in by_user[erin].body  # the plain explanation, not the raw text
+    assert (during.consecutive_failures, during.failure_alerted_at is not None) == (3, True)
+    assert {n.user_id for n in recovered} == {erin, alice}
+    assert (after.consecutive_failures, after.failure_alerted_at, after.status) == (0, None, "ok")
+    assert len(second_episode) == 4
+    # Each alert is recorded in the same transaction as the sync that crossed the threshold.
+    assert await audit_actions(deps, source, "source.") == [
+        "source.synced",
+        "source.failing",
+        "source.synced",
+        "source.synced",
+        "source.recovered",
+        "source.synced",
+        "source.synced",
+        "source.failing",
+        "source.synced",
+    ]
+
+
+async def test_a_cut_short_scan_flags_missing_items_and_only_a_complete_scan_deletes_them(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")
+    await run(deps, source)
+
+    travel = connector.items.pop("travel")
+    connector.complete, connector.truncated = False, True  # e.g. max_pages reached
+    cut = await run(deps, source)
+    flagged = (await documents(deps, source))["travel"].source_missing_since
+    connector.items["travel"] = travel  # listed again
+    back = await run(deps, source)
+    cleared = (await documents(deps, source))["travel"].source_missing_since
+    del connector.items["travel"]
+    connector.truncated = False  # a window (Slack history): unlisted items are not suspects
+    windowed = await run(deps, source)
+    not_suspect = (await documents(deps, source))["travel"].source_missing_since
+    connector.complete = True
+    complete = await run(deps, source)
+
+    assert (cut.deleted, cut.missing, flagged is not None) == (0, 1, True)
+    assert (back.missing, cleared) == (0, None)
+    assert (windowed.missing, not_suspect) == (0, None)
+    assert (complete.deleted, set(await documents(deps, source))) == (1, {"leave"})
+    history = await runs(deps, source)
+    assert [r.complete for r in history] == [True, False, False, False, True]
+    assert history[1].stats["missing"] == 1
+
+
+async def test_new_content_restarts_the_staleness_clock_with_the_sources_own_date(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    edited = datetime(2026, 3, 2, 8, 30, tzinfo=UTC)
+    connector.put("leave", "Parental leave is 16 weeks.", "v1", modified_at=edited)
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")  # no date from the source
+    before = datetime.now(UTC)
+    await run(deps, source)
+    first = await documents(deps, source)
+    connector.put("leave", "Parental leave is 18 weeks.", "v2", modified_at=None)
+    await run(deps, source)
+    second = await documents(deps, source)
+
+    assert first["leave"].source_changed_at == edited
+    travel_changed = first["travel"].source_changed_at
+    assert travel_changed is not None
+    assert travel_changed >= before
+    leave_changed = second["leave"].source_changed_at
+    assert leave_changed is not None
+    assert leave_changed > edited
+    assert second["travel"].source_changed_at == travel_changed  # unchanged: same clock
+
+
+async def age(deps: SyncDeps, source: Source, external_id: str, days: int) -> None:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        await session.execute(
+            update(Document)
+            .where(Document.source_id == source.id, Document.external_id == external_id)
+            .values(source_changed_at=datetime.now(UTC) - timedelta(days=days))
+        )
+
+
+async def reminders(deps: SyncDeps, source: Source) -> StaleReminderReport:
+    return await send_source_reminders(deps.sessions, source.tenant_id, failure_alert_after=3)
+
+
+async def test_stale_documents_remind_their_owner_once_per_staleness_episode(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    erin = await user_id(deps, source, "erin@")
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+        assert stored is not None
+        stored.stale_after_days = 30
+    for name in ("leave", "travel", "expenses"):
+        connector.put(name, f"The {name} policy.", "v1")
+    await run(deps, source)
+    await age(deps, source, "leave", 40)
+    await age(deps, source, "travel", 45)
+    await age(deps, source, "expenses", 10)  # fresh enough
+
+    first = await reminders(deps, source)
+    again = await reminders(deps, source)  # the same day, or a retry: nothing new
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        tasks = (await session.scalars(select(Task).where(Task.assignee_id == erin))).all()
+    notes = await notifications(deps, source, "source.stale_documents")
+    docs = await documents(deps, source)
+    connector.put("leave", "The leave policy, updated.", "v2")  # changed in the source
+    await run(deps, source)
+    after_change = (await documents(deps, source))["leave"].stale_reminded_at
+    await age(deps, source, "leave", 31)  # a month later, unchanged again: a new episode
+    second = await reminders(deps, source)
+
+    assert set(first.reminded) == {docs["leave"].id, docs["travel"].id}
+    assert (again.reminded, again.tasks) == ([], [])
+    assert len(tasks) == 1
+    assert len(notes) == 1
+    task = tasks[0]
+    assert task.title == "Check 2 synced documents that look stale"
+    assert f"/knowledge/documents/{docs['leave'].id}" in task.description
+    assert "unchanged in the source since" in task.description
+    assert task.origin["via"] == "connectors"
+    assert {d["id"] for d in task.origin["documents"]} == {
+        str(docs["leave"].id),
+        str(docs["travel"].id),
+    }
+    assert notes[0].user_id == erin
+    assert notes[0].link == f"/tasks/{task.id}"
+    assert docs["expenses"].stale_reminded_at is None
+    assert after_change is None
+    assert second.reminded == [docs["leave"].id]
+    assert (
+        await audit_actions(deps, source, "knowledge.document.stale_reminded")
+        == ["knowledge.document.stale_reminded"] * 3
+    )
+
+
+async def test_missing_upstream_documents_are_stale_without_a_threshold_until_they_return(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+        assert stored is not None
+        stored.stale_after_days = None  # no "not updated" reminders
+    connector.put("leave", "x", "v1")
+    connector.put("travel", "y", "v1")
+    await run(deps, source)
+    await age(deps, source, "leave", 900)
+    travel = connector.items.pop("travel")
+    connector.complete, connector.truncated = False, True
+    await run(deps, source)
+
+    flagged = await reminders(deps, source)
+    connector.items["travel"] = travel
+    await run(deps, source)
+    ended = await reminders(deps, source)
+
+    docs = await documents(deps, source)
+    assert flagged.reminded == [docs["travel"].id]  # not "leave": no threshold
+    assert ended.episodes_ended == 1
+    assert docs["travel"].stale_reminded_at is None
+
+
+async def test_an_owner_who_cannot_open_the_collection_is_not_reminded(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        hr = (
+            await session.scalars(select(Collection).where(Collection.key == "hr-guidance"))
+        ).one()
+        stored = await session.get(Source, source.id)
+        assert stored is not None
+        stored.collection_id, stored.stale_after_days = hr.id, 30  # Erin cannot open HR Guidance
+    connector.put("leave", "x", "v1")
+    await run(deps, source)
+    await age(deps, source, "leave", 60)
+
+    report = await reminders(deps, source)
+
+    assert (report.reminded, report.without_owner) == ([], 1)
+    assert await notifications(deps, source, "source.stale_documents") == []
+
+
+async def test_the_daily_task_alerts_a_failing_source_the_engine_did_not(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """E.g. the threshold was lowered after the failures."""
+    deps, connector, source, _, _ = setup
+    deps.failure_alert_after = 5
+    connector.fail = True
+    await run(deps, source)
+    await run(deps, source)
+    before = await notifications(deps, source, "source.failing")
+
+    report = await reminders(deps, source)  # threshold 3: two failures are not enough
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+        assert stored is not None
+        stored.consecutive_failures = 3
+    later = await reminders(deps, source)
+    twice = await reminders(deps, source)
+
+    assert before == []
+    assert report.failing_alerted == []
+    assert (later.failing_alerted, twice.failing_alerted) == (["intranet"], [])
+    assert len(await notifications(deps, source, "source.failing")) == 2  # Erin and Alice

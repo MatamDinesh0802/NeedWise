@@ -2,7 +2,9 @@
 
     scan -> per item: unchanged (skip) | new or changed (fetch, new version, ingest)
          -> if the scan was complete: items that disappeared are deleted everywhere
-         -> health recorded on the source
+            if it was cut short: they are kept and flagged "missing upstream"
+         -> health recorded on the source and as a run (the run history); a source that keeps
+            failing alerts the people who manage it (reminders.py)
 
 Safe by construction:
 - one sync per source at a time (a conditional status update acts as the lock);
@@ -17,14 +19,15 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.connectors.base import Connector, ConnectorError, RemoteItem
-from workmind.modules.connectors.models import Source
+from workmind.modules.connectors.models import Source, SourceRun
+from workmind.modules.connectors.reminders import announce_recovery, check_failing
 from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.governance.audit import Actor, record_event
 from workmind.modules.knowledge import service
@@ -36,6 +39,8 @@ from workmind.modules.retrieval.qdrant import QdrantClient
 
 log = structlog.get_logger("workmind.sync")
 STALE_LOCK = timedelta(hours=1)  # a "syncing" status older than this belongs to a dead worker
+RUNS_KEPT = 100  # run history per source
+INTERRUPTED = "the worker stopped before the sync finished"
 # Chat is discussion, never policy (ARCHITECTURE 7.3), whatever the collection's default
 # trust: anyone in a synced channel (Slack Connect guests included) writes it, and an
 # official-by-default collection would otherwise rank their messages above real policy
@@ -55,6 +60,8 @@ class SyncDeps:
     secrets: SecretBox
     connectors: ConnectorFactory
     max_bytes: int
+    # Failed syncs in a row before the people who manage the source are alerted.
+    failure_alert_after: int = 3
 
 
 @dataclass
@@ -66,10 +73,19 @@ class SyncReport:
     unchanged: int = 0
     deleted: int = 0
     failed: int = 0
+    missing: int = 0  # known items a cut-short scan did not list (kept, flagged)
+    complete: bool | None = None
     errors: list[str] = field(default_factory=list[str])
+    # Per-item errors keep the item's id apart from the message (the run history shows both).
+    item_errors: list[tuple[str | None, str]] = field(default_factory=list[tuple[str | None, str]])
 
     def stats(self) -> dict[str, Any]:
-        return {k: v for k, v in self.__dict__.items() if k not in ("status", "errors")}
+        skip = ("status", "errors", "item_errors", "complete")
+        return {k: v for k, v in self.__dict__.items() if k not in skip}
+
+    def error(self, message: str, item: str | None = None) -> None:
+        self.errors.append((f"{item}: {message}" if item else message)[:300])
+        self.item_errors.append((item, message[:300]))
 
 
 def _owner_context(source: Source) -> RequestContext:
@@ -84,8 +100,15 @@ def _owner_context(source: Source) -> RequestContext:
     )
 
 
-async def _claim(deps: SyncDeps, tenant_id: uuid.UUID, source_id: uuid.UUID) -> Source | None:
-    """Marks the source as syncing unless another sync holds it. None: skip this run."""
+async def _claim(
+    deps: SyncDeps,
+    tenant_id: uuid.UUID,
+    source_id: uuid.UUID,
+    trigger: str,
+    requested_by: uuid.UUID | None,
+) -> tuple[Source, uuid.UUID] | None:
+    """Marks the source as syncing unless another sync holds it, and opens its run. None: skip
+    this run. Taking over from a dead worker closes that worker's run as interrupted."""
     now = datetime.now(UTC)
     async with tenant_transaction(deps.sessions, tenant_id) as session:
         claimed = await session.scalar(
@@ -100,13 +123,42 @@ async def _claim(deps: SyncDeps, tenant_id: uuid.UUID, source_id: uuid.UUID) -> 
         )
         if claimed is None:
             return None
-        return await session.get(Source, source_id)
+        await session.execute(
+            update(SourceRun)
+            .where(SourceRun.source_id == source_id, SourceRun.status == "running")
+            .values(
+                status="error",
+                finished_at=now,
+                errors=[{"item": None, "message": INTERRUPTED}],
+            )
+        )
+        run = SourceRun(
+            tenant_id=tenant_id,
+            source_id=source_id,
+            trigger=trigger,
+            requested_by=requested_by,
+            status="running",
+            started_at=now,
+        )
+        session.add(run)
+        await session.flush()
+        source = await session.get(Source, source_id)
+        assert source is not None  # noqa: S101  (just claimed)
+        return source, run.id
 
 
-async def sync_source(deps: SyncDeps, tenant_id: uuid.UUID, source_id: uuid.UUID) -> SyncReport:
-    source = await _claim(deps, tenant_id, source_id)
-    if source is None:
+async def sync_source(
+    deps: SyncDeps,
+    tenant_id: uuid.UUID,
+    source_id: uuid.UUID,
+    *,
+    trigger: str = "schedule",
+    requested_by: uuid.UUID | None = None,
+) -> SyncReport:
+    claim = await _claim(deps, tenant_id, source_id, trigger, requested_by)
+    if claim is None:
         return SyncReport(status="skipped")
+    source, run_id = claim
     report = SyncReport()
     cursor: dict[str, Any] = dict(source.cursor)
     try:
@@ -117,10 +169,13 @@ async def sync_source(deps: SyncDeps, tenant_id: uuid.UUID, source_id: uuid.UUID
         if isinstance(refreshed, dict):
             await _store_credentials(deps, source, refreshed)  # pyright: ignore[reportUnknownArgumentType]
         report.items = len(scan.items)
+        report.complete = scan.complete
         cursor = scan.cursor
         await _apply(deps, source, connector, scan.items, report)
+        present = {i.external_id for i in scan.items}
         if scan.complete:
-            await _delete_missing(deps, source, {i.external_id for i in scan.items}, report)
+            await _delete_missing(deps, source, present, report)
+        await _mark_seen(deps, source, present, flag_missing=scan.truncated, report=report)
         report.status = (
             "error"
             if report.failed and not (report.added or report.updated or report.unchanged)
@@ -128,12 +183,12 @@ async def sync_source(deps: SyncDeps, tenant_id: uuid.UUID, source_id: uuid.UUID
         )
     except ConnectorError as exc:
         report.status = "error"
-        report.errors.append(str(exc)[:300])
+        report.error(str(exc))
     except Exception as exc:
         log.exception("sync_failed", source=str(source_id))
         report.status = "error"
-        report.errors.append(f"{type(exc).__name__}: {exc}"[:300])
-    await _finish(deps, source, report, cursor)
+        report.error(f"{type(exc).__name__}: {exc}")
+    await _finish(deps, source, run_id, report, cursor)
     return report
 
 
@@ -179,6 +234,9 @@ async def _apply(
                 document = await session.get(Document, result.document.id)
                 assert document is not None  # noqa: S101
                 document.source_version = item.version
+                if not result.unchanged:  # new content: a new staleness clock
+                    document.source_changed_at = item.modified_at or datetime.now(UTC)
+                    document.stale_reminded_at = None
             if not result.unchanged:
                 to_ingest.append((result.document.id, result.version.id))
             if existing is None:
@@ -189,7 +247,7 @@ async def _apply(
                 report.updated += 1
         except (ConnectorError, ApiError) as exc:
             report.failed += 1
-            report.errors.append(f"{item.external_id}: {exc}"[:300])
+            report.error(str(exc), item.external_id)
     for document_id, version_id in to_ingest:
         await deps.ingestion.dispatch(source.tenant_id, document_id, version_id)
 
@@ -217,6 +275,27 @@ async def _delete_missing(
     report.deleted = len(gone)
 
 
+async def _mark_seen(
+    deps: SyncDeps, source: Source, present: set[str], *, flag_missing: bool, report: SyncReport
+) -> None:
+    """Items the scan listed are not missing; after a scan that was cut short, known items it
+    did not list are flagged "missing upstream" (since the first such scan) and kept."""
+    now = datetime.now(UTC)
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        documents = (
+            await session.scalars(select(Document).where(Document.source_id == source.id))
+        ).all()
+        for document in documents:
+            if document.external_id in present:
+                if document.source_missing_since is not None:
+                    document.source_missing_since = None
+                if document.source_changed_at is None:  # synced before this was recorded
+                    document.source_changed_at = now
+            elif flag_missing and document.source_missing_since is None:
+                document.source_missing_since = now
+        report.missing = sum(1 for d in documents if d.source_missing_since is not None)
+
+
 async def _store_credentials(deps: SyncDeps, source: Source, credentials: dict[str, Any]) -> None:
     async with tenant_transaction(deps.sessions, source.tenant_id) as session:
         stored = await session.get(Source, source.id)
@@ -225,11 +304,25 @@ async def _store_credentials(deps: SyncDeps, source: Source, credentials: dict[s
 
 
 async def _finish(
-    deps: SyncDeps, source: Source, report: SyncReport, cursor: dict[str, Any]
+    deps: SyncDeps,
+    source: Source,
+    run_id: uuid.UUID,
+    report: SyncReport,
+    cursor: dict[str, Any],
 ) -> None:
     now = datetime.now(UTC)
     async with tenant_transaction(deps.sessions, source.tenant_id) as session:
-        stored = await session.get(Source, source.id)
+        run = await session.get(SourceRun, run_id)
+        if run is not None:
+            run.status = report.status
+            run.finished_at = now
+            run.complete = report.complete
+            run.stats = report.stats()
+            run.errors = [{"item": item, "message": m} for item, m in report.item_errors[:50]]
+        # Locked: the daily reminder task reads the failure episode too.
+        stored = await session.scalar(
+            select(Source).where(Source.id == source.id).with_for_update()
+        )
         if stored is None:
             return
         stored.status = report.status
@@ -238,6 +331,13 @@ async def _finish(
         stored.last_error = "; ".join(report.errors[:5]) or None
         if report.status == "ok":
             stored.last_success_at = now
+            stored.consecutive_failures = 0
+            if stored.failure_alerted_at is not None:
+                stored.failure_alerted_at = None
+                await announce_recovery(session, stored)
+        else:
+            stored.consecutive_failures += 1
+            await check_failing(session, stored, threshold=deps.failure_alert_after, now=now)
         await record_event(
             session,
             tenant_id=source.tenant_id,
@@ -246,5 +346,17 @@ async def _finish(
             resource_type="source",
             resource_id=source.key,
             details={"status": report.status, **report.stats()},
+        )
+        # The run history keeps the newest RUNS_KEPT runs of each source.
+        keep = (
+            select(SourceRun.id)
+            .where(SourceRun.source_id == source.id)
+            .order_by(SourceRun.started_at.desc())
+            .limit(RUNS_KEPT)
+        )
+        await session.execute(
+            delete(SourceRun)
+            .where(SourceRun.source_id == source.id, SourceRun.id.not_in(keep))
+            .execution_options(synchronize_session=False)
         )
     log.info("source_synced", source=source.key, status=report.status, **report.stats())
