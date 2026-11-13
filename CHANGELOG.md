@@ -57,6 +57,19 @@ Multi-tenant hardening ([docs/multi-tenancy.md](docs/multi-tenancy.md)):
   `RATE_LIMITS`, `RATE_LIMITS_ENABLED`).
 - A cross-tenant suite that calls every route with another tenant's ids.
 
+Connectors, the rest of Phase 7 ([docs/connectors.md](docs/connectors.md)):
+
+- A source health dashboard in Admin › Sources, and Knowledge Hub › Sources for the owners of the
+  collections sources sync into: health (healthy, failing, paused, never synced), the mapping and
+  who can see it, last successful and next scheduled sync, what the last run changed, errors in
+  plain words, a run history per source, pause and resume, Disconnect after typing the key.
+- Stale synced documents: unchanged in the source past the source's threshold, or missing
+  upstream (a cut-short scan no longer lists them). A daily task reminds their owners once per
+  staleness episode; a source that fails `SOURCE_FAILURE_ALERT_AFTER` syncs in a row (default 3)
+  notifies the people who manage it once per failure episode, and again when it recovers.
+- Connect Slack with OAuth (`SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`); a pasted bot token still
+  works.
+
 Operations: `make backup` and `make restore` with a measured restore drill
 ([backup and restore](docs/operations/backup-restore.md)); an upgrade test from a release tag,
 passed from v0.1.0 ([upgrades](docs/operations/upgrade.md)); `wm authz sync`.
@@ -90,6 +103,10 @@ Upgrade notes so far:
   signature authority workbook.
 - After an upgrade or a restore, `wm authz sync` brings each tenant's OpenFGA store to the
   current model.
+- Migration `0020` adds the source run history and staleness columns. Existing synced documents
+  start their staleness clock at their current version's date, so the first daily run after the
+  upgrade may remind owners of documents unchanged for more than 180 days (Slack sources have no
+  threshold). Collection owners who are not admins can now manage their collections' sources.
 
 ## v0.11 — Phase 11: admin, governance and usage analytics (2026-11-12, not tagged)
 

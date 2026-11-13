@@ -70,6 +70,10 @@ The cycle's task is remembered on the document (`review_task_id`), and the rows 
 the task runs, so running it twice, or twice at the same time, reminds once. A document without
 an active owner is not reminded; it is listed in the governance overview instead.
 
+Synced documents have a second, separate reminder: when one has not changed in its source for the
+source's threshold, or the source no longer lists it, its owner gets one task per daily run for
+all such documents, once per staleness episode ([connectors.md](connectors.md#stale-documents-and-reminders)).
+
 "Once a day" counts from when beat first started: the first run is a day after that. In Docker
 Compose, beat keeps its schedule in the `beat_schedule` volume, so restarting or rebuilding the
 stack does not push the next run back (with the schedule in `/tmp`, as before, every restart
@@ -199,6 +203,7 @@ The complete chain with its hashes, as JSON lines for a SIEM, is the Enterprise 
 |---|---|
 | `knowledge.document.owner_changed` | A document got another owner |
 | `knowledge.document.review_reminded` | The daily task reminded an owner (actor: system) |
+| `knowledge.document.stale_reminded` | The daily source task reminded an owner of a stale synced document ([connectors.md](connectors.md#stale-documents-and-reminders)) |
 | `knowledge.document.reviewed` | Someone marked a document reviewed |
 | `knowledge.document.official_requested` | An editor asked for official status |
 | `knowledge.document.official_rerouted` | The collection's owner changed and a pending request went to whoever decides now |
