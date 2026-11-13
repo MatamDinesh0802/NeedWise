@@ -30,6 +30,7 @@ from workmind.core.db import create_engine, create_session_factory
 from workmind.core.extensions import load_extensions
 from workmind.core.resources import Resources
 from workmind.core.tenancy import global_transaction
+from workmind.modules.connectors.oauth import OAuthApps
 from workmind.modules.connectors.registry import build_connector
 from workmind.modules.connectors.schedule import due_sources
 from workmind.modules.connectors.secrets import SecretBox
@@ -171,10 +172,7 @@ async def _run_sync(tenant_id: str, source_id: str) -> dict[str, Any]:
             collection_name=settings.qdrant_collection,
             secrets=SecretBox(settings.secrets_key.get_secret_value()),
             connectors=lambda source, credentials: build_connector(
-                source,
-                credentials,
-                http=http,
-                google_client=(settings.google_client_id, secret(settings.google_client_secret)),
+                source, credentials, http=http, apps=OAuthApps.from_settings(settings)
             ),
             max_bytes=settings.max_upload_bytes,
         )

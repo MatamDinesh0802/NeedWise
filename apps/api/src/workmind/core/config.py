@@ -134,6 +134,18 @@ class Settings(BaseSettings):
     smtp_starttls: bool = False
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
+    # Confluence Cloud sources (an Atlassian OAuth 2.0 (3LO) app; callback URL:
+    # <PUBLIC_URL>/api/v1/oauth/atlassian/callback). Not needed with API tokens.
+    atlassian_client_id: str | None = None
+    atlassian_client_secret: SecretStr | None = None
+    # SharePoint and OneDrive sources (a Microsoft Entra app registration, platform "Web";
+    # redirect URI: <PUBLIC_URL>/api/v1/oauth/microsoft/callback).
+    microsoft_client_id: str | None = None
+    microsoft_client_secret: SecretStr | None = None
+    # The directory that signs in: your tenant id (or a verified domain), or "organizations".
+    microsoft_tenant_id: str = Field(
+        default="organizations", pattern=r"^[A-Za-z0-9][A-Za-z0-9.-]{0,99}$"
+    )
     agent_fast_path: bool = True
     agent_fast_path_min_score: float = 0.3  # EmbeddingGemma similarities; see evals/README.md
     agent_fast_path_min_margin: float = 0.15

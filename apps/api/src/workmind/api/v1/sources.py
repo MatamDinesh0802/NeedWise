@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from urllib.parse import urlencode
 
+import structlog
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, ValidationError
@@ -22,8 +23,16 @@ from workmind.api.v1.admin import AdminContext
 from workmind.core.context import RequestContext
 from workmind.core.errors import ApiError
 from workmind.core.tenancy import tenant_key, tenant_transaction
+from workmind.modules.connectors import oauth
+from workmind.modules.connectors.base import ConnectorError
 from workmind.modules.connectors.models import Source
-from workmind.modules.connectors.registry import CREDENTIALS, build_connector, validate_config
+from workmind.modules.connectors.oauth import OAuthApp, OAuthApps
+from workmind.modules.connectors.registry import (
+    CREDENTIALS,
+    KINDS,
+    build_connector,
+    validate_config,
+)
 from workmind.modules.connectors.secrets import SecretBox
 from workmind.modules.connectors.sync import SyncDeps, sync_source
 from workmind.modules.governance.audit import Actor, record_event
@@ -34,6 +43,7 @@ from workmind.modules.knowledge.pipeline import delete_document_points
 from workmind.modules.knowledge.storage import owned_key
 from workmind.providers.factory import secret
 
+log = structlog.get_logger("workmind.sources")
 router = APIRouter(prefix="/admin/sources", tags=["admin"])
 oauth_router = APIRouter(prefix="/oauth", tags=["admin"])
 GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -45,7 +55,7 @@ OAUTH_TTL_S = 600
 class SourceCreate(BaseModel):
     key: str = Field(pattern=SLUG_PATTERN, max_length=40)
     name: str = Field(min_length=1, max_length=120)
-    kind: Literal["web", "github", "slack", "gdrive"]
+    kind: Literal["web", "github", "slack", "gdrive", "confluence", "sharepoint"]
     collection: str = Field(description="key of the collection documents are synced into")
     config: dict[str, Any]
     credentials: dict[str, str] | None = None
@@ -146,6 +156,70 @@ async def list_sources(ctx: AdminContext, request: Request) -> list[SourceOut]:
     return [_out(s, keys.get(s.collection_id, ""), counts.get(s.id, 0)) for s in sources]
 
 
+class CredentialFieldOut(BaseModel):
+    name: str
+    label: str
+    hint: str
+    optional: bool
+
+
+class OAuthOut(BaseModel):
+    provider: Literal["google", "atlassian", "microsoft"]
+    # Navigate the browser here to connect: it redirects to the provider's consent screen.
+    start_path: str  # with {key} for the source's key
+    redirect_uri: str  # what the operator registers with the provider
+    configured: bool  # the operator set the client id and secret
+
+
+class SourceKindOut(BaseModel):
+    kind: str
+    label: str
+    description: str
+    auth: Literal["none", "token", "oauth", "oauth_or_token"]
+    credentials: list[CredentialFieldOut]  # typed by an admin; write-only
+    oauth: OAuthOut | None
+    config_schema: dict[str, Any]  # JSON Schema of `config`
+
+
+@router.get("/kinds")
+async def source_kinds(ctx: AdminContext, request: Request) -> list[SourceKindOut]:
+    """Every connector this deployment has: what it is, how it signs in, what to configure."""
+    settings = settings_of(request)
+    apps = OAuthApps.from_settings(settings)
+    return [
+        SourceKindOut(
+            kind=info.kind,
+            label=info.label,
+            description=info.description,
+            auth=info.auth,
+            credentials=[
+                CredentialFieldOut(name=c.name, label=c.label, hint=c.hint, optional=c.optional)
+                for c in info.credentials
+            ],
+            oauth=OAuthOut(
+                provider=info.oauth,
+                start_path=f"/api/v1/admin/sources/{{key}}/oauth/{info.oauth}/start",
+                redirect_uri=_redirect_uri(settings.public_url, info.oauth),
+                configured=_app(apps, info.oauth).configured,
+            )
+            if info.oauth
+            else None,
+            config_schema=info.config.model_json_schema(),
+        )
+        for info in KINDS.values()
+    ]
+
+
+def _app(apps: OAuthApps, provider: str) -> OAuthApp:
+    return {"google": apps.google, "atlassian": apps.atlassian, "microsoft": apps.microsoft}[
+        provider
+    ]
+
+
+def _redirect_uri(public_url: str, provider: str) -> str:
+    return f"{public_url.rstrip('/')}/api/v1/oauth/{provider}/callback"
+
+
 @router.post("", status_code=201)
 async def create_source(ctx: AdminContext, request: Request, body: SourceCreate) -> SourceOut:
     config = _config(body.kind, body.config)
@@ -241,10 +315,7 @@ def sync_deps(request: Request) -> SyncDeps:
         collection_name=resources.collection_name,
         secrets=_secrets(request),
         connectors=lambda source, credentials: build_connector(
-            source,
-            credentials,
-            http=resources.http,
-            google_client=(settings.google_client_id, secret(settings.google_client_secret)),
+            source, credentials, http=resources.http, apps=OAuthApps.from_settings(settings)
         ),
         max_bytes=settings.max_upload_bytes,
     )
@@ -356,6 +427,147 @@ async def google_callback(
     return RedirectResponse(
         f"/admin/sources?oauth=connected&source={flow['source']}", status_code=303
     )
+
+
+# --- Confluence (Atlassian 3LO) and SharePoint/OneDrive (Microsoft, code + PKCE) -------------
+
+Provider = Literal["atlassian", "microsoft"]
+OAUTH_KINDS: dict[str, str] = {"atlassian": "confluence", "microsoft": "sharepoint"}
+OAUTH_SETTINGS: dict[str, str] = {
+    "atlassian": "ATLASSIAN_CLIENT_ID and ATLASSIAN_CLIENT_SECRET",
+    "microsoft": "MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET",
+}
+
+
+def _flow_key(ctx: RequestContext, provider: str, state: str) -> str:
+    return tenant_key(ctx.tenant_id, "oauth", provider, state)
+
+
+async def _oauth_start(
+    ctx: RequestContext, request: Request, key: str, provider: Provider
+) -> RedirectResponse:
+    settings, resources = settings_of(request), resources_of(request)
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        source = await _source(session, key)
+        if source.kind != OAUTH_KINDS[provider]:
+            raise ApiError(409, "wrong_kind", f"This source does not connect with {provider}")
+        config = dict(source.config)
+    app = _app(OAuthApps.from_settings(settings), provider)
+    if not app.configured:
+        raise ApiError(409, "oauth_not_configured", f"Set {OAUTH_SETTINGS[provider]} first")
+    state = secrets.token_urlsafe(32)
+    flow = {"tenant_id": str(ctx.tenant_id), "user_id": str(ctx.user_id), "source": key}
+    redirect_uri = _redirect_uri(settings.public_url, provider)
+    if provider == "atlassian":
+        url = oauth.ATLASSIAN_AUTHORIZE
+        query = {
+            "audience": "api.atlassian.com",
+            "client_id": app.client_id or "",
+            "scope": " ".join(oauth.ATLASSIAN_SCOPES),
+            "redirect_uri": redirect_uri,
+            "state": state,
+            "response_type": "code",
+            "prompt": "consent",
+        }
+    else:
+        verifier = secrets.token_urlsafe(64)
+        challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+            .rstrip(b"=")
+            .decode()
+        )
+        scope = " ".join(oauth.microsoft_scopes(config))
+        flow |= {"verifier": verifier, "scope": scope}
+        url = oauth.microsoft_authorize_url(app.tenant)
+        query = {
+            "client_id": app.client_id or "",
+            "response_type": "code",
+            "redirect_uri": redirect_uri,
+            "response_mode": "query",
+            "scope": scope,
+            "state": state,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        }
+    # Under the tenant's prefix: a callback in another tenant's session never even finds it.
+    await resources.valkey.set(_flow_key(ctx, provider, state), json.dumps(flow), ex=OAUTH_TTL_S)
+    return RedirectResponse(f"{url}?{urlencode(query)}", status_code=302)
+
+
+async def _oauth_callback(
+    ctx: RequestContext, request: Request, provider: Provider, code: str, state: str, error: str
+) -> RedirectResponse:
+    settings, resources = settings_of(request), resources_of(request)
+    failed = RedirectResponse("/admin/sources?oauth=failed", status_code=303)
+    raw = await resources.valkey.getdel(_flow_key(ctx, provider, state)) if state else None
+    if error or not code or raw is None:
+        return failed
+    flow = json.loads(raw)
+    if flow["tenant_id"] != str(ctx.tenant_id) or flow["user_id"] != str(ctx.user_id):
+        return failed  # another session
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        source = await session.scalar(select(Source).where(Source.key == flow["source"]))
+        if source is None or source.kind != OAUTH_KINDS[provider]:
+            return failed
+        config = dict(source.config)
+    app = _app(OAuthApps.from_settings(settings), provider)
+    redirect_uri = _redirect_uri(settings.public_url, provider)
+    try:
+        if provider == "atlassian":
+            credentials = await oauth.atlassian_connect(
+                resources.http,
+                app,
+                code=code,
+                redirect_uri=redirect_uri,
+                site_url=str(config.get("site_url", "")),
+            )
+        else:
+            credentials = await oauth.microsoft_connect(
+                resources.http,
+                app,
+                code=code,
+                redirect_uri=redirect_uri,
+                verifier=flow["verifier"],
+                scope=flow["scope"],
+            )
+    except ConnectorError as exc:
+        log.info("oauth_failed", provider=provider, source=flow["source"], reason=str(exc))
+        return failed
+    async with tenant_transaction(resources.db, ctx.tenant_id) as session:
+        source = await session.scalar(select(Source).where(Source.key == flow["source"]))
+        if source is None:
+            return failed
+        source.credentials = _secrets(request).seal(source.id, credentials)
+        await _audit(session, ctx, "admin.source.connected", source)
+    return RedirectResponse(
+        f"/admin/sources?oauth=connected&source={flow['source']}", status_code=303
+    )
+
+
+@router.get("/{key}/oauth/atlassian/start")
+async def atlassian_start(ctx: AdminContext, request: Request, key: str) -> RedirectResponse:
+    """Connects a Confluence source: redirects to Atlassian's consent screen."""
+    return await _oauth_start(ctx, request, key, "atlassian")
+
+
+@router.get("/{key}/oauth/microsoft/start")
+async def microsoft_start(ctx: AdminContext, request: Request, key: str) -> RedirectResponse:
+    """Connects a SharePoint/OneDrive source: redirects to Microsoft's sign-in."""
+    return await _oauth_start(ctx, request, key, "microsoft")
+
+
+@oauth_router.get("/atlassian/callback")
+async def atlassian_callback(
+    ctx: AdminContext, request: Request, code: str = "", state: str = "", error: str = ""
+) -> RedirectResponse:
+    return await _oauth_callback(ctx, request, "atlassian", code, state, error)
+
+
+@oauth_router.get("/microsoft/callback")
+async def microsoft_callback(
+    ctx: AdminContext, request: Request, code: str = "", state: str = "", error: str = ""
+) -> RedirectResponse:
+    return await _oauth_callback(ctx, request, "microsoft", code, state, error)
 
 
 class StaleDocument(BaseModel):

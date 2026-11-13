@@ -69,7 +69,17 @@ SECTIONS: Sequence[tuple[str, Sequence[str]]] = (
     ("Documents and ingestion", ["object_storage_path", "ingestion_mode", "max_upload_bytes"]),
     ("Meetings", ["max_meeting_bytes", "transcription_*"]),
     ("Analytics", ["analytics_*"]),
-    ("Tools and connectors", ["searxng_url", "mcp_servers", "google_client_*"]),
+    (
+        "Tools and connectors",
+        [
+            "searxng_url",
+            "mcp_servers",
+            "google_client_*",
+            "atlassian_client_*",
+            "microsoft_client_*",
+            "microsoft_tenant_id",
+        ],
+    ),
     ("Email", ["smtp_*"]),
     ("Enterprise edition", ["license_*", "deployment_id"]),
     ("Demo data (development only)", ["keycloak_admin_*", "demo_password"]),
@@ -278,6 +288,22 @@ NOTES: dict[str, str] = {
         "URI `<PUBLIC_URL>/api/v1/oauth/google/callback`."
     ),
     "google_client_secret": "That OAuth client's secret.",
+    "atlassian_client_id": (
+        "Confluence sources that connect with OAuth: an OAuth 2.0 (3LO) app in the Atlassian "
+        "developer console, with the callback URL `<PUBLIC_URL>/api/v1/oauth/atlassian/callback` "
+        "and the scopes in docs/connectors.md. Not needed for sources that use an API token."
+    ),
+    "atlassian_client_secret": "That Atlassian app's secret.",
+    "microsoft_client_id": (
+        "SharePoint and OneDrive sources: the application (client) id of a Microsoft Entra app "
+        'registration with a "Web" redirect URI `<PUBLIC_URL>/api/v1/oauth/microsoft/callback` '
+        "and the delegated Microsoft Graph permissions in docs/connectors.md."
+    ),
+    "microsoft_client_secret": "A client secret of that app registration.",
+    "microsoft_tenant_id": (
+        "The Microsoft Entra directory people sign in with: your tenant id or a verified domain "
+        "(a single-tenant app), or `organizations` for any work or school account."
+    ),
     "smtp_host": (
         "Outgoing email (`send_email`, always after a person's approval). Unset: email is off. "
         "Development uses Mailpit, which delivers nothing: http://localhost:8025."

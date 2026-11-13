@@ -4,6 +4,10 @@
 2. fetch returns bytes WorkMind can parse;
 3. failures raise ConnectorError (never a raw HTTP error), so a sync can record them;
 4. a scan that saw only part of the source says so (complete=False), so nothing is deleted.
+
+Confluence and SharePoint run against the fuller fakes in tests/fake_confluence.py and
+tests/fake_graph.py; their own behaviour (paging, delta feeds, throttling, OAuth) is tested in
+test_connectors_confluence.py and test_connectors_sharepoint.py.
 """
 
 import json
@@ -13,9 +17,15 @@ from typing import Any
 import httpx
 import pytest
 
+from tests import fake_confluence, fake_graph
+from tests.fake_confluence import Attachment, FakeConfluence, Page
+from tests.fake_graph import FakeGraph, Item
 from workmind.modules.connectors.base import Connector, ConnectorError
+from workmind.modules.connectors.confluence import ConfluenceConnector
 from workmind.modules.connectors.gdrive import GoogleDriveConnector
 from workmind.modules.connectors.github import GitHubConnector
+from workmind.modules.connectors.oauth import OAuthApp
+from workmind.modules.connectors.sharepoint import SharePointConnector
 from workmind.modules.connectors.slack import SlackConnector
 from workmind.modules.connectors.web import WebConnector
 from workmind.modules.knowledge.parsing import detect_mime, parse
@@ -95,6 +105,17 @@ def gdrive_routes(svc: FakeService, request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, content=svc.content["bytes"][file_id])
 
 
+def fake_routes(svc: FakeService, request: httpx.Request) -> httpx.Response:
+    return svc.content["fake"].handle(request)
+
+
+async def no_sleep(seconds: float) -> None:
+    return None
+
+
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
 # --- one fixture per connector ---------------------------------------------------------------
 
 DOC_A = "# Leave\n\nParental leave is 16 weeks.\n"
@@ -165,6 +186,53 @@ def gdrive(svc: FakeService) -> Connector:
     )
 
 
+def confluence(svc: FakeService) -> Connector:
+    fake = FakeConfluence()
+    fake.space("98306", "HR", "People")
+    fake.page(Page("98310", "98306", "People home", "<p>Everything about working here.</p>"))
+    fake.page(
+        Page(
+            "98311",
+            "98306",
+            "Leave policy",
+            "<h1>Leave</h1><p>Parental leave is <strong>16 weeks</strong>.</p>",
+            parent_id="98310",
+            parent_type="page",
+        )
+    )
+    fake.attach(Attachment("att98331", "98311", "leave-form.docx", DOCX, _docx("Leave form.")))
+    fake.attach(Attachment("att98332", "98311", "org-chart.png", "image/png", b"\x89PNG"))
+    svc.content["fake"] = fake
+    return ConfluenceConnector(
+        svc.client(),
+        site_url=fake_confluence.SITE,
+        spaces=["HR"],
+        credentials={"email": fake_confluence.EMAIL, "api_token": fake_confluence.API_TOKEN},
+        app=OAuthApp(),
+        sleep=no_sleep,
+    )
+
+
+def sharepoint(svc: FakeService) -> Connector:
+    fake = FakeGraph()
+    fake.put(Item("01POLICIES", "Policies", fake_graph.ROOT_ID, folder=True))
+    fake.put(Item("01LEAVEDOC", "Leave policy.docx", "01POLICIES", data=_docx("16 weeks.")))
+    fake.put(Item("01NOTESMD", "notes.md", "01POLICIES", data=DOC_A.encode()))
+    fake.put(Item("01PHOTOJPG", "photo.jpg", "01POLICIES", data=b"\xff\xd8\xff"))
+    fake.put(Item("01ARCHIVE", "Archive", "01POLICIES", folder=True))
+    fake.put(Item("01OLDTXT", "old.txt", "01ARCHIVE", data=b"Old notes."))
+    svc.content["fake"] = fake
+    return SharePointConnector(
+        svc.client(),
+        site_url=fake_graph.SITE_URL,
+        library=None,
+        folder=None,
+        credentials={"refresh_token": fake.refresh_token},
+        app=OAuthApp("client-id", "client-secret", "contoso.onmicrosoft.com"),
+        sleep=no_sleep,
+    )
+
+
 def _docx(text: str) -> bytes:
     import io
 
@@ -182,8 +250,10 @@ CONNECTORS = {
     "github": (github, github_routes),
     "slack": (slack, slack_routes),
     "gdrive": (gdrive, gdrive_routes),
+    "confluence": (confluence, fake_routes),
+    "sharepoint": (sharepoint, fake_routes),
 }
-EXPECTED_ITEMS = {"web": 2, "github": 2, "slack": 1, "gdrive": 3}
+EXPECTED_ITEMS = {"web": 2, "github": 2, "slack": 1, "gdrive": 3, "confluence": 3, "sharepoint": 3}
 
 
 @pytest.fixture(params=sorted(CONNECTORS))
@@ -225,6 +295,10 @@ async def test_versions_are_stable_until_the_content_changes(
             svc.content["docs/leave.md"] = DOC_A + "\nUpdated.\n"
         case "slack":
             svc.content["messages"][0]["text"] = "Edited: it is 16 weeks."
+        case "confluence":
+            svc.content["fake"].edit("98311", "<p>Parental leave is 18 weeks.</p>")
+        case "sharepoint":
+            svc.content["fake"].write("01NOTESMD", b"# Leave\n\nNow 18 weeks.\n")
         case _:
             svc.content["root"][0]["version"] = "8"
     changed = {i.external_id: i.version for i in (await connector.scan({})).items}

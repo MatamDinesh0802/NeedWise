@@ -140,6 +140,11 @@ not shown here; where one exists it is a development value.
 | <a id="mcp_servers"></a>`MCP_SERVERS` | JSON list | `[]` | Remote MCP servers whose tools agents may use, as JSON: `[{"key": "erp", "url": "https://erp.example/mcp", "token": "...", "read_only": ["stock"]}]`. A tool not listed in `read_only` needs approval. |
 | <a id="google_client_id"></a>`GOOGLE_CLIENT_ID` | string | *unset* | Google Drive sources: an OAuth client of type "Web application", with the redirect URI `<PUBLIC_URL>/api/v1/oauth/google/callback`. |
 | <a id="google_client_secret"></a>`GOOGLE_CLIENT_SECRET` | *secret* | *unset* | That OAuth client's secret. |
+| <a id="atlassian_client_id"></a>`ATLASSIAN_CLIENT_ID` | string | *unset* | Confluence sources that connect with OAuth: an OAuth 2.0 (3LO) app in the Atlassian developer console, with the callback URL `<PUBLIC_URL>/api/v1/oauth/atlassian/callback` and the scopes in docs/connectors.md. Not needed for sources that use an API token. |
+| <a id="atlassian_client_secret"></a>`ATLASSIAN_CLIENT_SECRET` | *secret* | *unset* | That Atlassian app's secret. |
+| <a id="microsoft_client_id"></a>`MICROSOFT_CLIENT_ID` | string | *unset* | SharePoint and OneDrive sources: the application (client) id of a Microsoft Entra app registration with a "Web" redirect URI `<PUBLIC_URL>/api/v1/oauth/microsoft/callback` and the delegated Microsoft Graph permissions in docs/connectors.md. |
+| <a id="microsoft_client_secret"></a>`MICROSOFT_CLIENT_SECRET` | *secret* | *unset* | A client secret of that app registration. |
+| <a id="microsoft_tenant_id"></a>`MICROSOFT_TENANT_ID` | string | `organizations` | The Microsoft Entra directory people sign in with: your tenant id or a verified domain (a single-tenant app), or `organizations` for any work or school account. |
 
 ## Email
 
