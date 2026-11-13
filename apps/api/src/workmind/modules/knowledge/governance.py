@@ -793,15 +793,17 @@ async def reroute_official_requests(
                 reason="nobody can decide this request any more: the collection's owner changed",
                 actor=ctx.user_id,
             )
-            await notify(
-                session,
-                ctx.tenant_id,
-                first.requested_by,
-                kind="approval.failed",
-                title=f"Nobody can decide: {first.summary[:120]}",
-                body="The collection's owner changed and nobody else can approve it.",
-                link=document_link(uuid.UUID(str(first.arguments["document_id"]))),
-            )
+            # The summary names the document: only to a requester who may still read it.
+            if await can_view_as(session, first.requested_by, collection, document=document):
+                await notify(
+                    session,
+                    ctx.tenant_id,
+                    first.requested_by,
+                    kind="approval.failed",
+                    title=f"Nobody can decide: {first.summary[:120]}",
+                    body="The collection's owner changed and nobody else can approve it.",
+                    link=document_link(document.id),
+                )
         else:
             _close_official_requests(
                 [a for a in copies if a.approver_id not in deciders],
