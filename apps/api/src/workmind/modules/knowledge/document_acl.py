@@ -40,13 +40,18 @@ from workmind.modules.retrieval.qdrant import QdrantClient, match
 Origin = Literal["source", "manual"]
 
 
-@dataclass(frozen=True, order=True)
+@dataclass(frozen=True)
 class AclEntry:
     """One entry of an own list: who in WorkMind (None: unmapped, grants nothing) and how the
     source named them (None for an entry an editor set)."""
 
     principal: str | None
     external: str | None = None
+
+
+def ordered(entries: Iterable[AclEntry]) -> list[AclEntry]:
+    """Distinct entries in a stable order (either field may be None)."""
+    return sorted(set(entries), key=lambda e: (e.principal or "", e.external or ""))
 
 
 def normalize_external(value: str) -> str:
@@ -90,7 +95,7 @@ async def entries_for(
 ) -> list[AclEntry]:
     """An own list from the principals a source names, each mapped (or not) to WorkMind."""
     resolved = await resolve(session, tenant_id, externals)
-    return sorted(AclEntry(principal, external) for external, principal in resolved.items())
+    return ordered(AclEntry(principal, external) for external, principal in resolved.items())
 
 
 # --- Reading ------------------------------------------------------------------------------------
@@ -168,8 +173,8 @@ async def set_acl(
     changed; if so, the caller refreshes the chunks after the commit (`refresh_payload`)."""
     before_grants = [] if fresh else (await grants_of(session, [document.id]))[document.id]
     before: set[RelationTuple] = set() if fresh else document_tuples(document, before_grants)
-    wanted = sorted(set(entries)) if entries is not None else []
-    current = sorted(AclEntry(g.principal, g.external) for g in before_grants)
+    wanted = ordered(entries) if entries is not None else []
+    current = ordered(AclEntry(g.principal, g.external) for g in before_grants)
     own = entries is not None
     if not fresh and own == document.own_acl and wanted == current:
         if own and document.acl_origin != origin:

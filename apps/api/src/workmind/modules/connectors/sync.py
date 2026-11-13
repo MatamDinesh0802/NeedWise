@@ -249,7 +249,7 @@ def acl_entries(
     if not acl.restricted:
         return None
     names = {document_acl.normalize_external(p) for p in acl.principals}
-    return sorted(document_acl.AclEntry(resolved.get(n), n) for n in names)
+    return document_acl.ordered(document_acl.AclEntry(resolved.get(n), n) for n in names)
 
 
 async def _apply(
