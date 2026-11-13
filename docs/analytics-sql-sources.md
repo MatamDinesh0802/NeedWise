@@ -89,7 +89,8 @@ A source's host is checked when it is saved and resolved again before **every** 
   in `ANALYTICS_SOURCE_PRIVATE_NETWORKS` (comma-separated CIDRs; empty by default, so a fresh
   deployment reaches public addresses only). An org admin cannot widen this: it is a deployment
   setting. In compose, where databases usually sit on the Docker network, list that network
-  (for example `172.16.0.0/12`); in Kubernetes, the pod or service CIDR of the databases;
+  (for example `172.16.0.0/12`); in Kubernetes, the pod or service CIDR of the databases (Helm:
+  `config.env.ANALYTICS_SOURCE_PRIVATE_NETWORKS`);
 - public addresses: allowed.
 
 The connection goes to the address that was just checked (a name that resolves elsewhere a

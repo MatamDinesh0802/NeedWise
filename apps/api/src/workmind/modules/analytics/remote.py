@@ -276,7 +276,12 @@ _MYSQL_CONNECTION = frozenset({1044, 1045, 1049, 1130, 1251, 2003, 2005, 2006, 2
 
 
 def _mysql(target: Target, sql: str, max_rows: int, timeout_s: float) -> EngineResult:
-    import pymysql
+    try:
+        import pymysql
+    except ImportError:  # the optional `mysql` extra (the image installs it)
+        raise SourceUnavailableError(
+            "MySQL support is not installed: install the API with the mysql extra."
+        ) from None
 
     context = tls_context(target)
     try:
