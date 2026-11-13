@@ -23,6 +23,7 @@ from workmind.modules.identity.models import (
     User,
 )
 from workmind.modules.knowledge.models import Collection, CollectionGrant
+from workmind.modules.work.models import RoutingRule
 from workmind.seed.company import CollectionSpec, CompanySpec
 from workmind.seed.keycloak_admin import KeycloakAdmin, KeycloakAdminError
 
@@ -160,6 +161,19 @@ async def seed_database(
                 )
             ).scalar_one()
             await _version_seeded_agent(session, agent_id)
+
+        # Routing rules only for a tenant that has none: rules an admin edited survive a re-seed.
+        if spec.request_routing and not await session.scalar(select(RoutingRule.id).limit(1)):
+            for position, rule in enumerate(spec.request_routing):
+                session.add(
+                    RoutingRule(
+                        tenant_id=tenant_id,
+                        department_id=department_ids[rule.department],
+                        keywords=[k.strip().lower() for k in rule.keywords],
+                        categories=[c.strip() for c in rule.categories],
+                        position=position,
+                    )
+                )
 
         await record_event(
             session,

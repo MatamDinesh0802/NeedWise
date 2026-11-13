@@ -4,6 +4,7 @@
     uv run wm eval --retrieval-only      # no LLM calls: recall/MRR and the context leak gate
     uv run wm eval --judge               # also grade faithfulness with the judge model
     uv run wm eval --skip-retrieval --suites analytics   # the BI agent: text-to-SQL
+    uv run wm eval --skip-retrieval --suites request_routing   # requests -> department queues
 
 Exits with status 2 if any permission leak is found (the CI gate, ARCHITECTURE 22.3).
 """
@@ -20,6 +21,7 @@ from pathlib import Path
 
 from workmind.core.config import Settings
 from workmind.core.resources import Resources
+from workmind.core.tenancy import tenant_transaction
 from workmind.evals.analytics import AnalyticsRecord, summarize
 from workmind.evals.datasets import (
     fact_present,
@@ -29,10 +31,15 @@ from workmind.evals.datasets import (
     load_meetings,
     load_qa,
     load_red_team,
+    load_request_routing,
     load_routing,
 )
 from workmind.evals.redteam import rescored_violations
 from workmind.evals.report import as_json, markdown
+from workmind.evals.request_routing import (
+    evaluate_request_routing,
+    summarize_request_routing,
+)
 from workmind.evals.runner import (
     AnswerRecord,
     Askers,
@@ -47,6 +54,7 @@ from workmind.evals.runner import (
 )
 from workmind.modules.retrieval.service import Mode
 from workmind.modules.usage.calls import attribute
+from workmind.modules.work.routing import load_routing as load_request_rules
 from workmind.providers.factory import role_configs
 from workmind.providers.llm import LLMUsage, Role
 
@@ -75,7 +83,8 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
         "--suites",
         default="qa,redteam,abstention",
         help="answer suites: qa, redteam, abstention, cross (multi-department), routing, "
-        "meetings, analytics (the BI agent: text-to-SQL)",
+        "meetings, analytics (the BI agent: text-to-SQL), request_routing (requests to "
+        "department queues; rules only with --retrieval-only)",
     )
     parser.add_argument(
         "--assistant",
@@ -163,6 +172,7 @@ async def run(args: argparse.Namespace) -> int:
     routing = load_routing(args.datasets) if "routing" in suites else []
     meeting_items = load_meetings(args.datasets) if "meetings" in suites else []
     analytics_items = load_analytics(args.datasets) if "analytics" in suites else []
+    requests = load_request_routing(args.datasets) if "request_routing" in suites else []
     # Candidates for the person who sees every row (the leak checks), before any filtering.
     analytics_people = sorted({i.user for i in analytics_items})
     if args.only:
@@ -173,6 +183,7 @@ async def run(args: argparse.Namespace) -> int:
         cross = [i for i in cross if i.id in wanted]
         routing = [i for i in routing if i.id in wanted]
         analytics_items = [i for i in analytics_items if i.id in wanted]
+        requests = [i for i in requests if i.id in wanted]
     if args.limit:
         qa, red_team, abstention = (
             qa[: args.limit],
@@ -181,6 +192,7 @@ async def run(args: argparse.Namespace) -> int:
         )
         cross, routing = cross[: args.limit], routing[: args.limit]
         analytics_items = analytics_items[: args.limit]
+        requests = requests[: args.limit]
 
     overrides: dict[str, object] = {"agent_fast_path": args.fast_path == "on"}
     if args.fast_path_score is not None:
@@ -216,6 +228,23 @@ async def run(args: argparse.Namespace) -> int:
         if routing:
             print(f"routing: {len(routing)} questions", file=sys.stderr)
             result.routing = await evaluator.routing(routing)
+        if requests:
+            # The tenant's own rules, threshold and router model; rules only without models.
+            async with tenant_transaction(resources.db, tenant.id) as session:
+                departments, rules, policy = await load_request_rules(session)
+            print(
+                f"request routing: {len(requests)} requests, {len(rules)} rules "
+                f"({'rules only' if args.retrieval_only else 'rules, then the router model'})",
+                file=sys.stderr,
+            )
+            result.request_routing = await evaluate_request_routing(
+                requests,
+                departments=departments,
+                rules=rules,
+                policy=policy,
+                llm=None if args.retrieval_only else askers.llm,
+                organization=tenant.name,
+            )
         if meeting_items and not args.retrieval_only:
             print(f"meetings: {len(meeting_items)} (audio: {args.meetings_audio})", file=sys.stderr)
             result.meetings = await evaluator.meetings(
@@ -270,9 +299,9 @@ async def run(args: argparse.Namespace) -> int:
         ),
         "datasets": f"{len(qa)} QA, {len(red_team)} red team, {len(abstention)} abstention, "
         f"{len(cross)} cross-department, {len(routing)} routing, "
-        f"{len(analytics_items)} analytics",
+        f"{len(analytics_items)} analytics, {len(requests)} requests to route",
     }
-    if result.routing:
+    if result.routing or (result.request_routing and not args.retrieval_only):
         meta["planner model"] = model_of("router")
     if result.analytics:
         meta["analytics agent model"] = model_of("agent")
@@ -315,6 +344,14 @@ async def run(args: argparse.Namespace) -> int:
                 f"{s['false_positives']} picked when not expected",
                 file=sys.stderr,
             )
+    if result.request_routing:
+        s = summarize_request_routing(result.request_routing)
+        print(
+            f"request routing: {s['correct']}/{s['items']} correct queue, "
+            f"{s['wrong_queue']} to a wrong department, {s['triaged']} to triage, rules as "
+            f"expected on {s['rules_as_expected']}/{s['items']}",
+            file=sys.stderr,
+        )
     if result.analytics:
         s = summarize(result.analytics)
         print(

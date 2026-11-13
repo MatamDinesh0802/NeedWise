@@ -94,6 +94,14 @@ class AgentSpec(_Strict):
     max_searches: int = Field(default=2, ge=1, le=5)
 
 
+class RoutingRuleSpec(_Strict):
+    """Request routing (docs/automation.md): what sends a request to a department's queue."""
+
+    department: str
+    keywords: list[str] = []
+    categories: list[str] = []
+
+
 class CompanySpec(_Strict):
     company: CompanyInfo
     departments: list[DepartmentSpec]
@@ -101,6 +109,7 @@ class CompanySpec(_Strict):
     people: list[PersonSpec]
     collections: list[CollectionSpec] = []
     agents: list[AgentSpec] = []
+    request_routing: list[RoutingRuleSpec] = []
 
     @model_validator(mode="after")
     def _check_references(self) -> Self:
@@ -153,6 +162,12 @@ class CompanySpec(_Strict):
                 for c in agent.collections
                 if c not in collection_keys
             ]
+
+        for rule in self.request_routing:
+            if rule.department not in departments:
+                problems.append(f"request_routing: unknown department '{rule.department}'")
+            if not rule.keywords and not rule.categories:
+                problems.append(f"request_routing {rule.department}: give keywords or categories")
 
         if problems:
             raise ValueError("invalid company file:\n  - " + "\n  - ".join(problems))

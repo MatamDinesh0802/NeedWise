@@ -281,8 +281,12 @@ async def load_routing(
 
 
 def categories_of(rules: Sequence[RuleView]) -> list[str]:
-    """The categories the Request form offers."""
-    return sorted({c for r in rules for c in r.categories}, key=str.lower)
+    """The categories the Request form offers (once each, ignoring case)."""
+    found: dict[str, str] = {}
+    for rule in rules:
+        for category in rule.categories:
+            found.setdefault(category.lower(), category)
+    return sorted(found.values(), key=str.lower)
 
 
 LLMFor = Callable[[uuid.UUID], Awaitable[LLMProvider]]

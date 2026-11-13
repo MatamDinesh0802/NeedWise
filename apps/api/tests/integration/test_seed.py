@@ -1,11 +1,12 @@
 import uuid
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from tests.integration.conftest import SessionFactory
 from workmind.core.tenancy import tenant_transaction
 from workmind.modules.identity.models import DepartmentMember, GroupMember, User
+from workmind.modules.work.models import RoutingRule
 from workmind.seed.apply import seed_database
 from workmind.seed.company import CompanySpec, load_company
 
@@ -41,3 +42,21 @@ async def test_seeding_creates_the_company_and_is_idempotent(
     async with tenant_transaction(app_sessions, first.tenant_id) as session:
         alice = (await session.scalars(select(User).where(User.email == "alice@acme.test"))).one()
     assert (alice.keycloak_sub, alice.org_role, alice.title) == ("kc-alice", "member", "HR Manager")
+
+
+async def test_routing_rules_are_seeded_once_and_an_admins_edits_survive_a_reseed(
+    owner_sessions: SessionFactory, app_sessions: SessionFactory
+) -> None:
+    spec = _unique_acme()
+    seeded = await seed_database(spec, owner_sessions, {})
+    async with tenant_transaction(app_sessions, seeded.tenant_id) as session:
+        rules = (await session.scalars(select(RoutingRule).order_by(RoutingRule.position))).all()
+        assert len(rules) == len(spec.request_routing) == 7
+        assert rules[0].categories == ["Billing and expenses"]
+        assert "invoice" in rules[0].keywords
+        await session.execute(delete(RoutingRule).where(RoutingRule.id != rules[0].id))
+
+    await seed_database(spec, owner_sessions, {})
+
+    async with tenant_transaction(app_sessions, seeded.tenant_id) as session:
+        assert await session.scalar(select(func.count()).select_from(RoutingRule)) == 1

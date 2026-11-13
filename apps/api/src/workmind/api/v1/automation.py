@@ -438,8 +438,15 @@ async def get_routing_rules(ctx: AdminContext, request: Request) -> list[Routing
         return await _rules_out(session)
 
 
-def _clean(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(v.strip().lower() for v in values if v.strip()))
+def clean_terms(values: list[str], *, lower: bool) -> list[str]:
+    """Stripped, without duplicates (ignoring case). Keywords are stored lower-case;
+    categories keep the case the form shows them in."""
+    kept: dict[str, str] = {}
+    for value in values:
+        text = " ".join(value.split())
+        if text:
+            kept.setdefault(text.lower(), text.lower() if lower else text)
+    return list(kept.values())
 
 
 @admin_router.put("/routing-rules")
@@ -452,7 +459,9 @@ async def put_routing_rules(
         for index, rule in enumerate(body.rules):
             if rule.department not in departments:
                 raise ApiError(422, "unknown_department", f"No department “{rule.department}”")
-            if not _clean(rule.keywords) and not _clean(rule.categories):
+            if not clean_terms(rule.keywords, lower=True) and not clean_terms(
+                rule.categories, lower=False
+            ):
                 raise ApiError(422, "empty_rule", f"Rule {index + 1} needs a keyword or a category")
         await session.execute(delete(RoutingRule))
         for position, rule in enumerate(body.rules):
@@ -460,8 +469,8 @@ async def put_routing_rules(
                 RoutingRule(
                     tenant_id=ctx.tenant_id,
                     department_id=departments[rule.department],
-                    keywords=_clean(rule.keywords),
-                    categories=_clean(rule.categories),
+                    keywords=clean_terms(rule.keywords, lower=True),
+                    categories=clean_terms(rule.categories, lower=False),
                     enabled=rule.enabled,
                     position=position,
                 )

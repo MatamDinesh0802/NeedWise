@@ -97,7 +97,7 @@ async def test_a_request_goes_to_the_queue_its_rules_name_and_says_why(
     llm = use_model(api, FakeLLM())
     set_rules(api, acme)
     options = api.get("/api/v1/requests/options", headers=acme.as_("bob")).json()
-    assert options["categories"] == ["billing", "it"]
+    assert options["categories"] == ["Billing", "IT"]
     assert "finance" in [d["key"] for d in options["departments"]]
 
     created = ask(api, acme, "bob", title="Refund for invoice 1182", description="Overcharged.")
