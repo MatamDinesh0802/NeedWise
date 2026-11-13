@@ -6,10 +6,16 @@ citation for every claim, drawn only from sources they are allowed to read. Depa
 meeting notes, questions about company data and approved actions build on the same
 permission checks.
 
-!!! warning "Status: not ready for real company data"
-    Phases 0 to 11 of the [roadmap](ROADMAP.md) are built. Phase 12, production hardening for
-    v1.0, is in progress. Until v1.0, run WorkMind on the fictional demo company or on test
-    data only.
+![Alice gets a cited answer about the L3 salary band; Bob, without access, is told the sources available to him don't contain it](media/demo.gif)
+
+The [full walkthrough](media/demo.mp4) (1 min 44 s): cited answers, the same question without
+access, department agents, an approval, a meeting, a chart with its SQL, and an administrator
+adding an agent.
+
+!!! warning "Status: v1.0, pending the release tag"
+    All 13 phases of the [roadmap](ROADMAP.md) are built; a last end-to-end pass and the release
+    remain. WorkMind has been run only on the fictional demo company: try it there, or on test
+    data, before anything real.
 
 ## Who it is for
 
@@ -36,16 +42,21 @@ permission checks.
 
 ## Quickstart
 
-Requirements: Docker with Compose v2.
+Requirements: Docker with the Compose plugin, `git` and `make`.
 
 ```bash
 git clone <repo-url> workmind && cd workmind
+cp .env.example .env    # then add a model, e.g. ANTHROPIC_API_KEY=sk-ant-...
 make quickstart
 ```
 
-Then open http://localhost:8480 and sign in as one of the demo users. Search works right away;
-answers need a model. [Quickstart](getting-started/quickstart.md) has the demo logins and the
-next steps.
+Then open http://localhost:8480 and sign in as `alice@acme.test` (password `workmind-demo`).
+Measured from fresh clones on a busy laptop, with the service images already downloaded: every
+service was healthy after 1 to 2 minutes, the demo company was seeded after about 3 minutes, and
+the first cited answer came under 4 minutes after the clone. Search works without a model;
+answers need one.
+[Quickstart](getting-started/quickstart.md) has the measurements, the demo logins and the next
+steps.
 
 ## Where to read next
 

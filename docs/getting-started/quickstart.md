@@ -1,14 +1,19 @@
 # Quickstart
 
 This runs WorkMind on your machine with **Acme Robotics**, a fictional 180-person company with
-departments, demo logins and 44 documents, some of them restricted.
+departments, demo logins and 47 documents in 14 collections, some of them restricted.
+
+![Alice gets a cited answer about the L3 salary band; Bob, without access, is told the sources available to him don't contain it](../media/demo.gif)
+
+The [full walkthrough](../media/demo.mp4) (1 min 44 s) shows what the steps below lead to.
 
 ## Requirements
 
-- Docker with Compose v2. On macOS, Docker Desktop with about 8 GB of memory is enough: the
-  core stack uses about 3 GB.
-- About 2.5 GB of downloads on the first run (images and the embedding model). It takes a few
-  minutes.
+- Docker with the Compose plugin (the `docker compose` command), `git` and `make`. On macOS,
+  Docker Desktop with about 8 GB of memory is enough: the core stack uses about 3 GB.
+- Downloads on the first run: about 0.9 GB of service images (compressed; Postgres, Keycloak,
+  Qdrant, the embedding server and the rest), the 330 MB embedding model, and the Python and
+  Node packages the API and web images are built from.
 - Free local ports 8480 (the app), 8400, 3400, 8401, 5432, 6379, 6333 and 8025. All of them
   bind to `127.0.0.1` only; [Configuration](configuration.md#ports-passwords-and-compose)
   shows how to move them.
@@ -17,6 +22,13 @@ departments, demo logins and 44 documents, some of them restricted.
 
 ```bash
 git clone <repo-url> workmind && cd workmind
+cp .env.example .env
+```
+
+Add a model to `.env` now if you have one ([below](#add-a-model-for-answers)): for Claude, the
+line `ANTHROPIC_API_KEY=<your Anthropic API key>`. Then:
+
+```bash
 make quickstart
 ```
 
@@ -27,9 +39,47 @@ make quickstart
    `EMBEDDING_BASE_URL=http://embeddings:8080/v1` and `COMPOSE_PROFILES=embeddings` to `.env`;
 3. builds and starts the stack and waits until every service is healthy;
 4. creates the demo company (`make seed`): Keycloak logins, departments, groups, collections,
-   agents, and the documents, indexed through the real ingestion pipeline.
+   agents, analytics data, and the documents, indexed through the real ingestion pipeline.
 
-Open **http://localhost:8480** and sign in.
+It ends by listing the demo logins. Open **http://localhost:8480**, sign in as `alice@acme.test`
+with the password `workmind-demo`, and ask *"What is the salary band for an L3 engineer?"*
+
+## How long it takes
+
+Measured on 2026-11-13 by following this page from fresh clones of the repository, on an Apple
+M5 laptop with Docker Desktop (8 CPUs, 16 GB). Seven other build-and-test jobs ran on the same
+machine at the time (load average 12 to 14), so an idle machine is likely faster.
+
+| Step | First run: empty build cache | Second run: build cache kept |
+|---|---|---|
+| `git clone` (a local clone) | 1 s | 1 s |
+| Build the API and web images | 79 s | 12 s |
+| Start until every service is healthy | 34 s (the embedding model downloads meanwhile) | 71 s (Keycloak's first start was the slowest) |
+| **Every service healthy, from the clone** | **1 min 54 s** | **1 min 24 s** |
+| Seed the demo company: 47 documents (364 chunks) on CPU embeddings, analytics data, logins | 69 s | 76 s |
+| **`make quickstart` done, from the clone** | **3 min 3 s** | **2 min 40 s** |
+| Add the key to `.env`, then `make up` | 41 s | not needed: the key was in `.env` first |
+| Sign in (page to signed in) | 1 to 2 s | 2 s |
+| Ask until the answer shows its first citation | 2.4 s | 2.3 s |
+| **First cited answer, adding up the steps** | **about 3 min 50 s** | **about 2 min 45 s** |
+
+How it was run:
+
+- **What was cached.** The service images (0.9 GB compressed for arm64) were already on the
+  machine for both runs; a first run elsewhere also waits for them. The first run built the
+  two images with a separate, empty BuildKit builder: its base images, packages and cache were
+  all downloaded and built from nothing, and exporting the images from that builder into Docker
+  took longer than Docker's own builder would. The second run used Docker's default builder
+  with its cache. Each run started from empty volumes, so the embedding model downloaded each
+  time.
+- **What was changed.** Only what keeps a second stack apart from the one already running on
+  that machine: another Compose project name, image tags and ports. The model key reached the
+  containers through `.env`, as above.
+- **What was not timed.** A person reading this page, typing and clicking: the answer rows add
+  up the measured steps and leave out the pauses between them.
+- **What went wrong.** The first attempt at the first run stopped after 18 seconds: `apk
+  upgrade` in the web image could not resolve its package server (`DNS: transient error`). It
+  was started again from nothing and went through; see [below](#if-something-goes-wrong).
 
 ## Demo logins
 
@@ -55,7 +105,9 @@ signs in as another demo account. It is shown when `NEXT_PUBLIC_DEMO=1`, the def
 ## Add a model for answers
 
 Search, the Knowledge Hub and the admin pages work without a model. Answers, agents, meeting
-notes and Insights need one. Add one of these to `.env`, then run `make up`:
+notes and Insights need one; until there is one, a question ends with *"No language model is
+set up yet"* and how to add one. Add one of these to `.env` (before `make quickstart`, or later
+followed by `make up`):
 
 | Option | Lines in `.env` |
 |---|---|
@@ -70,20 +122,27 @@ bring its own keys in the app, in **Admin › Models** ([Models and keys](../mod
 Ask the same question as two people, and compare:
 
 1. Sign in as `alice@acme.test` and ask *"What is the salary band for an L3 engineer?"* The
-   answer cites the salary bands in Employee Records.
-2. Sign in as `bob@acme.test` and ask the same. Bob gets *"I couldn't find this in the sources
-   available to you"*, with no hint that the document exists.
+   answer cites the salary bands in Employee Records; click a citation to open the source.
+2. Sign in as `bob@acme.test` (or use **View as…**) and ask the same. Bob gets *"I couldn't find
+   this in the sources available to you"*, with no hint that the document exists.
 
 More to try:
 
 - *"How many weeks of parental leave do we get?"*: an older policy and a Slack thread disagree
   with the official 2026 policy. Answers prefer the official source and mention the
   disagreement.
+- **Research & act** (as `olivia.grant@acme.test`): *"Prepare this week's operations report and
+  email it to leadership@acme.test."* The drafted email waits on an approval card: edit it,
+  approve it, and read it in Mailpit (http://localhost:8025).
+- **Department agents**: set `ASSISTANT_MODE=auto` in `.env` and run `make up`. Then, as Bob:
+  *"For my on-call week: how do I restart the fleet controller, what P1 response time do
+  customers get, and how close may I get to a moving AMR-500?"* Three department agents answer
+  their parts.
 - **Knowledge Hub**: open a collection you can edit (Alice: Company Handbook) and upload a file;
   watch it get indexed and see its chunks.
 - **Meetings** (as `olivia.grant@acme.test`): upload
-  `seed/acme/meetings/weekly-ops-sync-2026-11-02.txt` to Operations SOPs. Its decisions and
-  action items link to the moment they were said.
+  `seed/acme/meetings/weekly-ops-sync-2026-11-02.m4a` (or the `.txt` transcript) to Operations
+  SOPs. Its decisions and action items link to the moment they were said.
 - **Insights** (as `dan@acme.test`): *"Show revenue by customer."* Dan only ever sees his own
   13 customers, whatever SQL the model writes; Carol sees all of them.
 - **Admin** (as `erin@acme.test`): agents, models, budgets, the audit log.
@@ -127,8 +186,13 @@ before `make infra` so the ports don't clash.
 
 ## If something goes wrong
 
-- **A port is taken.** Set another one in `.env` (`HTTP_PORT` and `PUBLIC_URL` together), then
-  `make up`.
+- **A port is taken.** Each one has a setting in `.env`: `HTTP_PORT` (with `PUBLIC_URL` to
+  match), `API_PORT`, `WEB_PORT`, `POSTGRES_PORT`, `VALKEY_PORT`, `QDRANT_PORT`,
+  `OPENFGA_PORT` and `MAILPIT_PORT`. Change it, then `make up`. `make up` and `make status`
+  read `HTTP_PORT` from `.env` too.
+- **The build stops with a network error**, such as `DNS: transient error` from `apk` or a
+  timeout from `apt-get` or `uv`. Run `make quickstart` again: the steps that finished are
+  cached. It happened once while this page was being measured.
 - **Seeding or uploads fail with `Permission denied: '/data/objects/...'` (Linux).** The
   containers run as uid 10001, and a Linux Docker daemon creates a missing bind-mount directory
   as root. `make up` and `make quickstart` run `make objects-dir`, which creates `.data/objects`
@@ -138,6 +202,7 @@ before `make infra` so the ports don't clash.
   `make embeddings` (needs llama.cpp on the host) and
   `EMBEDDING_BASE_URL=http://host.docker.internal:8091/v1` in `.env`. Both produce the same
   vectors, so nothing needs re-indexing.
-- **Answers say a model is missing.** See [Add a model for answers](#add-a-model-for-answers).
+- **An answer says "No language model is set up yet".** See
+  [Add a model for answers](#add-a-model-for-answers); after changing `.env`, run `make up`.
 - **Anything else:** `make status` names the component that is down; `make logs s=<service>`
   shows why.

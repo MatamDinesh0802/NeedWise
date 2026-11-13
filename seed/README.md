@@ -3,12 +3,13 @@
 WorkMind is demonstrated and evaluated on **Acme Robotics**, a fictional 180-person warehouse
 robotics company. No real company data is ever used.
 
-| File | Purpose | Phase |
-|---|---|---|
-| `acme/company.yaml` | Departments, groups, people, demo logins, collections and who can see them. `make seed` loads it into Keycloak and WorkMind. | 0–1 ✅ |
-| `acme/facts.yaml` | Ground-truth facts (e.g. "parental leave is 16 weeks in the 2026 policy, 12 in 2025") | 2 |
-| `acme/corpus/` | ~500 generated documents (PDF, DOCX, XLSX, Slack exports, transcripts) | 2 |
-| `generator/` | Generates the corpus from the facts using a local model, then verifies it | 2 |
+| Path | What it holds |
+|---|---|
+| `acme/company.yaml` | Departments, groups, 20 people, the 9 demo logins, 14 collections with who can see them, and the department agents. `make seed` loads it into Keycloak and WorkMind. |
+| `acme/corpus_plan.yaml` | Every document's brief and the exact facts it must state: the ground truth the evaluation questions are graded against (`evals/`). |
+| `acme/corpus/` | The 47 documents (Word, Markdown, Excel, PDF, PowerPoint and two Slack exports), written from the plan by `python -m workmind.seed.corpus` and committed; `manifest.yaml` lists them. `make seed` indexes them through the real ingestion pipeline (364 chunks). |
+| `acme/analytics/` | The tables Insights queries (customers, products, invoice lines, the sales pipeline, January to September 2026), the script that generates them, and the semantic layer with its row policies. |
+| `acme/meetings/` | A 23-minute weekly operations meeting (transcript and audio, with its fact plan) and a support team transcript, to upload in **Meetings**. Not loaded by `make seed`. |
 
 ## Why generate documents from facts?
 
@@ -30,4 +31,10 @@ answer and a known source. The corpus includes the hard cases on purpose:
 | carol@acme.test | Finance analyst | Finance reports, enterprise docs. **Not** payroll. |
 | dan@acme.test | Account executive | Sales, enterprise docs |
 | erin@acme.test | IT administrator (org admin) | Manages settings. Admin does **not** grant restricted content. |
+| priya.raman@acme.test | CEO (org owner) | Leadership strategy, finance reports, enterprise docs |
+| hannah.schmidt@acme.test | CFO | Finance reports, payroll, leadership strategy, enterprise docs |
+| olivia.grant@acme.test | Head of operations | Leadership strategy, finance reports, enterprise docs; edits the Operations SOPs |
 | mallory@acme.test | External contractor (guest) | Only the contractor-onboarding collection: the red-team user |
+
+Every demo login uses the password `workmind-demo` (the `DEMO_PASSWORD` setting). What to try
+with each: [Quickstart](../docs/getting-started/quickstart.md#try-it).

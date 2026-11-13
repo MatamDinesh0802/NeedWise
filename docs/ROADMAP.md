@@ -1,6 +1,6 @@
 # WorkMind AI — Roadmap, Releases and Go-to-Market
 
-> **Status:** Draft v0.2 · **Phase 0 complete** · **Last updated:** 2026-11-12
+> **Status:** Draft v0.2 · **Phase 0 complete** · **Last updated:** 2026-11-13
 > **Companion doc:** [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## 1. Strategy in one paragraph
@@ -61,6 +61,13 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 - **Acme Robotics company definition:** departments, groups, 20 people (6 demo personas), 13 collections with access rules (`seed/acme/company.yaml`). The document generator moved to Phase 2, where documents are first needed; it generates them from a ground-truth facts file so every eval question has a known answer.
 
 **DoD:** fresh clone → `make up` → all services healthy in under 5 minutes. CI green.
+
+> Measured 2026-11-13 by following the README from fresh clones on a laptop that was busy with
+> other jobs ([quickstart](getting-started/quickstart.md#how-long-it-takes)): with
+> `make quickstart`, every service was healthy 1 min 54 s after the clone with an empty build
+> cache (1 min 24 s with the cache kept), and the demo company was seeded after 3 min 3 s
+> (2 min 40 s). The 0.9 GB of service images were already on the machine; their download was
+> not timed.
 
 **LinkedIn post #1 — "I'm building an open-source enterprise AI workspace, in public."**
 - The problem: company knowledge is scattered, and AI assistants leak permissions.
@@ -156,7 +163,21 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 ### Phase 4 — AI Assistant: first usable product (v0.4) — PUBLIC LAUNCH ✅ Built (launch pending the public repo)
 
 > Done: streaming chat with citations, sources panel, follow-ups, feedback, usage and cost, "view as",
-> `make quickstart`. Pending the maintainer: README GIF and demo video, public demo deployment (D4).
+> `make quickstart`, the README GIF and the demo video. Pending the maintainer: public demo
+> deployment (D4) and the launch.
+>
+> DoD, measured 2026-11-13 ([quickstart](getting-started/quickstart.md#how-long-it-takes)):
+> following the README from a fresh clone, the first cited answer came about 3 min 50 s after
+> the clone with an empty build cache and the key added after `make quickstart`, and about
+> 2 min 45 s with the build cache kept and the key in `.env` first; these add up the measured
+> steps on a busy laptop, with the service images already downloaded. A person's reading and
+> typing time was not measured. Following the README also found what a newcomer would trip on,
+> now fixed: the requirements left out `git` and `make`, a first question without a key failed
+> with "Something went wrong while answering", `make up` and `make status` ignored a moved
+> `HTTP_PORT`, **View as…** did not offer Olivia, whose examples the quickstart uses, and the
+> document count was stale. The [demo video](media/demo.mp4) (1 min 44 s) and the README GIF
+> were recorded with `make demo-video` against the development stack
+> ([how](../e2e/browser/demo/README.md)).
 
 **Goal:** a real person can install WorkMind and get cited, permission-aware answers in minutes.
 
