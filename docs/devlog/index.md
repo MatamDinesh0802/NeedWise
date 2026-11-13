@@ -8,8 +8,11 @@ links to it.
 Every number in a post comes from a committed evaluation report or a measured page of these
 docs, and every image is generated from the code or the running app (the images and their HTML
 sources are in `docs/devlog/assets/`). Posts 7 to 13 suggest a visual instead: their images are
-not made yet. The links in the posts' first comments use `https://github.com/MatamDinesh0802/NeedWise`, to be replaced
-when the repository is public.
+not made yet. The links in the posts' first comments point to the repository,
+`https://github.com/MatamDinesh0802/NeedWise`, and open once it is public.
+
+**For the launch, one post:** [the launch post](launch-post.md). The thirteen below are the
+development log, one per milestone.
 
 | Post | Milestone | About |
 |---|---|---|

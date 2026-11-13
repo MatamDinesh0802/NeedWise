@@ -186,6 +186,7 @@ nav:
   - Roadmap: ROADMAP.md
   - Devlog:
       - devlog/index.md
+      - "Launch post": devlog/launch-post.md
       - "#1 Building in public": devlog/post-01-building-in-public.md
       - "#2 Who can see what": devlog/post-02-who-can-see-what.md
       - "#3 Upload to answer": devlog/post-03-upload-to-answer.md
