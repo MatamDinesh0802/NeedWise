@@ -6,6 +6,7 @@ citations need.
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     CheckConstraint,
@@ -20,7 +21,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy import false as sa_false
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from workmind.core.db import Base, TenantScoped, Timestamps, uuid_primary_key
@@ -154,6 +155,9 @@ class Document(Base, TenantScoped, Timestamps):
     url: Mapped[str | None] = mapped_column(Text)  # where people can open the original
     # The source's version marker (etag, revision): unchanged items are not fetched again.
     source_version: Mapped[str | None] = mapped_column(Text)
+    # Where the item sits in its source (RemoteItem.meta): a Confluence page's space and
+    # ancestors, a SharePoint file's folder path, a repository path.
+    source_meta: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     trust: Mapped[str] = mapped_column(String(16))
     sensitivity: Mapped[str] = mapped_column(String(16))
     # True once an editor sets the label: re-indexing then keeps it instead of re-scanning.

@@ -28,8 +28,10 @@ class RemoteItem:
     title: str
     filename: str  # decides the parser: ".md", ".pdf", ".json" (Slack export), ...
     version: str  # changes whenever the content does
-    url: str | None = None
+    url: str | None = None  # where people open the original (a link back to the source)
     modified_at: datetime | None = None
+    # Stored with the document (`documents.source_meta`): where the item sits in its source,
+    # e.g. a Confluence page's space and ancestors or a SharePoint file's folder path.
     meta: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
@@ -40,6 +42,10 @@ class ScanResult:
     # missing item as deleted. Incremental scans set it False.
     complete: bool = True
     cursor: dict[str, Any] = field(default_factory=dict[str, Any])
+    # External ids the source itself reported as deleted (Microsoft Graph delta tombstones, an
+    # item that moved out of the selected folder). Removed whether or not the scan is complete:
+    # the source said so. An id WorkMind never synced is ignored.
+    deleted: list[str] = field(default_factory=list[str])
 
 
 class Connector(Protocol):

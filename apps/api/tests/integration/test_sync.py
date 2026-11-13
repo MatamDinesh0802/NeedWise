@@ -1,6 +1,8 @@
 """The sync engine against a scripted connector, with real PostgreSQL and Qdrant: adds, skips
 unchanged items without fetching them, versions changed ones, propagates deletions only after a
-complete scan, records failures without deleting anything, and runs one sync at a time.
+complete scan or when the source reports them (delta tombstones), records failures without
+deleting anything (and without moving an incremental source's cursor past them), keeps where
+an item sits in its source, and runs one sync at a time.
 
 Needs TEST_QDRANT_URL (and the test database)."""
 
@@ -41,14 +43,20 @@ class ScriptedConnector:
         self.complete = True
         self.fail = False
         self.fetched: list[str] = []
+        self.deleted: list[str] = []  # tombstones the next scan reports
+        self.unreachable: set[str] = set()  # items whose download fails
+        self.cursor: dict[str, Any] | None = None
 
-    def put(self, external_id: str, text: str, version: str) -> None:
+    def put(
+        self, external_id: str, text: str, version: str, meta: dict[str, Any] | None = None
+    ) -> None:
         item = RemoteItem(
             external_id,
             external_id.title(),
             f"{external_id}.md",
             version,
             f"https://intranet/{external_id}",
+            meta=meta or {},
         )
         self.items[external_id] = (item, f"# {external_id.title()}\n\n{text}\n".encode())
 
@@ -56,11 +64,16 @@ class ScriptedConnector:
         if self.fail:
             raise ConnectorError("intranet answered HTTP 503")
         return ScanResult(
-            [i for i, _ in self.items.values()], self.complete, {"seen": len(self.items)}
+            [i for i, _ in self.items.values()],
+            self.complete,
+            self.cursor if self.cursor is not None else {"seen": len(self.items)},
+            deleted=list(self.deleted),
         )
 
     async def fetch(self, item: RemoteItem) -> bytes:
         self.fetched.append(item.external_id)
+        if item.external_id in self.unreachable:
+            raise ConnectorError("intranet answered HTTP 502")
         return self.items[item.external_id][1]
 
 
@@ -121,6 +134,13 @@ async def documents(deps: SyncDeps, source: Source) -> dict[str, Document]:
             await session.scalars(select(Document).where(Document.source_id == source.id))
         ).all()
     return {d.external_id or "": d for d in rows}
+
+
+async def stored_cursor(deps: SyncDeps, source: Source) -> dict[str, Any]:
+    async with tenant_transaction(deps.sessions, source.tenant_id) as session:
+        stored = await session.get(Source, source.id)
+    assert stored is not None
+    return stored.cursor
 
 
 async def run(deps: SyncDeps, source: Source) -> Any:
@@ -186,6 +206,72 @@ async def test_an_incomplete_scan_or_a_failure_never_deletes(
     assert failed.status == "error"
     assert set(await documents(deps, source)) == {"leave", "travel"}
     assert (stored.status, stored.last_error) == ("error", "intranet answered HTTP 503")
+
+
+async def test_deletions_the_source_reports_apply_to_incremental_scans(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """A delta feed (SharePoint) lists only changes, so missing items mean nothing; its
+    tombstones are explicit deletions."""
+    deps, connector, source, qdrant, name = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")
+    await run(deps, source)
+
+    connector.complete = False
+    del connector.items["leave"]  # not in this delta page set: unchanged, not deleted
+    del connector.items["travel"]
+    connector.deleted = ["travel", "never-synced"]
+    report = await run(deps, source)
+
+    assert (report.status, report.deleted) == ("ok", 1)
+    assert set(await documents(deps, source)) == {"leave"}
+    assert await qdrant.count(name, tenant_id=source.tenant_id) == 1
+
+
+async def test_a_failed_download_does_not_move_the_cursor_past_it(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    """With a delta feed, an item whose download failed is not listed again unless it changes:
+    the cursor stays where it was, so the next sync sees the same changes once more."""
+    deps, connector, source, _, _ = setup
+    connector.complete = False
+    connector.cursor = {"delta": "link-1"}
+    connector.put("leave", "Parental leave is 16 weeks.", "v1")
+    await run(deps, source)
+    connector.cursor = {"delta": "link-2"}
+    connector.put("travel", "Hotels are capped at 250 euros.", "v1")
+    connector.unreachable = {"travel"}
+
+    failed = await run(deps, source)
+    kept = await stored_cursor(deps, source)
+    connector.unreachable = set()
+    connector.fetched.clear()
+    retried = await run(deps, source)
+    moved = await stored_cursor(deps, source)
+
+    assert (failed.failed, failed.unchanged, kept) == (1, 1, {"delta": "link-1"})
+    assert (retried.added, retried.unchanged, connector.fetched) == (1, 1, ["travel"])
+    assert moved == {"delta": "link-2"}
+
+
+async def test_where_an_item_sits_is_kept_and_follows_moves(
+    setup: tuple[SyncDeps, ScriptedConnector, Source, QdrantClient, str],
+) -> None:
+    deps, connector, source, _, _ = setup
+    connector.put("leave", "Parental leave is 16 weeks.", "7:a", {"path": ["HR", "Policies"]})
+    await run(deps, source)
+    before = (await documents(deps, source))["leave"]
+
+    # Moved under another parent: a new version marker, the same content.
+    connector.put("leave", "Parental leave is 16 weeks.", "7:b", {"path": ["HR", "Archive"]})
+    report = await run(deps, source)
+    after = (await documents(deps, source))["leave"]
+
+    assert before.source_meta == {"path": ["HR", "Policies"]}
+    assert after.source_meta == {"path": ["HR", "Archive"]}
+    assert (report.unchanged, after.current_version_id) == (1, before.current_version_id)
+    assert after.source_version == "7:b"
 
 
 async def test_slack_messages_are_discussion_even_in_an_official_collection(
