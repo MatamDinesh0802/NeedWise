@@ -491,6 +491,29 @@ async def test_rotation_moves_source_passwords_to_the_new_key(shop: Shop) -> Non
     assert await shop.sql("carol", "SELECT 1") == [[1]]
 
 
+async def test_weaker_tls_needs_the_password_again(shop: Shop) -> None:
+    # tls_mode and tls_ca were not bound to the stored password: an admin could set
+    # tls_mode=disable or their own CA and have the password sent without verification.
+    await shop.connect()
+    erin = await shop.ctx("erin")
+    ca = "-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----"
+
+    stronger = await shop.service.update_source(erin, "shop", SourcePatch(tls_mode="verify-full"))
+    assert stronger.tls_mode == "verify-full"  # stronger: the password stays
+    for patch in (SourcePatch(tls_mode="disable"), SourcePatch(tls_ca=ca)):
+        with pytest.raises(AnalyticsError) as refused:
+            await shop.service.update_source(erin, "shop", patch)
+        assert refused.value.code == "password_required"
+    back = "require" if shop.server.kind == "mysql" else "disable"
+    restored = await shop.service.update_source(
+        erin,
+        "shop",
+        SourcePatch(tls_mode=back, password=SecretStr(shop.server.password)),
+    )
+    assert restored.tls_mode == back
+    assert await shop.sql("carol", "SELECT count(*) FROM customers") == [[10]]
+
+
 async def test_a_moved_source_needs_its_password_again(shop: Shop) -> None:
     await shop.connect()
     erin = await shop.ctx("erin")

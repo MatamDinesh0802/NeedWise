@@ -149,6 +149,14 @@ POSTGRES_ATTACKS = [
     "TABLE orders",
     "SELECT * FROM ONLY orders",
     "SELECT * FROM orders TABLESAMPLE SYSTEM (10)",
+    # catalog names without a catalog table: reg* output functions read pg_class, pg_authid...
+    "SELECT CAST(CAST(GENERATE_SERIES(1, 5000) AS OID) AS REGCLASS)",
+    "SELECT CAST(order_id AS OID)::regclass FROM orders",
+    "SELECT CAST(10 AS REGROLE)",
+    "SELECT CAST(2200 AS REGNAMESPACE)",
+    "SELECT CAST(1 AS REGPROCEDURE)",
+    "SELECT 23::regtype",
+    "SELECT version()",
 ]
 
 

@@ -142,6 +142,8 @@ DENIED_FUNCTIONS: tuple[str, ...] = (
     "database",
     "schema",
     "user",
+    "version",  # the server's version and build
+    "current_version",
 )
 
 # Functions sqlglot does not know by type (exp.Anonymous) that a database source may call: common
@@ -632,6 +634,13 @@ def validate(
             raise QueryRejectedError("LATERAL is only allowed with a subquery.")
         if isinstance(node, exp.Func) and (name := denied_function(node, dialect)):
             raise QueryRejectedError(f"The function {name}() is not allowed.")
+        if isinstance(node, exp.Cast) and _catalog_type(node.to):
+            # regclass, regrole, regnamespace, regproc...: their output functions read the
+            # catalogs (pg_class, pg_authid) without naming a table.
+            raise QueryRejectedError(
+                f"Casting to {node.to.sql(dialect=dialect)} is not allowed: it reads the "
+                "database's catalog."
+            )
         if isinstance(node, exp.CTE):
             cte = node.alias_or_name.lower()
             if cte in tables:
@@ -653,6 +662,15 @@ def validate(
             continue
         used.add(_check_table(table, tables, dialect))
     return used
+
+
+def _catalog_type(to: exp.Expr) -> bool:
+    """A PostgreSQL object identifier alias type (regclass, regrole, regtype...)."""
+    try:
+        name = to.sql(dialect="postgres", comments=False).strip('"').lower()
+    except SqlglotError:
+        return True
+    return name.startswith("reg")
 
 
 def _check_physical(table: exp.Table, physical: frozenset[tuple[str, str]]) -> None:

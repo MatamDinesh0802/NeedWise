@@ -34,8 +34,11 @@ A query reaches the database only if all three agree it reads.
    user-defined function are unknown names, so they are refused. The deny-list of the uploaded
    data also applies, with additions for databases (waiting, locks, files, settings, SQL in a
    string) and the functions that name the connection's user or database (`current_user`,
-   `session_user`, `current_database`, `database()`, `user()`, `connection_id()`); `version()`
-   is allowed. Comments never reach the
+   `session_user`, `current_database`, `database()`, `user()`, `connection_id()`) and
+   `version()`. Casts to PostgreSQL's object identifier types (`regclass`, `regrole`,
+   `regnamespace`, `regproc`, `regtype`...) are refused too: their output reads the catalogs, so
+   `CAST(CAST(generate_series(1, 5000) AS oid) AS regclass)` would list every relation name
+   without naming a catalog table. Comments never reach the
    database: the SQL that runs is rebuilt from the parsed tree, so MySQL's executable comments
    (`/*! ... */`) are dropped with the rest.
 2. **The session** (`remote.py`, in the query worker). One new connection per query, never
@@ -109,7 +112,9 @@ Stored like model provider keys ([models.md](models.md)): AES-256-GCM with
 the source and where it connects (kind, host, port, database, user). A ciphertext copied to
 another source or tenant does not open, and changing the host, port, database or user without
 entering the password again is refused (`422 password_required`): an admin cannot point the
-stored password at a server of their choosing. The API never returns it (`password_set: true`
+stored password at a server of their choosing. Weakening TLS (a lower `tls_mode`, or a different
+`tls_ca`) also needs the password again, so it cannot be sent without the verification it was
+entered with; a stronger mode keeps it. The API never returns it (`password_set: true`
 says one is stored), audit events never contain it, and connection errors never quote it.
 `wm secrets rotate` re-encrypts source passwords with the active key, next to the provider keys
 (`modules/analytics/rotation.py`); keep the old key in `SECRETS_ENCRYPTION_PREVIOUS_KEYS` until
@@ -260,7 +265,11 @@ without access (Bob, Mallory, Erin), and 6 attacks (`hr.salaries`, `internal_not
 1. load `seed/acme/analytics/sql/shop.sql` into a schema `shop` (and `hr`) of a PostgreSQL
    database, or databases `shop` and `hr` on MySQL, and create the read-only user above;
 2. connect it in Admin › Analytics as key `shop` with schema `shop`, and save
-   `seed/acme/analytics/sql/shop.yaml` as its model;
+   `seed/acme/analytics/sql/shop.yaml` as its model. A database on your machine or in the
+   compose network (`postgres`, `host.docker.internal`, `127.0.0.1`) has a private or loopback
+   address, which is refused until an operator lists its network in
+   `ANALYTICS_SOURCE_PRIVATE_NETWORKS` (e.g. `172.16.0.0/12` for Docker's networks, or
+   `127.0.0.1/32`) and restarts the API;
 3. `uv run wm eval --skip-retrieval --suites analytics --analytics-file analytics_sql.jsonl`.
 
 Each item runs on its dataset with that dataset's reference person (who sees every row) for the

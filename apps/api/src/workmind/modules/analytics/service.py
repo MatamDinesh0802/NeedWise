@@ -920,6 +920,7 @@ class Analytics:
         async with tenant_transaction(self.sessions, ctx.tenant_id) as session:
             row = await _source_row(session, key, lock=True)
             place = _password_context(ctx.tenant_id, row)
+            tls_before = (row.tls_mode, row.tls_ca)
             for name in ("name", "host", "port", "database", "username", "tls_mode", "enabled"):
                 if changes.get(name) is not None:
                     setattr(row, name, changes[name])
@@ -927,7 +928,11 @@ class Analytics:
                 row.tls_ca = body.tls_ca
             if body.schemas is not None:
                 row.schemas = list(body.schemas)
-            moved = _password_context(ctx.tenant_id, row) != place
+            # Weaker TLS (a lower mode, or another CA to trust) could send the stored password
+            # to whoever answers for the host: it takes the password again, like a move.
+            moved = _password_context(ctx.tenant_id, row) != place or _tls_weakened(
+                tls_before, (row.tls_mode, row.tls_ca)
+            )
             if body.password is not None:
                 row.password = self._keyring().seal(
                     body.password.get_secret_value(),
@@ -938,8 +943,9 @@ class Analytics:
                     422,
                     "password_required",
                     "Enter the password again",
-                    "The stored password only works for the host, port, database and user it "
-                    "was entered for. Enter it again with the new connection settings.",
+                    "The stored password only works for the host, port, database, user and "
+                    "TLS settings it was entered for (a stronger TLS mode keeps it). Enter it "
+                    "again with the new connection settings.",
                 )
             row.updated_by = ctx.user_id
             await self._audit_source(
@@ -1577,6 +1583,17 @@ async def _source_row(session: AsyncSession, key: str, *, lock: bool = False) ->
     if row is None:
         raise _no_source(key)
     return row
+
+
+TLS_STRENGTH: dict[str, int] = {"disable": 0, "require": 1, "verify-full": 2}
+
+
+def _tls_weakened(before: tuple[str, str | None], after: tuple[str, str | None]) -> bool:
+    """A lower TLS mode, or a different CA to trust (which certificates pass verify-full)."""
+    (mode_before, ca_before), (mode_after, ca_after) = before, after
+    if TLS_STRENGTH.get(mode_after, 0) < TLS_STRENGTH.get(mode_before, 0):
+        return True
+    return ca_after != ca_before and mode_after != "disable"
 
 
 def _password_context(tenant_id: uuid.UUID, row: AnalyticsSource) -> bytes:
