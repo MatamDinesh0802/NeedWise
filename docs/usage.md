@@ -25,7 +25,7 @@ Each event (table `usage_events`) holds:
 | `user_id` | The person the call worked for; empty for evaluations |
 | `department_id` | The department the usage counts for (see "Attribution") |
 | `agent_key` | The department agent that made the call, if any |
-| `feature` | `chat`, `agents`, `research`, `workflow`, `meetings`, `analytics`, `agent_test`, `eval` (`other`: see below) |
+| `feature` | `chat`, `agents`, `research`, `workflow`, `meetings`, `analytics`, `agent_test`, `eval`, `routing` (`other`: see below) |
 | `model`, `model_id`, `provider`, `local` | The model name the provider reported, its catalog id, the provider kind (`anthropic`, `openai_compatible`), whether requests stay inside your infrastructure |
 | `input_tokens`, `output_tokens` | As the provider reported them |
 | `cost_usd` | The price of those tokens; empty when the model has no price |
@@ -82,11 +82,12 @@ tasks it starts inherit, `modules/usage/calls.py`):
 | `chat` | Assistant answers (`POST /conversations/{id}/messages`, `ASSISTANT_MODE=single`), `POST /api/v1/ask`, the MCP `ask` tool | the asker | `message`: the stored answer (conversations only) |
 | `agents` | The same, with `ASSISTANT_MODE=agents` or `auto`: planning, each department agent, composing | the asker | `message` |
 | `research` | "Research & act" in chat, `POST /api/v1/research` | the asker | `message` (chat only) |
-| `workflow` | Research steps of workflow runs, whatever started them (schedule, a person, `document.ready`) | the workflow's owner | `workflow_run` |
+| `workflow` | Research steps of workflow runs, whatever started them (schedule, a person, an event such as `document.ready`) | the workflow's owner | `workflow_run` |
 | `meetings` | Extracting notes from a meeting | the person who uploaded it | `meeting` |
 | `analytics` | `POST /analytics/ask` (Insights) | the asker | `analytics_run` |
 | `agent_test` | The test console in Admin › Agents | the administrator | — |
 | `eval` | `wm eval` | nobody | — |
+| `routing` | The router model deciding a request's queue (the Request form, email, the assistant's `create_task`, the admins' routing preview) | the person who asked (the admin, for a preview) | — |
 
 A department agent's calls carry its key (`agent_key`); in the test console every call carries
 the tested agent's key.

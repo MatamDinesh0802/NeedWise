@@ -232,7 +232,8 @@ and never undoes a review or an owner chosen in the app.
 ## What is not built
 
 - No escalation: an overdue review stays with its owner; nobody else is told when the owner
-  ignores the task.
+  ignores the task. (The review task is the owner's alone, so task escalation, docs/automation.md,
+  finds nobody else who may open it; the owner does get its due-date reminder.)
 - No review history beyond the audit log: the document keeps only its latest review.
 - Overdue reviews do not lower a document's ranking; they are only labelled.
 - No bulk actions (hand over every document of a person who leaves, mark many reviewed).

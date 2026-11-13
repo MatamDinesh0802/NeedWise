@@ -42,6 +42,12 @@ Engineering…) handle department work. Actions that leave the system need human
   to a local model, or leaves them out and says so.
 - **Knowledge Hub:** upload PDF, Word, Excel, PowerPoint, Markdown, HTML, CSV or Slack exports;
   watch them get indexed; see exactly which chunks the assistant reads.
+- **Actions wait for the right people.** Anything the assistant or a workflow would send or
+  change becomes an approval: for the person who asked, or by rule for the org admins, a
+  department's managers or a chain of approvers (never the requester). Reminders and escalation
+  after an SLA; notifications by email or Slack; requests routed to a department queue by rules,
+  then a model, else a person; workflows in YAML on schedules and events
+  ([docs/automation.md](docs/automation.md)).
 - **Meetings become commitments.** Upload a recording or transcript: local speech-to-text (a
   23-minute meeting in under a minute on a laptop CPU), decisions and action items that each
   link to the moment they were said, one click to a tracked task ([docs/meetings.md](docs/meetings.md)).
