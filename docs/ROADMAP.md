@@ -278,7 +278,8 @@ Each phase lists its **goal**, **scope**, **definition of done (DoD)** and **Lin
 > audited, with a 39-item eval set; workflows in YAML with errors at their lines; the events
 > `document.updated`, `meeting.processed`, `task.completed` and `approval.decided`. Checked with
 > unit and integration tests (a scripted model, a stub mailer and a stub Slack); the routing eval
-> has not been run with a real model, and the new pages were not walked through in a browser.
+> has not been run with a real model, and the new pages were checked in headless Chromium with a
+> mocked API (no axe serious findings), not against a running stack.
 >
 > Not built: Microsoft Teams notifications and Slack interactivity (approving from Slack);
 > reading a mailbox for email requests (only an endpoint for a bridge); per-workflow SLAs and

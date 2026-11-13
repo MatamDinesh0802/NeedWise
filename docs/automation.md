@@ -321,8 +321,11 @@ stub mailer and a stub Slack): rules and chains (no self-approval, edits carried
 step, a chain that loses its approvers fails), reminders and escalations happening once, the
 outbox with retries and digests, routing by rules, by the scripted model and to triage over HTTP,
 the email stub, YAML errors at their lines, each event trigger exactly once and only for what the
-owner can open, and every new route in the cross-tenant isolation suite. The pages were built and
-unit-tested; they were not walked through in a browser against a running stack in this change.
+owner can open, and every new route in the cross-tenant isolation suite. The new pages (Settings ›
+Notifications, Requests, Tasks › Triage, a request's page, Admin › Automation, the workflow
+editor) were rendered in headless Chromium with the API mocked in the browser: no console errors
+and no serious or critical axe findings. They have not been walked through against a running,
+seeded stack.
 
 Not built:
 
